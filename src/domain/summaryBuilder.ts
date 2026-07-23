@@ -1,0 +1,223 @@
+/**
+ * Rule-based summary generation (WORK_PLAN §15). No AI calls in the MVP.
+ *
+ * Produces two derived views from the canonical brief:
+ *   - `DesignSummary` — AI-facing. MUST NOT contain any publishing link/URL
+ *     (WORK_PLAN §34 Phase 5 gate). This is enforced structurally: the builder
+ *     only ever reads block *content* for design/reference blocks, and CTA
+ *     entries expose a boolean `hasLink`, never the URL.
+ *   - `PublishingInfo` — publishing-only info the image AI ignores.
+ */
+
+import { getBlockTypeMeta } from './blockTypes'
+import {
+  type BriefBlock,
+  type BriefFile,
+  type DesignSummary,
+  type EventBrief,
+  type LayoutAlignment,
+  type LayoutEmphasis,
+  type LayoutRegion,
+  type PublishingInfo,
+  type PublishingLink,
+  type PublishingNote,
+  type SummaryCta,
+  type SummaryImage,
+  type SummaryItem,
+  type SummaryLayoutHint,
+  type SummaryProduct,
+  type SummaryText,
+} from './briefSchema'
+import type { BlockType } from './blockTypes'
+
+const PRODUCT_IMAGE_TYPES: ReadonlySet<BlockType> = new Set<BlockType>([
+  'main_product_image',
+  'sub_product_image',
+  'product_group_image',
+])
+
+const BENEFIT_TYPES: ReadonlySet<BlockType> = new Set<BlockType>([
+  'benefit',
+  'purchase_condition',
+  'gift',
+  'application_condition',
+  'option_item',
+  'winner_count',
+])
+
+const LINK_TYPES: ReadonlySet<BlockType> = new Set<BlockType>([
+  'product_detail_link',
+  'button_url',
+  'application_form_link',
+  'reference_site_link',
+  'gif_source_link',
+])
+
+function content(block: BriefBlock): string {
+  return block.content?.trim() ?? ''
+}
+
+function hasContent(block: BriefBlock): boolean {
+  return content(block).length > 0
+}
+
+function isDesign(block: BriefBlock): boolean {
+  return block.aiVisibility === 'design'
+}
+
+function isPublishing(block: BriefBlock): boolean {
+  return block.aiVisibility === 'publishing'
+}
+
+/** Derives a soft region hint from the explicit hint or the block's y position. */
+function regionOf(block: BriefBlock, canvasHeight: number): LayoutRegion {
+  if (block.layoutHint.region) return block.layoutHint.region
+  const centerY = block.position.y + block.position.height / 2
+  if (centerY < canvasHeight / 3) return 'top'
+  if (centerY > (canvasHeight * 2) / 3) return 'bottom'
+  return 'middle'
+}
+
+/** Derives a soft alignment hint from the explicit hint or the block's x center. */
+function alignmentOf(block: BriefBlock, canvasWidth: number): LayoutAlignment {
+  if (block.layoutHint.alignment) return block.layoutHint.alignment
+  const centerX = block.position.x + block.position.width / 2
+  if (centerX < canvasWidth / 3) return 'left'
+  if (centerX > (canvasWidth * 2) / 3) return 'right'
+  return 'center'
+}
+
+function emphasisOf(block: BriefBlock): LayoutEmphasis {
+  return block.layoutHint.emphasis ?? 'normal'
+}
+
+function firstContent(blocks: BriefBlock[], type: BlockType): string | undefined {
+  const match = blocks.find((b) => b.type === type && isDesign(b) && hasContent(b))
+  return match ? content(match) : undefined
+}
+
+/**
+ * Builds the AI-facing design summary. Reads only design/reference blocks; no
+ * publishing content ever enters this object.
+ */
+export function buildDesignSummary(brief: EventBrief): DesignSummary {
+  const { blocks, project } = brief
+  const designBlocks = blocks.filter(isDesign)
+
+  const mainHeadline = firstContent(blocks, 'main_headline')
+
+  const subHeadlines = designBlocks
+    .filter((b) => b.type === 'sub_headline' && hasContent(b))
+    .map(content)
+
+  const requiredTexts: SummaryText[] = designBlocks
+    .filter((b) => getBlockTypeMeta(b.type).hasText && b.required && hasContent(b))
+    .toSorted((a, b) => a.priority - b.priority)
+    .map((b) => ({
+      blockId: b.id,
+      type: b.type,
+      label: b.label,
+      content: content(b),
+      emphasis: emphasisOf(b),
+      priority: b.priority,
+    }))
+
+  const requiredProducts: SummaryProduct[] = blocks
+    .filter((b) => PRODUCT_IMAGE_TYPES.has(b.type))
+    .map((b) => {
+      const product: SummaryProduct = {
+        blockId: b.id,
+        productName: b.image?.productName ?? b.label,
+        allowTransform: b.image?.allowTransform ?? true,
+        required: b.required,
+      }
+      if (b.assetId !== undefined) product.assetId = b.assetId
+      if (b.groupId !== undefined) product.groupId = b.groupId
+      return product
+    })
+
+  const requiredBenefits: SummaryItem[] = designBlocks
+    .filter((b) => BENEFIT_TYPES.has(b.type) && hasContent(b))
+    .map((b) => ({ blockId: b.id, type: b.type, label: b.label, content: content(b) }))
+
+  const cautions = designBlocks
+    .filter((b) => b.type === 'caution_text' && hasContent(b))
+    .map(content)
+
+  // A CTA "has a link" if any publishing link block exists. The URL is never
+  // copied here — only the boolean.
+  const anyPublishingLink = blocks.some((b) => LINK_TYPES.has(b.type) && isPublishing(b) && hasContent(b))
+  const ctaButtons: SummaryCta[] = designBlocks
+    .filter((b) => b.type === 'cta_button' && hasContent(b))
+    .map((b) => ({ blockId: b.id, text: content(b), hasLink: anyPublishingLink }))
+
+  // Images to insert as-is: existing full images, plus any image block whose
+  // transform is explicitly disallowed.
+  const verbatimImages: SummaryImage[] = blocks
+    .filter((b) => b.type === 'existing_full_image' || b.image?.allowTransform === false)
+    .map((b) => {
+      const image: SummaryImage = { blockId: b.id, verbatim: true }
+      if (b.assetId !== undefined) image.assetId = b.assetId
+      if (b.image?.productName !== undefined) image.productName = b.image.productName
+      return image
+    })
+
+  const layoutHints: SummaryLayoutHint[] = designBlocks
+    .map((b, index) => ({
+      blockId: b.id,
+      region: regionOf(b, project.canvasHeight),
+      alignment: alignmentOf(b, project.canvasWidth),
+      emphasis: emphasisOf(b),
+      order: b.layoutHint.order ?? index,
+    }))
+    .toSorted((a, b) => a.order - b.order)
+
+  const summary: DesignSummary = {
+    subHeadlines,
+    requiredTexts,
+    requiredProducts,
+    requiredBenefits,
+    cautions,
+    ctaButtons,
+    verbatimImages,
+    layoutHints,
+  }
+
+  if (mainHeadline !== undefined) summary.mainHeadline = mainHeadline
+  const period = firstContent(blocks, 'period')
+  if (period !== undefined) summary.period = period
+  const price = firstContent(blocks, 'price')
+  if (price !== undefined) summary.price = price
+  const discountRate = firstContent(blocks, 'discount_rate')
+  if (discountRate !== undefined) summary.discountRate = discountRate
+
+  return summary
+}
+
+/** Builds the publishing-only info (links + notes) from publishing blocks. */
+export function buildPublishingInfo(brief: EventBrief): PublishingInfo {
+  const publishingBlocks = brief.blocks.filter(isPublishing)
+
+  const links: PublishingLink[] = publishingBlocks
+    .filter((b) => LINK_TYPES.has(b.type) && hasContent(b))
+    .map((b) => {
+      const link: PublishingLink = { blockId: b.id, label: b.label, url: content(b) }
+      if (b.notes !== undefined) link.purpose = b.notes
+      return link
+    })
+
+  const notes: PublishingNote[] = publishingBlocks
+    .filter((b) => !LINK_TYPES.has(b.type) && hasContent(b))
+    .map((b) => ({ blockId: b.id, label: b.label, content: content(b) }))
+
+  return { links, notes }
+}
+
+/** Assembles the full `brief.json` payload with derived views (WORK_PLAN §13). */
+export function buildBriefFile(brief: EventBrief): BriefFile {
+  return {
+    ...brief,
+    designSummary: buildDesignSummary(brief),
+    publishing: buildPublishingInfo(brief),
+  }
+}
