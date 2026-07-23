@@ -19,8 +19,53 @@ import type {
 import { validateBrief } from '../../domain/validation'
 import { AI_VISIBILITY_LABELS, CATEGORY_LABELS, PRIORITY_LABELS } from '../uiLabels'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
+import { useAssets } from '../../features/assets/useAssets'
+import { ACCEPTED_MIME_TYPES } from '../../features/assets/imageUtils'
+import { useRef } from 'react'
 import { EmptySelection } from './EmptySelection'
 import { DeleteBlockAction } from './DeleteBlockAction'
+
+const IMAGE_ACCEPT = ACCEPTED_MIME_TYPES.join(',')
+
+/** Upload / preview / remove control for an image block (WORK_PLAN §11). */
+function ImageField({ block }: { block: BriefBlock }) {
+  const { uploadFiles, getUrl } = useAssets()
+  const { removeBlockAsset } = useBriefEditor()
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const url = getUrl(block.assetId)
+
+  return (
+    <div className="field">
+      <span className="field__label">이미지</span>
+      {url ? (
+        <img className="image-field__preview" src={url} alt={block.image?.productName ?? block.label} />
+      ) : (
+        <div className="image-field__empty">이미지가 없습니다</div>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept={IMAGE_ACCEPT}
+        multiple
+        className="image-field__input"
+        onChange={(e) => {
+          const files = e.target.files
+          if (files && files.length > 0) void uploadFiles(files, { targetBlockId: block.id })
+          e.target.value = ''
+        }}
+      />
+      <div className="image-field__actions">
+        <button type="button" className="btn" onClick={() => inputRef.current?.click()}>
+          {url ? '이미지 교체' : '이미지 업로드'}
+        </button>
+        {url && (
+          <button type="button" className="btn" onClick={() => removeBlockAsset(block.id)}>이미지 제거</button>
+        )}
+      </div>
+      <p className="field__note">붙여넣기(Ctrl+V) 또는 캔버스로 드래그도 가능합니다.</p>
+    </div>
+  )
+}
 
 const VISIBILITY_OPTIONS: AiVisibility[] = ['design', 'reference', 'publishing']
 const PRIORITY_OPTIONS: (1 | 2 | 3 | 4 | 5)[] = [1, 2, 3, 4, 5]
@@ -69,6 +114,7 @@ function BlockFields({ block }: { block: BriefBlock }) {
 
       {meta.requiresAsset && (
         <>
+          <ImageField block={block} />
           <label className="field">
             <span className="field__label">제품명</span>
             <input
@@ -86,7 +132,6 @@ function BlockFields({ block }: { block: BriefBlock }) {
             />
             <span className="field__label">AI 변형 허용</span>
           </label>
-          <p className="field__note">이미지 파일 업로드는 Phase 4에서 지원됩니다.</p>
         </>
       )}
 

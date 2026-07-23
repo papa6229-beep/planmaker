@@ -21,6 +21,14 @@ if (!('PointerEvent' in globalThis)) {
   })
 }
 
+// jsdom does not implement object URLs; provide harmless stubs so asset code
+// that creates/revokes URLs can run under tests.
+if (typeof URL.createObjectURL !== 'function') {
+  let counter = 0
+  URL.createObjectURL = () => `blob:mock/${(counter += 1)}`
+  URL.revokeObjectURL = () => {}
+}
+
 afterEach(() => {
   cleanup()
 })

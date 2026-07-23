@@ -10,6 +10,7 @@ import { getBlockTypeMeta, type BlockCategory } from '../../domain/blockTypes'
 import { AI_VISIBILITY_LABELS } from '../uiLabels'
 import type { BriefBlock } from '../../domain/briefSchema'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
+import { useAssets } from '../../features/assets/useAssets'
 import { RESIZE_HANDLES, resizeRect, type ResizeHandle } from '../../features/editor/canvasGeometry'
 
 interface Props {
@@ -39,8 +40,10 @@ interface DragState {
 
 export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeight }: Props) {
   const { moveBlock, resizeBlock, selectBlock, endInteraction } = useBriefEditor()
+  const { getUrl } = useAssets()
   const meta = getBlockTypeMeta(block.type)
   const isPublishingSide = block.aiVisibility !== 'design'
+  const thumbUrl = meta.requiresAsset ? getUrl(block.assetId) : undefined
   const drag = useRef<DragState | null>(null)
 
   const startDrag = (e: ReactPointerEvent) => {
@@ -142,13 +145,17 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
         {block.required && <span className="block-card__required" title="필수 블록">필수</span>}
       </span>
       <span className="block-card__title">{block.label}</span>
-      <span className="block-card__content">
-        {block.content && block.content.trim().length > 0
-          ? block.content
-          : meta.requiresAsset
-            ? '(이미지 미지정)'
-            : '(내용 없음)'}
-      </span>
+      {thumbUrl ? (
+        <img className="block-card__thumb" src={thumbUrl} alt={block.image?.productName ?? block.label} draggable={false} />
+      ) : (
+        <span className="block-card__content">
+          {block.content && block.content.trim().length > 0
+            ? block.content
+            : meta.requiresAsset
+              ? '(이미지 미지정)'
+              : '(내용 없음)'}
+        </span>
+      )}
 
       {selected &&
         RESIZE_HANDLES.map((handle) => (

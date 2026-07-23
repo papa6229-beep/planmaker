@@ -6,6 +6,7 @@ import {
   historyReducer,
   type HistoryState,
 } from './history'
+import { createEmptyBrief } from '../../domain/factory'
 
 function addBlock(state: HistoryState, blockType: 'main_headline' | 'sub_headline' | 'benefit'): HistoryState {
   return historyReducer(state, { type: 'ADD_BLOCK', blockType })
@@ -69,6 +70,18 @@ describe('history — gesture coalescing', () => {
     h = historyReducer(h, { type: 'END_INTERACTION' })
     h = historyReducer(h, { type: 'MOVE_BLOCK', blockId: id, x: 200, y: 200, coalesceKey: key })
     expect(h.past.length).toBe(afterFirstGesture + 1)
+  })
+})
+
+describe('history — HYDRATE', () => {
+  it('replaces state with a fresh baseline and no undo across it', () => {
+    let h = addBlock(createInitialHistoryState(), 'main_headline')
+    expect(canUndo(h)).toBe(true)
+    h = historyReducer(h, { type: 'HYDRATE', brief: createEmptyBrief('복구된 기획서') })
+    expect(h.present.brief.project.title).toBe('복구된 기획서')
+    expect(h.present.selectedIds).toEqual([])
+    expect(canUndo(h)).toBe(false)
+    expect(canRedo(h)).toBe(false)
   })
 })
 

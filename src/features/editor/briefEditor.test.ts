@@ -199,6 +199,52 @@ describe('DELETE_BLOCK / DELETE_SELECTED', () => {
   })
 })
 
+describe('image assets', () => {
+  const asset = {
+    id: 'asset_1',
+    fileName: 'logo.png',
+    mimeType: 'image/png' as const,
+    width: 100,
+    height: 100,
+    byteSize: 500,
+  }
+
+  it('ASSIGN_IMAGE attaches an asset to a block and registers it once', () => {
+    let state = addBlockOf(createInitialEditorState(), 'main_product_image')
+    const id = state.brief.blocks[0]!.id
+    state = briefReducer(state, { type: 'ASSIGN_IMAGE', blockId: id, asset, image: { productName: '로고' } })
+    expect(state.brief.blocks[0]!.assetId).toBe('asset_1')
+    expect(state.brief.blocks[0]!.image?.productName).toBe('로고')
+    expect(state.brief.assets).toHaveLength(1)
+
+    // Re-assigning the same asset id does not duplicate it.
+    state = briefReducer(state, { type: 'ASSIGN_IMAGE', blockId: id, asset })
+    expect(state.brief.assets).toHaveLength(1)
+  })
+
+  it('ADD_IMAGE_BLOCK creates an image block with the asset and selects it', () => {
+    const state = briefReducer(createInitialEditorState(), {
+      type: 'ADD_IMAGE_BLOCK',
+      asset,
+      position: { x: 40, y: 60 },
+    })
+    expect(state.brief.blocks).toHaveLength(1)
+    const block = state.brief.blocks[0]!
+    expect(block.type).toBe('main_product_image')
+    expect(block.assetId).toBe('asset_1')
+    expect(state.brief.assets).toHaveLength(1)
+    expect(state.selectedIds).toEqual([block.id])
+  })
+
+  it('REMOVE_BLOCK_ASSET clears the assetId and prunes the orphaned asset', () => {
+    let state = briefReducer(createInitialEditorState(), { type: 'ADD_IMAGE_BLOCK', asset })
+    const id = state.brief.blocks[0]!.id
+    state = briefReducer(state, { type: 'REMOVE_BLOCK_ASSET', blockId: id })
+    expect(state.brief.blocks[0]!.assetId).toBeUndefined()
+    expect(state.brief.assets).toHaveLength(0)
+  })
+})
+
 describe('NEW_BRIEF', () => {
   it('resets to the initial state', () => {
     let state = addBlockOf(createInitialEditorState(), 'main_headline')
