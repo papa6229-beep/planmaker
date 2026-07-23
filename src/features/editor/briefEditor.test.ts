@@ -3,7 +3,9 @@ import {
   briefReducer,
   createInitialEditorState,
   nextBlockPosition,
+  primarySelectedId,
   selectedBlock,
+  selectedBlocks,
   type EditorState,
 } from './briefEditor'
 import { validateBrief } from '../../domain/validation'
@@ -19,7 +21,7 @@ describe('createInitialEditorState', () => {
     const state = createInitialEditorState()
     expect(state.brief.project.title.length).toBeGreaterThan(0)
     expect(state.brief.blocks).toEqual([])
-    expect(state.selectedBlockId).toBeNull()
+    expect(state.selectedIds).toEqual([])
   })
 })
 
@@ -29,10 +31,9 @@ describe('ADD_BLOCK', () => {
     expect(state.brief.blocks).toHaveLength(1)
     const block = state.brief.blocks[0]!
     expect(block.type).toBe('main_headline')
-    // Default visibility comes from the catalog, not hardcoded in the UI.
     expect(block.aiVisibility).toBe(getBlockTypeMeta('main_headline').defaultVisibility)
     expect(block.label).toBe(getBlockTypeMeta('main_headline').label)
-    expect(state.selectedBlockId).toBe(block.id)
+    expect(state.selectedIds).toEqual([block.id])
     expect(selectedBlock(state)).toBe(block)
   })
 
@@ -50,12 +51,34 @@ describe('ADD_BLOCK', () => {
 })
 
 describe('SELECT_BLOCK', () => {
-  it('changes the selection', () => {
+  it('replaces the selection by default', () => {
     let state = addBlockOf(createInitialEditorState(), 'main_headline')
     const first = state.brief.blocks[0]!.id
     state = addBlockOf(state, 'benefit')
     state = briefReducer(state, { type: 'SELECT_BLOCK', blockId: first })
-    expect(state.selectedBlockId).toBe(first)
+    expect(state.selectedIds).toEqual([first])
+    expect(primarySelectedId(state)).toBe(first)
+  })
+
+  it('adds and toggles in additive mode', () => {
+    let state = addBlockOf(createInitialEditorState(), 'main_headline')
+    const a = state.brief.blocks[0]!.id
+    state = addBlockOf(state, 'benefit')
+    const b = state.brief.blocks[1]!.id
+
+    state = briefReducer(state, { type: 'SELECT_BLOCK', blockId: a })
+    state = briefReducer(state, { type: 'SELECT_BLOCK', blockId: b, additive: true })
+    expect(new Set(state.selectedIds)).toEqual(new Set([a, b]))
+
+    // Toggle b off.
+    state = briefReducer(state, { type: 'SELECT_BLOCK', blockId: b, additive: true })
+    expect(state.selectedIds).toEqual([a])
+  })
+
+  it('clears selection on null', () => {
+    let state = addBlockOf(createInitialEditorState(), 'main_headline')
+    state = briefReducer(state, { type: 'SELECT_BLOCK', blockId: null })
+    expect(state.selectedIds).toEqual([])
   })
 })
 
@@ -71,18 +94,108 @@ describe('UPDATE_BLOCK', () => {
     const block = state.brief.blocks[0]!
     expect(block.required).toBe(true)
     expect(block.layoutHint.region).toBe('top')
-    // Merge keeps the factory-set allowTransform.
     expect(block.image).toEqual({ allowTransform: true, productName: '롬프 X' })
   })
 })
 
-describe('DELETE_BLOCK', () => {
-  it('removes the block and clears selection when it was selected', () => {
+describe('MOVE_BLOCK', () => {
+  it('moves a block and keeps it within the canvas', () => {
+    let state = addBlockOf(createInitialEditorState(), 'main_headline')
+    const id = state.brief.blocks[0]!.id
+    state = briefReducer(state, { type: 'MOVE_BLOCK', blockId: id, x: 120, y: 300 })
+    expect(state.brief.blocks[0]!.position).toMatchObject({ x: 120, y: 300 })
+
+    // Off-canvas target is clamped.
+    state = briefReducer(state, { type: 'MOVE_BLOCK', blockId: id, x: 99999, y: 99999 })
+    const { x, y, width, height } = state.brief.blocks[0]!.position
+    expect(x + width).toBeLessThanOrEqual(state.brief.project.canvasWidth)
+    expect(y + height).toBeLessThanOrEqual(state.brief.project.canvasHeight)
+  })
+
+  it('moves every member of a group together', () => {
+    let state = addBlockOf(createInitialEditorState(), 'main_product_image')
+    state = addBlockOf(state, 'sub_product_image')
+    const [a, b] = state.brief.blocks
+    state = briefReducer(state, { type: 'SELECT_BLOCK', blockId: a!.id })
+    state = briefReducer(state, { type: 'SELECT_BLOCK', blockId: b!.id, additive: true })
+    state = briefReducer(state, { type: 'GROUP_SELECTED' })
+
+    const beforeB = state.brief.blocks[1]!.position
+    state = briefReducer(state, { type: 'MOVE_BLOCK', blockId: a!.id, x: a!.position.x + 40, y: a!.position.y + 40 })
+    // B moved by the same delta as A.
+    expect(state.brief.blocks[1]!.position.x).toBe(beforeB.x + 40)
+    expect(state.brief.blocks[1]!.position.y).toBe(beforeB.y + 40)
+  })
+})
+
+describe('RESIZE_BLOCK', () => {
+  it('applies a new rectangle', () => {
+    let state = addBlockOf(createInitialEditorState(), 'main_headline')
+    const id = state.brief.blocks[0]!.id
+    state = briefReducer(state, { type: 'RESIZE_BLOCK', blockId: id, rect: { x: 10, y: 10, width: 200, height: 150 } })
+    expect(state.brief.blocks[0]!.position).toEqual({ x: 10, y: 10, width: 200, height: 150 })
+  })
+})
+
+describe('DUPLICATE_BLOCK', () => {
+  it('clones the block with a new id, offsets it, and selects the clone', () => {
+    let state = addBlockOf(createInitialEditorState(), 'main_headline')
+    state = briefReducer(state, { type: 'UPDATE_BLOCK', blockId: state.brief.blocks[0]!.id, patch: { content: '헤드라인' } })
+    const src = state.brief.blocks[0]!
+    state = briefReducer(state, { type: 'DUPLICATE_BLOCK', blockId: src.id })
+
+    expect(state.brief.blocks).toHaveLength(2)
+    const clone = state.brief.blocks[1]!
+    expect(clone.id).not.toBe(src.id)
+    expect(clone.content).toBe('헤드라인')
+    expect(clone.position.x).not.toBe(src.position.x)
+    expect(state.selectedIds).toEqual([clone.id])
+  })
+})
+
+describe('GROUP_SELECTED / UNGROUP_SELECTED', () => {
+  it('assigns a shared groupId to 2+ selected blocks', () => {
+    let state = addBlockOf(createInitialEditorState(), 'main_product_image')
+    state = addBlockOf(state, 'sub_product_image')
+    const [a, b] = state.brief.blocks
+    state = briefReducer(state, { type: 'SELECT_BLOCK', blockId: a!.id })
+    state = briefReducer(state, { type: 'SELECT_BLOCK', blockId: b!.id, additive: true })
+    state = briefReducer(state, { type: 'GROUP_SELECTED' })
+
+    const g = state.brief.blocks[0]!.groupId
+    expect(g).toBeDefined()
+    expect(state.brief.blocks[1]!.groupId).toBe(g)
+
+    state = briefReducer(state, { type: 'UNGROUP_SELECTED' })
+    expect(state.brief.blocks[0]!.groupId).toBeUndefined()
+    expect(state.brief.blocks[1]!.groupId).toBeUndefined()
+  })
+
+  it('does nothing with fewer than 2 selected', () => {
+    let state = addBlockOf(createInitialEditorState(), 'main_headline')
+    state = briefReducer(state, { type: 'GROUP_SELECTED' })
+    expect(state.brief.blocks[0]!.groupId).toBeUndefined()
+  })
+})
+
+describe('DELETE_BLOCK / DELETE_SELECTED', () => {
+  it('removes a single block and drops it from the selection', () => {
     const state = addBlockOf(createInitialEditorState(), 'main_headline')
     const id = state.brief.blocks[0]!.id
     const next = briefReducer(state, { type: 'DELETE_BLOCK', blockId: id })
     expect(next.brief.blocks).toHaveLength(0)
-    expect(next.selectedBlockId).toBeNull()
+    expect(next.selectedIds).toEqual([])
+  })
+
+  it('removes every selected block', () => {
+    let state = addBlockOf(createInitialEditorState(), 'main_headline')
+    state = addBlockOf(state, 'benefit')
+    const [a, b] = state.brief.blocks
+    state = briefReducer(state, { type: 'SELECT_BLOCK', blockId: a!.id })
+    state = briefReducer(state, { type: 'SELECT_BLOCK', blockId: b!.id, additive: true })
+    state = briefReducer(state, { type: 'DELETE_SELECTED' })
+    expect(state.brief.blocks).toHaveLength(0)
+    expect(selectedBlocks(state)).toEqual([])
   })
 })
 
@@ -91,7 +204,7 @@ describe('NEW_BRIEF', () => {
     let state = addBlockOf(createInitialEditorState(), 'main_headline')
     state = briefReducer(state, { type: 'NEW_BRIEF' })
     expect(state.brief.blocks).toEqual([])
-    expect(state.selectedBlockId).toBeNull()
+    expect(state.selectedIds).toEqual([])
   })
 })
 

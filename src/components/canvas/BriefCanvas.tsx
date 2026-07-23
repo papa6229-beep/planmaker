@@ -1,10 +1,10 @@
 /**
  * Center column: the planning canvas (WORK_PLAN §6, §10). This is a *layout of
  * intent*, not a design surface — it shows meaning cards at their soft
- * positions. Drag / resize are intentionally out of scope for Phase 2.
+ * positions. Phase 3 enables move (drag) and resize on the cards themselves.
  *
  * The 840px sheet is scaled down to fit the screen; block coordinates stay in
- * true canvas space, so clicks and future exports remain accurate.
+ * true canvas space, so clicks, drags, and future exports remain accurate.
  */
 
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
@@ -16,6 +16,7 @@ export function BriefCanvas() {
   const { state, selectBlock } = useBriefEditor()
   const { project, blocks } = state.brief
   const { canvasWidth, canvasHeight } = project
+  const selected = new Set(state.selectedIds)
 
   return (
     <section className="canvas" aria-label="기획 캔버스">
@@ -31,7 +32,10 @@ export function BriefCanvas() {
             transform: `scale(${CANVAS_SCALE})`,
           }}
           role="presentation"
-          onClick={() => selectBlock(null)}
+          onPointerDown={(e) => {
+            // Clicking the empty sheet clears the selection.
+            if (e.target === e.currentTarget) selectBlock(null)
+          }}
         >
           {blocks.length === 0 && (
             <p className="canvas__empty">
@@ -42,8 +46,10 @@ export function BriefCanvas() {
             <BriefBlockCard
               key={block.id}
               block={block}
-              selected={block.id === state.selectedBlockId}
-              onSelect={selectBlock}
+              selected={selected.has(block.id)}
+              scale={CANVAS_SCALE}
+              canvasWidth={canvasWidth}
+              canvasHeight={canvasHeight}
             />
           ))}
         </div>

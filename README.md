@@ -10,7 +10,17 @@
 
 - ✅ **Phase 0** — Vite + React + TypeScript(strict) 프로젝트 구성, lint/typecheck/test/build 스크립트, 3열 UI 셸
 - ✅ **Phase 1** — 도메인 스키마(Project / BriefBlock / Asset / PublishingInfo), 블록 타입 카탈로그, 검증 규칙, AI용 designSummary 생성기, 샘플 fixture, Vitest 단위 테스트
-- ⛔ Phase 2 이후(캔버스 편집, 이미지 자산, 내보내기 등)는 아직 구현하지 않음
+- ✅ **Phase 2** — 기본 UI(팔레트·캔버스·속성 패널), 블록 생성/선택/삭제, 편집, 키보드 삭제 보호
+- ✅ **Phase 3** — 캔버스 편집: 드래그 이동(그룹 단위), 코너 리사이즈, 복제, 다중 선택·그룹화/해제, Undo/Redo(제스처 병합)
+- ⛔ Phase 4 이후(이미지 자산 업로드, 내보내기, AI 연결 등)는 아직 구현하지 않음
+
+### 캔버스 편집 단축키 (Phase 3)
+
+- 드래그: 블록을 끌어 이동 (그룹은 함께 이동)
+- 코너 핸들: 크기 조절
+- Shift+클릭: 다중 선택 → 그룹으로 묶기
+- Ctrl/Cmd+D: 복제 · Delete/Backspace: 선택 삭제(입력 중 보호)
+- Ctrl/Cmd+Z: 실행 취소 · Ctrl/Cmd+Shift+Z (또는 Ctrl+Y): 다시 실행
 
 ## 스크립트
 

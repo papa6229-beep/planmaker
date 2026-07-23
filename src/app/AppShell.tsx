@@ -1,7 +1,8 @@
 /**
- * Phase 2 application shell: the 3-column layout (palette · canvas · inspector)
- * plus the top toolbar (WORK_PLAN §6). Wires the editor context and the
- * global Delete/Backspace shortcut for removing the selected block.
+ * Application shell: the 3-column layout (palette · canvas · inspector) plus the
+ * top toolbar (WORK_PLAN §6). Wires the editor context and the global keyboard
+ * shortcuts for canvas editing (Phase 3): delete, duplicate, and undo/redo.
+ * Shortcuts are suppressed while typing so text editing is never hijacked.
  */
 
 import { useEffect } from 'react'
@@ -11,36 +12,55 @@ import { BlockPalette } from '../components/palette/BlockPalette'
 import { BriefCanvas } from '../components/canvas/BriefCanvas'
 import { PropertiesPanel } from '../components/inspector/PropertiesPanel'
 
-/** True when focus is in a text entry, so Delete must not remove a block. */
+/** True when focus is in a text entry, so shortcuts must not fire. */
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   const tag = target.tagName
-  return (
-    tag === 'INPUT' ||
-    tag === 'TEXTAREA' ||
-    tag === 'SELECT' ||
-    target.isContentEditable
-  )
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable
 }
 
-function DeleteKeyHandler() {
-  const { state, deleteBlock } = useBriefEditor()
-  const { selectedBlockId } = state
+function KeyboardShortcuts() {
+  const { selectedIds, primaryId, deleteSelected, duplicateBlock, undo, redo } = useBriefEditor()
 
   useEffect(() => {
-    if (selectedBlockId === null) return
-
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Delete' && e.key !== 'Backspace') return
-      // Protect text editing: never delete a block while typing (WORK_PLAN §6.6).
-      if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return
-      e.preventDefault()
-      deleteBlock(selectedBlockId)
+      const inText = isEditableTarget(e.target) || isEditableTarget(document.activeElement)
+      const mod = e.metaKey || e.ctrlKey
+
+      // Undo / redo (suppressed in text fields so native text undo still works).
+      if (mod && (e.key === 'z' || e.key === 'Z')) {
+        if (inText) return
+        e.preventDefault()
+        if (e.shiftKey) redo()
+        else undo()
+        return
+      }
+      if (mod && (e.key === 'y' || e.key === 'Y')) {
+        if (inText) return
+        e.preventDefault()
+        redo()
+        return
+      }
+
+      // Duplicate the primary block.
+      if (mod && (e.key === 'd' || e.key === 'D')) {
+        if (inText || primaryId === null) return
+        e.preventDefault()
+        duplicateBlock(primaryId)
+        return
+      }
+
+      // Delete the current selection (never while typing — WORK_PLAN §6.6).
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (inText || selectedIds.length === 0) return
+        e.preventDefault()
+        deleteSelected()
+      }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedBlockId, deleteBlock])
+  }, [selectedIds, primaryId, deleteSelected, duplicateBlock, undo, redo])
 
   return null
 }
@@ -54,7 +74,7 @@ function Workspace() {
         <BriefCanvas />
         <PropertiesPanel />
       </main>
-      <DeleteKeyHandler />
+      <KeyboardShortcuts />
     </div>
   )
 }

@@ -192,9 +192,12 @@ button { font-family: inherit; }
   border-radius: var(--radius);
   background: #fff;
   text-align: left;
-  cursor: pointer;
-  overflow: hidden;
+  cursor: move;
+  /* visible so the corner resize handles (rendered at -6px) are not clipped */
+  overflow: visible;
   font-size: 14px;
+  touch-action: none;
+  user-select: none;
 }
 .block-card:hover { border-color: var(--color-accent); }
 .block-card.is-selected {
@@ -206,6 +209,28 @@ button { font-family: inherit; }
   border-left-color: var(--color-reference);
   background: var(--color-reference-soft);
 }
+.block-card--grouped { border-style: dashed; }
+.block-card__group {
+  font-size: 11px;
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+/* Corner resize handles (WORK_PLAN §10). Shown on the selected card only. */
+.block-card__handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border: 2px solid var(--color-accent);
+  border-radius: 3px;
+}
+.block-card__handle--nw { top: -6px; left: -6px; cursor: nwse-resize; }
+.block-card__handle--ne { top: -6px; right: -6px; cursor: nesw-resize; }
+.block-card__handle--sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+.block-card__handle--se { bottom: -6px; right: -6px; cursor: nwse-resize; }
 .block-card__head { display: flex; align-items: center; gap: 6px; }
 .block-card__visibility {
   font-size: 11px;
@@ -223,7 +248,12 @@ button { font-family: inherit; }
   color: var(--color-danger);
   font-weight: 700;
 }
-.block-card__title { font-weight: 600; }
+.block-card__title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .block-card__content {
   color: var(--color-muted);
   font-size: 13px;
@@ -270,7 +300,9 @@ button { font-family: inherit; }
 .inspector__issue--error { color: var(--color-danger); background: #fef2f2; }
 .inspector__issue--warning { color: var(--color-warning); background: var(--color-reference-soft); }
 
-.inspector__delete { margin-top: 16px; width: 100%; }
+.inspector__actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+.inspector__actions .btn { flex: 1; }
+.inspector__delete { margin-top: 12px; width: 100%; }
 
 /* ── Minimal responsiveness (desktop-first, WORK_PLAN §7). ─────────────────── */
 @media (max-width: 1024px) {
