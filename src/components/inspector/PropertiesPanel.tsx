@@ -1,8 +1,11 @@
 /**
- * Right column: properties of the selected block (WORK_PLAN §6). Edits only the
+ * Right column: properties of the selection (WORK_PLAN §6, §10). Edits only the
  * common fields already defined in the Phase 1 schema — no new domain fields.
  * Enum fields use <select>, so invalid values can't be entered; free-text
  * fields are validated live and surfaced as issues below.
+ *
+ * Handles three states: nothing selected, one block (full editor + actions),
+ * and multiple blocks (group / ungroup / delete).
  */
 
 import { getBlockTypeMeta } from '../../domain/blockTypes'
@@ -38,6 +41,7 @@ const EMPHASIS_LABELS: Record<LayoutEmphasis, string> = {
 function BlockFields({ block }: { block: BriefBlock }) {
   const { updateBlock } = useBriefEditor()
   const meta = getBlockTypeMeta(block.type)
+  const editKey = `edit:${block.id}` // coalesce a run of text edits into one undo step
 
   return (
     <div className="fields">
@@ -47,7 +51,7 @@ function BlockFields({ block }: { block: BriefBlock }) {
           className="field__input"
           type="text"
           value={block.label}
-          onChange={(e) => updateBlock(block.id, { label: e.target.value })}
+          onChange={(e) => updateBlock(block.id, { label: e.target.value }, editKey)}
         />
       </label>
 
@@ -58,7 +62,7 @@ function BlockFields({ block }: { block: BriefBlock }) {
             className="field__input field__input--area"
             rows={3}
             value={block.content ?? ''}
-            onChange={(e) => updateBlock(block.id, { content: e.target.value })}
+            onChange={(e) => updateBlock(block.id, { content: e.target.value }, editKey)}
           />
         </label>
       )}
@@ -71,7 +75,7 @@ function BlockFields({ block }: { block: BriefBlock }) {
               className="field__input"
               type="text"
               value={block.image?.productName ?? ''}
-              onChange={(e) => updateBlock(block.id, { image: { productName: e.target.value } })}
+              onChange={(e) => updateBlock(block.id, { image: { productName: e.target.value } }, editKey)}
             />
           </label>
           <label className="field field--checkbox">
@@ -163,30 +167,46 @@ function BlockFields({ block }: { block: BriefBlock }) {
           className="field__input field__input--area"
           rows={2}
           value={block.notes ?? ''}
-          onChange={(e) => updateBlock(block.id, { notes: e.target.value })}
+          onChange={(e) => updateBlock(block.id, { notes: e.target.value }, editKey)}
         />
       </label>
     </div>
   )
 }
 
-export function PropertiesPanel() {
-  const { state, selected } = useBriefEditor()
+function MultiSelectionBody({ count }: { count: number }) {
+  const { selectedBlocks, groupSelected, ungroupSelected, deleteSelected } = useBriefEditor()
+  const anyGrouped = selectedBlocks.some((b) => b.groupId !== undefined)
 
-  if (selected === null) {
-    return (
-      <aside className="inspector" aria-label="선택 블록 설정">
-        <EmptySelection />
-      </aside>
-    )
-  }
+  return (
+    <>
+      <header className="inspector__header">
+        <p className="inspector__type">{count}개 블록 선택됨</p>
+        <p className="inspector__role">그룹으로 묶어 함께 이동할 수 있습니다.</p>
+      </header>
+      <div className="inspector__actions">
+        <button type="button" className="btn" onClick={groupSelected}>그룹으로 묶기</button>
+        {anyGrouped && (
+          <button type="button" className="btn" onClick={ungroupSelected}>그룹 해제</button>
+        )}
+      </div>
+      <button type="button" className="btn btn--danger inspector__delete" onClick={deleteSelected}>
+        선택 블록 삭제
+      </button>
+    </>
+  )
+}
+
+function SingleSelectionBody({ blockId }: { blockId: string }) {
+  const { state, selected, duplicateBlock, ungroupSelected } = useBriefEditor()
+  if (selected === null) return null
 
   const meta = getBlockTypeMeta(selected.type)
   const issues = validateBrief(state.brief)
-  const blockIssues = [...issues.errors, ...issues.warnings].filter((i) => i.blockId === selected.id)
+  const blockIssues = [...issues.errors, ...issues.warnings].filter((i) => i.blockId === blockId)
 
   return (
-    <aside className="inspector" aria-label="선택 블록 설정">
+    <>
       <header className="inspector__header">
         <p className="inspector__type">{meta.label}</p>
         <p className="inspector__role">
@@ -199,17 +219,43 @@ export function PropertiesPanel() {
       {blockIssues.length > 0 && (
         <ul className="inspector__issues">
           {blockIssues.map((issue) => (
-            <li
-              key={issue.code}
-              className={`inspector__issue inspector__issue--${issue.severity}`}
-            >
+            <li key={issue.code} className={`inspector__issue inspector__issue--${issue.severity}`}>
               {issue.message}
             </li>
           ))}
         </ul>
       )}
 
-      <DeleteBlockAction blockId={selected.id} />
+      <div className="inspector__actions">
+        <button type="button" className="btn" onClick={() => duplicateBlock(blockId)}>블록 복제</button>
+        {selected.groupId !== undefined && (
+          <button type="button" className="btn" onClick={ungroupSelected}>그룹 해제</button>
+        )}
+      </div>
+      <DeleteBlockAction blockId={blockId} />
+    </>
+  )
+}
+
+/**
+ * Always renders the same stable <aside> wrapper; only the inner body switches
+ * between empty / single / multi so consumers keep a stable DOM node.
+ */
+export function PropertiesPanel() {
+  const { selected, selectedIds } = useBriefEditor()
+
+  let body
+  if (selectedIds.length === 0 || selected === null) {
+    body = <EmptySelection />
+  } else if (selectedIds.length > 1) {
+    body = <MultiSelectionBody count={selectedIds.length} />
+  } else {
+    body = <SingleSelectionBody blockId={selected.id} />
+  }
+
+  return (
+    <aside className="inspector" aria-label="선택 블록 설정">
+      {body}
     </aside>
   )
 }
