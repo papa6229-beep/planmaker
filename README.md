@@ -15,7 +15,17 @@
 - ✅ **Phase 4** — 이미지 자산: 파일 업로드·다중 업로드·드래그앤드롭·Ctrl+V 붙여넣기, 원본 파일명/투명 배경 보존, IndexedDB(Dexie) 자동저장 및 새로고침 복구
 - ✅ **Phase 5** — 분리된 정보 영역: 디자인 입력 / 참고자료 / 퍼블리싱 3영역 시각 구분, 규칙 기반 AI 요약 미리보기(퍼블리싱 링크는 AI 요약에 미포함)
 - ✅ **Phase 6** — `.eventbrief` 내보내기/불러오기: ZIP 패키징(manifest·brief·preview·assets/references), 내보내기 검증, preview.png(840px) 생성, 트랜잭션 방식 복원(블록·좌표·그룹·이미지 바이트 동일)
-- ⛔ Phase 7 이후(샘플 fixture, AI 연결 등)는 아직 구현하지 않음
+- 🚧 **Phase 7 (Step 1)** — 제품 셸 도메인 기반: 멀티페이지 문서 스키마(`BriefDocument`)·페이지 순수 함수·v1→v2 마이그레이션·페이지별 참고 이미지 레이어·zoom 뷰 상태 분리, react-router-dom 최소 라우팅 셸(게이트/목록/편집기 진입). UI 재디자인·요청 상태·인라인 편집은 다음 Step
+- ⛔ Phase 7 나머지 Step 및 AI 연결은 아직 구현하지 않음
+
+### 멀티페이지 도메인 (Phase 7 Step 1)
+
+- `BriefDocument`(v2.0.0) = `project` + `pages[]` + `activePageId` + 공유 `assets[]`
+- 각 페이지: 고정 **840px** 캔버스 + 블록 + 페이지 단위 **참고 이미지 레이어**(오버레이 투명도 기본 35%)
+- 기존 단일 페이지 `EventBrief`(v1)·`.eventbrief` v1 파일은 `migrateToDocument`로 `pages[0]`에 무손실 마이그레이션
+- 페이지 추가/복제(ID 재생성)/삭제/순서변경 순수 함수, 마지막 페이지 삭제 불가·활성 페이지 불변식 유지
+- **zoom은 저장하지 않는 뷰 상태**(`canvasView.ts`) — `BriefDocument`/`.eventbrief`에 미포함
+- 라우트: `/` · `/briefs` · `/briefs/new` · `/briefs/:id`(편집기) · `/image-requests` · `/image-requests/:id`
 
 ### 내보내기 / 불러오기 (Phase 6)
 

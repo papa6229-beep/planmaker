@@ -453,6 +453,39 @@ button { font-family: inherit; }
 }
 @keyframes io-spin { to { transform: rotate(360deg); } }
 
+/* ── Route placeholders (Phase 7 Step 1 shell) ────────────────────────────── */
+.route-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.route-shell__card {
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  padding: 32px 36px;
+  max-width: 560px;
+  width: 100%;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
+}
+.route-shell__title { margin: 0 0 8px; font-size: 22px; }
+.route-shell__desc { margin: 0 0 20px; color: var(--color-muted); font-size: 14px; line-height: 1.6; }
+.route-shell__links { display: flex; gap: 10px; flex-wrap: wrap; }
+.route-shell__link {
+  display: inline-block;
+  padding: 10px 16px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--color-text);
+  font-size: 14px;
+}
+.route-shell__link:hover { background: #f3f5f9; }
+.route-shell__link--brief { border-color: var(--color-accent); color: var(--color-accent); }
+.route-shell__link--image { border-color: var(--color-publishing); color: var(--color-publishing); }
+
 /* ── Minimal responsiveness (desktop-first, WORK_PLAN §7). ─────────────────── */
 @media (max-width: 1024px) {
   .workspace { grid-template-columns: 200px 1fr 260px; }
