@@ -1,20 +1,26 @@
 /**
- * Export / import orchestration for `.eventbrief` files (WORK_PLAN §6, §10).
- * Holds the small state machine that drives validation, warning confirmation,
- * progress, and the transactional import swap. No ZIP/canvas logic lives here —
- * that is in the services layer; this only sequences it and talks to the editor
- * and asset stores.
+ * Export / import orchestration for `.eventbrief` files (WORK_PLAN §6, §10, and
+ * Phase 7 §9). Holds the small state machine that drives validation, warning
+ * confirmation, progress, and the transactional import swap.
+ *
+ * Step 4: this now works on the whole multi-page `BriefDocument`. Export writes
+ * every page plus one preview PNG per page; import restores all pages (v1 files
+ * migrate to a single page). No ZIP/canvas logic lives here — that is in the
+ * services layer; this only sequences it and talks to the document and asset
+ * stores.
  */
 
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useBriefEditor } from '../editor/useBriefEditor'
 import { useAssets } from '../assets/useAssets'
-import { getAllAssets, pruneAssets, replaceAssets, saveBrief } from '../../services/assetStore'
-import { packageEventBrief } from '../../services/eventBriefExport'
-import { readEventBrief, type ImportedBrief } from '../../services/eventBriefImport'
+import { useBriefDocument } from '../document/useBriefDocument'
+import { getAllAssets, pruneAssets, replaceAssets, saveDocument } from '../../services/assetStore'
+import { packageEventDocument } from '../../services/eventBriefExport'
+import { readEventDocument, type ImportedDocument } from '../../services/eventBriefImport'
 import { renderPreviewPng } from '../../services/previewRenderer'
 import { EventBriefError } from '../../services/eventBriefArchive'
-import { validateForExport, type ExportIssue } from './exportValidation'
+import { pageAsEventBrief } from '../../domain/briefMigration'
+import type { BriefDocument } from '../../domain/pageSchema'
+import { validateDocumentForExport, type ExportIssue } from './exportValidation'
 
 export type IoState =
   | { kind: 'idle' }
@@ -22,7 +28,7 @@ export type IoState =
   | { kind: 'export-warn'; warnings: ExportIssue[] }
   | { kind: 'exporting'; message: string }
   | { kind: 'export-failed'; message: string }
-  | { kind: 'import-confirm'; pending: ImportedBrief }
+  | { kind: 'import-confirm'; pending: ImportedDocument }
   | { kind: 'importing'; message: string }
   | { kind: 'import-failed'; message: string }
 
@@ -56,14 +62,15 @@ function triggerDownload(blob: Blob, fileName: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
+function hasAnyBlocks(doc: BriefDocument): boolean {
+  return doc.pages.some((p) => p.blocks.length > 0)
+}
+
 export function EventBriefIoProvider({ children }: { children: ReactNode }) {
-  const { state: editorState, hydrate } = useBriefEditor()
+  const { getDocument, replaceDocument } = useBriefDocument()
   const { loadFromStore } = useAssets()
   const [state, setState] = useState<IoState>({ kind: 'idle' })
   const runningRef = useRef(false)
-
-  const briefRef = useRef(editorState.brief)
-  briefRef.current = editorState.brief
 
   const dismiss = useCallback(() => setState({ kind: 'idle' }), [])
 
@@ -72,20 +79,23 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
     runningRef.current = true
     setState({ kind: 'exporting', message: '내보내기 준비 중…' })
     try {
-      const brief = briefRef.current
-      // Flush the latest brief so nothing in the 3s autosave window is lost.
-      await saveBrief(brief, Date.now())
+      const doc = getDocument()
+      // Flush the latest document so nothing in the 3s autosave window is lost.
+      await saveDocument(doc, Date.now())
       const stored = await getAllAssets()
 
       setState({ kind: 'exporting', message: '미리보기 생성 중…' })
       const blobMap = new Map(stored.map((a) => [a.id, a.blob]))
-      const preview = await renderPreviewPng(brief, blobMap)
+      const previews: Blob[] = []
+      for (const page of doc.pages) {
+        previews.push(await renderPreviewPng(pageAsEventBrief(doc, page), blobMap))
+      }
 
       setState({ kind: 'exporting', message: '패키징 중…' })
-      const pkg = await packageEventBrief({
-        brief,
+      const pkg = await packageEventDocument({
+        doc,
         assets: stored,
-        preview,
+        previews,
         createdAt: new Date().toISOString(),
       })
       triggerDownload(pkg.blob, pkg.fileName)
@@ -95,14 +105,14 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
     } finally {
       runningRef.current = false
     }
-  }, [])
+  }, [getDocument])
 
   const startExport = useCallback(async () => {
     if (runningRef.current) return
-    const brief = briefRef.current
+    const doc = getDocument()
     const stored = await getAllAssets()
     const availableIds = new Set(stored.map((a) => a.id))
-    const result = validateForExport(brief, availableIds)
+    const result = validateDocumentForExport(doc, availableIds)
     if (result.errors.length > 0) {
       setState({ kind: 'export-blocked', errors: result.errors })
       return
@@ -112,28 +122,33 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
       return
     }
     await doExport()
-  }, [doExport])
+  }, [doExport, getDocument])
 
   const confirmExportWithWarnings = useCallback(async () => {
     await doExport()
   }, [doExport])
 
   const applyImport = useCallback(
-    async (imported: ImportedBrief) => {
+    async (imported: ImportedDocument) => {
       setState({ kind: 'importing', message: '복원 중…' })
       try {
         // Transactional swap: persist first, then hydrate the UI.
-        await saveBrief(imported.brief, Date.now())
+        await saveDocument(imported.doc, Date.now())
         await replaceAssets(imported.assets)
-        await pruneAssets(imported.brief.blocks.map((b) => b.assetId).filter((id): id is string => id !== undefined))
-        hydrate(imported.brief) // resets history + selection
+        const referenced = new Set<string>()
+        for (const page of imported.doc.pages) {
+          for (const b of page.blocks) if (b.assetId !== undefined) referenced.add(b.assetId)
+          if (page.reference.assetId !== undefined) referenced.add(page.reference.assetId)
+        }
+        await pruneAssets(referenced)
+        replaceDocument(imported.doc) // resets history + selection, hydrates active page
         await loadFromStore() // rebuild object URLs from the new blobs
         setState({ kind: 'idle' })
       } catch (err) {
         setState({ kind: 'import-failed', message: messageFor(err) })
       }
     },
-    [hydrate, loadFromStore],
+    [replaceDocument, loadFromStore],
   )
 
   const startImport = useCallback(
@@ -143,9 +158,8 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
       setState({ kind: 'importing', message: '파일 검증 중…' })
       try {
         // Pass the File (a Blob) straight to JSZip — no arrayBuffer() needed.
-        const imported = await readEventBrief(file)
-        const hasWork = briefRef.current.blocks.length > 0
-        if (hasWork) {
+        const imported = await readEventDocument(file)
+        if (hasAnyBlocks(getDocument())) {
           setState({ kind: 'import-confirm', pending: imported })
         } else {
           await applyImport(imported)
@@ -156,7 +170,7 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
         runningRef.current = false
       }
     },
-    [applyImport],
+    [applyImport, getDocument],
   )
 
   const confirmImport = useCallback(async () => {

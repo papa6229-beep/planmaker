@@ -6,7 +6,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
 import { clearAll, getAllAssets, resetAssetStoreForTests } from '../services/assetStore'
 import { packageEventBrief } from '../services/eventBriefExport'
-import { readEventBrief, type ImportedBrief } from '../services/eventBriefImport'
+import { readEventDocument, type ImportedDocument } from '../services/eventBriefImport'
 import { createBlock, createEmptyBrief } from '../domain/factory'
 import type { EventBrief } from '../domain/briefSchema'
 
@@ -68,12 +68,13 @@ describe('export UI', () => {
     const warn = await screen.findByRole('alertdialog', { name: '내보내기 경고' })
     await user.click(within(warn).getByRole('button', { name: '계속 진행' }))
 
-    // One of the created object URLs is the exported archive; it must parse.
-    let parsed: ImportedBrief | null = null
+    // One of the created object URLs is the exported archive; it must parse as
+    // a multi-page document (v2).
+    let parsed: ImportedDocument | null = null
     await waitFor(async () => {
       for (const blob of created) {
         try {
-          parsed = await readEventBrief(blob)
+          parsed = await readEventDocument(blob)
           break
         } catch {
           /* not the archive */
@@ -81,7 +82,9 @@ describe('export UI', () => {
       }
       expect(parsed).not.toBeNull()
     })
-    expect(parsed!.brief.blocks.some((b) => b.type === 'main_headline')).toBe(true)
+    const doc = parsed!.doc
+    expect(doc.pages).toHaveLength(1)
+    expect(doc.pages[0]!.blocks.some((b) => b.type === 'main_headline')).toBe(true)
     spy.mockRestore()
   })
 })

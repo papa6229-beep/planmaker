@@ -12,6 +12,8 @@
 
 import Dexie, { type Table } from 'dexie'
 import type { EventBrief } from '../domain/briefSchema'
+import type { BriefDocument } from '../domain/pageSchema'
+import { migrateToDocument } from '../domain/briefMigration'
 
 /** A stored image binary plus the metadata needed to rehydrate its Asset. */
 export interface StoredAsset {
@@ -26,11 +28,14 @@ export interface StoredAsset {
 
 interface BriefSnapshotRow {
   key: string
-  brief: EventBrief
+  brief?: EventBrief
+  /** Multi-page document snapshot (Phase 7 Step 4). */
+  doc?: BriefDocument
   updatedAt: number
 }
 
 const SNAPSHOT_KEY = 'current'
+const DOCUMENT_KEY = 'document'
 
 class EventBriefDB extends Dexie {
   briefs!: Table<BriefSnapshotRow, string>
@@ -61,6 +66,24 @@ export async function saveBrief(brief: EventBrief, now: number): Promise<void> {
 export async function loadBrief(): Promise<EventBrief | null> {
   const row = await db().briefs.get(SNAPSHOT_KEY)
   return row?.brief ?? null
+}
+
+/** Persists the current multi-page document snapshot (Phase 7 Step 4). */
+export async function saveDocument(doc: BriefDocument, now: number): Promise<void> {
+  await db().briefs.put({ key: DOCUMENT_KEY, doc, updatedAt: now })
+}
+
+/**
+ * Loads the saved document snapshot. Falls back to a legacy single-page brief
+ * row and migrates it, so autosaved Phase 0–6 / Step 1–3 data still opens.
+ * Returns null when nothing is stored yet.
+ */
+export async function loadDocument(): Promise<BriefDocument | null> {
+  const docRow = await db().briefs.get(DOCUMENT_KEY)
+  if (docRow?.doc) return migrateToDocument(docRow.doc)
+  const legacy = await db().briefs.get(SNAPSHOT_KEY)
+  if (legacy?.brief) return migrateToDocument(legacy.brief)
+  return null
 }
 
 /** Stores (or replaces) an image asset binary. */

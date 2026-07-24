@@ -16,12 +16,24 @@ import type { EventBrief, Manifest } from '../domain/briefSchema'
 
 export const EVENTBRIEF_FORMAT = 'eventbrief'
 export const EVENTBRIEF_VERSION = '1.0.0'
-export const SUPPORTED_VERSIONS: readonly string[] = ['1.0.0']
+/** Multi-page archive version (Phase 7 Step 4). */
+export const EVENTBRIEF_DOCUMENT_VERSION = '2.0.0'
+export const SUPPORTED_VERSIONS: readonly string[] = ['1.0.0', '2.0.0']
 export const GENERATOR = 'event-brief-builder'
 
 export const MANIFEST_PATH = 'manifest.json'
 export const BRIEF_PATH = 'brief.json'
 export const PREVIEW_PATH = 'preview.png'
+/** v2 document payload path (all pages). */
+export const DOCUMENT_PATH = 'document.json'
+
+/**
+ * ZIP path for a page's preview, 1-based and zero-padded (WORK_PLAN §9.5):
+ * `previews/page-01.png`, `previews/page-02.png`, …
+ */
+export function pagePreviewPath(index: number): string {
+  return `previews/page-${String(index + 1).padStart(2, '0')}.png`
+}
 
 /** Guardrails against pathological archives (WORK_PLAN §9). */
 export const MAX_ASSET_COUNT = 500
@@ -124,10 +136,14 @@ export function assetArchivePath(assetId: string, originalFileName: string, area
   return `${folder}/${assetId}__${sanitizeArchiveFileName(originalFileName)}`
 }
 
-export function buildManifest(assets: AssetArchiveEntry[], createdAt: string): EventBriefManifest {
+export function buildManifest(
+  assets: AssetArchiveEntry[],
+  createdAt: string,
+  version: string = EVENTBRIEF_VERSION,
+): EventBriefManifest {
   return {
     format: EVENTBRIEF_FORMAT,
-    version: EVENTBRIEF_VERSION,
+    version,
     createdAt,
     generator: GENERATOR,
     assets,
