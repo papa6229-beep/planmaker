@@ -122,11 +122,13 @@ export function BriefDocumentProvider({ children }: { children: ReactNode }) {
   docRef.current = doc
   const readyRef = useRef(false)
 
-  // Keep restore callbacks stable for the one-shot mount effect.
+  // Keep restore callbacks + latest brief stable for the one-shot mount effect.
   const hydrateRef = useRef(hydrate)
   hydrateRef.current = hydrate
   const loadFromStoreRef = useRef(loadFromStore)
   loadFromStoreRef.current = loadFromStore
+  const briefRef = useRef(state.brief)
+  briefRef.current = state.brief
 
   // Restore once on mount: a saved document (or migrated legacy v1 snapshot).
   useEffect(() => {
@@ -135,9 +137,15 @@ export function BriefDocumentProvider({ children }: { children: ReactNode }) {
       try {
         const saved = await loadDocument()
         await loadFromStoreRef.current()
-        if (!cancelled && saved) {
-          setDoc(saved)
-          hydrateRef.current(pageAsEventBrief(saved, getActivePage(saved)))
+        if (!cancelled) {
+          if (saved) {
+            setDoc(saved)
+            hydrateRef.current(pageAsEventBrief(saved, getActivePage(saved)))
+          } else {
+            // No saved document: fold in any edits made before restore resolved
+            // (the sync effect was gated off until now), so nothing is dropped.
+            setDoc((d) => syncActivePage(d, briefRef.current))
+          }
         }
       } catch {
         // ignore: start from the in-memory initial document
@@ -227,7 +235,10 @@ export function BriefDocumentProvider({ children }: { children: ReactNode }) {
       setReferenceFit: (fit) => mutateDoc((d) => setPageReferenceFit(d, d.activePageId, fit)),
       setReferenceVisible: (visible) => mutateDoc((d) => setPageReferenceVisible(d, d.activePageId, visible)),
       replaceDocument,
-      getDocument: () => docRef.current,
+      // Sync the live editor brief on read so export/persistence never depend on
+      // the async sync-effect timing (avoids a mount-race where a just-added
+      // block isn't yet folded into the document).
+      getDocument: () => syncActivePage(docRef.current, briefRef.current),
     }),
     [doc, applyOp, replaceDocument, setReferenceImage, mutateDoc],
   )
