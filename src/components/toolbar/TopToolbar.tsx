@@ -84,7 +84,7 @@ export function TopToolbar({ mode = 'brief', onShowSummary }: { mode?: 'brief' |
           <BackIcon />
           <span>{mode === 'image' ? '요청 목록' : '게이트'}</span>
         </Link>
-        <span className="editor-topbar__mode" aria-label="현재 모드">{mode === 'image' ? '이미지 생성' : '기획서 생성'}</span>
+        <span className={`editor-topbar__mode${mode === 'image' ? ' editor-topbar__mode--image' : ''}`} aria-label="현재 모드">{mode === 'image' ? '이미지 생성' : '기획서 생성'}</span>
         <input
           ref={titleRef}
           className="editor-topbar__title"

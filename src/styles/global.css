@@ -3,23 +3,31 @@
    styling controls (color/font/shadow editing) are exposed to the user. */
 
 :root {
-  --color-bg: #eef0f4;
+  /* Design tokens (WORK_PLAN §14.2). The editor and the product shell share the
+     same palette so the whole app reads as one calm, business tool. */
+  --color-bg: #f5f6fa;
   --color-panel: #ffffff;
-  --color-border: #d8dce3;
-  --color-border-strong: #b9c0cc;
-  --color-text: #1f2430;
-  --color-muted: #6b7280;
-  --color-accent: #2563eb;
-  --color-accent-soft: #e8efff;
-  --color-design: #2563eb;
+  --color-panel-muted: #f8f9fc;
+  --color-border: #e4e7ec;
+  --color-border-strong: #d0d5dd;
+  --color-text: #171923;
+  --color-muted: #667085;
+  --color-accent: #4f6ef7; /* 기획서 생성 = indigo/blue */
+  --color-accent-strong: #3f5be0;
+  --color-accent-soft: #eef1fe;
+  --color-design: #4f6ef7;
   --color-reference: #b45309;
   --color-reference-soft: #fff7ed;
-  --color-publishing: #7c3aed;
-  --color-publishing-soft: #f4f0ff;
-  --color-danger: #b91c1c;
-  --color-warning: #b45309;
-  --radius: 8px;
-  font-family: system-ui, -apple-system, 'Segoe UI', 'Malgun Gothic', sans-serif;
+  --color-publishing: #7557e8; /* 이미지 생성 = violet */
+  --color-publishing-soft: #f1edfc;
+  --color-success: #16a36a;
+  --color-danger: #dc3f4f;
+  --color-danger-soft: #fdecee;
+  --color-warning: #d97706;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow-pop: 0 10px 30px rgba(23, 25, 35, 0.12);
+  font-family: 'Pretendard', 'Noto Sans KR', 'Inter', system-ui, -apple-system, 'Segoe UI', 'Malgun Gothic', sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -39,29 +47,36 @@ button { font-family: inherit; }
   outline-offset: 2px;
 }
 
-/* ── Buttons ──────────────────────────────────────────────────────────────── */
+/* ── Buttons (common component, WORK_PLAN §16, §14.5) ─────────────────────── */
 .btn {
-  padding: 6px 12px;
+  padding: 7px 14px;
   border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
-  background: #fff;
+  border-radius: var(--radius-sm);
+  background: var(--color-panel);
   color: var(--color-text);
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
 }
-.btn:hover:not(:disabled) { background: #f3f5f9; }
+.btn:hover:not(:disabled) { background: var(--color-panel-muted); border-color: var(--color-border-strong); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn--danger {
   border-color: var(--color-danger);
   color: var(--color-danger);
 }
-.btn--danger:hover:not(:disabled) { background: #fef2f2; }
+.btn--danger:hover:not(:disabled) { background: var(--color-danger-soft); }
 .btn--primary {
   border-color: var(--color-accent);
   background: var(--color-accent);
   color: #fff;
+  box-shadow: 0 1px 2px rgba(79, 110, 247, 0.3);
 }
-.btn--primary:hover:not(:disabled) { background: #1d4fd8; }
+.btn--primary:hover:not(:disabled) { background: var(--color-accent-strong); border-color: var(--color-accent-strong); }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn { transition: none; }
+}
 
 .toolbar__file-input { display: none; }
 
@@ -73,6 +88,7 @@ button { font-family: inherit; }
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  min-height: 64px; /* §14.3 상단 앱 바 높이 */
   padding: 8px 16px;
   background: var(--color-panel);
   border-bottom: 1px solid var(--color-border);
@@ -92,14 +108,14 @@ button { font-family: inherit; }
   gap: 4px;
   padding: 6px 10px;
   border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--color-text);
   text-decoration: none;
   font-size: 13px;
   white-space: nowrap;
   transition: background 160ms ease;
 }
-.editor-topbar__back:hover { background: #f3f5f9; }
+.editor-topbar__back:hover { background: var(--color-panel-muted); }
 .editor-topbar__mode {
   font-size: 12px;
   font-weight: 600;
@@ -109,20 +125,22 @@ button { font-family: inherit; }
   padding: 4px 10px;
   white-space: nowrap;
 }
+/* 이미지 생성 모드는 바이올렛 계열로 구분 (§14.2 image-accent). */
+.editor-topbar__mode--image { color: var(--color-publishing); background: var(--color-publishing-soft); }
 .editor-topbar__title {
   flex: 1 1 auto;
   min-width: 140px;
   max-width: 420px;
   padding: 7px 10px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: #fff;
+  border-radius: var(--radius-sm);
+  background: var(--color-panel);
   color: var(--color-text);
   font-size: 14px;
   font-weight: 600;
 }
 .editor-topbar__title::placeholder { color: var(--color-muted); font-weight: 400; }
-.editor-topbar__title:disabled { background: #f3f5f9; color: var(--color-muted); }
+.editor-topbar__title:disabled { background: var(--color-panel-muted); color: var(--color-muted); }
 
 .editor-topbar__right {
   display: flex;
@@ -164,7 +182,7 @@ button { font-family: inherit; }
   font-size: 13px;
   cursor: pointer;
 }
-.editor-topbar__menu-item:hover:not(:disabled) { background: #f3f5f9; }
+.editor-topbar__menu-item:hover:not(:disabled) { background: var(--color-panel-muted); }
 .editor-topbar__menu-item:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .editor-topbar__submit { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
@@ -311,7 +329,7 @@ button { font-family: inherit; }
   font-size: 13px;
   cursor: pointer;
 }
-.page-tab__menu-item:hover:not(:disabled) { background: #f3f5f9; }
+.page-tab__menu-item:hover:not(:disabled) { background: var(--color-panel-muted); }
 .page-tab__menu-item:disabled { opacity: 0.4; cursor: not-allowed; }
 .page-tab__menu-item--danger { color: var(--color-danger); }
 
@@ -320,7 +338,7 @@ button { font-family: inherit; }
   flex: none;
   padding: 12px;
   border-bottom: 1px solid var(--color-border);
-  background: var(--surface-muted, #f8f9fc);
+  background: var(--color-panel-muted);
 }
 .ref-tools__header { margin-bottom: 8px; }
 .ref-tools__title { margin: 0; font-size: 13px; font-weight: 700; }
@@ -466,13 +484,14 @@ button { font-family: inherit; }
 }
 .palette-item {
   width: 100%;
-  padding: 6px 8px;
+  padding: 8px 10px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: #fff;
+  border-radius: var(--radius-sm);
+  background: var(--color-panel);
   font-size: 13px;
   text-align: left;
   cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
 }
 .palette-item:hover { border-color: var(--color-accent); background: var(--color-accent-soft); }
 .palette-group--reference .palette-item,
@@ -514,9 +533,9 @@ button { font-family: inherit; }
   position: relative;
   transform-origin: top left;
   background: #fff;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 4px;
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 20px rgba(23, 25, 35, 0.08);
 }
 .canvas__empty {
   position: absolute;
@@ -547,8 +566,14 @@ button { font-family: inherit; }
   font-size: 14px;
   touch-action: none;
   user-select: none;
+  box-shadow: 0 1px 2px rgba(23, 25, 35, 0.06);
+  /* Only color/shadow animate — position/size stay instant while dragging. */
+  transition: border-color 140ms ease, box-shadow 140ms ease;
 }
 .block-card:hover { border-color: var(--color-accent); }
+@media (prefers-reduced-motion: reduce) {
+  .block-card { transition: none; }
+}
 .block-card.is-selected {
   border-color: var(--color-accent);
   box-shadow: 0 0 0 3px var(--color-accent-soft);
@@ -625,7 +650,7 @@ button { font-family: inherit; }
   font-size: 13px;
   cursor: pointer;
 }
-.block-card__menu-item:hover { background: #f3f5f9; }
+.block-card__menu-item:hover { background: var(--color-panel-muted); }
 .block-card__menu-item--danger { color: var(--color-danger); }
 .block-card__visibility {
   font-size: 11px;
@@ -702,8 +727,8 @@ button { font-family: inherit; }
   max-height: 160px;
   object-fit: contain;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: #fafbfc;
+  border-radius: var(--radius-sm);
+  background: var(--color-panel-muted);
 }
 .image-field__empty {
   padding: 20px;
@@ -711,7 +736,7 @@ button { font-family: inherit; }
   color: var(--color-muted);
   font-size: 12px;
   border: 1px dashed var(--color-border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 .image-field__input { display: none; }
 .image-field__actions { display: flex; gap: 6px; }
@@ -735,12 +760,25 @@ button { font-family: inherit; }
 .field--checkbox { flex-direction: row; align-items: center; gap: 8px; }
 .field--group { border: 1px solid var(--color-border); border-radius: 6px; padding: 8px; margin: 0; }
 .field__label { font-size: 12px; color: var(--color-muted); }
-.field__input {
-  padding: 6px 8px;
+/* Common input (WORK_PLAN §16, §14.7 — less browser-default, design-system). */
+.field__input,
+.palette-search__input {
+  padding: 8px 10px;
   border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-panel);
+  color: var(--color-text);
+  font: inherit;
   font-size: 13px;
   width: 100%;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.field__input:focus-visible,
+.palette-search__input:focus-visible,
+.editor-topbar__title:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
 .field__input--area { resize: vertical; }
 .field__row { display: flex; gap: 6px; }
@@ -749,7 +787,7 @@ button { font-family: inherit; }
 
 .inspector__issues { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .inspector__issue { font-size: 12px; padding: 6px 8px; border-radius: 6px; }
-.inspector__issue--error { color: var(--color-danger); background: #fef2f2; }
+.inspector__issue--error { color: var(--color-danger); background: var(--color-danger-soft); }
 .inspector__issue--warning { color: var(--color-warning); background: var(--color-reference-soft); }
 
 .inspector__actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
@@ -828,7 +866,7 @@ button { font-family: inherit; }
 
 .io-issues { list-style: none; margin: 0 0 4px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .io-issue { display: flex; gap: 10px; padding: 10px 12px; border-radius: 8px; }
-.io-issue--error { background: #fef2f2; }
+.io-issue--error { background: var(--color-danger-soft); }
 .io-issue--warning { background: var(--color-reference-soft); }
 .io-issue__icon { font-size: 16px; line-height: 1.3; }
 .io-issue__body { display: flex; flex-direction: column; gap: 2px; }
