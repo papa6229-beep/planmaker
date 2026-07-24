@@ -16,6 +16,7 @@ import {
   type EditorAction,
   type EditorState,
 } from './briefEditor'
+import type { EventBrief } from '../../domain/briefSchema'
 
 const HISTORY_LIMIT = 100
 
@@ -32,6 +33,7 @@ export type HistoryAction =
   | { type: 'UNDO' }
   | { type: 'REDO' }
   | { type: 'END_INTERACTION' }
+  | { type: 'HYDRATE'; brief: EventBrief }
 
 export function createInitialHistoryState(): HistoryState {
   return { past: [], present: createInitialEditorState(), future: [], lastCoalesceKey: null }
@@ -81,6 +83,14 @@ export function historyReducer(state: HistoryState, action: HistoryAction): Hist
     }
     case 'END_INTERACTION':
       return state.lastCoalesceKey === null ? state : { ...state, lastCoalesceKey: null }
+    case 'HYDRATE':
+      // Restoring from storage establishes a fresh baseline (no undo across it).
+      return {
+        past: [],
+        present: { brief: action.brief, selectedIds: [] },
+        future: [],
+        lastCoalesceKey: null,
+      }
     default: {
       const next = briefReducer(state.present, action)
       if (next === state.present) return state

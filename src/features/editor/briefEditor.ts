@@ -14,6 +14,7 @@
 import { createBlock, createEmptyBrief, createId } from '../../domain/factory'
 import type { AiVisibility, BlockType } from '../../domain/blockTypes'
 import type {
+  Asset,
   BlockImageMeta,
   BriefBlock,
   EventBrief,
@@ -57,6 +58,9 @@ export type EditorAction =
   | { type: 'DUPLICATE_BLOCK'; blockId: string }
   | { type: 'GROUP_SELECTED' }
   | { type: 'UNGROUP_SELECTED' }
+  | { type: 'ASSIGN_IMAGE'; blockId: string; asset: Asset; image?: Partial<BlockImageMeta> }
+  | { type: 'ADD_IMAGE_BLOCK'; asset: Asset; position?: { x: number; y: number }; blockType?: BlockType; image?: Partial<BlockImageMeta> }
+  | { type: 'REMOVE_BLOCK_ASSET'; blockId: string }
   | { type: 'NEW_BRIEF' }
 
 /** Builds the initial editor state (also used by "새로 만들기"). */
@@ -262,6 +266,86 @@ function ungroupSelected(state: EditorState): EditorState {
   )
 }
 
+function upsertAsset(assets: Asset[], asset: Asset): Asset[] {
+  const idx = assets.findIndex((a) => a.id === asset.id)
+  if (idx === -1) return [...assets, asset]
+  const next = assets.slice()
+  next[idx] = asset
+  return next
+}
+
+/** Drops an asset from the list if no block references it (keeps metadata tidy). */
+function pruneOrphanAsset(assets: Asset[], blocks: BriefBlock[], assetId: string | undefined): Asset[] {
+  if (assetId === undefined) return assets
+  const stillUsed = blocks.some((b) => b.assetId === assetId)
+  return stillUsed ? assets : assets.filter((a) => a.id !== assetId)
+}
+
+function assignImage(
+  state: EditorState,
+  blockId: string,
+  asset: Asset,
+  image: Partial<BlockImageMeta> | undefined,
+): EditorState {
+  const target = state.brief.blocks.find((b) => b.id === blockId)
+  if (!target) return state
+  const previousAssetId = target.assetId
+
+  const blocks = state.brief.blocks.map((b) => {
+    if (b.id !== blockId) return b
+    const next: BriefBlock = { ...b, assetId: asset.id }
+    if (image) next.image = { ...next.image, ...image }
+    return next
+  })
+
+  let assets = upsertAsset(state.brief.assets, asset)
+  if (previousAssetId !== undefined && previousAssetId !== asset.id) {
+    assets = pruneOrphanAsset(assets, blocks, previousAssetId)
+  }
+  return { ...state, brief: { ...state.brief, blocks, assets } }
+}
+
+function addImageBlock(
+  state: EditorState,
+  asset: Asset,
+  blockType: BlockType,
+  position: { x: number; y: number } | undefined,
+  image: Partial<BlockImageMeta> | undefined,
+): EditorState {
+  const { brief } = state
+  const base = position ?? nextBlockPosition(brief.blocks, brief.project.canvasWidth, brief.project.canvasHeight)
+  const pos = clampPosition(
+    { x: base.x, y: base.y, width: NEW_BLOCK_WIDTH, height: NEW_BLOCK_HEIGHT },
+    brief.project.canvasWidth,
+    brief.project.canvasHeight,
+  )
+  const block = createBlock(blockType, {
+    assetId: asset.id,
+    position: { x: pos.x, y: pos.y, width: NEW_BLOCK_WIDTH, height: NEW_BLOCK_HEIGHT },
+  })
+  if (image) block.image = { ...block.image, ...image }
+
+  return {
+    brief: { ...brief, blocks: [...brief.blocks, block], assets: upsertAsset(brief.assets, asset) },
+    selectedIds: [block.id],
+  }
+}
+
+function removeBlockAsset(state: EditorState, blockId: string): EditorState {
+  const target = state.brief.blocks.find((b) => b.id === blockId)
+  if (!target || target.assetId === undefined) return state
+  const removedId = target.assetId
+
+  const blocks = state.brief.blocks.map((b) => {
+    if (b.id !== blockId) return b
+    const next = { ...b }
+    delete next.assetId
+    return next
+  })
+  const assets = pruneOrphanAsset(state.brief.assets, blocks, removedId)
+  return { ...state, brief: { ...state.brief, blocks, assets } }
+}
+
 /** Pure reducer for all single-step editor transitions. */
 export function briefReducer(state: EditorState, action: EditorAction): EditorState {
   switch (action.type) {
@@ -285,6 +369,12 @@ export function briefReducer(state: EditorState, action: EditorAction): EditorSt
       return groupSelected(state)
     case 'UNGROUP_SELECTED':
       return ungroupSelected(state)
+    case 'ASSIGN_IMAGE':
+      return assignImage(state, action.blockId, action.asset, action.image)
+    case 'ADD_IMAGE_BLOCK':
+      return addImageBlock(state, action.asset, action.blockType ?? 'main_product_image', action.position, action.image)
+    case 'REMOVE_BLOCK_ASSET':
+      return removeBlockAsset(state, action.blockId)
     case 'NEW_BRIEF':
       return createInitialEditorState()
     default:

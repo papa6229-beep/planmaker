@@ -7,7 +7,7 @@
 
 import { createContext, useContext, useMemo, useReducer, type ReactNode } from 'react'
 import type { BlockType } from '../../domain/blockTypes'
-import type { BriefBlock } from '../../domain/briefSchema'
+import type { Asset, BlockImageMeta, BriefBlock, EventBrief } from '../../domain/briefSchema'
 import {
   primarySelectedId,
   selectedBlock,
@@ -41,6 +41,10 @@ export interface BriefEditorApi {
   duplicateBlock: (blockId: string) => void
   groupSelected: () => void
   ungroupSelected: () => void
+  assignImage: (blockId: string, asset: Asset, image?: Partial<BlockImageMeta>) => void
+  addImageBlock: (asset: Asset, position?: { x: number; y: number }, image?: Partial<BlockImageMeta>) => void
+  removeBlockAsset: (blockId: string) => void
+  hydrate: (brief: EventBrief) => void
   newBrief: () => void
   undo: () => void
   redo: () => void
@@ -81,6 +85,14 @@ export function BriefEditorProvider({ children }: { children: ReactNode }) {
       duplicateBlock: (blockId) => dispatch({ type: 'DUPLICATE_BLOCK', blockId }),
       groupSelected: () => dispatch({ type: 'GROUP_SELECTED' }),
       ungroupSelected: () => dispatch({ type: 'UNGROUP_SELECTED' }),
+      assignImage: (blockId, asset, image) =>
+        dispatch(image === undefined
+          ? { type: 'ASSIGN_IMAGE', blockId, asset }
+          : { type: 'ASSIGN_IMAGE', blockId, asset, image }),
+      addImageBlock: (asset, position, image) =>
+        dispatch({ type: 'ADD_IMAGE_BLOCK', asset, ...(position ? { position } : {}), ...(image ? { image } : {}) }),
+      removeBlockAsset: (blockId) => dispatch({ type: 'REMOVE_BLOCK_ASSET', blockId }),
+      hydrate: (brief) => dispatch({ type: 'HYDRATE', brief }),
       newBrief: () => dispatch({ type: 'NEW_BRIEF' }),
       undo: () => dispatch({ type: 'UNDO' }),
       redo: () => dispatch({ type: 'REDO' }),

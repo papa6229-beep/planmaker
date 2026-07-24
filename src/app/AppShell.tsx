@@ -7,6 +7,10 @@
 
 import { useEffect } from 'react'
 import { BriefEditorProvider, useBriefEditor } from '../features/editor/useBriefEditor'
+import { AssetsProvider, useAssets } from '../features/assets/useAssets'
+import { Persistence } from '../features/assets/Persistence'
+import { imageFilesFromClipboard } from '../features/assets/imageUtils'
+import { isImageBlock } from '../domain/blockTypes'
 import { TopToolbar } from '../components/toolbar/TopToolbar'
 import { BlockPalette } from '../components/palette/BlockPalette'
 import { BriefCanvas } from '../components/canvas/BriefCanvas'
@@ -65,6 +69,26 @@ function KeyboardShortcuts() {
   return null
 }
 
+/** Global image paste (WORK_PLAN §11): Ctrl+V an image → assign or create. */
+function GlobalPaste() {
+  const { selected } = useBriefEditor()
+  const { uploadFiles } = useAssets()
+
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const files = imageFilesFromClipboard(e.clipboardData?.items)
+      if (files.length === 0) return // let normal text paste proceed
+      e.preventDefault()
+      const targetId = selected && isImageBlock(selected.type) ? selected.id : undefined
+      void uploadFiles(files, targetId === undefined ? {} : { targetBlockId: targetId })
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [selected, uploadFiles])
+
+  return null
+}
+
 function Workspace() {
   return (
     <div className="app">
@@ -75,6 +99,8 @@ function Workspace() {
         <PropertiesPanel />
       </main>
       <KeyboardShortcuts />
+      <GlobalPaste />
+      <Persistence />
     </div>
   )
 }
@@ -82,7 +108,9 @@ function Workspace() {
 export function AppShell() {
   return (
     <BriefEditorProvider>
-      <Workspace />
+      <AssetsProvider>
+        <Workspace />
+      </AssetsProvider>
     </BriefEditorProvider>
   )
 }
