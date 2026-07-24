@@ -204,6 +204,31 @@ button { font-family: inherit; }
 .stage { flex: 1; display: flex; min-height: 0; min-width: 0; }
 .stage .canvas { flex: 1; min-height: 0; min-width: 0; }
 
+/* Request work page: status change + generation placeholder (Phase 7 §13.2–4). */
+.req-status-panel {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: var(--color-publishing-soft);
+  border-bottom: 1px solid var(--color-border);
+}
+.req-status-panel__row { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.req-status-panel__label { font-size: 12px; font-weight: 600; color: var(--color-publishing); }
+.req-status-btn {
+  padding: 5px 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: #fff;
+  font-size: 12px;
+  color: var(--color-text);
+  cursor: pointer;
+}
+.req-status-btn.is-active { border-color: var(--color-publishing); background: var(--color-publishing); color: #fff; }
+.req-status-panel__gen { margin: 0; font-size: 12px; color: var(--color-muted); }
+
 /* ── Page filmstrip (Phase 7 §9.2) ────────────────────────────────────────── */
 .page-tabs {
   flex: none;
@@ -1000,6 +1025,66 @@ button { font-family: inherit; }
 .badge--info .badge__dot { background: var(--brief-accent); }
 .badge--success .badge__dot { background: var(--ok); }
 .badge--warning .badge__dot { background: var(--warn); }
+
+/* ── Work-request list (Phase 7 §13) ──────────────────────────────────────── */
+.req-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.req-filter {
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+.req-filter.is-active { border-color: var(--brief-accent); color: var(--brief-accent); background: var(--brief-accent-soft); }
+.req-empty-filter { color: var(--text-secondary); font-size: 14px; }
+
+.req-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.req-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.req-card__thumb {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+}
+.req-card__pages { font-size: 10px; font-weight: 700; }
+.req-card__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.req-card__title { margin: 0; font-size: 15px; font-weight: 600; }
+.req-card__meta { margin: 0; font-size: 12px; color: var(--text-secondary); }
+.req-card__open { flex: none; }
+
+/* Planning-side delivered requests (BriefsPage). */
+.brief-requests__title { font-size: 15px; font-weight: 700; margin: 8px 0 12px; }
+.req-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.req-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.req-row__main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.req-row__title { font-size: 14px; font-weight: 600; }
+.req-row__meta { font-size: 12px; color: var(--text-secondary); }
 
 /* Empty state */
 .empty-state {

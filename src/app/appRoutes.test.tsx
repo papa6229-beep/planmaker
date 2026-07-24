@@ -45,7 +45,7 @@ describe('AppRoutes — Phase 7 Step 2 entry gate', () => {
     renderAt('/')
     await user.click(screen.getByRole('link', { name: /기획서 생성/ }))
     expect(screen.getByRole('heading', { level: 1, name: '기획서 생성' })).toBeTruthy()
-    expect(screen.getByText('아직 작성한 기획서가 없습니다')).toBeTruthy()
+    expect(screen.getByText('아직 작성하거나 전달한 기획서가 없습니다')).toBeTruthy()
   })
 
   // §12.3 — the 이미지 생성 card navigates to /image-requests
@@ -57,18 +57,19 @@ describe('AppRoutes — Phase 7 Step 2 entry gate', () => {
     expect(screen.getByText('아직 전달된 이미지 작업 요청이 없습니다')).toBeTruthy()
   })
 
-  // §12.7 — the image card shows no fabricated request counts, only a neutral note
+  // §12.7 — with no delivered requests, the image card shows no counts, only a
+  // truthful "아직 전달된 요청이 없습니다" note (never fabricated numbers).
   it('shows no fake request counts on the image card', () => {
     const { container } = renderAt('/')
     expect(container.querySelector('.entry-card__stats')).toBeNull()
-    expect(screen.getByText('요청 관리 연결 예정')).toBeTruthy()
+    expect(screen.getByText('아직 전달된 요청이 없습니다')).toBeTruthy()
   })
 
   // §12.5 — /briefs has an honest empty state, no fake list and no fake counts
   it('renders /briefs with an empty state and no fake list', () => {
     const { container } = renderAt('/briefs')
     expect(screen.getByRole('heading', { level: 1, name: '기획서 생성' })).toBeTruthy()
-    expect(screen.getByText('아직 작성한 기획서가 없습니다')).toBeTruthy()
+    expect(screen.getByText('아직 작성하거나 전달한 기획서가 없습니다')).toBeTruthy()
     expect(screen.queryAllByRole('listitem')).toHaveLength(0)
     expect(container.querySelector('.entry-card__stats')).toBeNull()
   })

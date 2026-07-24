@@ -45,7 +45,7 @@ export function EntryCard({
       <h2 className="entry-card__title">{title}</h2>
       <p className="entry-card__desc">{description}</p>
 
-      {stats && stats.length > 0 ? (
+      {stats && stats.length > 0 && (
         <ul className="entry-card__stats">
           {stats.map((s) => (
             <li key={s.label} className="entry-card__stat">
@@ -54,9 +54,8 @@ export function EntryCard({
             </li>
           ))}
         </ul>
-      ) : (
-        note && <p className="entry-card__note">{note}</p>
       )}
+      {note && <p className="entry-card__note">{note}</p>}
 
       <span className="entry-card__cta">
         {cta}

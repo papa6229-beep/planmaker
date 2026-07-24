@@ -5,10 +5,14 @@
  * Shortcuts are suppressed while typing so text editing is never hijacked.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { BriefEditorProvider, useBriefEditor } from '../features/editor/useBriefEditor'
 import { AssetsProvider, useAssets } from '../features/assets/useAssets'
-import { BriefDocumentProvider, useBriefDocument } from '../features/document/useBriefDocument'
+import {
+  BriefDocumentProvider,
+  useBriefDocument,
+  type DocumentBinding,
+} from '../features/document/useBriefDocument'
 import { imageFilesFromClipboard } from '../features/assets/imageUtils'
 import { isImageBlock } from '../domain/blockTypes'
 import { EventBriefIoProvider, useEventBriefIo } from '../features/export/useEventBriefIo'
@@ -125,13 +129,13 @@ function GlobalEventBriefDrop() {
   return null
 }
 
-function Workspace() {
+function Workspace({ mode, statusPanel }: { mode: 'brief' | 'image'; statusPanel?: ReactNode }) {
   const [summaryOpen, setSummaryOpen] = useState(false)
   const { activeReference } = useBriefDocument()
   const sideBySide = activeReference.viewMode === 'side' && activeReference.assetId !== undefined
   return (
     <div className="app">
-      <TopToolbar onShowSummary={() => setSummaryOpen(true)} />
+      <TopToolbar mode={mode} onShowSummary={() => setSummaryOpen(true)} />
       <main className="workspace">
         <div className="side-left">
           <ReferenceTools />
@@ -139,6 +143,7 @@ function Workspace() {
         </div>
         <div className="workspace__center">
           <PageTabs />
+          {statusPanel}
           <ReferenceViewControls />
           <div className="stage">
             <BriefCanvas />
@@ -156,13 +161,22 @@ function Workspace() {
   )
 }
 
-export function AppShell() {
+export interface AppShellProps {
+  /** 'brief' = planning (전달하기); 'image' = design work on a request (§13.2). */
+  mode?: 'brief' | 'image'
+  /** Overrides document load/save (used by the request work page). */
+  binding?: DocumentBinding
+  /** Extra panel rendered under the page tabs (request status + generation). */
+  statusPanel?: ReactNode
+}
+
+export function AppShell({ mode = 'brief', binding, statusPanel }: AppShellProps = {}) {
   return (
     <BriefEditorProvider>
       <AssetsProvider>
-        <BriefDocumentProvider>
+        <BriefDocumentProvider {...(binding ? { binding } : {})}>
           <EventBriefIoProvider>
-            <Workspace />
+            <Workspace mode={mode} statusPanel={statusPanel} />
           </EventBriefIoProvider>
         </BriefDocumentProvider>
       </AssetsProvider>

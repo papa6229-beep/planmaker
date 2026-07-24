@@ -10,11 +10,14 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
+import { RequestsProvider } from '../features/requests/useRequests'
 
 function renderEditor() {
   return render(
     <MemoryRouter initialEntries={['/briefs/new']}>
-      <AppShell />
+      <RequestsProvider>
+        <AppShell />
+      </RequestsProvider>
     </MemoryRouter>,
   )
 }
