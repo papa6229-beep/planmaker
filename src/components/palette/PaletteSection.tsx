@@ -1,18 +1,18 @@
 /**
- * A single collapsible category of block types. Clicking a block item creates
- * a block of that type via the editor (which uses the Phase 1 factory).
+ * A single collapsible palette section (WORK_PLAN §10.2). Clicking a block item
+ * creates a block of that type via the editor (which uses the Phase 1 factory).
  */
 
 import { useState } from 'react'
-import { BLOCK_TYPE_LIST, type BlockCategory } from '../../domain/blockTypes'
-import { CATEGORY_LABELS } from '../uiLabels'
+import { getBlockTypeMeta } from '../../domain/blockTypes'
+import type { PaletteSectionDef } from '../uiLabels'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 
-export function PaletteSection({ category }: { category: BlockCategory }) {
+export function PaletteSection({ section, defaultOpen = true }: { section: PaletteSectionDef; defaultOpen?: boolean }) {
   const { addBlock } = useBriefEditor()
-  const [open, setOpen] = useState(true)
-  const items = BLOCK_TYPE_LIST.filter((meta) => meta.category === category)
-  const sectionId = `palette-section-${category}`
+  const [open, setOpen] = useState(defaultOpen)
+  const items = section.types.map(getBlockTypeMeta)
+  const sectionId = `palette-section-${section.key}`
 
   return (
     <div className="palette-section">
@@ -24,7 +24,7 @@ export function PaletteSection({ category }: { category: BlockCategory }) {
         onClick={() => setOpen((v) => !v)}
       >
         <span className="palette-section__chevron" aria-hidden="true">{open ? '▾' : '▸'}</span>
-        {CATEGORY_LABELS[category]}
+        {section.label}
         <span className="palette-section__count">{items.length}</span>
       </button>
       {open && (

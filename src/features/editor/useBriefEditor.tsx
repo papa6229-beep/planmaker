@@ -39,6 +39,7 @@ export interface BriefEditorApi {
   moveBlock: (blockId: string, x: number, y: number, coalesceKey?: string) => void
   resizeBlock: (blockId: string, rect: Rect, coalesceKey?: string) => void
   duplicateBlock: (blockId: string) => void
+  duplicateSelected: () => void
   groupSelected: () => void
   ungroupSelected: () => void
   assignImage: (blockId: string, asset: Asset, image?: Partial<BlockImageMeta>) => void
@@ -84,6 +85,7 @@ export function BriefEditorProvider({ children }: { children: ReactNode }) {
           ? { type: 'RESIZE_BLOCK', blockId, rect }
           : { type: 'RESIZE_BLOCK', blockId, rect, coalesceKey }),
       duplicateBlock: (blockId) => dispatch({ type: 'DUPLICATE_BLOCK', blockId }),
+      duplicateSelected: () => dispatch({ type: 'DUPLICATE_SELECTED' }),
       groupSelected: () => dispatch({ type: 'GROUP_SELECTED' }),
       ungroupSelected: () => dispatch({ type: 'UNGROUP_SELECTED' }),
       assignImage: (blockId, asset, image) =>

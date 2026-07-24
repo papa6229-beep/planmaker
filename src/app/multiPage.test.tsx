@@ -57,15 +57,15 @@ describe('multi-page editor', () => {
     expect(within(canvas()).queryByRole('button', { name: /메인 문구/ })).toBeNull()
 
     // Add a benefit on page 2.
-    await user.click(within(palette()).getByRole('button', { name: '혜택' }))
-    expect(within(canvas()).getByRole('button', { name: /혜택/ })).toBeTruthy()
+    await user.click(within(palette()).getByRole('button', { name: '서브 문구' }))
+    expect(within(canvas()).getByRole('button', { name: /서브 문구/ })).toBeTruthy()
     expect(within(canvas()).queryByRole('button', { name: /메인 문구/ })).toBeNull()
 
     // Back to page 1: the headline is there, the benefit is not.
     const p1 = within(strip()).getAllByRole('button').find((b) => b.textContent === '1페이지')!
     await user.click(p1)
     expect(within(canvas()).getByRole('button', { name: /메인 문구/ })).toBeTruthy()
-    expect(within(canvas()).queryByRole('button', { name: /혜택/ })).toBeNull()
+    expect(within(canvas()).queryByRole('button', { name: /서브 문구/ })).toBeNull()
   })
 
   it('renames a page through its menu', async () => {

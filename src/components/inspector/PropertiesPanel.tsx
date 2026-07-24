@@ -9,21 +9,14 @@
  */
 
 import { getBlockTypeMeta } from '../../domain/blockTypes'
-import type { AiVisibility } from '../../domain/blockTypes'
-import type {
-  BriefBlock,
-  LayoutAlignment,
-  LayoutEmphasis,
-  LayoutRegion,
-} from '../../domain/briefSchema'
+import type { BriefBlock } from '../../domain/briefSchema'
 import { validateBrief } from '../../domain/validation'
-import { AI_VISIBILITY_LABELS, CATEGORY_LABELS, PRIORITY_LABELS } from '../uiLabels'
+import { CATEGORY_LABELS } from '../uiLabels'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useAssets } from '../../features/assets/useAssets'
 import { ACCEPTED_MIME_TYPES } from '../../features/assets/imageUtils'
 import { useRef } from 'react'
 import { EmptySelection } from './EmptySelection'
-import { DeleteBlockAction } from './DeleteBlockAction'
 
 const IMAGE_ACCEPT = ACCEPTED_MIME_TYPES.join(',')
 
@@ -67,22 +60,13 @@ function ImageField({ block }: { block: BriefBlock }) {
   )
 }
 
-const VISIBILITY_OPTIONS: AiVisibility[] = ['design', 'reference', 'publishing']
-const PRIORITY_OPTIONS: (1 | 2 | 3 | 4 | 5)[] = [1, 2, 3, 4, 5]
-const REGION_OPTIONS: LayoutRegion[] = ['top', 'middle', 'bottom', 'free']
-const ALIGNMENT_OPTIONS: LayoutAlignment[] = ['left', 'center', 'right', 'free']
-const EMPHASIS_OPTIONS: LayoutEmphasis[] = ['low', 'normal', 'high', 'very_high']
-
-const REGION_LABELS: Record<LayoutRegion, string> = {
-  top: '상단', middle: '중단', bottom: '하단', free: '자유',
-}
-const ALIGNMENT_LABELS: Record<LayoutAlignment, string> = {
-  left: '좌', center: '중앙', right: '우', free: '자유',
-}
-const EMPHASIS_LABELS: Record<LayoutEmphasis, string> = {
-  low: '낮음', normal: '보통', high: '높음', very_high: '매우 높음',
-}
-
+/**
+ * Minimal block editor (WORK_PLAN §11.2, Phase 7 Step 6). Only the essentials:
+ * 라벨 · 내용(텍스트) · 이미지(교체/제거)·제품명(이미지) · 필수 여부 · 메모.
+ * Importance, AI-visibility, layout hints, and the delete button are removed —
+ * their domain fields keep their defaults; the design/publishing distinction is
+ * driven by the block type, and deletion is done on the canvas.
+ */
 function BlockFields({ block }: { block: BriefBlock }) {
   const { updateBlock } = useBriefEditor()
   const meta = getBlockTypeMeta(block.type)
@@ -124,14 +108,6 @@ function BlockFields({ block }: { block: BriefBlock }) {
               onChange={(e) => updateBlock(block.id, { image: { productName: e.target.value } }, editKey)}
             />
           </label>
-          <label className="field field--checkbox">
-            <input
-              type="checkbox"
-              checked={block.image?.allowTransform ?? true}
-              onChange={(e) => updateBlock(block.id, { image: { allowTransform: e.target.checked } })}
-            />
-            <span className="field__label">AI 변형 허용</span>
-          </label>
         </>
       )}
 
@@ -143,68 +119,6 @@ function BlockFields({ block }: { block: BriefBlock }) {
         />
         <span className="field__label">필수 블록</span>
       </label>
-
-      <label className="field">
-        <span className="field__label">중요도</span>
-        <select
-          className="field__input"
-          value={block.priority}
-          onChange={(e) => updateBlock(block.id, { priority: Number(e.target.value) as BriefBlock['priority'] })}
-        >
-          {PRIORITY_OPTIONS.map((p) => (
-            <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>
-          ))}
-        </select>
-      </label>
-
-      <label className="field">
-        <span className="field__label">AI 전달 여부</span>
-        <select
-          className="field__input"
-          value={block.aiVisibility}
-          onChange={(e) => updateBlock(block.id, { aiVisibility: e.target.value as AiVisibility })}
-        >
-          {VISIBILITY_OPTIONS.map((v) => (
-            <option key={v} value={v}>{AI_VISIBILITY_LABELS[v]}</option>
-          ))}
-        </select>
-      </label>
-
-      <fieldset className="field field--group">
-        <legend className="field__label">위치 힌트 (소프트)</legend>
-        <div className="field__row">
-          <select
-            aria-label="영역"
-            className="field__input"
-            value={block.layoutHint.region ?? 'free'}
-            onChange={(e) => updateBlock(block.id, { layoutHint: { region: e.target.value as LayoutRegion } })}
-          >
-            {REGION_OPTIONS.map((r) => (
-              <option key={r} value={r}>{REGION_LABELS[r]}</option>
-            ))}
-          </select>
-          <select
-            aria-label="정렬"
-            className="field__input"
-            value={block.layoutHint.alignment ?? 'free'}
-            onChange={(e) => updateBlock(block.id, { layoutHint: { alignment: e.target.value as LayoutAlignment } })}
-          >
-            {ALIGNMENT_OPTIONS.map((a) => (
-              <option key={a} value={a}>{ALIGNMENT_LABELS[a]}</option>
-            ))}
-          </select>
-          <select
-            aria-label="강조"
-            className="field__input"
-            value={block.layoutHint.emphasis ?? 'normal'}
-            onChange={(e) => updateBlock(block.id, { layoutHint: { emphasis: e.target.value as LayoutEmphasis } })}
-          >
-            {EMPHASIS_OPTIONS.map((em) => (
-              <option key={em} value={em}>{EMPHASIS_LABELS[em]}</option>
-            ))}
-          </select>
-        </div>
-      </fieldset>
 
       <label className="field">
         <span className="field__label">메모</span>
@@ -220,24 +134,22 @@ function BlockFields({ block }: { block: BriefBlock }) {
 }
 
 function MultiSelectionBody({ count }: { count: number }) {
-  const { selectedBlocks, groupSelected, ungroupSelected, deleteSelected } = useBriefEditor()
+  const { selectedBlocks, groupSelected, ungroupSelected, duplicateSelected } = useBriefEditor()
   const anyGrouped = selectedBlocks.some((b) => b.groupId !== undefined)
 
   return (
     <>
       <header className="inspector__header">
         <p className="inspector__type">{count}개 블록 선택됨</p>
-        <p className="inspector__role">그룹으로 묶어 함께 이동할 수 있습니다.</p>
+        <p className="inspector__role">그룹으로 묶어 함께 이동할 수 있습니다. 삭제는 Delete 키 또는 카드 메뉴로.</p>
       </header>
       <div className="inspector__actions">
         <button type="button" className="btn" onClick={groupSelected}>그룹으로 묶기</button>
         {anyGrouped && (
           <button type="button" className="btn" onClick={ungroupSelected}>그룹 해제</button>
         )}
+        <button type="button" className="btn" onClick={duplicateSelected}>복제</button>
       </div>
-      <button type="button" className="btn btn--danger inspector__delete" onClick={deleteSelected}>
-        선택 블록 삭제
-      </button>
     </>
   )
 }
@@ -254,9 +166,7 @@ function SingleSelectionBody({ blockId }: { blockId: string }) {
     <>
       <header className="inspector__header">
         <p className="inspector__type">{meta.label}</p>
-        <p className="inspector__role">
-          {CATEGORY_LABELS[meta.category]} · {AI_VISIBILITY_LABELS[selected.aiVisibility]}
-        </p>
+        <p className="inspector__role">{CATEGORY_LABELS[meta.category]}</p>
       </header>
 
       <BlockFields block={selected} />
@@ -277,7 +187,7 @@ function SingleSelectionBody({ blockId }: { blockId: string }) {
           <button type="button" className="btn" onClick={ungroupSelected}>그룹 해제</button>
         )}
       </div>
-      <DeleteBlockAction blockId={blockId} />
+      <p className="inspector__hint">삭제는 Delete 키 또는 카드 ⋯ 메뉴로 합니다.</p>
     </>
   )
 }

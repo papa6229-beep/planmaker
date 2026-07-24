@@ -56,6 +56,7 @@ export type EditorAction =
   | { type: 'MOVE_BLOCK'; blockId: string; x: number; y: number; coalesceKey?: string }
   | { type: 'RESIZE_BLOCK'; blockId: string; rect: Rect; coalesceKey?: string }
   | { type: 'DUPLICATE_BLOCK'; blockId: string }
+  | { type: 'DUPLICATE_SELECTED' }
   | { type: 'GROUP_SELECTED' }
   | { type: 'UNGROUP_SELECTED' }
   | { type: 'ASSIGN_IMAGE'; blockId: string; asset: Asset; image?: Partial<BlockImageMeta> }
@@ -230,6 +231,53 @@ function duplicateBlock(state: EditorState, blockId: string): EditorState {
   return { brief: { ...state.brief, blocks: [...state.brief.blocks, clone] }, selectedIds: [clone.id] }
 }
 
+/**
+ * Duplicates every selected block with fresh ids, offset from the originals.
+ * Grouping among the selected set is preserved (group ids are remapped), and
+ * the clones become the new selection. Used by the multi-select 복제 action.
+ */
+function duplicateSelected(state: EditorState): EditorState {
+  const ids = new Set(state.selectedIds)
+  if (ids.size === 0) return state
+  const canvasW = state.brief.project.canvasWidth
+  const canvasH = state.brief.project.canvasHeight
+  const groupMap = new Map<string, string>()
+  const clones: BriefBlock[] = []
+
+  for (const src of state.brief.blocks) {
+    if (!ids.has(src.id)) continue
+    const offset = clampPosition(
+      { ...src.position, x: src.position.x + DUPLICATE_OFFSET, y: src.position.y + DUPLICATE_OFFSET },
+      canvasW,
+      canvasH,
+    )
+    const clone: BriefBlock = {
+      ...src,
+      id: createId(),
+      position: { ...src.position, x: offset.x, y: offset.y },
+      layoutHint: { ...src.layoutHint },
+    }
+    if (src.image) clone.image = { ...src.image }
+    if (src.groupId !== undefined) {
+      let g = groupMap.get(src.groupId)
+      if (g === undefined) {
+        g = createId('grp')
+        groupMap.set(src.groupId, g)
+      }
+      clone.groupId = g
+    } else {
+      delete clone.groupId
+    }
+    clones.push(clone)
+  }
+
+  if (clones.length === 0) return state
+  return {
+    brief: { ...state.brief, blocks: [...state.brief.blocks, ...clones] },
+    selectedIds: clones.map((c) => c.id),
+  }
+}
+
 function deleteBlocks(state: EditorState, ids: Set<string>): EditorState {
   return {
     brief: { ...state.brief, blocks: state.brief.blocks.filter((b) => !ids.has(b.id)) },
@@ -376,6 +424,8 @@ export function briefReducer(state: EditorState, action: EditorAction): EditorSt
       return resizeBlock(state, action.blockId, action.rect)
     case 'DUPLICATE_BLOCK':
       return duplicateBlock(state, action.blockId)
+    case 'DUPLICATE_SELECTED':
+      return duplicateSelected(state)
     case 'GROUP_SELECTED':
       return groupSelected(state)
     case 'UNGROUP_SELECTED':
