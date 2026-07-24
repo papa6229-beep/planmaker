@@ -6,7 +6,7 @@
 
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 
-export function TopToolbar() {
+export function TopToolbar({ onShowSummary }: { onShowSummary: () => void }) {
   const { state, newBrief, undo, redo, canUndo, canRedo } = useBriefEditor()
   const title = state.brief.project.title.trim() || 'Event Brief Builder'
 
@@ -29,6 +29,7 @@ export function TopToolbar() {
         <button type="button" className="btn" onClick={undo} disabled={!canUndo} title="실행 취소 (Ctrl+Z)">실행 취소</button>
         <button type="button" className="btn" onClick={redo} disabled={!canRedo} title="다시 실행 (Ctrl+Shift+Z)">다시 실행</button>
         <span className="toolbar__divider" aria-hidden="true" />
+        <button type="button" className="btn" onClick={onShowSummary} title="이미지 생성 AI가 읽는 정보 미리보기">AI 요약</button>
         <button type="button" className="btn" disabled title="Phase 6에서 지원">미리보기</button>
         <button type="button" className="btn" disabled title="Phase 6에서 지원">기획서 내보내기</button>
       </nav>
