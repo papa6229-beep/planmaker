@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react'
 import { BriefEditorProvider, useBriefEditor } from '../features/editor/useBriefEditor'
 import { AssetsProvider, useAssets } from '../features/assets/useAssets'
-import { BriefDocumentProvider } from '../features/document/useBriefDocument'
+import { BriefDocumentProvider, useBriefDocument } from '../features/document/useBriefDocument'
 import { imageFilesFromClipboard } from '../features/assets/imageUtils'
 import { isImageBlock } from '../domain/blockTypes'
 import { EventBriefIoProvider, useEventBriefIo } from '../features/export/useEventBriefIo'
@@ -19,6 +19,9 @@ import { BlockPalette } from '../components/palette/BlockPalette'
 import { BriefCanvas } from '../components/canvas/BriefCanvas'
 import { PropertiesPanel } from '../components/inspector/PropertiesPanel'
 import { SummaryPanel } from '../components/summary/SummaryPanel'
+import { ReferenceTools } from '../components/reference/ReferenceTools'
+import { ReferenceViewControls } from '../components/reference/ReferenceViewControls'
+import { ReferenceSideView } from '../components/reference/ReferenceSideView'
 
 /** True when focus is in a text entry, so shortcuts must not fire. */
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -124,14 +127,23 @@ function GlobalEventBriefDrop() {
 
 function Workspace() {
   const [summaryOpen, setSummaryOpen] = useState(false)
+  const { activeReference } = useBriefDocument()
+  const sideBySide = activeReference.viewMode === 'side' && activeReference.assetId !== undefined
   return (
     <div className="app">
       <TopToolbar onShowSummary={() => setSummaryOpen(true)} />
       <main className="workspace">
-        <BlockPalette />
+        <div className="side-left">
+          <ReferenceTools />
+          <BlockPalette />
+        </div>
         <div className="workspace__center">
           <PageTabs />
-          <BriefCanvas />
+          <ReferenceViewControls />
+          <div className="stage">
+            <BriefCanvas />
+            {sideBySide && <ReferenceSideView />}
+          </div>
         </div>
         <PropertiesPanel />
       </main>

@@ -36,11 +36,17 @@ import {
   duplicatePage,
   getActivePage,
   movePage,
+  removeReferenceImage as removePageReference,
   renamePage,
   setActivePage,
+  setReferenceFit as setPageReferenceFit,
+  setReferenceImage as setPageReferenceImage,
+  setReferenceOpacity as setPageReferenceOpacity,
+  setReferenceViewMode as setPageReferenceViewMode,
+  setReferenceVisible as setPageReferenceVisible,
 } from '../../domain/pageOps'
-import type { BriefDocument, BriefPage } from '../../domain/pageSchema'
-import type { EventBrief } from '../../domain/briefSchema'
+import type { BriefDocument, BriefPage, ReferenceLayer } from '../../domain/pageSchema'
+import type { Asset, EventBrief } from '../../domain/briefSchema'
 import { loadDocument, pruneAssets, saveDocument } from '../../services/assetStore'
 
 const AUTOSAVE_DEBOUNCE_MS = 3000
@@ -55,6 +61,15 @@ export interface BriefDocumentApi {
   movePage: (pageId: string, delta: number) => void
   renamePage: (pageId: string, title: string) => void
   switchPage: (pageId: string) => void
+  /** The active page's reference layer (WORK_PLAN §8). */
+  activeReference: ReferenceLayer
+  /** Sets the active page's reference image (adds the asset to the pool). */
+  setReferenceImage: (asset: Asset) => void
+  removeReferenceImage: () => void
+  setReferenceViewMode: (mode: ReferenceLayer['viewMode']) => void
+  setReferenceOpacity: (opacity: number) => void
+  setReferenceFit: (fit: ReferenceLayer['fit']) => void
+  setReferenceVisible: (visible: boolean) => void
   /** Replaces the whole document (used by import); hydrates the active page. */
   replaceDocument: (doc: BriefDocument) => void
   /** Latest synced document (for export/persistence). */
@@ -175,6 +190,22 @@ export function BriefDocumentProvider({ children }: { children: ReactNode }) {
     [hydrate],
   )
 
+  // Reference-layer mutations live only in the document (not the editor brief),
+  // so they never re-hydrate. The sync effect preserves the reference layer.
+  const mutateDoc = useCallback((fn: (doc: BriefDocument) => BriefDocument) => {
+    setDoc(fn(docRef.current))
+  }, [])
+
+  const setReferenceImage = useCallback(
+    (asset: Asset) => {
+      mutateDoc((d) => {
+        const withAsset = d.assets.some((a) => a.id === asset.id) ? d : { ...d, assets: [...d.assets, asset] }
+        return setPageReferenceImage(withAsset, withAsset.activePageId, asset.id)
+      })
+    },
+    [mutateDoc],
+  )
+
   const api = useMemo<BriefDocumentApi>(
     () => ({
       document: doc,
@@ -188,10 +219,17 @@ export function BriefDocumentProvider({ children }: { children: ReactNode }) {
       switchPage: (pageId) => {
         if (pageId !== docRef.current.activePageId) applyOp(setActivePage(docRef.current, pageId))
       },
+      activeReference: getActivePage(doc).reference,
+      setReferenceImage,
+      removeReferenceImage: () => mutateDoc((d) => removePageReference(d, d.activePageId)),
+      setReferenceViewMode: (mode) => mutateDoc((d) => setPageReferenceViewMode(d, d.activePageId, mode)),
+      setReferenceOpacity: (opacity) => mutateDoc((d) => setPageReferenceOpacity(d, d.activePageId, opacity)),
+      setReferenceFit: (fit) => mutateDoc((d) => setPageReferenceFit(d, d.activePageId, fit)),
+      setReferenceVisible: (visible) => mutateDoc((d) => setPageReferenceVisible(d, d.activePageId, visible)),
       replaceDocument,
       getDocument: () => docRef.current,
     }),
-    [doc, applyOp, replaceDocument],
+    [doc, applyOp, replaceDocument, setReferenceImage, mutateDoc],
   )
 
   return <BriefDocumentContext.Provider value={api}>{children}</BriefDocumentContext.Provider>

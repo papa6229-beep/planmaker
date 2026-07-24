@@ -8,9 +8,11 @@
  * true canvas space, so clicks, drags, drops, and future exports stay accurate.
  */
 
-import { useRef, useState, type DragEvent } from 'react'
+import { useRef, useState, type CSSProperties, type DragEvent } from 'react'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useAssets } from '../../features/assets/useAssets'
+import { useBriefDocument } from '../../features/document/useBriefDocument'
+import type { ReferenceLayer } from '../../domain/pageSchema'
 import { BriefBlockCard } from './BriefBlockCard'
 
 const CANVAS_SCALE = 0.6
@@ -19,12 +21,25 @@ function hasFiles(e: DragEvent): boolean {
   return Array.from(e.dataTransfer.types).includes('Files')
 }
 
+/** Overlay image sizing in the 840px canvas space, per the fit method (§8.3). */
+function overlayStyle(ref: ReferenceLayer, canvasWidth: number): CSSProperties {
+  const base: CSSProperties = { opacity: ref.opacity }
+  if (ref.fit === 'width') return { ...base, width: canvasWidth, height: 'auto' }
+  if (ref.fit === 'center') return { ...base, left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: 'auto', height: 'auto' }
+  return base // 'original' — natural size, pinned top-left
+}
+
 export function BriefCanvas() {
   const { state, selectBlock } = useBriefEditor()
-  const { uploadFiles } = useAssets()
+  const { uploadFiles, getUrl } = useAssets()
+  const { activeReference } = useBriefDocument()
   const { project, blocks } = state.brief
   const { canvasWidth, canvasHeight } = project
   const selected = new Set(state.selectedIds)
+
+  const overlayUrl = getUrl(activeReference.assetId)
+  const showOverlay =
+    activeReference.viewMode === 'overlay' && activeReference.visible && overlayUrl !== undefined
 
   const sheetRef = useRef<HTMLDivElement | null>(null)
   const [dragOver, setDragOver] = useState(false)
@@ -71,6 +86,16 @@ export function BriefCanvas() {
           }}
           onDrop={onDrop}
         >
+          {showOverlay && (
+            <img
+              className="canvas__overlay"
+              src={overlayUrl}
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              style={overlayStyle(activeReference, canvasWidth)}
+            />
+          )}
           {blocks.length === 0 && (
             <p className="canvas__empty">
               왼쪽 팔레트에서 블록을 클릭하거나, 이미지를 여기로 끌어다 놓으세요.

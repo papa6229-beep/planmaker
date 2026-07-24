@@ -36,6 +36,12 @@ export interface AssetsApi {
   urls: Record<string, string>
   getUrl: (assetId: string | undefined) => string | undefined
   uploadFiles: (files: Iterable<File>, options?: UploadOptions) => Promise<number>
+  /**
+   * Stores an image binary and returns its Asset metadata WITHOUT creating a
+   * block (WORK_PLAN §8.2). Used for page-level reference images, which are
+   * auxiliary assets, not output blocks. Returns null if the file is rejected.
+   */
+  storeImage: (file: File) => Promise<Asset | null>
   loadFromStore: () => Promise<void>
 }
 
@@ -104,6 +110,29 @@ export function AssetsProvider({ children }: { children: ReactNode }) {
     [assignImage, addImageBlock, addUrl],
   )
 
+  const storeImage = useCallback<AssetsApi['storeImage']>(async (file) => {
+    if (!isAcceptedImage(file) || !isAcceptedMime(file.type)) return null
+    const mime: ImageMimeType = file.type
+    const id = createId('asset')
+    const size = await readImageSize(file)
+
+    const asset: Asset = { id, fileName: file.name, mimeType: mime, byteSize: file.size }
+    if (size) {
+      asset.width = size.width
+      asset.height = size.height
+    }
+    await putAsset({
+      id,
+      blob: file,
+      fileName: file.name,
+      mimeType: mime,
+      byteSize: file.size,
+      ...(size ? { width: size.width, height: size.height } : {}),
+    })
+    addUrl(id, file)
+    return asset
+  }, [addUrl])
+
   const loadFromStore = useCallback<AssetsApi['loadFromStore']>(async () => {
     const stored = await getAllAssets()
     const next: Record<string, string> = {}
@@ -128,9 +157,10 @@ export function AssetsProvider({ children }: { children: ReactNode }) {
       urls,
       getUrl: (assetId) => (assetId === undefined ? undefined : urls[assetId]),
       uploadFiles,
+      storeImage,
       loadFromStore,
     }),
-    [urls, uploadFiles, loadFromStore],
+    [urls, uploadFiles, storeImage, loadFromStore],
   )
 
   return <AssetsContext.Provider value={api}>{children}</AssetsContext.Provider>
