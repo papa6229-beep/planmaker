@@ -8,12 +8,13 @@
 import { useEffect, useState } from 'react'
 import { BriefEditorProvider, useBriefEditor } from '../features/editor/useBriefEditor'
 import { AssetsProvider, useAssets } from '../features/assets/useAssets'
-import { Persistence } from '../features/assets/Persistence'
+import { BriefDocumentProvider } from '../features/document/useBriefDocument'
 import { imageFilesFromClipboard } from '../features/assets/imageUtils'
 import { isImageBlock } from '../domain/blockTypes'
 import { EventBriefIoProvider, useEventBriefIo } from '../features/export/useEventBriefIo'
 import { EventBriefIoDialogs } from '../features/export/EventBriefIoDialogs'
 import { TopToolbar } from '../components/toolbar/TopToolbar'
+import { PageTabs } from '../components/pages/PageTabs'
 import { BlockPalette } from '../components/palette/BlockPalette'
 import { BriefCanvas } from '../components/canvas/BriefCanvas'
 import { PropertiesPanel } from '../components/inspector/PropertiesPanel'
@@ -128,13 +129,15 @@ function Workspace() {
       <TopToolbar onShowSummary={() => setSummaryOpen(true)} />
       <main className="workspace">
         <BlockPalette />
-        <BriefCanvas />
+        <div className="workspace__center">
+          <PageTabs />
+          <BriefCanvas />
+        </div>
         <PropertiesPanel />
       </main>
       <KeyboardShortcuts />
       <GlobalPaste />
       <GlobalEventBriefDrop />
-      <Persistence />
       <EventBriefIoDialogs />
       {summaryOpen && <SummaryPanel onClose={() => setSummaryOpen(false)} />}
     </div>
@@ -145,9 +148,11 @@ export function AppShell() {
   return (
     <BriefEditorProvider>
       <AssetsProvider>
-        <EventBriefIoProvider>
-          <Workspace />
-        </EventBriefIoProvider>
+        <BriefDocumentProvider>
+          <EventBriefIoProvider>
+            <Workspace />
+          </EventBriefIoProvider>
+        </BriefDocumentProvider>
       </AssetsProvider>
     </BriefEditorProvider>
   )
