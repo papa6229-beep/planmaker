@@ -453,38 +453,247 @@ button { font-family: inherit; }
 }
 @keyframes io-spin { to { transform: rotate(360deg); } }
 
-/* ── Route placeholders (Phase 7 Step 1 shell) ────────────────────────────── */
-.route-shell {
+/* ══ Product shell — gate & list pages (WORK_PLAN Phase 7 §8, §14) ══════════ */
+/* Shell design tokens. Scoped to the shell so the editor keeps its own tokens. */
+.shell {
+  --app-bg: #f5f6fa;
+  --surface: #ffffff;
+  --surface-muted: #f8f9fc;
+  --text-primary: #171923;
+  --text-secondary: #667085;
+  --line: #e4e7ec;
+  --brief-accent: #4f6ef7;
+  --brief-accent-soft: #eef1fe;
+  --image-accent: #7557e8;
+  --image-accent-soft: #f1edfc;
+  --ok: #16a36a;
+  --warn: #d97706;
+
   min-height: 100vh;
+  background: var(--app-bg);
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  font-family:
+    Pretendard, 'Noto Sans KR', Inter, system-ui, -apple-system, 'Malgun Gothic', sans-serif;
+}
+
+/* Header */
+.app-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.app-header__inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 14px 24px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 24px;
 }
-.route-shell__card {
-  background: var(--color-panel);
-  border: 1px solid var(--color-border);
-  border-radius: 14px;
-  padding: 32px 36px;
-  max-width: 560px;
-  width: 100%;
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
-}
-.route-shell__title { margin: 0 0 8px; font-size: 22px; }
-.route-shell__desc { margin: 0 0 20px; color: var(--color-muted); font-size: 14px; line-height: 1.6; }
-.route-shell__links { display: flex; gap: 10px; flex-wrap: wrap; }
-.route-shell__link {
-  display: inline-block;
-  padding: 10px 16px;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 8px;
+.app-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   text-decoration: none;
-  color: var(--color-text);
+  color: var(--text-primary);
+  border-radius: 10px;
+  padding: 4px 6px;
+}
+.app-brand__mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--brief-accent-soft);
+  color: var(--brief-accent);
+}
+.app-brand__text { display: flex; flex-direction: column; line-height: 1.25; }
+.app-brand__name { font-weight: 700; font-size: 15px; }
+.app-brand__tag { font-size: 11px; color: var(--text-secondary); }
+
+/* Main container */
+.shell__main {
+  flex: 1;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 40px 24px 64px;
+}
+.shell__main--wide { max-width: 1180px; }
+
+/* Page header */
+.page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+.page-header__title { margin: 0; font-size: 24px; font-weight: 700; }
+.page-header__desc { margin: 6px 0 0; color: var(--text-secondary); font-size: 14px; }
+.page-header__actions { display: flex; gap: 8px; }
+
+/* Gate */
+.gate { padding-top: 24px; }
+.gate__intro { text-align: center; margin-bottom: 36px; }
+.gate__title { margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
+.gate__subtitle { margin: 12px 0 0; color: var(--text-secondary); font-size: 15px; }
+.gate__cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+/* Entry card (whole card is a link) */
+.entry-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 28px 28px 24px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  text-decoration: none;
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease;
+}
+.entry-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(16, 24, 40, 0.1);
+}
+.entry-card__icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 13px;
+  margin-bottom: 6px;
+}
+.entry-card__audience {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+.entry-card__title { margin: 0; font-size: 20px; font-weight: 700; }
+.entry-card__desc { margin: 0; color: var(--text-secondary); font-size: 14px; line-height: 1.6; }
+.entry-card__note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  align-self: flex-start;
+}
+.entry-card__stats { list-style: none; display: flex; gap: 18px; margin: 4px 0 0; padding: 0; }
+.entry-card__stat { display: flex; flex-direction: column; }
+.entry-card__stat-value { font-size: 20px; font-weight: 700; }
+.entry-card__stat-label { font-size: 12px; color: var(--text-secondary); }
+.entry-card__cta {
+  margin-top: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
   font-size: 14px;
 }
-.route-shell__link:hover { background: #f3f5f9; }
-.route-shell__link--brief { border-color: var(--color-accent); color: var(--color-accent); }
-.route-shell__link--image { border-color: var(--color-publishing); color: var(--color-publishing); }
+.entry-card--brief .entry-card__icon { background: var(--brief-accent-soft); color: var(--brief-accent); }
+.entry-card--brief .entry-card__cta { color: var(--brief-accent); }
+.entry-card--brief:hover { border-color: var(--brief-accent); }
+.entry-card--image .entry-card__icon { background: var(--image-accent-soft); color: var(--image-accent); }
+.entry-card--image .entry-card__cta { color: var(--image-accent); }
+.entry-card--image:hover { border-color: var(--image-accent); }
+
+/* Status summary + badges */
+.req-summary { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; }
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 13px;
+}
+.badge__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-secondary); }
+.badge__value { font-weight: 700; }
+.badge--violet .badge__dot { background: var(--image-accent); }
+.badge--info .badge__dot { background: var(--brief-accent); }
+.badge--success .badge__dot { background: var(--ok); }
+.badge--warning .badge__dot { background: var(--warn); }
+
+/* Empty state */
+.empty-state {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 56px 32px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.empty-state__icon {
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 15px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.empty-state__title { margin: 0; font-size: 17px; font-weight: 700; }
+.empty-state__desc { margin: 0; max-width: 420px; color: var(--text-secondary); font-size: 14px; line-height: 1.7; }
+.empty-state__action { margin-top: 14px; }
+
+/* Shell buttons (larger, primary for CTAs) */
+.shell .btn {
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: 14px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+.shell .btn:hover { background: var(--surface-muted); }
+.shell .btn--primary {
+  background: var(--brief-accent);
+  border-color: var(--brief-accent);
+  color: #fff;
+}
+.shell .btn--primary:hover { background: #3f5bde; }
+.shell .btn--lg { padding: 10px 18px; font-weight: 600; }
+
+.shell :focus-visible { outline: 2px solid var(--brief-accent); outline-offset: 2px; }
+
+/* Cards collapse to one column on narrow screens (no horizontal scroll). */
+@media (max-width: 780px) {
+  .gate__cards { grid-template-columns: 1fr; }
+  .gate__title { font-size: 24px; }
+}
+
+/* Respect reduced-motion preferences. */
+@media (prefers-reduced-motion: reduce) {
+  .entry-card { transition: none; }
+  .entry-card:hover { transform: none; }
+  .shell .btn { transition: none; }
+}
 
 /* ── Minimal responsiveness (desktop-first, WORK_PLAN §7). ─────────────────── */
 @media (max-width: 1024px) {

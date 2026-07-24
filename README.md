@@ -15,8 +15,9 @@
 - ✅ **Phase 4** — 이미지 자산: 파일 업로드·다중 업로드·드래그앤드롭·Ctrl+V 붙여넣기, 원본 파일명/투명 배경 보존, IndexedDB(Dexie) 자동저장 및 새로고침 복구
 - ✅ **Phase 5** — 분리된 정보 영역: 디자인 입력 / 참고자료 / 퍼블리싱 3영역 시각 구분, 규칙 기반 AI 요약 미리보기(퍼블리싱 링크는 AI 요약에 미포함)
 - ✅ **Phase 6** — `.eventbrief` 내보내기/불러오기: ZIP 패키징(manifest·brief·preview·assets/references), 내보내기 검증, preview.png(840px) 생성, 트랜잭션 방식 복원(블록·좌표·그룹·이미지 바이트 동일)
-- 🚧 **Phase 7 (Step 1)** — 제품 셸 도메인 기반: 멀티페이지 문서 스키마(`BriefDocument`)·페이지 순수 함수·v1→v2 마이그레이션·페이지별 참고 이미지 레이어·zoom 뷰 상태 분리, react-router-dom 최소 라우팅 셸(게이트/목록/편집기 진입). UI 재디자인·요청 상태·인라인 편집은 다음 Step
-- ⛔ Phase 7 나머지 Step 및 AI 연결은 아직 구현하지 않음
+- ✅ **Phase 7 (Step 1)** — 제품 셸 도메인 기반: 멀티페이지 문서 스키마(`BriefDocument`)·페이지 순수 함수·v1→v2 마이그레이션·페이지별 참고 이미지 레이어·zoom 뷰 상태 분리, react-router-dom 최소 라우팅 셸(게이트/목록/편집기 진입)
+- 🚧 **Phase 7 (Step 2)** — 진입 게이트·공통 제품 셸 UI: 앱 헤더/브랜드, 업무 선택 게이트(기획서 생성·이미지 생성 2카드), `/briefs`·`/image-requests` 정직한 빈 상태(가짜 목록·가짜 건수 없음), 향후 요청 KPI 주입용 구조만 준비. 편집기(`/briefs/new`·`/briefs/:id`)는 기존 그대로 마운트
+- ⛔ Phase 7 나머지 Step(요청 저장소·인라인 편집) 및 AI 연결은 아직 구현하지 않음
 
 ### 멀티페이지 도메인 (Phase 7 Step 1)
 
@@ -26,6 +27,15 @@
 - 페이지 추가/복제(ID 재생성)/삭제/순서변경 순수 함수, 마지막 페이지 삭제 불가·활성 페이지 불변식 유지
 - **zoom은 저장하지 않는 뷰 상태**(`canvasView.ts`) — `BriefDocument`/`.eventbrief`에 미포함
 - 라우트: `/` · `/briefs` · `/briefs/new` · `/briefs/:id`(편집기) · `/image-requests` · `/image-requests/:id`
+
+### 진입 게이트 · 제품 셸 UI (Phase 7 Step 2)
+
+- 공통 셸 컴포넌트(`src/components/shell/`): `AppShellLayout` · `AppHeader` · `AppBrand` · `PageHeader` · `EmptyState` · `StatusBadge`
+- `/` 게이트: 앱 헤더 + "어떤 작업을 시작할까요?" 인트로 + 진입 카드 2개(**기획서 생성** → `/briefs` 파랑, **이미지 생성** → `/image-requests` 보라). 카드 전체가 키보드 포커스 가능한 단일 링크
+- **가짜 데이터 없음**: 요청 건수·상태를 지어내지 않음. 이미지 카드는 "요청 관리 연결 예정" 중립 안내만 표시하고, 향후 `RequestRepository` KPI(신규/작업 중/완료/전체)를 주입할 슬롯(`EntryCard.stats`)만 준비
+- `/briefs`·`/image-requests`: 정직한 빈 상태. `/image-requests`의 신규/작업 중/완료 배지는 실제 값 0(지어낸 숫자 아님)
+- 편집기(`/briefs/new`·`/briefs/:id`)는 기존 `AppShell`을 **수정 없이** 마운트
+- 디자인 토큰은 `.shell` 클래스에 스코프 → 편집기 스타일과 분리. 색은 역할 구분에만 사용, 그라디언트/글로우 없음, `prefers-reduced-motion` 대응
 
 ### 내보내기 / 불러오기 (Phase 6)
 
