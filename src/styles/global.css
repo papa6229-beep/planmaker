@@ -65,32 +65,114 @@ button { font-family: inherit; }
 
 .toolbar__file-input { display: none; }
 
-/* ── App / toolbar ────────────────────────────────────────────────────────── */
+/* ── App / editor top bar (Phase 7 §7.1) ──────────────────────────────────── */
 .app { display: flex; flex-direction: column; height: 100vh; }
 
-.toolbar {
+.editor-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 10px 16px;
+  padding: 8px 16px;
   background: var(--color-panel);
   border-bottom: 1px solid var(--color-border);
   flex-wrap: wrap;
 }
-.toolbar__brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
-.toolbar__logo { font-weight: 700; font-size: 15px; }
-.toolbar__project {
+
+.editor-topbar__left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 380px;
+}
+.editor-topbar__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  color: var(--color-text);
+  text-decoration: none;
   font-size: 13px;
-  color: var(--color-muted);
-  max-width: 240px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background 160ms ease;
+}
+.editor-topbar__back:hover { background: #f3f5f9; }
+.editor-topbar__mode {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  border-radius: 999px;
+  padding: 4px 10px;
   white-space: nowrap;
 }
-.toolbar__actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.toolbar__divider { width: 1px; height: 20px; background: var(--color-border); margin: 0 4px; }
-.toolbar__status { font-size: 12px; color: var(--color-muted); }
+.editor-topbar__title {
+  flex: 1 1 auto;
+  min-width: 140px;
+  max-width: 420px;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+.editor-topbar__title::placeholder { color: var(--color-muted); font-weight: 400; }
+.editor-topbar__title:disabled { background: #f3f5f9; color: var(--color-muted); }
+
+.editor-topbar__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.editor-topbar__status { font-size: 12px; color: var(--color-muted); white-space: nowrap; }
+.editor-topbar__divider { width: 1px; height: 20px; background: var(--color-border); }
+.editor-topbar__actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* 보조 메뉴 (overflow) — a native <details> disclosure. */
+.editor-topbar__menu { position: relative; }
+.editor-topbar__menu-trigger { list-style: none; cursor: pointer; user-select: none; }
+.editor-topbar__menu-trigger::-webkit-details-marker { display: none; }
+.editor-topbar__menu-trigger::after { content: '▾'; margin-left: 4px; font-size: 10px; }
+.editor-topbar__menu:not([open]) .editor-topbar__menu-panel { display: none; }
+.editor-topbar__menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  padding: 6px;
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(20, 23, 33, 0.12);
+}
+.editor-topbar__menu-item {
+  text-align: left;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.editor-topbar__menu-item:hover:not(:disabled) { background: #f3f5f9; }
+.editor-topbar__menu-item:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.editor-topbar__submit { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.editor-topbar__submit-hint { margin: 0; font-size: 11px; color: var(--color-muted); white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .editor-topbar__back { transition: none; }
+}
 
 /* ── Workspace: 3 columns ─────────────────────────────────────────────────── */
 .workspace {

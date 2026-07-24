@@ -61,6 +61,7 @@ export type EditorAction =
   | { type: 'ASSIGN_IMAGE'; blockId: string; asset: Asset; image?: Partial<BlockImageMeta> }
   | { type: 'ADD_IMAGE_BLOCK'; asset: Asset; position?: { x: number; y: number }; blockType?: BlockType; image?: Partial<BlockImageMeta> }
   | { type: 'REMOVE_BLOCK_ASSET'; blockId: string }
+  | { type: 'SET_PROJECT_TITLE'; title: string; coalesceKey?: string }
   | { type: 'NEW_BRIEF' }
 
 /** Builds the initial editor state (also used by "새로 만들기"). */
@@ -346,6 +347,16 @@ function removeBlockAsset(state: EditorState, blockId: string): EditorState {
   return { ...state, brief: { ...state.brief, blocks, assets } }
 }
 
+/**
+ * Sets the project title — the single source of truth for the name shown in the
+ * top bar, the briefs list, and the gate (WORK_PLAN §7.1). Editing coalesces
+ * into one undo step via the history wrapper.
+ */
+function setProjectTitle(state: EditorState, title: string): EditorState {
+  if (state.brief.project.title === title) return state
+  return { ...state, brief: { ...state.brief, project: { ...state.brief.project, title } } }
+}
+
 /** Pure reducer for all single-step editor transitions. */
 export function briefReducer(state: EditorState, action: EditorAction): EditorState {
   switch (action.type) {
@@ -375,6 +386,8 @@ export function briefReducer(state: EditorState, action: EditorAction): EditorSt
       return addImageBlock(state, action.asset, action.blockType ?? 'main_product_image', action.position, action.image)
     case 'REMOVE_BLOCK_ASSET':
       return removeBlockAsset(state, action.blockId)
+    case 'SET_PROJECT_TITLE':
+      return setProjectTitle(state, action.title)
     case 'NEW_BRIEF':
       return createInitialEditorState()
     default:

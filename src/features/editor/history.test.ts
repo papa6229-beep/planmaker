@@ -71,6 +71,21 @@ describe('history — gesture coalescing', () => {
     h = historyReducer(h, { type: 'MOVE_BLOCK', blockId: id, x: 200, y: 200, coalesceKey: key })
     expect(h.past.length).toBe(afterFirstGesture + 1)
   })
+
+  it('collapses a run of title keystrokes into one undo step', () => {
+    let h = createInitialHistoryState()
+    const depthBefore = h.past.length
+    const key = 'project-title'
+    for (const title of ['여', '여름', '여름 세', '여름 세일']) {
+      h = historyReducer(h, { type: 'SET_PROJECT_TITLE', title, coalesceKey: key })
+    }
+    // One checkpoint for the whole typing run…
+    expect(h.past.length).toBe(depthBefore + 1)
+    expect(h.present.brief.project.title).toBe('여름 세일')
+    // …and a single undo reverts to the pre-typing title.
+    h = historyReducer(h, { type: 'UNDO' })
+    expect(h.present.brief.project.title).not.toBe('여름 세일')
+  })
 })
 
 describe('history — HYDRATE', () => {

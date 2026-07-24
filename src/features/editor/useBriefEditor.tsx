@@ -44,6 +44,7 @@ export interface BriefEditorApi {
   assignImage: (blockId: string, asset: Asset, image?: Partial<BlockImageMeta>) => void
   addImageBlock: (asset: Asset, position?: { x: number; y: number }, image?: Partial<BlockImageMeta>) => void
   removeBlockAsset: (blockId: string) => void
+  setProjectTitle: (title: string, coalesceKey?: string) => void
   hydrate: (brief: EventBrief) => void
   newBrief: () => void
   undo: () => void
@@ -92,6 +93,10 @@ export function BriefEditorProvider({ children }: { children: ReactNode }) {
       addImageBlock: (asset, position, image) =>
         dispatch({ type: 'ADD_IMAGE_BLOCK', asset, ...(position ? { position } : {}), ...(image ? { image } : {}) }),
       removeBlockAsset: (blockId) => dispatch({ type: 'REMOVE_BLOCK_ASSET', blockId }),
+      setProjectTitle: (title, coalesceKey) =>
+        dispatch(coalesceKey === undefined
+          ? { type: 'SET_PROJECT_TITLE', title }
+          : { type: 'SET_PROJECT_TITLE', title, coalesceKey }),
       hydrate: (brief) => dispatch({ type: 'HYDRATE', brief }),
       newBrief: () => dispatch({ type: 'NEW_BRIEF' }),
       undo: () => dispatch({ type: 'UNDO' }),

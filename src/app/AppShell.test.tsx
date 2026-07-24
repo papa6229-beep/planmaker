@@ -1,7 +1,17 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
+
+/** The editor runs inside the router (mounted at /briefs/new · /briefs/:id). */
+function renderShell() {
+  return render(
+    <MemoryRouter initialEntries={['/briefs/new']}>
+      <AppShell />
+    </MemoryRouter>,
+  )
+}
 
 function panels() {
   return {
@@ -13,7 +23,7 @@ function panels() {
 
 describe('AppShell — 3-column layout', () => {
   it('renders palette, canvas, and inspector', () => {
-    render(<AppShell />)
+    renderShell()
     const { palette, canvas, inspector } = panels()
     expect(palette).toBeTruthy()
     expect(canvas).toBeTruthy()
@@ -23,7 +33,7 @@ describe('AppShell — 3-column layout', () => {
   })
 
   it('separates design-input blocks from reference/publishing blocks', () => {
-    render(<AppShell />)
+    renderShell()
     expect(screen.getByRole('region', { name: '디자인 입력 블록' })).toBeTruthy()
     expect(screen.getByRole('region', { name: '참고 · 퍼블리싱 블록' })).toBeTruthy()
   })
@@ -32,7 +42,7 @@ describe('AppShell — 3-column layout', () => {
 describe('AppShell — block creation & selection', () => {
   it('creates a factory block from the palette and auto-selects it', async () => {
     const user = userEvent.setup()
-    render(<AppShell />)
+    renderShell()
     const { palette, canvas, inspector } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '메인 문구' }))
@@ -46,7 +56,7 @@ describe('AppShell — block creation & selection', () => {
 
   it('switches selection when another canvas card is clicked', async () => {
     const user = userEvent.setup()
-    render(<AppShell />)
+    renderShell()
     const { palette, canvas, inspector } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '메인 문구' }))
@@ -64,7 +74,7 @@ describe('AppShell — block creation & selection', () => {
 describe('AppShell — deletion', () => {
   it('deletes the selected block via the delete button and clears selection', async () => {
     const user = userEvent.setup()
-    render(<AppShell />)
+    renderShell()
     const { palette, canvas, inspector } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '메인 문구' }))
@@ -78,7 +88,7 @@ describe('AppShell — deletion', () => {
 
   it('deletes with the Delete key when focus is not in a text field', async () => {
     const user = userEvent.setup()
-    render(<AppShell />)
+    renderShell()
     const { palette, canvas } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '메인 문구' }))
@@ -91,7 +101,7 @@ describe('AppShell — deletion', () => {
 
   it('does NOT delete a block when Delete is pressed inside a text field', async () => {
     const user = userEvent.setup()
-    render(<AppShell />)
+    renderShell()
     const { palette, canvas, inspector } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '메인 문구' }))
@@ -107,7 +117,7 @@ describe('AppShell — deletion', () => {
 describe('AppShell — editing', () => {
   it('edits the label and reflects it on the canvas card', async () => {
     const user = userEvent.setup()
-    render(<AppShell />)
+    renderShell()
     const { palette, canvas, inspector } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '메인 문구' }))

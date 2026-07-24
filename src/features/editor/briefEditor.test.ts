@@ -281,6 +281,24 @@ describe('publishing separation still holds through the editor', () => {
   })
 })
 
+describe('SET_PROJECT_TITLE', () => {
+  it('updates the project title without touching blocks or selection', () => {
+    let state = addBlockOf(createInitialEditorState(), 'main_headline')
+    const selectedBefore = state.selectedIds
+    const blocksBefore = state.brief.blocks
+    state = briefReducer(state, { type: 'SET_PROJECT_TITLE', title: '여름 프로모션' })
+    expect(state.brief.project.title).toBe('여름 프로모션')
+    expect(state.brief.blocks).toBe(blocksBefore)
+    expect(state.selectedIds).toBe(selectedBefore)
+  })
+
+  it('is a no-op (same reference) when the title is unchanged', () => {
+    const state = createInitialEditorState()
+    const same = briefReducer(state, { type: 'SET_PROJECT_TITLE', title: state.brief.project.title })
+    expect(same).toBe(state)
+  })
+})
+
 describe('nextBlockPosition', () => {
   it('starts at the top-left margin for an empty canvas', () => {
     const pos = nextBlockPosition([])
