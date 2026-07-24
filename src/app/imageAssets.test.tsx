@@ -78,7 +78,7 @@ describe('image assets — upload', () => {
 
     // Two image cards appear (uploads are async and sequential).
     await waitFor(() => {
-      expect(within(canvas).getAllByRole('button')).toHaveLength(2)
+      expect(sheet.querySelectorAll('.block-card')).toHaveLength(2)
     })
     await waitFor(async () => {
       expect(await getAllAssets()).toHaveLength(2)

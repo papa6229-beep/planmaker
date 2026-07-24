@@ -35,7 +35,7 @@ describe('AppShell — 3-column layout', () => {
   it('separates design-input blocks from reference/publishing blocks', () => {
     renderShell()
     expect(screen.getByRole('region', { name: '디자인 입력 블록' })).toBeTruthy()
-    expect(screen.getByRole('region', { name: '참고 · 퍼블리싱 블록' })).toBeTruthy()
+    expect(screen.getByRole('region', { name: '퍼블리싱 정보' })).toBeTruthy()
   })
 })
 
@@ -60,19 +60,19 @@ describe('AppShell — block creation & selection', () => {
     const { palette, canvas, inspector } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '메인 문구' }))
-    await user.click(within(palette).getByRole('button', { name: '혜택' }))
-    // Benefit is selected now (inspector header shows its type).
-    expect(within(inspector).getByText('혜택')).toBeTruthy()
+    await user.click(within(palette).getByRole('button', { name: '서브 문구' }))
+    // Sub headline is selected now (inspector header shows its type).
+    expect(within(inspector).getByText('서브 문구')).toBeTruthy()
 
     // Click the main headline card → inspector reflects it.
     await user.click(within(canvas).getByRole('button', { name: /메인 문구/ }))
     expect(within(inspector).getByText('메인 문구')).toBeTruthy()
-    expect(within(inspector).queryByText('혜택')).toBeNull()
+    expect(within(inspector).queryByText('서브 문구')).toBeNull()
   })
 })
 
 describe('AppShell — deletion', () => {
-  it('deletes the selected block via the delete button and clears selection', async () => {
+  it('deletes the selected block via the card menu and clears selection', async () => {
     const user = userEvent.setup()
     renderShell()
     const { palette, canvas, inspector } = panels()
@@ -80,7 +80,8 @@ describe('AppShell — deletion', () => {
     await user.click(within(palette).getByRole('button', { name: '메인 문구' }))
     expect(within(canvas).getByRole('button', { name: /메인 문구/ })).toBeTruthy()
 
-    await user.click(within(inspector).getByRole('button', { name: '블록 삭제' }))
+    // The inspector no longer has a delete button (§11.1); delete via the card ⋯ menu.
+    await user.click(within(canvas).getByRole('button', { name: '삭제' }))
 
     expect(within(canvas).queryByRole('button', { name: /메인 문구/ })).toBeNull()
     expect(within(inspector).getByText('선택된 블록이 없습니다')).toBeTruthy()
