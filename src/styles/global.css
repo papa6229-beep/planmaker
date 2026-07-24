@@ -395,6 +395,45 @@ button { font-family: inherit; }
 .ref-view__opacity-value { width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
 .ref-view__fit select { font-size: 12px; padding: 2px 4px; }
 
+/* Canvas controls row: reference view modes (left) + zoom controls (right). */
+.canvas-controls {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: var(--color-panel);
+  border-bottom: 1px solid var(--color-border);
+}
+/* Inside the shared row the reference bar drops its own frame. */
+.canvas-controls .ref-view {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border-bottom: 0;
+}
+.canvas-toolbar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 6px 12px;
+}
+.canvas-toolbar__btn { padding: 4px 10px; font-size: 15px; line-height: 1; min-width: 30px; }
+.canvas-toolbar__value {
+  min-width: 46px;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted);
+}
+.canvas-toolbar__fit.is-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
 .ref-side {
   flex: 0 0 40%;
   min-width: 220px;

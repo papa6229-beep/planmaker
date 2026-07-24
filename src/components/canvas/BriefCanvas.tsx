@@ -4,18 +4,21 @@
  * positions. Phase 3 enables move (drag) and resize on the cards; Phase 4 adds
  * image drag-and-drop (WORK_PLAN §11) that drops new image blocks at the cursor.
  *
- * The 840px sheet is scaled down to fit the screen; block coordinates stay in
- * true canvas space, so clicks, drags, drops, and future exports stay accurate.
+ * The 840px sheet is displayed at the current zoom; block coordinates stay in
+ * true canvas space, so clicks, drags, drops, and exports stay accurate. Zoom
+ * is view-only (WORK_PLAN §14.7, `canvasView.ts`) and never saved.
  */
 
-import { useRef, useState, type CSSProperties, type DragEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 'react'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useAssets } from '../../features/assets/useAssets'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
+import { useCanvasView } from '../../features/editor/useCanvasView'
 import type { ReferenceLayer } from '../../domain/pageSchema'
 import { BriefBlockCard } from './BriefBlockCard'
 
-const CANVAS_SCALE = 0.6
+/** Horizontal padding of the `.canvas` scroll container (keep in sync with CSS). */
+const CANVAS_PADDING = 24
 
 function hasFiles(e: DragEvent): boolean {
   return Array.from(e.dataTransfer.types).includes('Files')
@@ -33,6 +36,7 @@ export function BriefCanvas() {
   const { state, selectBlock } = useBriefEditor()
   const { uploadFiles, getUrl } = useAssets()
   const { activeReference } = useBriefDocument()
+  const { zoom, reportViewport } = useCanvasView()
   const { project, blocks } = state.brief
   const { canvasWidth, canvasHeight } = project
   const selected = new Set(state.selectedIds)
@@ -41,8 +45,21 @@ export function BriefCanvas() {
   const showOverlay =
     activeReference.viewMode === 'overlay' && activeReference.visible && overlayUrl !== undefined
 
+  const canvasRef = useRef<HTMLElement | null>(null)
   const sheetRef = useRef<HTMLDivElement | null>(null)
   const [dragOver, setDragOver] = useState(false)
+
+  // Measure the available width so fit-to-view can size the fixed 840px canvas.
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+    const measure = () => reportViewport(Math.max(0, el.clientWidth - CANVAS_PADDING * 2), canvasWidth)
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [reportViewport, canvasWidth])
 
   const onDrop = (e: DragEvent) => {
     if (!hasFiles(e)) return
@@ -52,16 +69,16 @@ export function BriefCanvas() {
     if (files.length === 0) return
     const rect = sheetRef.current?.getBoundingClientRect()
     const position = rect
-      ? { x: (e.clientX - rect.left) / CANVAS_SCALE, y: (e.clientY - rect.top) / CANVAS_SCALE }
+      ? { x: (e.clientX - rect.left) / zoom, y: (e.clientY - rect.top) / zoom }
       : undefined
     void uploadFiles(files, position ? { position } : {})
   }
 
   return (
-    <section className="canvas" aria-label="기획 캔버스">
+    <section className="canvas" aria-label="기획 캔버스" ref={canvasRef}>
       <div
         className="canvas__viewport"
-        style={{ width: canvasWidth * CANVAS_SCALE, height: canvasHeight * CANVAS_SCALE }}
+        style={{ width: canvasWidth * zoom, height: canvasHeight * zoom }}
       >
         <div
           ref={sheetRef}
@@ -69,7 +86,7 @@ export function BriefCanvas() {
           style={{
             width: canvasWidth,
             height: canvasHeight,
-            transform: `scale(${CANVAS_SCALE})`,
+            transform: `scale(${zoom})`,
           }}
           role="presentation"
           onPointerDown={(e) => {
@@ -106,7 +123,7 @@ export function BriefCanvas() {
               key={block.id}
               block={block}
               selected={selected.has(block.id)}
-              scale={CANVAS_SCALE}
+              scale={zoom}
               canvasWidth={canvasWidth}
               canvasHeight={canvasHeight}
             />
