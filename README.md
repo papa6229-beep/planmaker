@@ -14,7 +14,16 @@
 - ✅ **Phase 3** — 캔버스 편집: 드래그 이동(그룹 단위), 코너 리사이즈, 복제, 다중 선택·그룹화/해제, Undo/Redo(제스처 병합)
 - ✅ **Phase 4** — 이미지 자산: 파일 업로드·다중 업로드·드래그앤드롭·Ctrl+V 붙여넣기, 원본 파일명/투명 배경 보존, IndexedDB(Dexie) 자동저장 및 새로고침 복구
 - ✅ **Phase 5** — 분리된 정보 영역: 디자인 입력 / 참고자료 / 퍼블리싱 3영역 시각 구분, 규칙 기반 AI 요약 미리보기(퍼블리싱 링크는 AI 요약에 미포함)
-- ⛔ Phase 6 이후(내보내기, PNG 미리보기, AI 연결 등)는 아직 구현하지 않음
+- ✅ **Phase 6** — `.eventbrief` 내보내기/불러오기: ZIP 패키징(manifest·brief·preview·assets/references), 내보내기 검증, preview.png(840px) 생성, 트랜잭션 방식 복원(블록·좌표·그룹·이미지 바이트 동일)
+- ⛔ Phase 7 이후(샘플 fixture, AI 연결 등)는 아직 구현하지 않음
+
+### 내보내기 / 불러오기 (Phase 6)
+
+- 상단 **기획서 내보내기** → 검증(오류 차단 / 경고 확인) → `preview.png` 생성 → `{프로젝트명}.eventbrief`(ZIP) 다운로드
+- 상단 **기획서 불러오기** 또는 `.eventbrief` 파일을 화면에 드래그앤드롭
+- 불러오기는 전체 아카이브를 메모리에서 검증한 뒤에만 한 번에 교체(부분 복원·기존 프로젝트 손상 없음)
+- `.eventbrief` 내부 구조: `manifest.json` · `brief.json`(단일 원본) · `preview.png` · `assets/`(디자인 이미지) · `references/`(참고·퍼블리싱 이미지)
+- 이미지 ZIP 경로는 `{assetId}__{원본파일명}` 규칙으로 충돌 없이 생성, 원본 파일명/MIME/투명 PNG·GIF 바이너리 보존
 
 ### 정보 영역 분리 (Phase 5)
 

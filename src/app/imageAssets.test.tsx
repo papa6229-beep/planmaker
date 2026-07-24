@@ -31,7 +31,9 @@ describe('image assets — upload', () => {
 
     await user.click(within(palette).getByRole('button', { name: '메인 제품 이미지' }))
 
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    // Use the inspector's image input specifically (the toolbar also has a
+    // file input for .eventbrief import).
+    const fileInput = container.querySelector('.image-field__input') as HTMLInputElement
     expect(fileInput).not.toBeNull()
     await user.upload(fileInput, pngFile())
 
