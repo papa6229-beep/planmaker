@@ -7,6 +7,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react'
 import { BriefEditorProvider, useBriefEditor } from '../features/editor/useBriefEditor'
+import { CanvasViewProvider, useCanvasView } from '../features/editor/useCanvasView'
 import { AssetsProvider, useAssets } from '../features/assets/useAssets'
 import {
   BriefDocumentProvider,
@@ -21,6 +22,7 @@ import { TopToolbar } from '../components/toolbar/TopToolbar'
 import { PageTabs } from '../components/pages/PageTabs'
 import { BlockPalette } from '../components/palette/BlockPalette'
 import { BriefCanvas } from '../components/canvas/BriefCanvas'
+import { CanvasZoomControls } from '../components/canvas/CanvasZoomControls'
 import { PropertiesPanel } from '../components/inspector/PropertiesPanel'
 import { SummaryPanel } from '../components/summary/SummaryPanel'
 import { ReferenceTools } from '../components/reference/ReferenceTools'
@@ -36,11 +38,30 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 function KeyboardShortcuts() {
   const { selectedIds, primaryId, deleteSelected, duplicateBlock, undo, redo } = useBriefEditor()
+  const { stepIn, stepOut, resetTo100 } = useCanvasView()
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const inText = isEditableTarget(e.target) || isEditableTarget(document.activeElement)
       const mod = e.metaKey || e.ctrlKey
+
+      // Canvas zoom (view-only): Ctrl/⌘ with +/=/-/0. Requires a modifier, so it
+      // never interferes with typing; overrides the browser's page zoom here.
+      if (mod && (e.key === '=' || e.key === '+')) {
+        e.preventDefault()
+        stepIn()
+        return
+      }
+      if (mod && e.key === '-') {
+        e.preventDefault()
+        stepOut()
+        return
+      }
+      if (mod && e.key === '0') {
+        e.preventDefault()
+        resetTo100()
+        return
+      }
 
       // Undo / redo (suppressed in text fields so native text undo still works).
       if (mod && (e.key === 'z' || e.key === 'Z')) {
@@ -75,7 +96,7 @@ function KeyboardShortcuts() {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedIds, primaryId, deleteSelected, duplicateBlock, undo, redo])
+  }, [selectedIds, primaryId, deleteSelected, duplicateBlock, undo, redo, stepIn, stepOut, resetTo100])
 
   return null
 }
@@ -144,7 +165,10 @@ function Workspace({ mode, statusPanel }: { mode: 'brief' | 'image'; statusPanel
         <div className="workspace__center">
           <PageTabs />
           {statusPanel}
-          <ReferenceViewControls />
+          <div className="canvas-controls">
+            <ReferenceViewControls />
+            <CanvasZoomControls />
+          </div>
           <div className="stage">
             <BriefCanvas />
             {sideBySide && <ReferenceSideView />}
@@ -176,7 +200,9 @@ export function AppShell({ mode = 'brief', binding, statusPanel }: AppShellProps
       <AssetsProvider>
         <BriefDocumentProvider {...(binding ? { binding } : {})}>
           <EventBriefIoProvider>
-            <Workspace mode={mode} statusPanel={statusPanel} />
+            <CanvasViewProvider>
+              <Workspace mode={mode} statusPanel={statusPanel} />
+            </CanvasViewProvider>
           </EventBriefIoProvider>
         </BriefDocumentProvider>
       </AssetsProvider>

@@ -36,12 +36,14 @@ describe('canvas editing — drag to move', () => {
     const card = within(canvas).getByRole('button', { name: /메인 문구/ })
     const startLeft = px(card.style.left)
 
-    // Drag 60 screen px right → 100 canvas px at scale 0.6.
+    // Drag 60 screen px right. Zoom defaults to 100% (1:1) in jsdom (fit-to-view
+    // resolves to the default when the container reports 0 width), so screen
+    // delta == canvas delta.
     fireEvent.pointerDown(card, { button: 0, clientX: 100, clientY: 100 })
     fireEvent.pointerMove(window, { clientX: 160, clientY: 100 })
     fireEvent.pointerUp(window, { clientX: 160, clientY: 100 })
 
-    expect(px(card.style.left)).toBeCloseTo(startLeft + 100, 0)
+    expect(px(card.style.left)).toBeCloseTo(startLeft + 60, 0)
 
     // Undo returns it to the start.
     const { canvas: canvas2 } = panels()
@@ -65,10 +67,10 @@ describe('canvas editing — resize', () => {
     expect(seHandle).not.toBeNull()
 
     fireEvent.pointerDown(seHandle!, { button: 0, clientX: 200, clientY: 200 })
-    fireEvent.pointerMove(window, { clientX: 260, clientY: 200 }) // +60 screen → +100 canvas
+    fireEvent.pointerMove(window, { clientX: 260, clientY: 200 }) // +60 screen → +60 canvas at 100%
     fireEvent.pointerUp(window, { clientX: 260, clientY: 200 })
 
-    expect(px(card.style.width)).toBeCloseTo(startWidth + 100, 0)
+    expect(px(card.style.width)).toBeCloseTo(startWidth + 60, 0)
   })
 })
 
