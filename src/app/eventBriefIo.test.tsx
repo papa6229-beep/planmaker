@@ -71,17 +71,22 @@ describe('export UI', () => {
     // One of the created object URLs is the exported archive; it must parse as
     // a multi-page document (v2).
     let parsed: ImportedDocument | null = null
-    await waitFor(async () => {
-      for (const blob of created) {
-        try {
-          parsed = await readEventDocument(blob)
-          break
-        } catch {
-          /* not the archive */
+    // Generous timeout: packaging runs real JSZip work, which can exceed the
+    // default 1s under parallel test load (avoids a timing-only flake).
+    await waitFor(
+      async () => {
+        for (const blob of created) {
+          try {
+            parsed = await readEventDocument(blob)
+            break
+          } catch {
+            /* not the archive */
+          }
         }
-      }
-      expect(parsed).not.toBeNull()
-    })
+        expect(parsed).not.toBeNull()
+      },
+      { timeout: 5000 },
+    )
     const doc = parsed!.doc
     expect(doc.pages).toHaveLength(1)
     expect(doc.pages[0]!.blocks.some((b) => b.type === 'main_headline')).toBe(true)
