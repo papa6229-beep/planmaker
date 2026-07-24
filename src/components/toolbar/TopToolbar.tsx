@@ -1,24 +1,22 @@
 /**
- * Editor top bar (WORK_PLAN Phase 7 §7.1 — 기획서 화면 상단 재구성).
+ * Editor top bar (WORK_PLAN Phase 7 §7.1). In 기획서 생성 mode it carries the
+ * primary 전달하기 CTA; in 이미지 생성 mode (a request work page, §13.2) the mode
+ * label changes and the CTA is replaced by the request's status panel.
  *
- * Left:  게이트로 돌아가기 · `기획서 생성` 모드 표시 · 기획서 제목 입력란
- * Right: 자동 저장 상태 · 실행 취소 · 다시 실행 · AI 요약 · 보조 메뉴 · 전달하기
- *
- * The title input is the single source of truth for the project name (shown in
- * the briefs list and gate later). `전달하기` is the Primary CTA but is NOT wired
- * in this step — WorkRequest/RequestRepository and the actual submission flow
- * are Step 7. Clicking it only surfaces an honest "다음 단계에서 연결" notice;
- * no request is created and nothing is faked. The existing `.eventbrief` file
- * actions move into the overflow (보조) menu and stay fully functional.
+ * Step 7 wires 전달하기: it validates the title, snapshots the current
+ * multi-page document, and creates a submitted WorkRequest that shows up in the
+ * image-generation queue. The `.eventbrief` file actions stay in the overflow
+ * (보조) menu.
  */
 
 import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
+import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { useEventBriefIo } from '../../features/export/useEventBriefIo'
+import { useRequests } from '../../features/requests/useRequests'
 
 const TITLE_COALESCE_KEY = 'project-title'
-const SUBMIT_NOTICE = '요청 전달 기능은 다음 단계에서 연결됩니다.'
 
 function BackIcon() {
   return (
@@ -28,12 +26,17 @@ function BackIcon() {
   )
 }
 
-export function TopToolbar({ onShowSummary }: { onShowSummary: () => void }) {
+export function TopToolbar({ mode = 'brief', onShowSummary }: { mode?: 'brief' | 'image'; onShowSummary: () => void }) {
   const { state, setProjectTitle, newBrief, undo, redo, canUndo, canRedo, endInteraction } = useBriefEditor()
+  const { getDocument } = useBriefDocument()
   const { startExport, startImport, busy } = useEventBriefIo()
+  const { submit } = useRequests()
   const importInputRef = useRef<HTMLInputElement | null>(null)
+  const titleRef = useRef<HTMLInputElement | null>(null)
   const menuRef = useRef<HTMLDetailsElement | null>(null)
-  const [submitNotice, setSubmitNotice] = useState(false)
+  const [notice, setNotice] = useState('')
+  const [delivered, setDelivered] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const title = state.brief.project.title
 
   const closeMenu = () => {
@@ -48,15 +51,42 @@ export function TopToolbar({ onShowSummary }: { onShowSummary: () => void }) {
     }
   }
 
+  const handleSubmit = async () => {
+    const doc = getDocument()
+    if (!doc.project.title.trim()) {
+      setDelivered(false)
+      setNotice('기획서 제목을 입력해야 전달할 수 있습니다.')
+      titleRef.current?.focus()
+      return
+    }
+    if (!doc.pages.some((p) => p.blocks.length > 0)) {
+      setDelivered(false)
+      setNotice('내용이 있는 블록을 추가한 뒤 전달하세요.')
+      return
+    }
+    setSubmitting(true)
+    try {
+      await submit(doc, new Date().toISOString())
+      setDelivered(true)
+      setNotice('요청이 이미지 생성 목록에 전달되었습니다.')
+    } catch {
+      setDelivered(false)
+      setNotice('전달에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <header className="editor-topbar">
       <div className="editor-topbar__left">
-        <Link className="editor-topbar__back" to="/" aria-label="게이트로 돌아가기">
+        <Link className="editor-topbar__back" to={mode === 'image' ? '/image-requests' : '/'} aria-label={mode === 'image' ? '요청 목록으로 돌아가기' : '게이트로 돌아가기'}>
           <BackIcon />
-          <span>게이트</span>
+          <span>{mode === 'image' ? '요청 목록' : '게이트'}</span>
         </Link>
-        <span className="editor-topbar__mode" aria-label="현재 모드">기획서 생성</span>
+        <span className="editor-topbar__mode" aria-label="현재 모드">{mode === 'image' ? '이미지 생성' : '기획서 생성'}</span>
         <input
+          ref={titleRef}
           className="editor-topbar__title"
           type="text"
           value={title}
@@ -110,19 +140,28 @@ export function TopToolbar({ onShowSummary }: { onShowSummary: () => void }) {
           </details>
         </nav>
 
-        <div className="editor-topbar__submit">
-          <button
-            type="button"
-            className="btn btn--primary"
-            onClick={() => setSubmitNotice(true)}
-            aria-describedby="editor-topbar-submit-hint"
-          >
-            전달하기
-          </button>
-          <p id="editor-topbar-submit-hint" className="editor-topbar__submit-hint" role="status">
-            {submitNotice ? SUBMIT_NOTICE : '다음 단계 연결 예정'}
-          </p>
-        </div>
+        {mode === 'brief' && (
+          <div className="editor-topbar__submit">
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={() => void handleSubmit()}
+              disabled={submitting || busy}
+              aria-describedby="editor-topbar-submit-hint"
+            >
+              전달하기
+            </button>
+            <p id="editor-topbar-submit-hint" className="editor-topbar__submit-hint" role="status">
+              {notice || '이미지 생성 요청으로 전달합니다.'}
+              {delivered && (
+                <>
+                  {' '}
+                  <Link to="/image-requests">목록 보기</Link>
+                </>
+              )}
+            </p>
+          </div>
+        )}
 
         <input
           ref={importInputRef}

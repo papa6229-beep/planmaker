@@ -12,14 +12,17 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { AppShell } from './AppShell'
+import { RequestsProvider } from '../features/requests/useRequests'
 
 function renderEditor() {
   return render(
     <MemoryRouter initialEntries={['/briefs/new']}>
-      <Routes>
-        <Route path="/" element={<h1>게이트 화면</h1>} />
-        <Route path="/briefs/new" element={<AppShell />} />
-      </Routes>
+      <RequestsProvider>
+        <Routes>
+          <Route path="/" element={<h1>게이트 화면</h1>} />
+          <Route path="/briefs/new" element={<AppShell />} />
+        </Routes>
+      </RequestsProvider>
     </MemoryRouter>,
   )
 }
@@ -62,18 +65,17 @@ describe('editor top bar — Phase 7 Step 3', () => {
     expect(screen.getByRole('button', { name: '새로 만들기' })).toBeTruthy()
   })
 
-  it('renders 전달하기 as a non-functional placeholder (no request, no navigation)', async () => {
+  it('validates before delivering — an empty brief creates no request and does not navigate', async () => {
     const user = userEvent.setup()
     renderEditor()
 
     const submit = screen.getByRole('button', { name: '전달하기' })
-    const hint = screen.getByRole('status')
-    expect(hint.textContent).toBe('다음 단계 연결 예정')
+    expect(screen.getByRole('status').textContent).toContain('이미지 생성 요청으로 전달합니다.')
 
     await user.click(submit)
 
-    // Honest guidance appears; we stay in the editor and nothing was created.
-    expect(screen.getByRole('status').textContent).toBe('요청 전달 기능은 다음 단계에서 연결됩니다.')
+    // Empty brief → validation blocks delivery; we stay in the editor.
+    expect(screen.getByRole('status').textContent).toContain('내용이 있는 블록을 추가한 뒤 전달하세요.')
     expect(screen.getByRole('complementary', { name: '블록 팔레트' })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: '게이트 화면' })).toBeNull()
   })

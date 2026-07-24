@@ -13,6 +13,7 @@ import { render, screen, within, waitFor, fireEvent } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
+import { RequestsProvider } from '../features/requests/useRequests'
 import { clearAll, resetAssetStoreForTests, saveDocument } from '../services/assetStore'
 import { createEmptyDocument } from '../domain/pageSchema'
 import { createBlock, createEmptyBrief } from '../domain/factory'
@@ -20,7 +21,9 @@ import { createBlock, createEmptyBrief } from '../domain/factory'
 function renderShell() {
   return render(
     <MemoryRouter initialEntries={['/briefs/new']}>
-      <AppShell />
+      <RequestsProvider>
+        <AppShell />
+      </RequestsProvider>
     </MemoryRouter>,
   )
 }

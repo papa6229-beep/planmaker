@@ -48,8 +48,21 @@ import {
 import type { BriefDocument, BriefPage, ReferenceLayer } from '../../domain/pageSchema'
 import type { Asset, EventBrief } from '../../domain/briefSchema'
 import { loadDocument, pruneAssets, saveDocument } from '../../services/assetStore'
+import { allRequestAssetIds } from '../../services/requestStore'
 
 const AUTOSAVE_DEBOUNCE_MS = 3000
+
+/**
+ * How the provider loads and persists its document. The default binds to the
+ * single autosaved brief; the request work page (§13.2) binds to a work
+ * request's editable copy instead, leaving the submitted snapshot untouched.
+ */
+export interface DocumentBinding {
+  load: () => Promise<BriefDocument | null>
+  save: (doc: BriefDocument, now: number) => Promise<void>
+}
+
+const DEFAULT_BINDING: DocumentBinding = { load: loadDocument, save: saveDocument }
 
 export interface BriefDocumentApi {
   document: BriefDocument
@@ -113,7 +126,13 @@ function referencedAssetIds(doc: BriefDocument): string[] {
   return [...ids]
 }
 
-export function BriefDocumentProvider({ children }: { children: ReactNode }) {
+export function BriefDocumentProvider({
+  children,
+  binding = DEFAULT_BINDING,
+}: {
+  children: ReactNode
+  binding?: DocumentBinding
+}) {
   const { state, hydrate } = useBriefEditor()
   const { loadFromStore } = useAssets()
   const [doc, setDoc] = useState<BriefDocument>(() => briefToDocument(state.brief))
@@ -129,13 +148,15 @@ export function BriefDocumentProvider({ children }: { children: ReactNode }) {
   loadFromStoreRef.current = loadFromStore
   const briefRef = useRef(state.brief)
   briefRef.current = state.brief
+  const bindingRef = useRef(binding)
+  bindingRef.current = binding
 
   // Restore once on mount: a saved document (or migrated legacy v1 snapshot).
   useEffect(() => {
     let cancelled = false
     void (async () => {
       try {
-        const saved = await loadDocument()
+        const saved = await bindingRef.current.load()
         await loadFromStoreRef.current()
         if (!cancelled) {
           if (saved) {
@@ -164,12 +185,18 @@ export function BriefDocumentProvider({ children }: { children: ReactNode }) {
     setDoc((d) => syncActivePage(d, state.brief))
   }, [state.brief])
 
-  // Debounced autosave of the whole document + orphan-asset pruning.
+  // Debounced autosave of the whole document + orphan-asset pruning. Assets
+  // referenced by any delivered request are also kept, so a submitted snapshot
+  // never loses its images when the live document stops using them (§6).
   useEffect(() => {
     if (!readyRef.current) return
     const timer = setTimeout(() => {
-      void saveDocument(doc, Date.now())
-        .then(() => pruneAssets(referencedAssetIds(doc)))
+      void bindingRef.current.save(doc, Date.now())
+        .then(async () => {
+          const keep = new Set(referencedAssetIds(doc))
+          for (const id of await allRequestAssetIds()) keep.add(id)
+          await pruneAssets(keep)
+        })
         .catch(() => {
           // ignore: autosave is best-effort
         })

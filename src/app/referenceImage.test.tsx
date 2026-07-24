@@ -10,6 +10,7 @@ import { render, screen, within, waitFor, fireEvent } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
+import { RequestsProvider } from '../features/requests/useRequests'
 import { clearAll, getAllAssets, resetAssetStoreForTests } from '../services/assetStore'
 
 // jsdom cannot decode images; make dimension reading resolve deterministically.
@@ -21,7 +22,9 @@ vi.mock('../features/assets/imageUtils', async () => {
 function renderShell() {
   return render(
     <MemoryRouter initialEntries={['/briefs/new']}>
-      <AppShell />
+      <RequestsProvider>
+        <AppShell />
+      </RequestsProvider>
     </MemoryRouter>,
   )
 }
