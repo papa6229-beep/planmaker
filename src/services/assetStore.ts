@@ -86,6 +86,14 @@ export async function pruneAssets(referencedIds: Iterable<string>): Promise<void
   if (orphans.length > 0) await db().assets.bulkDelete(orphans)
 }
 
+/** Atomically replaces all stored asset blobs (used by import). */
+export async function replaceAssets(assets: StoredAsset[]): Promise<void> {
+  await db().transaction('rw', db().assets, async () => {
+    await db().assets.clear()
+    if (assets.length > 0) await db().assets.bulkPut(assets)
+  })
+}
+
 /** Clears everything (used by tests and a future "reset" action). */
 export async function clearAll(): Promise<void> {
   await db().transaction('rw', db().briefs, db().assets, async () => {

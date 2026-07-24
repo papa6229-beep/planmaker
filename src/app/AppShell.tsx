@@ -11,6 +11,8 @@ import { AssetsProvider, useAssets } from '../features/assets/useAssets'
 import { Persistence } from '../features/assets/Persistence'
 import { imageFilesFromClipboard } from '../features/assets/imageUtils'
 import { isImageBlock } from '../domain/blockTypes'
+import { EventBriefIoProvider, useEventBriefIo } from '../features/export/useEventBriefIo'
+import { EventBriefIoDialogs } from '../features/export/EventBriefIoDialogs'
 import { TopToolbar } from '../components/toolbar/TopToolbar'
 import { BlockPalette } from '../components/palette/BlockPalette'
 import { BriefCanvas } from '../components/canvas/BriefCanvas'
@@ -90,6 +92,35 @@ function GlobalPaste() {
   return null
 }
 
+/** Global `.eventbrief` drop (WORK_PLAN §8) — distinct from image drops, which
+ *  the canvas handles. Captured before the canvas so a brief never gets treated
+ *  as an image. */
+function GlobalEventBriefDrop() {
+  const { startImport } = useEventBriefIo()
+
+  useEffect(() => {
+    const isBriefFile = (f: File) => f.name.toLowerCase().endsWith('.eventbrief')
+    const onDragOver = (e: DragEvent) => {
+      if (Array.from(e.dataTransfer?.types ?? []).includes('Files')) e.preventDefault()
+    }
+    const onDrop = (e: DragEvent) => {
+      const file = Array.from(e.dataTransfer?.files ?? []).find(isBriefFile)
+      if (!file) return // not a brief → let the canvas handle image drops
+      e.preventDefault()
+      e.stopPropagation()
+      void startImport(file)
+    }
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('drop', onDrop, true) // capture: beat the canvas
+    return () => {
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('drop', onDrop, true)
+    }
+  }, [startImport])
+
+  return null
+}
+
 function Workspace() {
   const [summaryOpen, setSummaryOpen] = useState(false)
   return (
@@ -102,7 +133,9 @@ function Workspace() {
       </main>
       <KeyboardShortcuts />
       <GlobalPaste />
+      <GlobalEventBriefDrop />
       <Persistence />
+      <EventBriefIoDialogs />
       {summaryOpen && <SummaryPanel onClose={() => setSummaryOpen(false)} />}
     </div>
   )
@@ -112,7 +145,9 @@ export function AppShell() {
   return (
     <BriefEditorProvider>
       <AssetsProvider>
-        <Workspace />
+        <EventBriefIoProvider>
+          <Workspace />
+        </EventBriefIoProvider>
       </AssetsProvider>
     </BriefEditorProvider>
   )
