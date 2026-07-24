@@ -5,7 +5,7 @@
  * Shortcuts are suppressed while typing so text editing is never hijacked.
  */
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { BriefEditorProvider, useBriefEditor } from '../features/editor/useBriefEditor'
 import { AssetsProvider, useAssets } from '../features/assets/useAssets'
 import { Persistence } from '../features/assets/Persistence'
@@ -15,6 +15,7 @@ import { TopToolbar } from '../components/toolbar/TopToolbar'
 import { BlockPalette } from '../components/palette/BlockPalette'
 import { BriefCanvas } from '../components/canvas/BriefCanvas'
 import { PropertiesPanel } from '../components/inspector/PropertiesPanel'
+import { SummaryPanel } from '../components/summary/SummaryPanel'
 
 /** True when focus is in a text entry, so shortcuts must not fire. */
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -90,9 +91,10 @@ function GlobalPaste() {
 }
 
 function Workspace() {
+  const [summaryOpen, setSummaryOpen] = useState(false)
   return (
     <div className="app">
-      <TopToolbar />
+      <TopToolbar onShowSummary={() => setSummaryOpen(true)} />
       <main className="workspace">
         <BlockPalette />
         <BriefCanvas />
@@ -101,6 +103,7 @@ function Workspace() {
       <KeyboardShortcuts />
       <GlobalPaste />
       <Persistence />
+      {summaryOpen && <SummaryPanel onClose={() => setSummaryOpen(false)} />}
     </div>
   )
 }

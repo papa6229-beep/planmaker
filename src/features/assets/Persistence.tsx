@@ -29,14 +29,20 @@ export function Persistence() {
   const loadFromStoreRef = useRef(loadFromStore)
   loadFromStoreRef.current = loadFromStore
 
-  // Restore once on mount.
+  // Restore once on mount. Failures (e.g. IndexedDB unavailable in private
+  // mode) are non-fatal — the app just starts from a fresh brief.
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      const saved = await loadBrief()
-      await loadFromStoreRef.current()
-      if (!cancelled && saved) hydrateRef.current(saved)
-      loadedRef.current = true
+      try {
+        const saved = await loadBrief()
+        await loadFromStoreRef.current()
+        if (!cancelled && saved) hydrateRef.current(saved)
+      } catch {
+        // ignore: continue with the in-memory initial state
+      } finally {
+        loadedRef.current = true
+      }
     })()
     return () => {
       cancelled = true
@@ -48,7 +54,11 @@ export function Persistence() {
     if (!loadedRef.current) return
     const brief = state.brief
     const timer = setTimeout(() => {
-      void saveBrief(brief, Date.now()).then(() => pruneAssets(referencedAssetIds(brief.blocks)))
+      void saveBrief(brief, Date.now())
+        .then(() => pruneAssets(referencedAssetIds(brief.blocks)))
+        .catch(() => {
+          // ignore: autosave is best-effort
+        })
     }, AUTOSAVE_DEBOUNCE_MS)
     return () => clearTimeout(timer)
   }, [state.brief])

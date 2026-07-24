@@ -3,6 +3,7 @@
  * framework's afterEach global is present (vitest `globals: true`), but we
  * register cleanup explicitly so the suite is robust regardless of config.
  */
+import 'fake-indexeddb/auto'
 import { afterEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
 

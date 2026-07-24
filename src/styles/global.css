@@ -14,6 +14,8 @@
   --color-design: #2563eb;
   --color-reference: #b45309;
   --color-reference-soft: #fff7ed;
+  --color-publishing: #7c3aed;
+  --color-publishing-soft: #f4f0ff;
   --color-danger: #b91c1c;
   --color-warning: #b45309;
   --radius: 8px;
@@ -204,10 +206,15 @@ button { font-family: inherit; }
   border-color: var(--color-accent);
   box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
-.block-card--design-side { border-left-color: var(--color-design); }
-.block-card--reference-side {
+/* Three information areas (WORK_PLAN §7, Phase 5): design / reference / publishing. */
+.block-card--vis-design { border-left-color: var(--color-design); }
+.block-card--vis-reference {
   border-left-color: var(--color-reference);
   background: var(--color-reference-soft);
+}
+.block-card--vis-publishing {
+  border-left-color: var(--color-publishing);
+  background: var(--color-publishing-soft);
 }
 .block-card--grouped { border-style: dashed; }
 .block-card__group {
@@ -239,9 +246,13 @@ button { font-family: inherit; }
   padding: 1px 6px;
   border-radius: 999px;
 }
-.block-card--reference-side .block-card__visibility {
+.block-card--vis-reference .block-card__visibility {
   color: var(--color-reference);
   background: #fdebd3;
+}
+.block-card--vis-publishing .block-card__visibility {
+  color: var(--color-publishing);
+  background: var(--color-publishing-soft);
 }
 .block-card__required {
   font-size: 11px;
@@ -341,6 +352,51 @@ button { font-family: inherit; }
 .inspector__actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
 .inspector__actions .btn { flex: 1; }
 .inspector__delete { margin-top: 12px; width: 100%; }
+
+/* ── AI summary modal (WORK_PLAN §15, Phase 5) ────────────────────────────── */
+.summary-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 20, 30, 0.45);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 40px 16px;
+  overflow-y: auto;
+  z-index: 100;
+}
+.summary {
+  background: var(--color-panel);
+  border-radius: 10px;
+  width: min(720px, 100%);
+  padding: 20px 24px 28px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+.summary__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.summary__title { margin: 0; font-size: 18px; }
+.summary__note { margin: 0 0 16px; font-size: 12px; color: var(--color-muted); line-height: 1.6; }
+.summary__area {
+  border-left: 4px solid var(--color-border-strong);
+  padding: 4px 0 4px 14px;
+  margin-bottom: 18px;
+}
+.summary__area--design { border-left-color: var(--color-design); }
+.summary__area--reference { border-left-color: var(--color-reference); }
+.summary__area--publishing { border-left-color: var(--color-publishing); }
+.summary__area-title { margin: 0 0 10px; font-size: 14px; }
+.summary__area-title span { font-size: 11px; font-weight: 400; color: var(--color-muted); margin-left: 6px; }
+.summary__area--publishing .summary__area-title { color: var(--color-publishing); }
+.summary__field { display: flex; gap: 10px; margin-bottom: 8px; font-size: 13px; }
+.summary__field-label { flex: none; width: 120px; color: var(--color-muted); }
+.summary__field-value { flex: 1; }
+.summary__list { margin: 4px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.6; }
+.summary__field .summary__list { margin: 0; }
+.summary__empty { margin: 0; font-size: 13px; color: var(--color-muted); }
 
 /* ── Minimal responsiveness (desktop-first, WORK_PLAN §7). ─────────────────── */
 @media (max-width: 1024px) {

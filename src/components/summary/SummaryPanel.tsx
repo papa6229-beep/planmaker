@@ -1,0 +1,137 @@
+/**
+ * AI summary preview (WORK_PLAN §15, Phase 5). Surfaces the three separated
+ * information areas so the user can verify what the image-generation AI reads:
+ *
+ *   1. 디자인 입력 — the rule-based `designSummary` (headline, products,
+ *      benefits, CTAs, verbatim images, layout priority). Never contains a
+ *      publishing URL (structurally excluded by summaryBuilder).
+ *   2. 참고자료 — reference blocks the AI may consult.
+ *   3. 퍼블리싱 정보 — links/notes that are NOT sent to the AI.
+ *
+ * This is the visible proof of the Phase 5 completion gate: publishing links
+ * appear only in area 3.
+ */
+
+import { useEffect } from 'react'
+import { useBriefEditor } from '../../features/editor/useBriefEditor'
+import { buildDesignSummary, buildPublishingInfo } from '../../domain/summaryBuilder'
+
+function Field({ label, value }: { label: string; value: string | undefined }) {
+  if (!value) return null
+  return (
+    <div className="summary__field">
+      <span className="summary__field-label">{label}</span>
+      <span className="summary__field-value">{value}</span>
+    </div>
+  )
+}
+
+function List({ label, items }: { label: string; items: string[] }) {
+  if (items.length === 0) return null
+  return (
+    <div className="summary__field">
+      <span className="summary__field-label">{label}</span>
+      <ul className="summary__list">
+        {items.map((item, i) => (
+          <li key={`${label}-${i}`}>{item}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+export function SummaryPanel({ onClose }: { onClose: () => void }) {
+  const { state } = useBriefEditor()
+  const brief = state.brief
+  const design = buildDesignSummary(brief)
+  const publishing = buildPublishingInfo(brief)
+  const referenceBlocks = brief.blocks.filter((b) => b.aiVisibility === 'reference')
+  const labelOf = (blockId: string) => brief.blocks.find((b) => b.id === blockId)?.label ?? blockId
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div className="summary-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="summary"
+        role="dialog"
+        aria-modal="true"
+        aria-label="AI 요약 미리보기"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="summary__header">
+          <h2 className="summary__title">AI 요약 미리보기</h2>
+          <button type="button" className="btn" onClick={onClose} aria-label="닫기">닫기</button>
+        </header>
+        <p className="summary__note">
+          규칙 기반으로 생성되며 MVP에서는 AI를 호출하지 않습니다. 퍼블리싱 정보는 이미지 생성 AI에 전달되지 않습니다.
+        </p>
+
+        <section className="summary__area summary__area--design" aria-label="디자인 입력 요약">
+          <h3 className="summary__area-title">디자인 입력 <span>이미지 생성 AI가 읽는 정보</span></h3>
+          <Field label="메인 문구" value={design.mainHeadline} />
+          <List label="서브 문구" items={design.subHeadlines} />
+          <List label="필수 문구" items={design.requiredTexts.map((t) => `${t.label}: ${t.content}`)} />
+          <List
+            label="제품"
+            items={design.requiredProducts.map(
+              (p) => `${p.productName}${p.required ? ' (필수)' : ''}${p.allowTransform ? '' : ' · 변형 불가'}`,
+            )}
+          />
+          <List label="혜택·조건" items={design.requiredBenefits.map((b) => `${b.label}: ${b.content}`)} />
+          <Field label="기간" value={design.period} />
+          <Field label="가격" value={design.price} />
+          <Field label="할인율" value={design.discountRate} />
+          <List label="주의 문구" items={design.cautions} />
+          <List
+            label="버튼 문구"
+            items={design.ctaButtons.map((c) => `${c.text} ${c.hasLink ? '(연결 있음)' : '(연결 없음)'}`)}
+          />
+          <List
+            label="그대로 삽입할 이미지"
+            items={design.verbatimImages.map((v) => v.productName ?? labelOf(v.blockId))}
+          />
+          <List
+            label="대략적 배치 우선순위"
+            items={design.layoutHints.map((h, i) => `${i + 1}. ${labelOf(h.blockId)} (${h.region}/${h.emphasis})`)}
+          />
+        </section>
+
+        <section className="summary__area summary__area--reference" aria-label="참고자료">
+          <h3 className="summary__area-title">참고자료 <span>AI가 참고할 수 있는 정보</span></h3>
+          {referenceBlocks.length === 0 ? (
+            <p className="summary__empty">참고자료 블록이 없습니다.</p>
+          ) : (
+            <ul className="summary__list">
+              {referenceBlocks.map((b) => (
+                <li key={b.id}>{b.label}{b.content ? `: ${b.content}` : ''}</li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="summary__area summary__area--publishing" aria-label="퍼블리싱 정보">
+          <h3 className="summary__area-title">퍼블리싱 정보 <span>이미지 생성 AI에 전달되지 않음</span></h3>
+          {publishing.links.length === 0 && publishing.notes.length === 0 ? (
+            <p className="summary__empty">퍼블리싱 정보가 없습니다.</p>
+          ) : (
+            <ul className="summary__list">
+              {publishing.links.map((l) => (
+                <li key={l.blockId}>{l.label}: {l.url}{l.purpose ? ` (${l.purpose})` : ''}</li>
+              ))}
+              {publishing.notes.map((n) => (
+                <li key={n.blockId}>{n.label}: {n.content}</li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    </div>
+  )
+}

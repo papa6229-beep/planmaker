@@ -42,7 +42,6 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   const { moveBlock, resizeBlock, selectBlock, endInteraction } = useBriefEditor()
   const { getUrl } = useAssets()
   const meta = getBlockTypeMeta(block.type)
-  const isPublishingSide = block.aiVisibility !== 'design'
   const thumbUrl = meta.requiresAsset ? getUrl(block.assetId) : undefined
   const drag = useRef<DragState | null>(null)
 
@@ -116,7 +115,8 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
       className={[
         'block-card',
         `block-card--${CATEGORY_MODIFIER[meta.category]}`,
-        isPublishingSide ? 'block-card--reference-side' : 'block-card--design-side',
+        // Three-way information-area distinction (WORK_PLAN §7, Phase 5).
+        `block-card--vis-${block.aiVisibility}`,
         block.groupId !== undefined ? 'block-card--grouped' : '',
         selected ? 'is-selected' : '',
       ]
