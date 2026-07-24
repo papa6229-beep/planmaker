@@ -2,8 +2,18 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
 import { clearAll, getAllAssets, resetAssetStoreForTests } from '../services/assetStore'
+
+/** The editor runs inside the router (mounted at /briefs/new · /briefs/:id). */
+function renderShell() {
+  return render(
+    <MemoryRouter initialEntries={['/briefs/new']}>
+      <AppShell />
+    </MemoryRouter>,
+  )
+}
 
 // jsdom cannot decode images; make dimension reading resolve deterministically.
 vi.mock('../features/assets/imageUtils', async () => {
@@ -25,7 +35,7 @@ beforeEach(async () => {
 describe('image assets — upload', () => {
   it('uploads an image into the selected image block and shows a thumbnail', async () => {
     const user = userEvent.setup()
-    const { container } = render(<AppShell />)
+    const { container } = renderShell()
     const palette = screen.getByRole('complementary', { name: '블록 팔레트' })
     const inspector = screen.getByRole('complementary', { name: '선택 블록 설정' })
 
@@ -53,7 +63,7 @@ describe('image assets — upload', () => {
   })
 
   it('drops multiple images onto the canvas as new image blocks', async () => {
-    render(<AppShell />)
+    renderShell()
     const canvas = screen.getByRole('region', { name: '기획 캔버스' })
 
     // Simulate a drop of two files onto the sheet.

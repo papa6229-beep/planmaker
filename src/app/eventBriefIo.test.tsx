@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
 import { render, screen, within, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
 import { clearAll, getAllAssets, resetAssetStoreForTests } from '../services/assetStore'
 import { packageEventBrief } from '../services/eventBriefExport'
@@ -32,6 +33,15 @@ async function makeArchiveFile(): Promise<File> {
   return new File([pkg.blob], 'sample.eventbrief', { type: 'application/zip' })
 }
 
+/** The editor runs inside the router (mounted at /briefs/new · /briefs/:id). */
+function renderShell() {
+  return render(
+    <MemoryRouter initialEntries={['/briefs/new']}>
+      <AppShell />
+    </MemoryRouter>,
+  )
+}
+
 beforeEach(async () => {
   resetAssetStoreForTests()
   await clearAll()
@@ -46,11 +56,13 @@ describe('export UI', () => {
       return 'blob:mock'
     })
 
-    render(<AppShell />)
+    renderShell()
     const palette = screen.getByRole('complementary', { name: '블록 팔레트' })
     await user.click(within(palette).getByRole('button', { name: '메인 문구' }))
 
-    await user.click(screen.getByRole('button', { name: '기획서 내보내기' }))
+    // Export now lives in the top bar's 보조 메뉴 (overflow).
+    await user.click(screen.getByText('보조 메뉴'))
+    await user.click(screen.getByRole('button', { name: '파일로 저장 (.eventbrief)' }))
 
     // A text-only brief triggers warnings (no required product) → confirm.
     const warn = await screen.findByRole('alertdialog', { name: '내보내기 경고' })
@@ -77,7 +89,7 @@ describe('export UI', () => {
 describe('import UI', () => {
   it('restores blocks and assets from a dropped-in archive (round-trip)', async () => {
     const file = await makeArchiveFile()
-    render(<AppShell />)
+    renderShell()
     const canvas = screen.getByRole('region', { name: '기획 캔버스' })
 
     const importInput = document.querySelector('.toolbar__file-input') as HTMLInputElement
@@ -95,7 +107,7 @@ describe('import UI', () => {
 
   it('rejects a corrupt archive without changing the current work', async () => {
     const user = userEvent.setup()
-    render(<AppShell />)
+    renderShell()
     const palette = screen.getByRole('complementary', { name: '블록 팔레트' })
     const canvas = screen.getByRole('region', { name: '기획 캔버스' })
 

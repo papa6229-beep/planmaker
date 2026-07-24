@@ -1,7 +1,17 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
+
+/** The editor runs inside the router (mounted at /briefs/new · /briefs/:id). */
+function renderShell() {
+  return render(
+    <MemoryRouter initialEntries={['/briefs/new']}>
+      <AppShell />
+    </MemoryRouter>,
+  )
+}
 
 const PUBLISHING_URL = 'https://shop.example.com/cta'
 
@@ -21,7 +31,7 @@ async function buildBriefWithCtaAndUrl(user: ReturnType<typeof userEvent.setup>)
 describe('AI summary panel — information-area separation (Phase 5 gate)', () => {
   it('shows the publishing URL only in the publishing area, never in the AI design summary', async () => {
     const user = userEvent.setup()
-    render(<AppShell />)
+    renderShell()
     await buildBriefWithCtaAndUrl(user)
 
     await user.click(screen.getByRole('button', { name: 'AI 요약' }))
@@ -41,7 +51,7 @@ describe('AI summary panel — information-area separation (Phase 5 gate)', () =
 
   it('closes on the close button', async () => {
     const user = userEvent.setup()
-    render(<AppShell />)
+    renderShell()
     await user.click(screen.getByRole('button', { name: 'AI 요약' }))
     expect(screen.getByRole('dialog', { name: 'AI 요약 미리보기' })).toBeTruthy()
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '닫기' }))

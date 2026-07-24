@@ -1,7 +1,17 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, within, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
+
+/** The editor runs inside the router (mounted at /briefs/new · /briefs/:id). */
+function renderShell() {
+  return render(
+    <MemoryRouter initialEntries={['/briefs/new']}>
+      <AppShell />
+    </MemoryRouter>,
+  )
+}
 
 function panels() {
   return {
@@ -16,7 +26,7 @@ const px = (v: string) => Number.parseFloat(v)
 describe('canvas editing — drag to move', () => {
   it('moves a block by the pointer delta (accounting for canvas scale) and undoes it', async () => {
     const user = userEvent.setup()
-    render(<AppShell />)
+    renderShell()
     const { palette, canvas } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '메인 문구' }))
@@ -41,7 +51,7 @@ describe('canvas editing — drag to move', () => {
 describe('canvas editing — resize', () => {
   it('resizes from the SE handle', async () => {
     const user = userEvent.setup()
-    const { container } = render(<AppShell />)
+    const { container } = renderShell()
     const { palette, canvas } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '메인 문구' }))
@@ -62,7 +72,7 @@ describe('canvas editing — resize', () => {
 describe('canvas editing — duplicate', () => {
   it('duplicates the selected block from the inspector', async () => {
     const user = userEvent.setup()
-    render(<AppShell />)
+    renderShell()
     const { palette, canvas, inspector } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '메인 문구' }))
@@ -76,7 +86,7 @@ describe('canvas editing — duplicate', () => {
 describe('canvas editing — grouping', () => {
   it('groups two shift-selected blocks and can ungroup them', async () => {
     const user = userEvent.setup()
-    const { container } = render(<AppShell />)
+    const { container } = renderShell()
     const { palette, canvas, inspector } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '메인 제품 이미지' }))
@@ -99,7 +109,7 @@ describe('canvas editing — grouping', () => {
 describe('canvas editing — scales to 20+ blocks', () => {
   it('renders 20 blocks and keeps the brief valid', async () => {
     const user = userEvent.setup()
-    render(<AppShell />)
+    renderShell()
     const { palette, canvas } = panels()
 
     const add = within(palette).getByRole('button', { name: '자유 텍스트' })
