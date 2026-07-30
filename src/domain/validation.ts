@@ -5,7 +5,7 @@
  * are semantic — there is no color/shape inference anywhere (§3.4, §22).
  */
 
-import { isImageBlock, isReferenceBlock } from './blockTypes'
+import { getBlockTypeMeta, isImageBlock, isReferenceBlock } from './blockTypes'
 import type { BriefBlock, EventBrief } from './briefSchema'
 
 export type IssueSeverity = 'error' | 'warning'
@@ -20,7 +20,8 @@ export type ValidationCode =
   | 'DUPLICATE_BLOCK_ID'
   | 'ASSET_REFERENCE_MISSING'
   // warnings
-  | 'NO_MAIN_HEADLINE'
+  /** No text at all for the AI to build a hierarchy from. */
+  | 'NO_TEXT_CONTENT'
   | 'NO_REQUIRED_PRODUCT'
   | 'CTA_WITHOUT_LINK'
   | 'LINK_IN_DESIGN_AREA'
@@ -110,9 +111,13 @@ export function validateBrief(brief: EventBrief): ValidationResult {
 
   // ── Warnings ────────────────────────────────────────────────────────────
 
-  const hasMainHeadline = blocks.some((b) => b.type === 'main_headline' && hasContent(b))
-  if (!hasMainHeadline) {
-    warnings.push(warning('NO_MAIN_HEADLINE', '메인 문구가 없습니다.'))
+  // The simplified 글 넣기 tool writes neutral `free_text` and lets the AI decide
+  // which line is the headline, so demanding a `main_headline` would warn on
+  // every well-formed brief. What actually matters is that *some* wording
+  // exists for the AI to build a hierarchy from.
+  const hasAnyText = blocks.some((b) => isDesignBlock(b) && getBlockTypeMeta(b.type).hasText && hasContent(b))
+  if (!hasAnyText) {
+    warnings.push(warning('NO_TEXT_CONTENT', '문구가 하나도 없습니다. 최소 한 개의 문구를 넣어 주세요.'))
   }
 
   const hasRequiredProduct = blocks.some(

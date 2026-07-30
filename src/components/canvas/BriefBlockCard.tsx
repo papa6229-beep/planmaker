@@ -12,7 +12,7 @@
 
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { getBlockTypeMeta, type BlockCategory } from '../../domain/blockTypes'
-import { AI_VISIBILITY_LABELS } from '../uiLabels'
+import { cardKindLabel } from '../../domain/simpleBlocks'
 import type { BriefBlock } from '../../domain/briefSchema'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useAssets } from '../../features/assets/useAssets'
@@ -25,6 +25,12 @@ interface Props {
   scale: number
   canvasWidth: number
   canvasHeight: number
+  /**
+   * True when this card is the visible half of a 버튼·링크 pair. The pair is held
+   * together by a group id, but that is internal plumbing — the card must not
+   * advertise itself as a user-made group.
+   */
+  paired?: boolean
 }
 
 const CATEGORY_MODIFIER: Record<BlockCategory, string> = {
@@ -49,7 +55,7 @@ function hasContent(block: BriefBlock): boolean {
   return typeof block.content === 'string' && block.content.trim().length > 0
 }
 
-export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeight }: Props) {
+export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeight, paired = false }: Props) {
   const { moveBlock, resizeBlock, selectBlock, endInteraction, updateBlock, deleteBlock, removeBlockAsset } =
     useBriefEditor()
   const { getUrl, uploadFiles } = useAssets()
@@ -134,7 +140,7 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
         'block-card',
         `block-card--${CATEGORY_MODIFIER[meta.category]}`,
         `block-card--vis-${block.aiVisibility}`,
-        block.groupId !== undefined ? 'block-card--grouped' : '',
+        block.groupId !== undefined && !paired ? 'block-card--grouped' : '',
         selected ? 'is-selected' : '',
       ]
         .filter(Boolean)
@@ -158,8 +164,10 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
       }}
     >
       <span className="block-card__head">
-        <span className="block-card__visibility">{AI_VISIBILITY_LABELS[block.aiVisibility]}</span>
-        {block.groupId !== undefined && <span className="block-card__group" title="그룹">그룹</span>}
+        {/* Plain-language kind, so an unselected card is still identifiable
+            without knowing the internal type or AI-visibility vocabulary. */}
+        <span className="block-card__visibility">{cardKindLabel(block)}</span>
+        {block.groupId !== undefined && !paired && <span className="block-card__group" title="그룹">그룹</span>}
         {block.required && <span className="block-card__required" title="필수 블록">필수</span>}
         {selected && (
           <details className="block-card__menu" ref={menuRef} onPointerDown={(e) => e.stopPropagation()}>

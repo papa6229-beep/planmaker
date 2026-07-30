@@ -42,7 +42,7 @@ describe('image assets — upload', () => {
     const palette = screen.getByRole('complementary', { name: '블록 팔레트' })
     const inspector = screen.getByRole('complementary', { name: '선택 블록 설정' })
 
-    await user.click(within(palette).getByRole('button', { name: '메인 제품 이미지' }))
+    await user.click(within(palette).getByRole('button', { name: '이미지 자리' }))
 
     // Use the inspector's image input specifically (the toolbar also has a
     // file input for .eventbrief import).

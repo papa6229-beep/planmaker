@@ -10,6 +10,7 @@
  */
 
 import { getBlockTypeMeta } from './blockTypes'
+import { NOTE_TYPE } from './simpleBlocks'
 import {
   type BriefBlock,
   type BriefFile,
@@ -22,11 +23,14 @@ import {
   type PublishingLink,
   type PublishingNote,
   type SummaryCta,
+  type SummaryGeometry,
   type SummaryImage,
+  type SummaryInstruction,
   type SummaryItem,
   type SummaryLayoutHint,
   type SummaryProduct,
   type SummaryText,
+  type SummaryTextEntry,
 } from './briefSchema'
 import type { BlockType } from './blockTypes'
 
@@ -91,6 +95,11 @@ function emphasisOf(block: BriefBlock): LayoutEmphasis {
   return block.layoutHint.emphasis ?? 'normal'
 }
 
+function geometryOf(block: BriefBlock): SummaryGeometry {
+  const { x, y, width, height } = block.position
+  return { x, y, width, height }
+}
+
 function firstContent(blocks: BriefBlock[], type: BlockType): string | undefined {
   const match = blocks.find((b) => b.type === type && isDesign(b) && hasContent(b))
   return match ? content(match) : undefined
@@ -100,11 +109,51 @@ function firstContent(blocks: BriefBlock[], type: BlockType): string | undefined
  * Builds the AI-facing design summary. Reads only design/reference blocks; no
  * publishing content ever enters this object.
  */
-export function buildDesignSummary(brief: EventBrief): DesignSummary {
+export interface SummaryContext {
+  /** Page the brief projection came from, so summary entries can name it. */
+  pageId?: string
+}
+
+export function buildDesignSummary(brief: EventBrief, context: SummaryContext = {}): DesignSummary {
   const { blocks, project } = brief
   const designBlocks = blocks.filter(isDesign)
+  const { pageId } = context
 
   const mainHeadline = firstContent(blocks, 'main_headline')
+
+  // Every design text, verbatim — nothing is dropped just because it has no
+  // explicit semantic role (the simplified 글 넣기 tool writes `free_text`).
+  const texts: SummaryTextEntry[] = designBlocks
+    .filter((b) => getBlockTypeMeta(b.type).hasText && hasContent(b))
+    .map((b) => {
+      const entry: SummaryTextEntry = {
+        blockId: b.id,
+        type: b.type,
+        label: b.label,
+        content: content(b),
+        emphasis: emphasisOf(b),
+        geometry: geometryOf(b),
+      }
+      if (pageId !== undefined) entry.pageId = pageId
+      return entry
+    })
+
+  // 요청 메모: guidance for the AI / design team that must never be printed.
+  // Selected by block *type* so pre-existing `revision_reference` blocks in old
+  // documents read the same way, with their stored data left untouched.
+  const instructions: SummaryInstruction[] = blocks
+    .filter((b) => b.type === NOTE_TYPE && hasContent(b))
+    .map((b) => {
+      const item: SummaryInstruction = {
+        blockId: b.id,
+        label: b.label,
+        content: content(b),
+        geometry: geometryOf(b),
+        renderAsText: false,
+      }
+      if (pageId !== undefined) item.pageId = pageId
+      return item
+    })
 
   const subHeadlines = designBlocks
     .filter((b) => b.type === 'sub_headline' && hasContent(b))
@@ -174,6 +223,8 @@ export function buildDesignSummary(brief: EventBrief): DesignSummary {
 
   const summary: DesignSummary = {
     subHeadlines,
+    texts,
+    instructions,
     requiredTexts,
     requiredProducts,
     requiredBenefits,
@@ -214,10 +265,10 @@ export function buildPublishingInfo(brief: EventBrief): PublishingInfo {
 }
 
 /** Assembles the full `brief.json` payload with derived views (WORK_PLAN §13). */
-export function buildBriefFile(brief: EventBrief): BriefFile {
+export function buildBriefFile(brief: EventBrief, context: SummaryContext = {}): BriefFile {
   return {
     ...brief,
-    designSummary: buildDesignSummary(brief),
+    designSummary: buildDesignSummary(brief, context),
     publishing: buildPublishingInfo(brief),
   }
 }

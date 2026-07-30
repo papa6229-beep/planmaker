@@ -186,12 +186,70 @@ export interface SummaryLayoutHint {
 }
 
 /**
+ * Approximate placement carried into the AI summary. These are *hints* about
+ * visual weight and reading order, never pixel-exact instructions (§3.2).
+ */
+export interface SummaryGeometry {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/**
+ * A text the design must reproduce **verbatim**, with the emphasis the user
+ * asked for. Every design text block with content appears here — including the
+ * neutral `free_text` written with the simplified 글 넣기 tool — so no wording
+ * is ever dropped from the AI input. `type` is reported as-is so an explicit
+ * legacy type (`main_headline`, `price`, …) keeps its meaning while a neutral
+ * `free_text` leaves the hierarchy decision to the AI.
+ */
+export interface SummaryTextEntry {
+  blockId: string
+  /** Page the text lives on, when the summary is built for a known page. */
+  pageId?: string
+  type: BlockType
+  label: string
+  /** The exact wording. Never paraphrased or reformatted. */
+  content: string
+  emphasis: LayoutEmphasis
+  geometry: SummaryGeometry
+}
+
+/**
+ * An instruction for the AI / design team that must **not** be printed into the
+ * generated image (요청 메모). `renderAsText` is always `false`, which is the
+ * explicit contract separating a request from copy that must appear verbatim.
+ */
+export interface SummaryInstruction {
+  blockId: string
+  pageId?: string
+  label: string
+  /** The exact memo text. */
+  content: string
+  geometry: SummaryGeometry
+  /** Always false — this text is guidance, never rendered into the image. */
+  renderAsText: false
+}
+
+/**
  * AI-facing design summary (WORK_PLAN §13, §15). Rule-based, no AI calls in the
  * MVP (§15). Crucially never contains publishing links (§34 Phase 5 gate).
  */
 export interface DesignSummary {
   mainHeadline?: string
   subHeadlines: string[]
+  /**
+   * Every design text with content, verbatim, with emphasis and approximate
+   * geometry. Superset of the role-specific fields below — the AI should read
+   * this to be sure no wording is missed.
+   */
+  texts: SummaryTextEntry[]
+  /**
+   * Non-printing requests (요청 메모). Separated from `texts` so guidance is
+   * never mistaken for copy to render.
+   */
+  instructions: SummaryInstruction[]
   requiredTexts: SummaryText[]
   requiredProducts: SummaryProduct[]
   requiredBenefits: SummaryItem[]

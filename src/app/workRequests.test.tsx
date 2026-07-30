@@ -25,7 +25,7 @@ function renderApp(path = '/briefs/new') {
 /** Adds a headline block and delivers the brief as a work request. */
 async function deliver(user: ReturnType<typeof userEvent.setup>, title: string) {
   const palette = await screen.findByRole('complementary', { name: '블록 팔레트' })
-  await user.click(within(palette).getByRole('button', { name: '메인 문구' }))
+  await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
 
   const titleInput = screen.getByLabelText('기획서 제목')
   await user.clear(titleInput)

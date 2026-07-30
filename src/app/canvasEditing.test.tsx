@@ -32,8 +32,8 @@ describe('canvas editing — drag to move', () => {
     renderShell()
     const { palette, canvas } = panels()
 
-    await user.click(within(palette).getByRole('button', { name: '메인 문구' }))
-    const card = within(canvas).getByRole('button', { name: /메인 문구/ })
+    await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
+    const card = within(canvas).getByRole('button', { name: /문구/ })
     const startLeft = px(card.style.left)
 
     // Drag 60 screen px right. Zoom defaults to 100% (1:1) in jsdom (fit-to-view
@@ -48,7 +48,7 @@ describe('canvas editing — drag to move', () => {
     // Undo returns it to the start.
     const { canvas: canvas2 } = panels()
     await user.click(screen.getByRole('button', { name: '실행 취소' }))
-    const cardAfter = within(canvas2).getByRole('button', { name: /메인 문구/ })
+    const cardAfter = within(canvas2).getByRole('button', { name: /문구/ })
     expect(px(cardAfter.style.left)).toBeCloseTo(startLeft, 0)
   })
 })
@@ -59,8 +59,8 @@ describe('canvas editing — resize', () => {
     const { container } = renderShell()
     const { palette, canvas } = panels()
 
-    await user.click(within(palette).getByRole('button', { name: '메인 문구' }))
-    const card = within(canvas).getByRole('button', { name: /메인 문구/ })
+    await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
+    const card = within(canvas).getByRole('button', { name: /문구/ })
     const startWidth = px(card.style.width)
 
     const seHandle = container.querySelector('.block-card__handle--se')
@@ -80,11 +80,11 @@ describe('canvas editing — duplicate', () => {
     renderShell()
     const { palette, canvas, inspector } = panels()
 
-    await user.click(within(palette).getByRole('button', { name: '메인 문구' }))
-    expect(within(canvas).getAllByRole('button', { name: /메인 문구/ })).toHaveLength(1)
+    await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
+    expect(within(canvas).getAllByRole('button', { name: /문구/ })).toHaveLength(1)
 
     await user.click(within(inspector).getByRole('button', { name: '블록 복제' }))
-    expect(within(canvas).getAllByRole('button', { name: /메인 문구/ })).toHaveLength(2)
+    expect(within(canvas).getAllByRole('button', { name: /문구/ })).toHaveLength(2)
   })
 })
 
@@ -94,8 +94,8 @@ describe('canvas editing — grouping', () => {
     const { container } = renderShell()
     const { palette, canvas, inspector } = panels()
 
-    await user.click(within(palette).getByRole('button', { name: '메인 제품 이미지' }))
-    await user.click(within(palette).getByRole('button', { name: '보조 제품 이미지' }))
+    await user.click(within(palette).getByRole('button', { name: '이미지 자리' }))
+    await user.click(within(palette).getByRole('button', { name: '요청 메모' }))
 
     const cards = within(canvas).getAllByRole('button')
     // Select first, then shift-select second → multi-selection.
@@ -117,11 +117,11 @@ describe('canvas editing — scales to 20+ blocks', () => {
     renderShell()
     const { palette, canvas } = panels()
 
-    const add = within(palette).getByRole('button', { name: '자유 텍스트' })
+    const add = within(palette).getByRole('button', { name: '글 넣기' })
     for (let i = 0; i < 20; i++) {
       await user.click(add)
     }
     // 20 free-text cards on the canvas.
-    expect(within(canvas).getAllByRole('button', { name: /자유 텍스트/ })).toHaveLength(20)
+    expect(within(canvas).getAllByRole('button', { name: /문구/ })).toHaveLength(20)
   })
 })

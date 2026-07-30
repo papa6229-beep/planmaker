@@ -28,6 +28,7 @@ import { SummaryPanel } from '../components/summary/SummaryPanel'
 import { ReferenceTools } from '../components/reference/ReferenceTools'
 import { ReferenceViewControls } from '../components/reference/ReferenceViewControls'
 import { ReferenceSideView } from '../components/reference/ReferenceSideView'
+import { StartChoice } from '../components/start/StartChoice'
 
 /** True when focus is in a text entry, so shortcuts must not fire. */
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -152,8 +153,14 @@ function GlobalEventBriefDrop() {
 
 function Workspace({ mode, statusPanel }: { mode: 'brief' | 'image'; statusPanel?: ReactNode }) {
   const [summaryOpen, setSummaryOpen] = useState(false)
+  const [startDismissed, setStartDismissed] = useState(false)
   const { activeReference } = useBriefDocument()
+  const { state } = useBriefEditor()
   const sideBySide = activeReference.viewMode === 'side' && activeReference.assetId !== undefined
+  // Offer the first-start choice only on a genuinely untouched page — a document
+  // already being worked on never sees it again.
+  const showStart =
+    !startDismissed && state.brief.blocks.length === 0 && activeReference.assetId === undefined
   return (
     <div className="app">
       <TopToolbar mode={mode} onShowSummary={() => setSummaryOpen(true)} />
@@ -169,6 +176,7 @@ function Workspace({ mode, statusPanel }: { mode: 'brief' | 'image'; statusPanel
             <ReferenceViewControls />
             <CanvasZoomControls />
           </div>
+          {showStart && <StartChoice onDismiss={() => setStartDismissed(true)} />}
           <div className="stage">
             <BriefCanvas />
             {sideBySide && <ReferenceSideView />}

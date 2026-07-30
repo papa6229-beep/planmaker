@@ -52,23 +52,23 @@ describe('multi-page editor', () => {
     renderEditor()
 
     // Page 1: add a headline.
-    await user.click(within(palette()).getByRole('button', { name: '메인 문구' }))
-    expect(within(canvas()).getByRole('button', { name: /메인 문구/ })).toBeTruthy()
+    await user.click(within(palette()).getByRole('button', { name: '글 넣기' }))
+    expect(within(canvas()).getByRole('button', { name: /문구/ })).toBeTruthy()
 
     // New page 2 starts empty.
     await user.click(within(strip()).getByRole('button', { name: '+ 페이지 추가' }))
-    expect(within(canvas()).queryByRole('button', { name: /메인 문구/ })).toBeNull()
+    expect(within(canvas()).queryByRole('button', { name: /문구/ })).toBeNull()
 
-    // Add a benefit on page 2.
-    await user.click(within(palette()).getByRole('button', { name: '서브 문구' }))
-    expect(within(canvas()).getByRole('button', { name: /서브 문구/ })).toBeTruthy()
-    expect(within(canvas()).queryByRole('button', { name: /메인 문구/ })).toBeNull()
+    // Add a memo on page 2.
+    await user.click(within(palette()).getByRole('button', { name: '요청 메모' }))
+    expect(within(canvas()).getByRole('button', { name: /요청 메모/ })).toBeTruthy()
+    expect(within(canvas()).queryByRole('button', { name: /문구/ })).toBeNull()
 
     // Back to page 1: the headline is there, the benefit is not.
     const p1 = within(strip()).getAllByRole('button').find((b) => b.textContent === '1페이지')!
     await user.click(p1)
-    expect(within(canvas()).getByRole('button', { name: /메인 문구/ })).toBeTruthy()
-    expect(within(canvas()).queryByRole('button', { name: /서브 문구/ })).toBeNull()
+    expect(within(canvas()).getByRole('button', { name: /문구/ })).toBeTruthy()
+    expect(within(canvas()).queryByRole('button', { name: /요청 메모/ })).toBeNull()
   })
 
   it('renames a page through its menu', async () => {

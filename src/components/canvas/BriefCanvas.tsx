@@ -14,6 +14,7 @@ import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useAssets } from '../../features/assets/useAssets'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { useCanvasView } from '../../features/editor/useCanvasView'
+import { findLinkPartner, isPairedLinkUrl } from '../../domain/simpleBlocks'
 import type { ReferenceLayer } from '../../domain/pageSchema'
 import { BriefBlockCard } from './BriefBlockCard'
 
@@ -40,6 +41,9 @@ export function BriefCanvas() {
   const { project, blocks } = state.brief
   const { canvasWidth, canvasHeight } = project
   const selected = new Set(state.selectedIds)
+  // A 버튼·링크 is one card: its paired publishing URL block stays in the data
+  // (and in exports) but is not drawn. Legacy standalone URL blocks still show.
+  const visibleBlocks = blocks.filter((b) => !isPairedLinkUrl(blocks, b))
 
   const overlayUrl = getUrl(activeReference.assetId)
   const showOverlay =
@@ -118,7 +122,7 @@ export function BriefCanvas() {
               왼쪽 팔레트에서 블록을 클릭하거나, 이미지를 여기로 끌어다 놓으세요.
             </p>
           )}
-          {blocks.map((block) => (
+          {visibleBlocks.map((block) => (
             <BriefBlockCard
               key={block.id}
               block={block}
@@ -126,6 +130,7 @@ export function BriefCanvas() {
               scale={zoom}
               canvasWidth={canvasWidth}
               canvasHeight={canvasHeight}
+              paired={findLinkPartner(blocks, block) !== undefined}
             />
           ))}
         </div>

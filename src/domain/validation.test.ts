@@ -53,14 +53,29 @@ describe('validateBrief — errors', () => {
 })
 
 describe('validateBrief — warnings', () => {
-  it('warns when there is no main headline and no required product', () => {
+  it('warns when there is no required product', () => {
     const brief: EventBrief = {
       ...createEmptyBrief('행사'),
       blocks: [createBlock('body_text', { content: '내용' })],
     }
     const result = validateBrief(brief)
-    expect(codes(result.warnings)).toContain('NO_MAIN_HEADLINE')
     expect(codes(result.warnings)).toContain('NO_REQUIRED_PRODUCT')
+  })
+
+  it('warns only when there is no wording at all, not when a headline type is absent', () => {
+    // The simplified 글 넣기 tool writes neutral `free_text`; that must count as
+    // wording so the warning is not a permanent false alarm.
+    const withGenericText: EventBrief = {
+      ...createEmptyBrief('행사'),
+      blocks: [createBlock('free_text', { content: '여름 세일' })],
+    }
+    expect(codes(validateBrief(withGenericText).warnings)).not.toContain('NO_TEXT_CONTENT')
+
+    const noText: EventBrief = {
+      ...createEmptyBrief('행사'),
+      blocks: [createBlock('main_product_image')],
+    }
+    expect(codes(validateBrief(noText).warnings)).toContain('NO_TEXT_CONTENT')
   })
 
   it('warns when a reference block is placed in the design area', () => {

@@ -14,7 +14,16 @@
 
 import { useEffect } from 'react'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
+import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { buildDesignSummary, buildPublishingInfo } from '../../domain/summaryBuilder'
+
+/** Plain-language emphasis labels for the summary. */
+const EMPHASIS_TEXT: Record<string, string> = {
+  very_high: '크게 강조',
+  high: '크게 강조',
+  normal: '보통',
+  low: '작게',
+}
 
 function Field({ label, value }: { label: string; value: string | undefined }) {
   if (!value) return null
@@ -42,10 +51,14 @@ function List({ label, items }: { label: string; items: string[] }) {
 
 export function SummaryPanel({ onClose }: { onClose: () => void }) {
   const { state } = useBriefEditor()
+  const { activePageId } = useBriefDocument()
   const brief = state.brief
-  const design = buildDesignSummary(brief)
+  const design = buildDesignSummary(brief, { pageId: activePageId })
   const publishing = buildPublishingInfo(brief)
-  const referenceBlocks = brief.blocks.filter((b) => b.aiVisibility === 'reference')
+  const instructionIds = new Set(design.instructions.map((i) => i.blockId))
+  const referenceBlocks = brief.blocks.filter(
+    (b) => b.aiVisibility === 'reference' && !instructionIds.has(b.id),
+  )
   const labelOf = (blockId: string) => brief.blocks.find((b) => b.id === blockId)?.label ?? blockId
 
   useEffect(() => {
@@ -72,6 +85,36 @@ export function SummaryPanel({ onClose }: { onClose: () => void }) {
         <p className="summary__note">
           규칙 기반으로 생성되며 MVP에서는 AI를 호출하지 않습니다. 퍼블리싱 정보는 이미지 생성 AI에 전달되지 않습니다.
         </p>
+
+        <section className="summary__area summary__area--design" aria-label="그대로 넣을 문구">
+          <h3 className="summary__area-title">그대로 넣을 문구 <span>한 글자도 바뀌지 않습니다</span></h3>
+          {design.texts.length === 0 ? (
+            <p className="summary__empty">문구가 없습니다.</p>
+          ) : (
+            <ul className="summary__list">
+              {design.texts.map((t) => (
+                <li key={t.blockId}>
+                  {t.content} <span className="summary__tag">{EMPHASIS_TEXT[t.emphasis]}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="summary__area summary__area--instruction" aria-label="요청 메모">
+          <h3 className="summary__area-title">요청 메모 <span>이미지에 인쇄하지 않는 지시</span></h3>
+          {design.instructions.length === 0 ? (
+            <p className="summary__empty">요청 메모가 없습니다.</p>
+          ) : (
+            <ul className="summary__list">
+              {design.instructions.map((i) => (
+                <li key={i.blockId}>
+                  {i.content} <span className="summary__tag">인쇄하지 않음</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
         <section className="summary__area summary__area--design" aria-label="디자인 입력 요약">
           <h3 className="summary__area-title">디자인 입력 <span>이미지 생성 AI가 읽는 정보</span></h3>

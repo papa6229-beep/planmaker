@@ -228,7 +228,13 @@ export function BriefDocumentProvider({
   // Reference-layer mutations live only in the document (not the editor brief),
   // so they never re-hydrate. The sync effect preserves the reference layer.
   const mutateDoc = useCallback((fn: (doc: BriefDocument) => BriefDocument) => {
-    setDoc(fn(docRef.current))
+    // `docRef.current` is refreshed on render, so several mutations fired in one
+    // event handler would all read the same stale document and the last would
+    // win. Advancing the ref here makes them compose (e.g. 참고 이미지 위에서
+    // 시작 sets the image, the view mode, and visibility in one go).
+    const next = fn(docRef.current)
+    docRef.current = next
+    setDoc(next)
   }, [])
 
   const setReferenceImage = useCallback(

@@ -61,8 +61,8 @@ describe('canvas zoom — view-only display control', () => {
     const palette = screen.getByRole('complementary', { name: '블록 팔레트' })
     const canvas = screen.getByRole('region', { name: '기획 캔버스' })
 
-    await user.click(within(palette).getByRole('button', { name: '메인 문구' }))
-    const card = within(canvas).getByRole('button', { name: /메인 문구/ })
+    await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
+    const card = within(canvas).getByRole('button', { name: /문구/ })
     const before = { left: card.style.left, top: card.style.top, width: card.style.width }
 
     await user.click(within(zoomBar()).getByRole('button', { name: '확대' }))

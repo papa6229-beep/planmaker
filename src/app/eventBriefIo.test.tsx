@@ -61,7 +61,7 @@ describe('export UI', () => {
 
     renderShell()
     const palette = screen.getByRole('complementary', { name: '블록 팔레트' })
-    await user.click(within(palette).getByRole('button', { name: '메인 문구' }))
+    await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
 
     // Export now lives in the top bar's 보조 메뉴 (overflow).
     await user.click(screen.getByText('보조 메뉴'))
@@ -92,7 +92,7 @@ describe('export UI', () => {
     )
     const doc = parsed!.doc
     expect(doc.pages).toHaveLength(1)
-    expect(doc.pages[0]!.blocks.some((b) => b.type === 'main_headline')).toBe(true)
+    expect(doc.pages[0]!.blocks.some((b) => b.type === 'free_text')).toBe(true)
     spy.mockRestore()
   })
 })
@@ -123,8 +123,8 @@ describe('import UI', () => {
     const canvas = screen.getByRole('region', { name: '기획 캔버스' })
 
     // Existing work.
-    await user.click(within(palette).getByRole('button', { name: '메인 문구' }))
-    expect(within(canvas).getAllByRole('button', { name: /메인 문구/ })).toHaveLength(1)
+    await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
+    expect(within(canvas).getAllByRole('button', { name: /문구/ })).toHaveLength(1)
 
     const bad = new File([new Uint8Array([1, 2, 3, 4])], 'broken.eventbrief', { type: 'application/zip' })
     const importInput = document.querySelector('.toolbar__file-input') as HTMLInputElement
@@ -134,6 +134,6 @@ describe('import UI', () => {
     await waitFor(() => {
       expect(screen.getByRole('alertdialog', { name: '불러오기 실패' })).toBeTruthy()
     })
-    expect(within(canvas).getAllByRole('button', { name: /메인 문구/ })).toHaveLength(1)
+    expect(within(canvas).getAllByRole('button', { name: /문구/ })).toHaveLength(1)
   })
 })

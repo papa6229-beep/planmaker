@@ -37,39 +37,25 @@ beforeEach(async () => {
   await clearAll()
 })
 
-describe('palette simplification (§10)', () => {
-  it('hides the granular 행사정보 blocks from the new palette', () => {
+describe('palette simplification (1차 단순화 §2.2)', () => {
+  it('offers exactly the four authoring tools and nothing else', () => {
     renderShell()
-    for (const label of ['혜택', '구매 조건', '사은품', '신청 조건', '당첨 인원']) {
+    const tools = within(screen.getByRole('list', { name: '기본 블록' })).getAllByRole('button')
+    expect(tools.map((b) => b.querySelector('.simple-tool__label')?.textContent)).toEqual([
+      '글 넣기',
+      '이미지 자리',
+      '버튼·링크',
+      '요청 메모',
+    ])
+    expect(tools).toHaveLength(4)
+  })
+
+  it('no longer lists the granular typed blocks or a publishing section', () => {
+    renderShell()
+    for (const label of ['혜택', '구매 조건', '사은품', '메인 문구', 'CTA 버튼', '버튼 연결 URL']) {
       expect(within(palette()).queryByRole('button', { name: label })).toBeNull()
     }
-    // …but the recommended design blocks are present.
-    expect(within(palette()).getByRole('button', { name: '메인 문구' })).toBeTruthy()
-    expect(within(palette()).getByRole('button', { name: 'CTA 버튼' })).toBeTruthy()
-  })
-
-  it('keeps publishing/link blocks in a separate 퍼블리싱 정보 section', async () => {
-    const user = userEvent.setup()
-    renderShell()
-    expect(screen.getByRole('region', { name: '퍼블리싱 정보' })).toBeTruthy()
-    // Collapsed by default; expand to reveal the link blocks.
-    expect(within(palette()).queryByRole('button', { name: '버튼 연결 URL' })).toBeNull()
-    await user.click(within(palette()).getByRole('button', { name: /퍼블리싱 정보/ }))
-    expect(within(palette()).getByRole('button', { name: '버튼 연결 URL' })).toBeTruthy()
-  })
-
-  it('searches blocks by Korean label and shows an empty message', async () => {
-    const user = userEvent.setup()
-    renderShell()
-    const search = within(palette()).getByRole('searchbox', { name: '블록 검색' })
-
-    await user.type(search, '메인')
-    expect(within(palette()).getByRole('button', { name: '메인 문구' })).toBeTruthy()
-    expect(within(palette()).getByRole('button', { name: '메인 제품 이미지' })).toBeTruthy()
-
-    await user.clear(search)
-    await user.type(search, '존재하지않는블록')
-    expect(within(palette()).getByText('검색 결과가 없습니다.')).toBeTruthy()
+    expect(screen.queryByRole('region', { name: '퍼블리싱 정보' })).toBeNull()
   })
 
   it('renders an existing 행사정보 block loaded from a file', async () => {
@@ -89,16 +75,16 @@ describe('right panel simplification (§11)', () => {
   it('does not expose importance, AI-visibility, layout-hint, or a delete button', async () => {
     const user = userEvent.setup()
     renderShell()
-    await user.click(within(palette()).getByRole('button', { name: '메인 문구' }))
+    await user.click(within(palette()).getByRole('button', { name: '글 넣기' }))
 
     const insp = inspector()
     expect(within(insp).queryByText('중요도')).toBeNull()
     expect(within(insp).queryByText('AI 전달 여부')).toBeNull()
     expect(within(insp).queryByText('위치 힌트 (소프트)')).toBeNull()
     expect(within(insp).queryByRole('button', { name: '블록 삭제' })).toBeNull()
-    // The kept essentials are still there.
-    expect(within(insp).getByLabelText('라벨')).toBeTruthy()
-    expect(within(insp).getByLabelText('내용')).toBeTruthy()
+    // 글 넣기 asks for the wording and how strongly to emphasise it — nothing else.
+    expect(within(insp).getByLabelText('문구')).toBeTruthy()
+    expect(within(insp).getByRole('radiogroup', { name: '강조 정도' })).toBeTruthy()
   })
 })
 
@@ -106,11 +92,11 @@ describe('inline text editing (§12)', () => {
   it('edits a text block directly on the canvas', async () => {
     const user = userEvent.setup()
     renderShell()
-    await user.click(within(palette()).getByRole('button', { name: '메인 문구' }))
+    await user.click(within(palette()).getByRole('button', { name: '글 넣기' }))
 
-    const card = within(canvas()).getByRole('button', { name: /메인 문구/ })
+    const card = within(canvas()).getByRole('button', { name: /문구/ })
     await user.dblClick(card)
-    const editor = screen.getByLabelText('메인 문구 내용')
+    const editor = screen.getByLabelText('문구 내용')
     await user.type(editor, '여름 세일 시작')
     await user.keyboard('{Control>}{Enter}{/Control}')
 
@@ -120,7 +106,7 @@ describe('inline text editing (§12)', () => {
   it('disables dragging while inline-editing', async () => {
     const user = userEvent.setup()
     const { container } = renderShell()
-    await user.click(within(palette()).getByRole('button', { name: '메인 문구' }))
+    await user.click(within(palette()).getByRole('button', { name: '글 넣기' }))
 
     const card = container.querySelector('.block-card') as HTMLElement
     const left0 = card.style.left
@@ -136,17 +122,17 @@ describe('inline text editing (§12)', () => {
   it('collapses an inline edit into a single undo step', async () => {
     const user = userEvent.setup()
     renderShell()
-    await user.click(within(palette()).getByRole('button', { name: '메인 문구' }))
+    await user.click(within(palette()).getByRole('button', { name: '글 넣기' }))
 
-    const card = within(canvas()).getByRole('button', { name: /메인 문구/ })
+    const card = within(canvas()).getByRole('button', { name: /문구/ })
     await user.dblClick(card)
-    await user.type(screen.getByLabelText('메인 문구 내용'), '한 번에 병합')
+    await user.type(screen.getByLabelText('문구 내용'), '한 번에 병합')
     await user.keyboard('{Control>}{Enter}{/Control}')
     expect(within(canvas()).getByRole('button', { name: /한 번에 병합/ })).toBeTruthy()
 
     // One undo reverts the whole edit; the block itself remains.
     await user.click(screen.getByRole('button', { name: '실행 취소' }))
     expect(within(canvas()).queryByRole('button', { name: /한 번에 병합/ })).toBeNull()
-    expect(within(canvas()).getByRole('button', { name: /메인 문구/ })).toBeTruthy()
+    expect(within(canvas()).getByRole('button', { name: /문구/ })).toBeTruthy()
   })
 })

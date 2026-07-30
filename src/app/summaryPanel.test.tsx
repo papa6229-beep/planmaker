@@ -22,14 +22,11 @@ async function buildBriefWithCtaAndUrl(user: ReturnType<typeof userEvent.setup>)
   const palette = screen.getByRole('complementary', { name: '블록 팔레트' })
   const inspector = screen.getByRole('complementary', { name: '선택 블록 설정' })
 
-  // A design CTA button.
-  await user.click(within(palette).getByRole('button', { name: 'CTA 버튼' }))
-  await user.type(within(inspector).getByLabelText('내용'), '지금 구매')
-
-  // A publishing-only URL block — now in the collapsible 퍼블리싱 정보 section.
-  await user.click(within(palette).getByRole('button', { name: /퍼블리싱 정보/ }))
-  await user.click(within(palette).getByRole('button', { name: '버튼 연결 URL' }))
-  await user.type(within(inspector).getByLabelText('내용'), PUBLISHING_URL)
+  // One 버튼·링크 tool: the wording and the address are entered together, but
+  // stay two blocks internally (design button + publishing URL).
+  await user.click(within(palette).getByRole('button', { name: '버튼·링크' }))
+  await user.type(within(inspector).getByLabelText('버튼에 보일 문구'), '지금 구매')
+  await user.type(within(inspector).getByLabelText('연결 주소 (선택)'), PUBLISHING_URL)
 }
 
 describe('AI summary panel — information-area separation (Phase 5 gate)', () => {

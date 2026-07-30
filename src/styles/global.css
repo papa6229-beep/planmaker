@@ -540,6 +540,107 @@ button { font-family: inherit; }
   background: var(--color-reference-soft);
 }
 
+/* ── Four simplified tools (1차 단순화 §2.2) ───────────────────────────────── */
+.simple-tools {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.simple-tool {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-panel);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+.simple-tool:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  box-shadow: 0 1px 2px rgba(23, 25, 35, 0.06);
+}
+.simple-tool__label { font-size: 14px; font-weight: 600; }
+.simple-tool__hint { font-size: 11px; color: var(--color-muted); line-height: 1.5; }
+.simple-tool--note { border-style: dashed; }
+.simple-tool--note .simple-tool__label { color: var(--color-reference); }
+
+@media (prefers-reduced-motion: reduce) {
+  .simple-tool { transition: none; }
+}
+
+/* ── First-start choice (1차 단순화 §2.1) ──────────────────────────────────── */
+.start-choice {
+  flex: none;
+  margin: 16px 24px 0;
+  padding: 24px;
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  text-align: center;
+}
+.start-choice__title { margin: 0; font-size: 17px; font-weight: 700; }
+.start-choice__desc { margin: 6px 0 0; font-size: 13px; color: var(--color-muted); }
+.start-choice__options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+.start-choice__option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 20px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-panel-muted);
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.start-choice__option:hover { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.start-choice__icon { color: var(--color-accent); }
+.start-choice__option-title { font-size: 14px; font-weight: 600; }
+.start-choice__option-desc { font-size: 11px; color: var(--color-muted); line-height: 1.5; }
+.start-choice__input { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .start-choice__option { transition: none; }
+}
+
+/* Emphasis choice (글 넣기) */
+.emphasis-choice { display: flex; gap: 6px; }
+.emphasis-choice__btn {
+  flex: 1;
+  padding: 7px 4px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-panel);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.emphasis-choice__btn.is-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .emphasis-choice__btn { transition: none; }
+}
+
 /* Palette search + empty result (Phase 7 §10.3). */
 .palette-search { margin-bottom: 10px; }
 .palette-search__input {
@@ -871,6 +972,18 @@ button { font-family: inherit; }
 .summary__area-title { margin: 0 0 10px; font-size: 14px; }
 .summary__area-title span { font-size: 11px; font-weight: 400; color: var(--color-muted); margin-left: 6px; }
 .summary__area--publishing .summary__area-title { color: var(--color-publishing); }
+.summary__area--instruction { border-left-color: var(--color-reference); }
+.summary__area--instruction .summary__area-title { color: var(--color-reference); }
+.summary__tag {
+  font-size: 11px;
+  color: var(--color-muted);
+  background: var(--color-panel-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-left: 4px;
+  white-space: nowrap;
+}
 .summary__field { display: flex; gap: 10px; margin-bottom: 8px; font-size: 13px; }
 .summary__field-label { flex: none; width: 120px; color: var(--color-muted); }
 .summary__field-value { flex: 1; }

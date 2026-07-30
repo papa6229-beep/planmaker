@@ -21,6 +21,13 @@ import type {
   LayoutHint,
 } from '../../domain/briefSchema'
 import { DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH } from '../../domain/briefSchema'
+import {
+  LINK_URL_TYPE,
+  SIMPLE_BLOCK_TYPE,
+  findLinkPartner,
+  isPairedLinkUrl,
+  withLinkPartners,
+} from '../../domain/simpleBlocks'
 import { boundedDelta, clampPosition, type Rect } from './canvasGeometry'
 
 /** Default title so a fresh brief still passes validation (needs a title). */
@@ -48,7 +55,8 @@ export interface BlockPatch {
 }
 
 export type EditorAction =
-  | { type: 'ADD_BLOCK'; blockType: BlockType }
+  | { type: 'ADD_BLOCK'; blockType: BlockType; label?: string }
+  | { type: 'ADD_BUTTON_LINK'; label: string }
   | { type: 'SELECT_BLOCK'; blockId: string | null; additive?: boolean }
   | { type: 'DELETE_BLOCK'; blockId: string }
   | { type: 'DELETE_SELECTED' }
@@ -84,12 +92,14 @@ export function nextBlockPosition(
   canvasWidth = DEFAULT_CANVAS_WIDTH,
   canvasHeight = DEFAULT_CANVAS_HEIGHT,
 ): { x: number; y: number } {
-  const x = PLACEMENT_MARGIN
+  // Horizontally centred so a new block lands somewhere obvious, then stacked
+  // below existing blocks so nothing is created on top of earlier work.
+  const x = Math.max(0, Math.round((canvasWidth - NEW_BLOCK_WIDTH) / 2))
   if (blocks.length === 0) return { x, y: PLACEMENT_MARGIN }
   const lowestBottom = blocks.reduce((max, b) => Math.max(max, b.position.y + b.position.height), 0)
   let y = lowestBottom + PLACEMENT_MARGIN
   if (y + NEW_BLOCK_HEIGHT > canvasHeight) y = PLACEMENT_MARGIN
-  return { x: Math.min(x, Math.max(0, canvasWidth - NEW_BLOCK_WIDTH)), y }
+  return { x, y }
 }
 
 // ── Selection helpers ────────────────────────────────────────────────────────
@@ -118,13 +128,44 @@ function withBlocks(state: EditorState, blocks: BriefBlock[]): EditorState {
   return { ...state, brief: { ...state.brief, blocks } }
 }
 
-function addBlock(state: EditorState, blockType: BlockType): EditorState {
+function addBlock(state: EditorState, blockType: BlockType, label?: string): EditorState {
   const { brief } = state
   const position = nextBlockPosition(brief.blocks, brief.project.canvasWidth, brief.project.canvasHeight)
   const block = createBlock(blockType, {
     position: { ...position, width: NEW_BLOCK_WIDTH, height: NEW_BLOCK_HEIGHT },
+    ...(label === undefined ? {} : { label }),
   })
   return { brief: { ...brief, blocks: [...brief.blocks, block] }, selectedIds: [block.id] }
+}
+
+/**
+ * Creates a 버튼·링크: one visible design `cta_button` plus its publishing
+ * `button_url`, linked by a shared `groupId`. Both are created in a single
+ * action so one undo removes the pair, and the URL stays in a publishing block
+ * so it never reaches the image AI.
+ */
+function addButtonLink(state: EditorState, buttonLabel: string): EditorState {
+  const { brief } = state
+  const position = nextBlockPosition(brief.blocks, brief.project.canvasWidth, brief.project.canvasHeight)
+  const groupId = createId('lnk')
+
+  const button = createBlock(SIMPLE_BLOCK_TYPE.buttonLink, {
+    label: buttonLabel,
+    groupId,
+    position: { ...position, width: NEW_BLOCK_WIDTH, height: NEW_BLOCK_HEIGHT },
+  })
+  // The URL block is not drawn on the canvas (the pair shows as one card), but
+  // it keeps a real position so it stays valid and exports unchanged.
+  const url = createBlock(LINK_URL_TYPE, {
+    label: `${buttonLabel} 연결 주소`,
+    groupId,
+    position: { ...position, width: NEW_BLOCK_WIDTH, height: NEW_BLOCK_HEIGHT },
+  })
+
+  return {
+    brief: { ...brief, blocks: [...brief.blocks, button, url] },
+    selectedIds: [button.id],
+  }
 }
 
 function selectBlock(state: EditorState, blockId: string | null, additive: boolean): EditorState {
@@ -210,6 +251,12 @@ function duplicateBlock(state: EditorState, blockId: string): EditorState {
   const src = state.brief.blocks.find((b) => b.id === blockId)
   if (!src) return state
 
+  // Duplicating one half of a 버튼·링크 must produce a whole new pair, so hand
+  // off to the multi-block path (which remaps group ids).
+  if (findLinkPartner(state.brief.blocks, src) !== undefined) {
+    return duplicateSelected({ ...state, selectedIds: [blockId] })
+  }
+
   const canvasW = state.brief.project.canvasWidth
   const canvasH = state.brief.project.canvasHeight
   const offset = clampPosition(
@@ -237,7 +284,8 @@ function duplicateBlock(state: EditorState, blockId: string): EditorState {
  * the clones become the new selection. Used by the multi-select 복제 action.
  */
 function duplicateSelected(state: EditorState): EditorState {
-  const ids = new Set(state.selectedIds)
+  // Include the URL half of any selected 버튼·링크 so the copy is a full pair.
+  const ids = withLinkPartners(state.brief.blocks, new Set(state.selectedIds))
   if (ids.size === 0) return state
   const canvasW = state.brief.project.canvasWidth
   const canvasH = state.brief.project.canvasHeight
@@ -272,16 +320,23 @@ function duplicateSelected(state: EditorState): EditorState {
   }
 
   if (clones.length === 0) return state
+  const blocks = [...state.brief.blocks, ...clones]
+  // Never select the hidden URL half of a pair — it has no card to act on, and
+  // selecting it would make one 버튼·링크 look like a multi-selection.
+  const selectable = clones.filter((c) => !isPairedLinkUrl(blocks, c))
   return {
-    brief: { ...state.brief, blocks: [...state.brief.blocks, ...clones] },
-    selectedIds: clones.map((c) => c.id),
+    brief: { ...state.brief, blocks },
+    selectedIds: (selectable.length > 0 ? selectable : clones).map((c) => c.id),
   }
 }
 
 function deleteBlocks(state: EditorState, ids: Set<string>): EditorState {
+  // A 버튼·링크 is one thing to the user, so deleting the visible button also
+  // removes its paired URL block.
+  const all = withLinkPartners(state.brief.blocks, ids)
   return {
-    brief: { ...state.brief, blocks: state.brief.blocks.filter((b) => !ids.has(b.id)) },
-    selectedIds: state.selectedIds.filter((id) => !ids.has(id)),
+    brief: { ...state.brief, blocks: state.brief.blocks.filter((b) => !all.has(b.id)) },
+    selectedIds: state.selectedIds.filter((id) => !all.has(id)),
   }
 }
 
@@ -409,7 +464,9 @@ function setProjectTitle(state: EditorState, title: string): EditorState {
 export function briefReducer(state: EditorState, action: EditorAction): EditorState {
   switch (action.type) {
     case 'ADD_BLOCK':
-      return addBlock(state, action.blockType)
+      return addBlock(state, action.blockType, action.label)
+    case 'ADD_BUTTON_LINK':
+      return addButtonLink(state, action.label)
     case 'SELECT_BLOCK':
       return selectBlock(state, action.blockId, action.additive ?? false)
     case 'DELETE_BLOCK':
