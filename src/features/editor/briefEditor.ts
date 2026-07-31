@@ -25,11 +25,12 @@ import {
   LINK_TYPE_FOR,
   LINK_URL_TYPE,
   SIMPLE_BLOCK_TYPE,
+  drawsBareText,
   findLinkPartner,
   isPairedLinkUrl,
   withLinkPartners,
 } from '../../domain/simpleBlocks'
-import { emphasisForBlockSize } from '../../domain/textFit'
+import { CARD_CHROME_Y, CARD_PADDING_X, emphasisForBlockSize, fitTextHeight, fitTextSize } from '../../domain/textFit'
 import { boundedDelta, clampPosition, type Rect } from './canvasGeometry'
 
 /** Default title so a fresh brief still passes validation (needs a title). */
@@ -64,6 +65,7 @@ export type EditorAction =
   | { type: 'DELETE_BLOCK'; blockId: string }
   | { type: 'DELETE_SELECTED' }
   | { type: 'UPDATE_BLOCK'; blockId: string; patch: BlockPatch; coalesceKey?: string }
+  | { type: 'COMMIT_TEXT'; blockId: string; content: string }
   | { type: 'MOVE_BLOCK'; blockId: string; x: number; y: number; coalesceKey?: string }
   | { type: 'RESIZE_BLOCK'; blockId: string; rect: Rect; coalesceKey?: string }
   | { type: 'DUPLICATE_BLOCK'; blockId: string }
@@ -206,6 +208,36 @@ function updateBlock(state: EditorState, blockId: string, patch: BlockPatch): Ed
   )
 }
 
+/**
+ * Commits wording typed inside a block and sheds the empty space left under it
+ * (단계 1-A §3.3).
+ *
+ * A block starts at a default height, so a short line would otherwise leave a
+ * tall box that says nothing about where the wording sits. Trimming only ever
+ * shrinks: growing is the user's call, made by dragging a corner, which is also
+ * how the type size is chosen. A block already too small keeps its 블록이 작아요
+ * warning rather than being trimmed around illegible text.
+ */
+function commitText(state: EditorState, blockId: string, content: string): EditorState {
+  const target = state.brief.blocks.find((b) => b.id === blockId)
+  if (!target) return state
+  const written = withDerivedEmphasis(applyPatch(target, { content }))
+
+  if (!drawsBareText(written) || content.trim().length === 0) {
+    return withBlocks(state, state.brief.blocks.map((b) => (b.id === blockId ? written : b)))
+  }
+
+  const { width, height } = written.position
+  const fit = fitTextSize(content, width, height)
+  const needed = fitTextHeight(content, width, fit.fontSize)
+  const trimmed =
+    fit.overflow || needed >= height
+      ? written
+      : withDerivedEmphasis({ ...written, position: { ...written.position, height: needed } })
+
+  return withBlocks(state, state.brief.blocks.map((b) => (b.id === blockId ? trimmed : b)))
+}
+
 function moveBlock(state: EditorState, blockId: string, x: number, y: number): EditorState {
   const target = state.brief.blocks.find((b) => b.id === blockId)
   if (!target) return state
@@ -245,7 +277,10 @@ function moveBlock(state: EditorState, blockId: string, x: number, y: number): E
  */
 function withDerivedEmphasis(block: BriefBlock): BriefBlock {
   if (!getBlockTypeMeta(block.type).hasText) return block
-  const emphasis = emphasisForBlockSize(block.content ?? '', block.position.width, block.position.height)
+  // Measured over the same area the wording is drawn in: bare for printed
+  // wording, card-sized for the kinds that keep a card.
+  const area = drawsBareText(block) ? {} : { padX: CARD_PADDING_X, padY: CARD_CHROME_Y }
+  const emphasis = emphasisForBlockSize(block.content ?? '', block.position.width, block.position.height, area)
   if (block.layoutHint.emphasis === emphasis) return block
   return { ...block, layoutHint: { ...block.layoutHint, emphasis } }
 }
@@ -540,6 +575,8 @@ export function briefReducer(state: EditorState, action: EditorAction): EditorSt
       return state.selectedIds.length > 0 ? deleteBlocks(state, new Set(state.selectedIds)) : state
     case 'UPDATE_BLOCK':
       return updateBlock(state, action.blockId, action.patch)
+    case 'COMMIT_TEXT':
+      return commitText(state, action.blockId, action.content)
     case 'MOVE_BLOCK':
       return moveBlock(state, action.blockId, action.x, action.y)
     case 'RESIZE_BLOCK':

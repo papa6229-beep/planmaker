@@ -62,16 +62,16 @@ describe('multi-page editor', () => {
     await user.click(within(strip()).getByRole('button', { name: '+ 페이지 추가' }))
     expect(within(canvas()).queryByRole('button', { name: /문구/ })).toBeNull()
 
-    // Add a memo on page 2.
-    await user.click(within(palette()).getByRole('button', { name: '요청 메모' }))
-    expect(within(canvas()).getByRole('button', { name: /요청 메모/ })).toBeTruthy()
+    // Add an image slot on page 2.
+    await user.click(within(palette()).getByRole('button', { name: '이미지' }))
+    expect(canvas().querySelectorAll('.block-card')).toHaveLength(1)
     expect(within(canvas()).queryByRole('button', { name: /문구/ })).toBeNull()
 
     // Back to page 1: the headline is there, the benefit is not.
     const p1 = within(strip()).getAllByRole('button').find((b) => b.textContent === '1페이지')!
     await user.click(p1)
     expect(within(canvas()).getByRole('button', { name: /문구/ })).toBeTruthy()
-    expect(within(canvas()).queryByRole('button', { name: /요청 메모/ })).toBeNull()
+    expect(canvas().querySelectorAll('.block-card')).toHaveLength(1)
   })
 
   it('renames a page through its menu', async () => {

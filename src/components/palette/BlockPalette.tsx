@@ -1,16 +1,16 @@
 /**
- * Left column: the four authoring tools (기획서 작성 화면 1차 단순화 §2.2).
+ * Left column: the three authoring tools (단계 1-A §4.1).
  *
- * The user sees exactly four things to add — 글 넣기 · 이미지 자리 · 버튼·링크 ·
- * 요청 메모 — instead of the previous 23 typed entries. The 34-type catalog is
- * untouched: `simpleBlocks.ts` maps these four onto existing types, and blocks
- * of any other type in an existing document still open and edit normally.
+ * The user sees exactly three things to add — 글 넣기 · 이미지 · 버튼·링크 —
+ * instead of the previous 23 typed entries. The 34-type catalog is untouched:
+ * `simpleBlocks.ts` maps these three onto existing types, and blocks of any
+ * other type in an existing document still open and edit normally.
  *
- * The URL of a 버튼·링크 is entered in the properties panel, so there is no
- * separate 퍼블리싱 정보 section to browse here.
+ * The URL of a 버튼·링크 is entered on the block itself, so there is no separate
+ * 퍼블리싱 정보 section to browse here.
  */
 
-import { SIMPLE_BLOCKS, SIMPLE_BLOCK_TYPE, type SimpleBlockKind } from '../../domain/simpleBlocks'
+import { PALETTE_TOOLS, SIMPLE_BLOCK_TYPE, type SimpleBlockKind } from '../../domain/simpleBlocks'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 
 export function BlockPalette() {
@@ -29,7 +29,7 @@ export function BlockPalette() {
       </header>
 
       <ul className="simple-tools" aria-label="기본 블록">
-        {SIMPLE_BLOCKS.map((tool) => (
+        {PALETTE_TOOLS.map((tool) => (
           <li key={tool.kind}>
             <button
               type="button"

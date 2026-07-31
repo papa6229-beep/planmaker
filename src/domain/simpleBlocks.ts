@@ -46,6 +46,16 @@ export const SIMPLE_BLOCKS: SimpleBlockDef[] = [
   { kind: 'note', label: '요청 메모', hint: '이미지에 넣지 않고 전달할 요청입니다', blockLabel: '요청 메모' },
 ]
 
+/**
+ * What the palette offers for a *new* block: three things, not four.
+ *
+ * 요청 메모 is no longer a way to start a block — the document-wide 전체 컨셉
+ * carries that intent now. The kind itself stays in `SIMPLE_BLOCKS` above:
+ * existing `revision_reference` blocks keep their name, their card, their
+ * editing, and their place in the AI summary.
+ */
+export const PALETTE_TOOLS: SimpleBlockDef[] = SIMPLE_BLOCKS.filter((tool) => tool.kind !== 'note')
+
 /** Block type each tool creates. 버튼·링크 additionally creates `button_url`. */
 export const SIMPLE_BLOCK_TYPE: Record<SimpleBlockKind, BlockType> = {
   text: 'free_text',
@@ -126,6 +136,18 @@ export function simpleKindOf(block: BriefBlock): SimpleBlockKind | null {
   if (block.type === NOTE_TYPE) return 'note'
   if (block.type === SIMPLE_BLOCK_TYPE.imageSlot) return 'imageSlot'
   return null
+}
+
+/**
+ * True when the block's box on the canvas *is* its wording area (단계 1-A §3.1).
+ *
+ * Wording that gets printed into the image is drawn bare, so the block's
+ * position and size say exactly where that wording goes. Everything else — an
+ * image slot waiting for a picture, a legacy 요청 메모 that is never printed —
+ * keeps its card, because for those the card is the thing being placed.
+ */
+export function drawsBareText(block: BriefBlock): boolean {
+  return getBlockTypeMeta(block.type).hasText && block.aiVisibility === 'design'
 }
 
 /** Short kind label shown on the canvas card so blocks are told apart at a glance. */

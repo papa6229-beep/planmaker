@@ -36,6 +36,8 @@ describe('canvas editing — drag to move', () => {
     const { palette, canvas } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
+    // A new block opens ready to type; leaving the editor makes it draggable.
+    await user.keyboard('{Escape}')
     const card = within(canvas).getByRole('button', { name: /문구/ })
     const startLeft = px(card.style.left)
 
@@ -63,6 +65,7 @@ describe('canvas editing — resize', () => {
     const { palette, canvas } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
+    await user.keyboard('{Escape}')
     const card = within(canvas).getByRole('button', { name: /문구/ })
     const startWidth = px(card.style.width)
 
@@ -99,7 +102,9 @@ describe('canvas editing — multi-selection', () => {
     const { palette, canvas } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '이미지' }))
-    await user.click(within(palette).getByRole('button', { name: '요청 메모' }))
+    await user.keyboard('{Escape}')
+    await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
+    await user.keyboard('{Escape}')
 
     const cards = Array.from(canvas.querySelectorAll('.block-card')) as HTMLElement[]
     await user.click(cards[0]!)
@@ -119,6 +124,7 @@ describe('canvas editing — scales to 20+ blocks', () => {
     const add = within(palette).getByRole('button', { name: '글 넣기' })
     for (let i = 0; i < 20; i++) {
       await user.click(add)
+      await user.keyboard('{Escape}')
     }
     // 20 free-text cards on the canvas.
     expect(within(canvas).getAllByRole('button', { name: /문구/ })).toHaveLength(20)

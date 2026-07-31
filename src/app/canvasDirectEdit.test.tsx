@@ -119,7 +119,7 @@ describe('§10.2–3 크기에 따른 글자 크기와 emphasis', () => {
     const small = briefReducer(withText, {
       type: 'RESIZE_BLOCK',
       blockId: id,
-      rect: { x: 20, y: 20, width: 180, height: 40 },
+      rect: { x: 20, y: 20, width: 180, height: 26 },
     })
 
     expect(big.brief.blocks[0]!.layoutHint.emphasis).toBe('high')
@@ -180,8 +180,8 @@ describe('§10.4 긴 문구의 최소 가독성', () => {
     fireEvent.change(screen.getByLabelText('문구 내용'), {
       target: {
         value:
-          '가을 리빙 기획전 이불 커튼 러그 전 품목 최대 50% 할인 5만원 이상 구매 시 무료배송 사은품 증정 9월 한 달 내내 진행합니다. ' +
-          '일부 상품은 행사에서 제외되며 재고 소진 시 조기 종료될 수 있습니다. 자세한 내용은 상세페이지를 확인해 주세요.',
+          ('가을 리빙 기획전 이불 커튼 러그 전 품목 최대 50% 할인 5만원 이상 구매 시 무료배송 사은품 증정 9월 한 달 내내 진행합니다. ' +
+            '일부 상품은 행사에서 제외되며 재고 소진 시 조기 종료될 수 있습니다. 자세한 내용은 상세페이지를 확인해 주세요. ').repeat(3),
       },
     })
     await user.keyboard('{Control>}{Enter}{/Control}')
@@ -198,11 +198,11 @@ describe('§10.5 이미지 블록', () => {
     renderEditor()
     await user.click(tool('이미지'))
 
-    const card = canvas().querySelector('.block-card') as HTMLElement
-    expect(within(card).getByText('어떤 이미지가 들어갈지 적어주세요')).toBeTruthy()
+    // The new slot opens asking what belongs there.
+    const editor = screen.getByLabelText('이미지 내용') as HTMLTextAreaElement
+    expect(editor.placeholder).toBe('어떤 이미지가 들어갈지 적어주세요')
 
-    await user.dblClick(card)
-    await user.type(screen.getByLabelText('이미지 내용'), '여기에 대표 제품 사진')
+    await user.type(editor, '여기에 대표 제품 사진')
     await user.keyboard('{Control>}{Enter}{/Control}')
     expect(within(canvas()).getByText('여기에 대표 제품 사진')).toBeTruthy()
   })
@@ -211,6 +211,7 @@ describe('§10.5 이미지 블록', () => {
     const user = userEvent.setup()
     renderEditor()
     await user.click(tool('이미지'))
+    await user.keyboard('{Escape}')
     const card = canvas().querySelector('.block-card') as HTMLElement
 
     const file = pngFile()
@@ -230,6 +231,7 @@ describe('§10.6 이미지 링크 · §10.7 버튼 문구와 URL', () => {
     const user = userEvent.setup()
     renderEditor()
     await user.click(tool('이미지'))
+    await user.keyboard('{Escape}')
     const card = canvas().querySelector('.block-card') as HTMLElement
 
     await user.click(within(card).getByRole('button', { name: '이미지 링크 연결' }))

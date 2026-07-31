@@ -40,16 +40,15 @@ beforeEach(async () => {
 })
 
 describe('palette simplification (1차 단순화 §2.2)', () => {
-  it('offers exactly the four authoring tools and nothing else', () => {
+  it('offers exactly the three authoring tools and nothing else', () => {
     renderShell()
     const tools = within(screen.getByRole('list', { name: '기본 블록' })).getAllByRole('button')
     expect(tools.map((b) => b.querySelector('.simple-tool__label')?.textContent)).toEqual([
       '글 넣기',
       '이미지',
       '버튼·링크',
-      '요청 메모',
     ])
-    expect(tools).toHaveLength(4)
+    expect(tools).toHaveLength(3)
   })
 
   it('no longer lists the granular typed blocks or a publishing section', () => {

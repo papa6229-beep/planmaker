@@ -141,15 +141,14 @@ describe('첫 시작 선택 (§2.1)', () => {
 // ── 단순 팔레트 (§2.2) ───────────────────────────────────────────────────────
 
 describe('단순 팔레트 (§2.2)', () => {
-  it('shows exactly the four tools', () => {
+  it('shows exactly the three tools', () => {
     renderEditor()
     const tools = within(screen.getByRole('list', { name: '기본 블록' })).getAllByRole('button')
-    expect(tools).toHaveLength(4)
+    expect(tools).toHaveLength(3)
     expect(tools.map((b) => b.getAttribute('aria-label'))).toEqual([
       '글 넣기',
       '이미지',
       '버튼·링크',
-      '요청 메모',
     ])
   })
 
@@ -215,7 +214,14 @@ describe('글 넣기 (§2.3)', () => {
     expect(block.type).toBe('free_text')
     expect(block.content).toBe('여름 세일')
     expect(block.layoutHint.emphasis).toBe('high')
-    expect(written.brief.blocks[0]!.layoutHint.emphasis).toBe('normal')
+    // A cramped block reads as 작게 with the same wording and no type change.
+    const cramped = briefReducer(written, {
+      type: 'RESIZE_BLOCK',
+      blockId: id,
+      rect: { x: 0, y: 0, width: 180, height: 26 },
+    })
+    expect(cramped.brief.blocks[0]!.layoutHint.emphasis).toBe('low')
+    expect(cramped.brief.blocks[0]!.type).toBe('free_text')
   })
 
   it('carries every generic text into the AI summary with emphasis, ids and geometry', () => {
@@ -230,7 +236,7 @@ describe('글 넣기 (§2.3)', () => {
     const next = briefReducer(typed, {
       type: 'RESIZE_BLOCK',
       blockId: id,
-      rect: { x: 20, y: 20, width: 180, height: 40 },
+      rect: { x: 20, y: 20, width: 180, height: 26 },
     })
 
     const { page, design } = summarize(asDocument(next.brief))
@@ -407,11 +413,24 @@ describe('버튼·링크 (§2.3, 판정 3)', () => {
 // ── 요청 메모 (§2.3, 판정 1) ─────────────────────────────────────────────────
 
 describe('요청 메모 (§2.3, 판정 1)', () => {
-  it('is created as a non-printing reference instruction', async () => {
+  it('is no longer offered as a new block, but an existing one stays editable', async () => {
+    // 전체 컨셉 carries this intent for new work (단계 1-A §4.1); documents that
+    // already hold a 요청 메모 must keep it, render it, and edit it.
+    const note = createBlock('revision_reference', { id: 'blk_note', label: '요청 메모', content: '기존 요청' })
+    const doc = createEmptyDocument(createEmptyBrief('과거 문서').project)
+    doc.pages[0]!.blocks = [note]
+    await saveDocument(doc, 1)
+
     const user = userEvent.setup()
     renderEditor()
-    await user.click(within(palette()).getByRole('button', { name: '요청 메모' }))
-    await user.dblClick(canvas().querySelector('.block-card') as HTMLElement)
+    expect(within(palette()).queryByRole('button', { name: '요청 메모' })).toBeNull()
+    const card = await waitFor(() => {
+      const found = canvas().querySelector('.block-card')
+      expect(found).not.toBeNull()
+      return found as HTMLElement
+    })
+    await user.dblClick(card)
+    await user.clear(screen.getByLabelText('요청 메모 내용'))
     await user.type(screen.getByLabelText('요청 메모 내용'), '이 부분은 시원한 느낌으로')
     await user.keyboard('{Control>}{Enter}{/Control}')
     expect(within(canvas()).getByText('이 부분은 시원한 느낌으로')).toBeTruthy()

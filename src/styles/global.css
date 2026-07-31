@@ -770,6 +770,46 @@ button { font-family: inherit; }
    hanging below its card is covered by the next card unless the card itself
    comes forward while it is in use. */
 .block-card.is-front { z-index: 2; }
+
+/* ── 문구 블록: the box IS the wording area (단계 1-A §3.1) ──────────────────── */
+/* No card, no badge row, no label line — just the wording, so the block's
+   position and size describe where that wording actually goes. */
+.block-card--bare {
+  padding: 4px;
+  gap: 0;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  box-shadow: none;
+}
+.block-card--bare:hover { border-color: var(--color-border-strong); }
+.block-card--bare.is-selected {
+  border-color: var(--color-accent);
+  box-shadow: none;
+}
+.block-card--bare.is-overflowing { border-color: var(--color-warning); }
+.block-card--bare .block-card__content { flex: 1; min-height: 0; }
+.block-card--bare .block-card__editor { border-radius: 2px; padding: 0; }
+
+/* The kind and the ⋯ menu float above the selected block, outside its box. */
+.block-toolbar {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-panel);
+  box-shadow: 0 2px 8px rgba(20, 23, 33, 0.12);
+  white-space: nowrap;
+  cursor: default;
+}
+.block-toolbar__kind { font-size: 11px; color: var(--color-muted); }
+.block-toolbar .block-card__tools { margin-left: 0; }
 /* Three information areas (WORK_PLAN §7, Phase 5): design / reference / publishing. */
 .block-card--vis-design { border-left-color: var(--color-design); }
 .block-card--vis-reference {

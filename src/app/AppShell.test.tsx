@@ -41,10 +41,10 @@ describe('AppShell — 3-column layout', () => {
     expect(selectedCards(canvas)).toHaveLength(0)
   })
 
-  it('offers the four authoring tools in the palette', () => {
+  it('offers the three authoring tools in the palette', () => {
     renderShell()
     const tools = screen.getByRole('list', { name: '기본 블록' })
-    expect(within(tools).getAllByRole('button')).toHaveLength(4)
+    expect(within(tools).getAllByRole('button')).toHaveLength(3)
   })
 })
 
@@ -67,14 +67,16 @@ describe('AppShell — block creation & selection', () => {
     const { palette, canvas } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
-    await user.click(within(palette).getByRole('button', { name: '요청 메모' }))
-    // The memo is the new selection.
-    expect(selectedCards(canvas)[0]!.textContent).toContain('요청 메모')
+    await user.keyboard('{Escape}')
+    await user.click(within(palette).getByRole('button', { name: '이미지' }))
+    await user.keyboard('{Escape}')
+    // The image slot is the new selection.
+    expect(selectedCards(canvas)[0]!.textContent).toContain('이미지')
 
     // Clicking the text card moves the selection to it.
     await user.click(within(canvas).getByRole('button', { name: /문구/ }))
     expect(selectedCards(canvas)).toHaveLength(1)
-    expect(selectedCards(canvas)[0]!.textContent).toContain('글 넣기')
+    expect(selectedCards(canvas)[0]!.className).toContain('block-card--bare')
   })
 })
 

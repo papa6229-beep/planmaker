@@ -16,8 +16,8 @@
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { getBlockTypeMeta, type BlockCategory } from '../../domain/blockTypes'
-import { canCarryLink, cardKindLabel } from '../../domain/simpleBlocks'
-import { fitTextSize } from '../../domain/textFit'
+import { canCarryLink, cardKindLabel, drawsBareText } from '../../domain/simpleBlocks'
+import { CARD_CHROME_Y, CARD_PADDING_X, fitTextSize } from '../../domain/textFit'
 import type { BriefBlock } from '../../domain/briefSchema'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useAssets } from '../../features/assets/useAssets'
@@ -78,7 +78,7 @@ function LinkIcon() {
 
 export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeight, paired = false, linkUrl }: Props) {
   const {
-    moveBlock, resizeBlock, selectBlock, endInteraction, updateBlock,
+    moveBlock, resizeBlock, selectBlock, endInteraction, commitText,
     deleteBlock, duplicateBlock, removeBlockAsset, setBlockLink,
   } = useBriefEditor()
   const { getUrl, uploadFiles } = useAssets()
@@ -96,7 +96,11 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   // Text blocks and empty image blocks both take wording in place.
   const takesInlineText = meta.hasText || (meta.requiresAsset && thumbUrl === undefined)
   const linkable = canCarryLink(block.type)
-  const fit = fitTextSize(block.content ?? '', block.position.width, block.position.height)
+  // Printed wording is drawn bare, so its box is measured as pure text area;
+  // the kinds that keep a card are measured with that card's chrome.
+  const bare = drawsBareText(block)
+  const fitArea = bare ? {} : { padX: CARD_PADDING_X, padY: CARD_CHROME_Y }
+  const fit = fitTextSize(block.content ?? '', block.position.width, block.position.height, fitArea)
 
   const beginEdit = () => {
     if (!takesInlineText) return
@@ -105,10 +109,28 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   }
   const commitEdit = () => {
     setEditing(false)
-    if (draft !== (block.content ?? '')) updateBlock(block.id, { content: draft })
+    if (draft !== (block.content ?? '')) commitText(block.id, draft)
   }
   const openFilePicker = () => fileRef.current?.click()
   const closeMenu = () => menuRef.current?.removeAttribute('open')
+
+  /**
+   * A block added from the palette opens ready to type (단계 1-A §4.2): it is
+   * brand new, selected, and still empty, so the only thing left to do is say
+   * what goes in it. Existing blocks are unaffected — they still open on a
+   * double-click.
+   */
+  const autoEdited = useRef(false)
+  useEffect(() => {
+    if (autoEdited.current) return
+    autoEdited.current = true
+    if (!selected || !takesInlineText || hasContent(block)) return
+    setDraft('')
+    setEditing(true)
+    // Mount-only: this is about how the block was created, not about later
+    // selection changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Paste an image straight onto the selected image block.
   useEffect(() => {
@@ -190,6 +212,63 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
     void uploadFiles(files, { targetBlockId: block.id })
   }
 
+  /**
+   * The kind and the ⋯ menu, shown either in the card head (kinds that keep a
+   * card) or in the floating bar above a selected bare block. Either way it is
+   * screen furniture: it is not part of the block's box and never reaches the
+   * saved position, the AI placement data, or the content fingerprint.
+   */
+  const tools = (
+    <span className="block-card__tools" onPointerDown={(e) => e.stopPropagation()}>
+      {linkable && (
+        <button
+          type="button"
+          className="block-card__tool"
+          aria-label={`${block.label} 링크 연결`}
+          title="연결 주소 입력"
+          onClick={() => {
+            setLinkDraft(linkUrl ?? '')
+            setLinkOpen((v) => !v)
+          }}
+        >
+          <LinkIcon />
+        </button>
+      )}
+      <details className="block-card__menu" ref={menuRef}>
+        <summary className="block-card__menu-trigger" aria-label={`${block.label} 블록 메뉴`}>⋯</summary>
+        <div className="block-card__menu-panel">
+          {meta.requiresAsset && (
+            <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); openFilePicker() }}>
+              {thumbUrl ? '이미지 교체' : '이미지 넣기'}
+            </button>
+          )}
+          {meta.requiresAsset && thumbUrl && (
+            <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); removeBlockAsset(block.id) }}>
+              이미지 제거
+            </button>
+          )}
+          <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); duplicateBlock(block.id) }}>
+            블록 복제
+          </button>
+          <button type="button" className="block-card__menu-item block-card__menu-item--danger" onClick={() => { closeMenu(); deleteBlock(block.id) }}>
+            삭제
+          </button>
+        </div>
+      </details>
+    </span>
+  )
+
+  const linkBadge = linkUrl !== undefined && (
+    <span className="block-card__link-badge" title={`연결됨: ${linkUrl}`} aria-label="연결된 주소 있음">
+      <LinkIcon />
+    </span>
+  )
+  const overflowBadge = fit.overflow && (
+    <span className="block-card__overflow" title="글이 블록보다 깁니다. 블록을 키워 주세요.">
+      블록이 작아요
+    </span>
+  )
+
   return (
     <div
       className={[
@@ -197,6 +276,8 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
         `block-card--${CATEGORY_MODIFIER[meta.category]}`,
         `block-card--vis-${block.aiVisibility}`,
         block.groupId !== undefined && !paired ? 'block-card--grouped' : '',
+        // Printed wording carries no card: the box is the wording area itself.
+        bare ? 'block-card--bare' : '',
         selected ? 'is-selected' : '',
         // A card whose popovers can be open has to paint above later siblings,
         // otherwise the next card swallows clicks on the link editor / ⋯ menu.
@@ -210,6 +291,9 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
       role="button"
       tabIndex={0}
       aria-pressed={selected}
+      // The kind and label are no longer drawn inside a text block, so the
+      // block still says what it is to a screen reader (and to tests) here.
+      aria-label={hasContent(block) ? `${block.label}: ${block.content}` : block.label}
       onPointerDown={startDrag}
       onDoubleClick={() => (meta.requiresAsset && thumbUrl ? openFilePicker() : beginEdit())}
       onDragOver={(e) => {
@@ -240,63 +324,33 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
         }
       }}
     >
-      <span className="block-card__head">
-        {/* Plain-language kind, so an unselected card is still identifiable
-            without knowing the internal type or AI-visibility vocabulary. */}
-        <span className="block-card__visibility">{cardKindLabel(block)}</span>
-        {block.groupId !== undefined && !paired && <span className="block-card__group" title="그룹">그룹</span>}
-        {linkUrl !== undefined && (
-          <span className="block-card__link-badge" title={`연결됨: ${linkUrl}`} aria-label="연결된 주소 있음">
-            <LinkIcon />
+      {bare ? (
+        // Floating bar, drawn above the block and outside its box (§3.2).
+        selected && (
+          <span className="block-toolbar" onPointerDown={(e) => e.stopPropagation()}>
+            {/* The block's own name (문구 · 버튼 · 혜택 …), which is what the
+                label line used to say inside the box. */}
+            <span className="block-toolbar__kind">{block.label}</span>
+            {block.groupId !== undefined && !paired && <span className="block-card__group" title="그룹">그룹</span>}
+            {linkBadge}
+            {overflowBadge}
+            {tools}
           </span>
-        )}
-        {fit.overflow && (
-          <span className="block-card__overflow" title="글이 블록보다 깁니다. 블록을 키워 주세요.">
-            블록이 작아요
+        )
+      ) : (
+        <>
+          <span className="block-card__head">
+            {/* Plain-language kind, so an unselected card is still identifiable
+                without knowing the internal type or AI-visibility vocabulary. */}
+            <span className="block-card__visibility">{cardKindLabel(block)}</span>
+            {block.groupId !== undefined && !paired && <span className="block-card__group" title="그룹">그룹</span>}
+            {linkBadge}
+            {overflowBadge}
+            {selected && tools}
           </span>
-        )}
-        {selected && (
-          <span className="block-card__tools" onPointerDown={(e) => e.stopPropagation()}>
-            {linkable && (
-              <button
-                type="button"
-                className="block-card__tool"
-                aria-label={`${block.label} 링크 연결`}
-                title="연결 주소 입력"
-                onClick={() => {
-                  setLinkDraft(linkUrl ?? '')
-                  setLinkOpen((v) => !v)
-                }}
-              >
-                <LinkIcon />
-              </button>
-            )}
-            <details className="block-card__menu" ref={menuRef}>
-              <summary className="block-card__menu-trigger" aria-label={`${block.label} 블록 메뉴`}>⋯</summary>
-              <div className="block-card__menu-panel">
-                {meta.requiresAsset && (
-                  <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); openFilePicker() }}>
-                    {thumbUrl ? '이미지 교체' : '이미지 넣기'}
-                  </button>
-                )}
-                {meta.requiresAsset && thumbUrl && (
-                  <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); removeBlockAsset(block.id) }}>
-                    이미지 제거
-                  </button>
-                )}
-                <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); duplicateBlock(block.id) }}>
-                  블록 복제
-                </button>
-                <button type="button" className="block-card__menu-item block-card__menu-item--danger" onClick={() => { closeMenu(); deleteBlock(block.id) }}>
-                  삭제
-                </button>
-              </div>
-            </details>
-          </span>
-        )}
-      </span>
-
-      <span className="block-card__title">{block.label}</span>
+          <span className="block-card__title">{block.label}</span>
+        </>
+      )}
 
       {editing ? (
         <textarea

@@ -26,6 +26,7 @@ import { createEmptyDocument } from '../domain/pageSchema'
 import { createBlock, createEmptyProject } from '../domain/factory'
 import { createWorkRequest } from '../domain/workRequest'
 import { briefStatus, lastDeliveredAt, latestDeliveryOf } from '../domain/briefStatus'
+import { fitTextHeight, fitTextSize } from '../domain/textFit'
 import type { BriefDocument } from '../domain/pageSchema'
 import type { WorkRequest } from '../domain/workRequest'
 
@@ -35,7 +36,16 @@ vi.mock('../services/previewRenderer', () => ({
 
 function docWith(title: string, text: string, id?: string): BriefDocument {
   const doc = createEmptyDocument(createEmptyProject(title))
-  doc.pages[0]!.blocks = [createBlock('free_text', { id: 'blk_1', label: '문구', content: text })]
+  const block = createBlock('free_text', { id: 'blk_1', label: '문구', content: text })
+  // A block written in the editor ends up exactly as tall as its wording, so
+  // fixtures use that height too — otherwise re-typing the same words would
+  // legitimately read as a geometry change.
+  const { width } = block.position
+  block.position = {
+    ...block.position,
+    height: fitTextHeight(text, width, fitTextSize(text, width, block.position.height).fontSize),
+  }
+  doc.pages[0]!.blocks = [block]
   if (id) doc.project.id = id
   return doc
 }
