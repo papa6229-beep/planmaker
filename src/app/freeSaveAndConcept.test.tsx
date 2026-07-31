@@ -17,6 +17,7 @@ import { render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
+import { AppSurfaceProvider } from './AppSurfaceContext'
 import { AppRoutes } from './AppRoutes'
 import { RequestsProvider } from '../features/requests/useRequests'
 import { DocumentsProvider } from '../features/documents/useDocuments'
@@ -43,11 +44,14 @@ vi.mock('../services/previewRenderer', () => ({
 function renderShell(binding?: { load: () => Promise<BriefDocument | null>; save: (d: BriefDocument) => Promise<void> }) {
   return render(
     <MemoryRouter initialEntries={['/briefs/new']}>
-      <RequestsProvider>
-        <DocumentsProvider>
-          {binding ? <AppShell binding={binding} /> : <AppShell />}
-        </DocumentsProvider>
-      </RequestsProvider>
+      {/* 전달하기 is a studio feature, and this file exercises it (타 팀 배포 §5). */}
+      <AppSurfaceProvider surface="studio">
+        <RequestsProvider>
+          <DocumentsProvider>
+            {binding ? <AppShell binding={binding} /> : <AppShell />}
+          </DocumentsProvider>
+        </RequestsProvider>
+      </AppSurfaceProvider>
     </MemoryRouter>,
   )
 }

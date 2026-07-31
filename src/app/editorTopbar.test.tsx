@@ -12,6 +12,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { AppShell } from './AppShell'
+import { AppSurfaceProvider } from './AppSurfaceContext'
 import { RequestsProvider } from '../features/requests/useRequests'
 import { DocumentsProvider } from '../features/documents/useDocuments'
 
@@ -22,7 +23,8 @@ function renderEditor() {
           <DocumentsProvider>
           <Routes>
           <Route path="/" element={<h1>게이트 화면</h1>} />
-          <Route path="/briefs/new" element={<AppShell />} />
+          {/* 전달하기 belongs to the studio surface (타 팀 배포 §5). */}
+          <Route path="/briefs/new" element={<AppSurfaceProvider surface="studio"><AppShell /></AppSurfaceProvider>} />
         </Routes>
         </DocumentsProvider>
       </RequestsProvider>

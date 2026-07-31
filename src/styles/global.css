@@ -206,6 +206,15 @@ button { font-family: inherit; }
 .save-dialog__input { flex: 1; min-width: 0; }
 .save-dialog__ext { flex: none; font-size: 13px; color: var(--color-muted); }
 
+/* How a finished brief reaches the design team on the 타 팀 배포 surface: said
+   once, beside the file actions (§4.5). */
+.editor-topbar__handoff {
+  max-width: 260px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-muted);
+}
+
 /* Short confirmation that a file was written (자유 저장 §3). */
 .editor-topbar__io-note { font-size: 12px; color: var(--color-success); white-space: nowrap; }
 

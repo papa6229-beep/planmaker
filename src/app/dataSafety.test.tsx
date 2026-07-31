@@ -16,6 +16,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AppRoutes } from './AppRoutes'
 import { AppShell } from './AppShell'
+import { AppSurfaceProvider } from './AppSurfaceContext'
 import { RequestsProvider } from '../features/requests/useRequests'
 import { DocumentsProvider } from '../features/documents/useDocuments'
 import {
@@ -86,7 +87,8 @@ async function fileOf(doc: BriefDocument, assets: StoredAsset[], name = 'in.even
 function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <AppRoutes />
+      {/* delivering is a studio feature (타 팀 배포 §5). */}
+      <AppRoutes surface="studio" />
     </MemoryRouter>,
   )
 }
@@ -94,11 +96,13 @@ function renderAt(path: string) {
 function renderShell(binding: { load: () => Promise<BriefDocument | null>; save: (d: BriefDocument) => Promise<void> }) {
   return render(
     <MemoryRouter initialEntries={['/briefs/x']}>
-      <RequestsProvider>
-        <DocumentsProvider>
-          <AppShell binding={binding} />
-        </DocumentsProvider>
-      </RequestsProvider>
+      <AppSurfaceProvider surface="studio">
+        <RequestsProvider>
+          <DocumentsProvider>
+            <AppShell binding={binding} />
+          </DocumentsProvider>
+        </RequestsProvider>
+      </AppSurfaceProvider>
     </MemoryRouter>,
   )
 }
