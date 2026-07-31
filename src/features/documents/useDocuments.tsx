@@ -18,6 +18,7 @@ import {
 } from 'react'
 import {
   createDocument,
+  deleteDocument,
   duplicateDocument,
   listDocuments,
   migrateSingleAutosave,
@@ -37,6 +38,8 @@ export interface DocumentsApi {
   createNew: () => Promise<string>
   /** Copies a brief into an independent new one; returns the copy's id. */
   duplicate: (id: string) => Promise<string | null>
+  /** Removes a brief from this browser. Delivered snapshots are untouched. */
+  remove: (id: string) => Promise<void>
   /** Re-reads the list (after a save, delivery, or copy). */
   refresh: () => Promise<void>
 }
@@ -87,9 +90,17 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
     [refresh],
   )
 
+  const remove = useCallback(
+    async (id: string) => {
+      await deleteDocument(id)
+      await refresh()
+    },
+    [refresh],
+  )
+
   const api = useMemo<DocumentsApi>(
-    () => ({ documents, loaded, createNew, duplicate, refresh }),
-    [documents, loaded, createNew, duplicate, refresh],
+    () => ({ documents, loaded, createNew, duplicate, remove, refresh }),
+    [documents, loaded, createNew, duplicate, remove, refresh],
   )
 
   return <DocumentsContext.Provider value={api}>{children}</DocumentsContext.Provider>

@@ -771,6 +771,19 @@ button { font-family: inherit; }
    comes forward while it is in use. */
 .block-card.is-front { z-index: 2; }
 
+/* 작성 월 filter + day groups in the library (손검수 2 §6.2). */
+.library__month { display: flex; align-items: center; gap: 8px; }
+.library__month-label { flex: none; font-size: 12px; color: var(--color-muted); }
+.library__month-select { flex: 1; min-width: 0; padding: 6px 8px; font-size: 12px; }
+.library__groups { display: flex; flex-direction: column; gap: 12px; }
+.library__group-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-muted);
+}
+.library__menu-item--danger { color: var(--color-danger); }
+
 /* Confirmation for something that cannot be shrugged off (손검수 2 §4, §5). */
 .confirm-backdrop {
   position: fixed;

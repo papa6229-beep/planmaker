@@ -106,6 +106,15 @@ export async function listDocuments(): Promise<DocumentSummary[]> {
   return rows.toSorted((a, b) => b.updatedAt - a.updatedAt).map(summarize)
 }
 
+/**
+ * Removes one brief from this browser. Delivered snapshots (`WorkRequest`) live
+ * in their own store and are untouched, and shared image blobs are left alone —
+ * asset pruning already keeps whatever any stored brief or delivery still uses.
+ */
+export async function deleteDocument(id: string): Promise<void> {
+  await db().documents.delete(id)
+}
+
 /** Loads one brief, or `null` when the id is unknown. */
 export async function loadDocumentById(id: string): Promise<BriefDocument | null> {
   const row = await db().documents.get(id)
