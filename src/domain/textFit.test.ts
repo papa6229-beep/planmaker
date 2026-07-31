@@ -9,11 +9,20 @@ import {
 
 describe('fitTextSize — block size drives type size', () => {
   it('draws the same wording larger in a larger block', () => {
-    const small = fitTextSize('여름 세일', 200, 60)
+    const small = fitTextSize('여름 세일', 200, 100)
     const large = fitTextSize('여름 세일', 600, 220)
     expect(large.fontSize).toBeGreaterThan(small.fontSize)
     expect(small.overflow).toBe(false)
     expect(large.overflow).toBe(false)
+  })
+
+  it('leaves room for the card chrome so the wording is not clipped', () => {
+    // A default block is 320×96 and its text area measures 291×37 in the browser
+    // once padding, the kind badge row, and the label line are taken out. The
+    // chosen size must draw inside that, line box included.
+    const fit = fitTextSize('일부 상품 제외', 320, 96)
+    expect(fit.fontSize * 1.35).toBeLessThanOrEqual(37)
+    expect(fit.overflow).toBe(false)
   })
 
   it('never grows past the cap or shrinks past the readable minimum', () => {

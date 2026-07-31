@@ -243,6 +243,23 @@ describe('§10.6 이미지 링크 · §10.7 버튼 문구와 URL', () => {
     expect(canvas().querySelectorAll('.block-card')).toHaveLength(1)
   })
 
+  it('brings the card in use forward so a later card cannot cover its link editor', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+    await user.click(tool('이미지'))
+    await user.click(tool('글 넣기'))
+
+    // The link editor hangs below its card and would otherwise sit under the
+    // card added after it, which swallows the pointer.
+    const first = canvas().querySelectorAll('.block-card')[0] as HTMLElement
+    await user.click(first)
+    await user.click(within(first).getByRole('button', { name: '이미지 링크 연결' }))
+    expect(first.classList.contains('is-front')).toBe(true)
+
+    const second = canvas().querySelectorAll('.block-card')[1] as HTMLElement
+    expect(second.classList.contains('is-front')).toBe(false)
+  })
+
   it('keeps an image URL out of the AI summary and in publishing info', () => {
     const created = reduce({ type: 'ADD_BLOCK', blockType: 'main_product_image', label: '이미지' })
     const id = created.brief.blocks[0]!.id

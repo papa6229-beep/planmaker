@@ -198,6 +198,9 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
         `block-card--vis-${block.aiVisibility}`,
         block.groupId !== undefined && !paired ? 'block-card--grouped' : '',
         selected ? 'is-selected' : '',
+        // A card whose popovers can be open has to paint above later siblings,
+        // otherwise the next card swallows clicks on the link editor / ⋯ menu.
+        selected || editing || linkOpen ? 'is-front' : '',
         dropActive ? 'is-drop-target' : '',
         fit.overflow ? 'is-overflowing' : '',
       ]

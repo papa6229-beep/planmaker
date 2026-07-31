@@ -198,16 +198,24 @@ describe('글 넣기 (§2.3)', () => {
   it('keeps the block type neutral and records emphasis on the layout hint', () => {
     const created = reduce({ type: 'ADD_BLOCK', blockType: 'free_text', label: '문구' })
     const id = created.brief.blocks[0]!.id
-    const next = briefReducer(created, {
+    const written = briefReducer(created, {
       type: 'UPDATE_BLOCK',
       blockId: id,
-      patch: { content: '여름 세일', layoutHint: { emphasis: 'high' } },
+      patch: { content: '여름 세일' },
+    })
+    // Emphasis follows the size the wording is drawn at, so a big block records
+    // 크게 without the user setting anything.
+    const next = briefReducer(written, {
+      type: 'RESIZE_BLOCK',
+      blockId: id,
+      rect: { x: 0, y: 0, width: 600, height: 240 },
     })
     const block = next.brief.blocks[0]!
     // Emphasis never rewrites the semantic type — large text is not a headline.
     expect(block.type).toBe('free_text')
     expect(block.content).toBe('여름 세일')
     expect(block.layoutHint.emphasis).toBe('high')
+    expect(written.brief.blocks[0]!.layoutHint.emphasis).toBe('normal')
   })
 
   it('carries every generic text into the AI summary with emphasis, ids and geometry', () => {

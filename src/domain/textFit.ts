@@ -17,11 +17,14 @@ export const MIN_FONT_PX = 12
 export const MAX_FONT_PX = 72
 /** Line box as a multiple of the font size. */
 const LINE_HEIGHT = 1.35
-/** Card padding (top+bottom, left+right) reserved inside the block. */
-const PADDING_X = 24
-const PADDING_Y = 20
-/** Room for the small kind badge above the text. */
-const HEADER_PX = 20
+/**
+ * Chrome the card spends before any wording is drawn, measured against the
+ * rendered card: side padding plus its accent border horizontally, and padding
+ * plus the kind badge row and the block label line vertically. Underestimating
+ * these is what makes text spill out of the card, so they are kept honest.
+ */
+const PADDING_X = 30
+const CHROME_Y = 65
 
 export interface TextFit {
   /** Font size to render at, in canvas units. */
@@ -37,7 +40,7 @@ export interface TextFit {
  * synchronous, which is what makes live resize feel immediate.
  */
 function averageCharRatio(text: string): number {
-  if (text.length === 0) return 0.6
+  if (text.length === 0) return 0.62
   let wide = 0
   for (const ch of text) {
     const code = ch.codePointAt(0) ?? 0
@@ -54,7 +57,7 @@ function averageCharRatio(text: string): number {
     }
   }
   const wideRatio = wide / [...text].length
-  return 0.55 + wideRatio * 0.45
+  return 0.58 + wideRatio * 0.42
 }
 
 /** Lines the text needs at a given font size, honouring explicit line breaks. */
@@ -79,7 +82,7 @@ function lineCount(text: string, fontSize: number, innerWidth: number): number {
  */
 export function fitTextSize(text: string, width: number, height: number): TextFit {
   const innerWidth = Math.max(1, width - PADDING_X)
-  const innerHeight = Math.max(1, height - PADDING_Y - HEADER_PX)
+  const innerHeight = Math.max(1, height - CHROME_Y)
   const trimmed = text.trim()
 
   if (trimmed.length === 0) {

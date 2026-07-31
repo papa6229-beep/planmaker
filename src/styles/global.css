@@ -766,6 +766,10 @@ button { font-family: inherit; }
   border-color: var(--color-accent);
   box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
+/* Cards make their own stacking context, so a popover (link editor, ⋯ menu)
+   hanging below its card is covered by the next card unless the card itself
+   comes forward while it is in use. */
+.block-card.is-front { z-index: 2; }
 /* Three information areas (WORK_PLAN §7, Phase 5): design / reference / publishing. */
 .block-card--vis-design { border-left-color: var(--color-design); }
 .block-card--vis-reference {
