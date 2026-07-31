@@ -30,7 +30,7 @@ function day(ms: number): string {
 export function BriefLibrary() {
   const { documents, loaded, createNew, duplicate, refresh } = useDocuments()
   const { requests } = useRequests()
-  const { saveNow } = useBriefDocument()
+  const { saveNow, getDocument } = useBriefDocument()
   const navigate = useNavigate()
   const { id: openId } = useParams()
 
@@ -140,9 +140,14 @@ export function BriefLibrary() {
       ) : (
         <ul className="library__list">
           {visible.map((d) => {
-            const status = briefStatus(requests, d.id, docs[d.id])
-            const delivered = lastDeliveredAt(requests, d.id)
             const isOpen = d.id === openId
+            // The open brief is read from what is on screen, not from the last
+            // autosaved copy: its title shows as it is typed, and 전달 후 수정 중
+            // shows as soon as the work actually differs from what was delivered.
+            const live = isOpen ? getDocument() : undefined
+            const title = live?.project.title.trim() ? live.project.title : d.title
+            const status = briefStatus(requests, d.id, live ?? docs[d.id])
+            const delivered = lastDeliveredAt(requests, d.id)
             return (
               <li key={d.id} className={`library__item${isOpen ? ' is-open' : ''}`}>
                 <button
@@ -151,7 +156,7 @@ export function BriefLibrary() {
                   disabled={busy}
                   onClick={() => void goTo(d.id)}
                 >
-                  <span className="library__item-title">{d.title}</span>
+                  <span className="library__item-title">{title}</span>
                   <span className={`library__status ${STATUS_CLASS[status]}`}>{BRIEF_STATUS_LABELS[status]}</span>
                   <span className="library__dates">
                     작성 {day(d.createdAt)} · 수정 {day(d.updatedAt)}
@@ -159,7 +164,7 @@ export function BriefLibrary() {
                   </span>
                 </button>
                 <details className="library__menu">
-                  <summary className="library__menu-trigger" aria-label={`${d.title} 메뉴`}>⋯</summary>
+                  <summary className="library__menu-trigger" aria-label={`${title} 메뉴`}>⋯</summary>
                   <div className="library__menu-panel">
                     <button type="button" className="library__menu-item" disabled={busy} onClick={() => void copy(d.id)}>
                       복사해서 새 기획서 만들기

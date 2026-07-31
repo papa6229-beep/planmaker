@@ -90,6 +90,36 @@ describe('§10.8 전체 컨셉', () => {
     }, { timeout: 5000 })
   })
 
+  it('shows up in the AI 요약 as soon as it is typed, without a reload', async () => {
+    const id = await createDocument(docWith('여름 기획전', '여름 세일'), 1)
+    const binding = {
+      load: () => loadDocumentById(id),
+      save: (doc: BriefDocument) => saveDocumentById(id, doc, Date.now()),
+    }
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter initialEntries={['/briefs/x']}>
+        <RequestsProvider>
+          <DocumentsProvider>
+            <AppShell binding={binding} />
+          </DocumentsProvider>
+        </RequestsProvider>
+      </MemoryRouter>,
+    )
+
+    const region = await screen.findByRole('region', { name: '전체 컨셉' })
+    await user.click(within(region).getByRole('button'))
+    await user.type(document.getElementById('concept-input') as HTMLTextAreaElement, '시원하고 밝게')
+
+    await user.click(screen.getByRole('button', { name: 'AI 요약' }))
+    const dialog = screen.getByRole('dialog', { name: 'AI 요약 미리보기' })
+    const instructions = within(dialog).getByLabelText('요청 메모')
+    expect(instructions.textContent).toContain('시원하고 밝게')
+    expect(instructions.textContent).toContain('인쇄하지 않음')
+    // And it is still not copy to print.
+    expect(within(dialog).getByLabelText('그대로 넣을 문구').textContent).not.toContain('시원하고 밝게')
+  })
+
   it('reaches the AI as a document-wide, non-printing instruction', () => {
     const doc = docWith('여름 기획전', '여름 세일')
     doc.project.concept = '여름 바다처럼 시원하고 밝게'
@@ -169,6 +199,19 @@ describe('판정 §2 — 내용 기반 비교', () => {
     const concepted = docWith('기획서', '문구')
     concepted.project.concept = '시원하게'
     expect(documentFingerprint(concepted)).not.toBe(fingerprint)
+  })
+
+  it('ignores the emphasis hint the editor derives from wording and size', () => {
+    const delivered = docWith('기획서', '문구')
+    const edited = docWith('기획서', '문구')
+    // Editing writes the derived hint; the words and the box are unchanged.
+    edited.pages[0]!.blocks[0]!.layoutHint = { emphasis: 'high' }
+    expect(sameDocumentContent(delivered, edited)).toBe(true)
+
+    // A real size change is still a change.
+    const bigger = docWith('기획서', '문구')
+    bigger.pages[0]!.blocks[0]!.position = { ...bigger.pages[0]!.blocks[0]!.position, height: 400 }
+    expect(sameDocumentContent(delivered, bigger)).toBe(false)
   })
 
   it('ignores which page is on screen and how the reference is being viewed', () => {

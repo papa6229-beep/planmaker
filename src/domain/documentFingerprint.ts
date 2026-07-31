@@ -20,8 +20,11 @@
  *   - `activePageId` — which page the user happens to be looking at
  *   - the reference layer's view controls (view mode / visibility / opacity /
  *     fit), which only affect how the reference is displayed while editing
+ *   - `layoutHint.emphasis`, which is derived from the wording and the block
+ *     size — both already compared here
  */
 
+import type { LayoutHint } from './briefSchema'
 import type { BriefDocument, BriefPage } from './pageSchema'
 
 /** Stable stringify: object keys are sorted so key order can never matter. */
@@ -45,6 +48,18 @@ function stable(value: unknown): unknown {
  * with their ids dropped, and group ids are renumbered by first appearance so
  * that "these two blocks are paired" is compared, not which random id says so.
  */
+/**
+ * Emphasis is written by the editor from the wording and the block size, so a
+ * brief that was never touched since it was delivered can still gain the hint
+ * the moment it is opened and edited back to the same words. Comparing it would
+ * report work that did not happen; the wording and size it comes from are
+ * compared instead.
+ */
+function layoutHintContent(hint: LayoutHint): Omit<LayoutHint, 'emphasis'> {
+  const { emphasis: _emphasis, ...rest } = hint
+  return rest
+}
+
 function pageContent(page: BriefPage, groupKey: (groupId: string) => string) {
   return {
     title: page.title,
@@ -58,7 +73,7 @@ function pageContent(page: BriefPage, groupKey: (groupId: string) => string) {
       priority: b.priority,
       aiVisibility: b.aiVisibility,
       position: b.position,
-      layoutHint: b.layoutHint,
+      layoutHint: layoutHintContent(b.layoutHint),
       notes: b.notes,
       assetId: b.assetId,
       group: b.groupId === undefined ? undefined : groupKey(b.groupId),

@@ -51,8 +51,11 @@ function List({ label, items }: { label: string; items: string[] }) {
 
 export function SummaryPanel({ onClose }: { onClose: () => void }) {
   const { state } = useBriefEditor()
-  const { activePageId } = useBriefDocument()
-  const brief = state.brief
+  const { activePageId, concept } = useBriefDocument()
+  // 전체 컨셉 belongs to the document, not to the page projection the editor
+  // holds, so it is folded in here — otherwise the summary would show the
+  // concept only after a reload.
+  const brief = { ...state.brief, project: { ...state.brief.project, concept } }
   const design = buildDesignSummary(brief, { pageId: activePageId })
   const publishing = buildPublishingInfo(brief)
   const instructionIds = new Set(design.instructions.map((i) => i.blockId))

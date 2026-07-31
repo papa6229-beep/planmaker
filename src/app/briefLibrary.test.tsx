@@ -165,6 +165,50 @@ describe('§10.14 복제', () => {
   })
 })
 
+describe('§10.16 화면에서 본 상태', () => {
+  it('shows the open brief under the title being typed', async () => {
+    const id = await createDocument(docWith('예전 제목', '문구'), 1000)
+
+    const user = userEvent.setup()
+    renderApp(`/briefs/${id}`)
+    await waitFor(() => expect(within(library()).getByText('예전 제목')).toBeTruthy())
+
+    const titleInput = screen.getByRole('textbox', { name: '기획서 제목' })
+    await user.clear(titleInput)
+    await user.type(titleInput, '여름 기획전')
+
+    await waitFor(() => expect(within(library()).getByText('여름 기획전')).toBeTruthy())
+  })
+
+
+  it('turns the open brief to 전달 후 수정 중 as soon as its wording changes', async () => {
+    const id = await createDocument(docWith('여름 기획전', '원래 문구'), 1000)
+
+    const user = userEvent.setup()
+    renderApp(`/briefs/${id}`)
+    await waitFor(() => expect(screen.getByText('원래 문구')).toBeTruthy())
+
+    const row = () => within(library()).getByRole('button', { name: /여름 기획전/ })
+    await user.click(screen.getByRole('button', { name: '전달하기' }))
+    await waitFor(() => expect(row().textContent).toContain('전달 완료'))
+
+    // Editing on the canvas is enough — no autosave, no reload.
+    const card = document.querySelector('.block-card') as HTMLElement
+    await user.dblClick(card)
+    await user.clear(screen.getByLabelText('문구 내용'))
+    await user.type(screen.getByLabelText('문구 내용'), '바뀐 문구')
+    await user.keyboard('{Control>}{Enter}{/Control}')
+    await waitFor(() => expect(row().textContent).toContain('전달 후 수정 중'))
+
+    // Putting it back exactly returns it to 전달 완료.
+    await user.dblClick(document.querySelector('.block-card') as HTMLElement)
+    await user.clear(screen.getByLabelText('문구 내용'))
+    await user.type(screen.getByLabelText('문구 내용'), '원래 문구')
+    await user.keyboard('{Control>}{Enter}{/Control}')
+    await waitFor(() => expect(row().textContent).toContain('전달 완료'))
+  })
+})
+
 function deliver(doc: BriefDocument, at: string): WorkRequest {
   return createWorkRequest(`req_${at}`, doc, at)
 }
