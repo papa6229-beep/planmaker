@@ -13,10 +13,11 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useAssets } from '../assets/useAssets'
 import { useBriefDocument } from '../document/useBriefDocument'
-import { deleteAssets, getAllAssets, pruneAssets, putAssets, saveDocument } from '../../services/assetStore'
+import { deleteAssets, getAllAssets, pruneAssets, putAssets } from '../../services/assetStore'
 import { resolveAssetCollisions } from '../../services/importAssets'
 import { allDocumentAssetIds } from '../../services/documentStore'
 import { allRequestAssetIds } from '../../services/requestStore'
+import { allStudioAssetIds } from '../../services/studioStore'
 import { hasUserWork, referencedAssetIds } from '../../domain/pageOps'
 import { packageEventDocument } from '../../services/eventBriefExport'
 import { readEventDocument, type ImportedDocument } from '../../services/eventBriefImport'
@@ -73,7 +74,7 @@ function triggerDownload(blob: Blob, fileName: string): void {
 }
 
 export function EventBriefIoProvider({ children }: { children: ReactNode }) {
-  const { getDocument, importDocument } = useBriefDocument()
+  const { getDocument, importDocument, saveNow } = useBriefDocument()
   const { loadFromStore } = useAssets()
   const [state, setState] = useState<IoState>({ kind: 'idle' })
   const runningRef = useRef(false)
@@ -87,7 +88,9 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
     try {
       const doc = getDocument()
       // Flush the latest document so nothing in the 3s autosave window is lost.
-      await saveDocument(doc, Date.now())
+      // Through the binding, so the brief being saved goes to its own row —
+      // the image studio's job must never land in a brief-writer row.
+      await saveNow()
       const stored = await getAllAssets()
 
       setState({ kind: 'exporting', message: '미리보기 생성 중…' })
@@ -113,7 +116,7 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
     } finally {
       runningRef.current = false
     }
-  }, [getDocument])
+  }, [getDocument, saveNow])
 
   /**
    * Saving to a file preserves whatever the brief is right now. A brief may be
@@ -165,6 +168,7 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
         const keep = new Set(referencedAssetIds(resolved.doc))
         for (const id of await allDocumentAssetIds()) keep.add(id)
         for (const id of await allRequestAssetIds()) keep.add(id)
+        for (const id of await allStudioAssetIds()) keep.add(id)
         await pruneAssets(keep)
         setState({ kind: 'idle' })
       } catch (err) {
@@ -174,6 +178,7 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
           const keep = new Set<string>()
           for (const id of await allDocumentAssetIds()) keep.add(id)
           for (const id of await allRequestAssetIds()) keep.add(id)
+          for (const id of await allStudioAssetIds()) keep.add(id)
           await deleteAssets(added.filter((id) => !keep.has(id)))
         } catch {
           // best effort: an orphan blob is harmless next to a failed import

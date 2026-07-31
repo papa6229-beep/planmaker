@@ -53,6 +53,7 @@ import type { RequestTeam } from '../../domain/requestTeam'
 import { loadDocument, pruneAssets, saveDocument } from '../../services/assetStore'
 import { allRequestAssetIds } from '../../services/requestStore'
 import { allDocumentAssetIds } from '../../services/documentStore'
+import { allStudioAssetIds } from '../../services/studioStore'
 
 const AUTOSAVE_DEBOUNCE_MS = 3000
 
@@ -64,6 +65,15 @@ const AUTOSAVE_DEBOUNCE_MS = 3000
 export interface DocumentBinding {
   load: () => Promise<BriefDocument | null>
   save: (doc: BriefDocument, now: number) => Promise<void>
+  /**
+   * Called instead of `save` when a *file* is opened into this binding.
+   *
+   * For the brief writer there is no difference — an opened file becomes the
+   * brief in the row that is open. The image studio needs the difference: there,
+   * opening a file means taking it on as the job's original, keeping the
+   * identity the file was written with (이미지 생성기 0단계 §3.1).
+   */
+  adopt?: (doc: BriefDocument, now: number) => Promise<void>
 }
 
 const DEFAULT_BINDING: DocumentBinding = { load: loadDocument, save: saveDocument }
@@ -245,6 +255,9 @@ export function BriefDocumentProvider({
           const keep = new Set(referencedAssetIds(doc))
           for (const id of await allDocumentAssetIds()) keep.add(id)
           for (const id of await allRequestAssetIds()) keep.add(id)
+          // The design team's product cut-outs are deliberately absent from the
+          // brief document, so nothing else here knows they are in use.
+          for (const id of await allStudioAssetIds()) keep.add(id)
           await pruneAssets(keep)
         })
         .catch(() => {
@@ -313,6 +326,14 @@ export function BriefDocumentProvider({
    */
   const importDocument = useCallback(
     async (next: BriefDocument) => {
+      // A binding that adopts files decides identity itself; forcing the open
+      // row's id onto the document would be wrong there.
+      const adopt = bindingRef.current.adopt
+      if (adopt !== undefined) {
+        await adopt(next, Date.now())
+        replaceDocument(next)
+        return
+      }
       const currentId = docRef.current.project.id
       const owned: BriefDocument =
         currentId === undefined ? next : { ...next, project: { ...next.project, id: currentId } }

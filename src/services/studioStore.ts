@@ -1,0 +1,63 @@
+/**
+ * Studio 작업 저장소 (이미지 생성기 0단계 §7).
+ *
+ * 작성기 보관함(`event-brief-documents`)과 물리적으로 다른 데이터베이스다.
+ * Studio가 무엇을 저장하든 작성기 문서를 덮어쓸 수 없고, 반대도 마찬가지다.
+ *
+ * 0단계의 작업은 한 건이다(`STUDIO_JOB_ID`). 생성 결과와 버전을 담을 구조는
+ * 아직 만들지 않는다 — 지금 필요한 것은 원본과 디자인팀 자료의 경계뿐이다.
+ */
+
+import Dexie, { type Table } from 'dexie'
+import { studioAssetIds, type StudioJob } from '../domain/studioJob'
+
+/** 0단계의 단일 작업 행. */
+export const STUDIO_JOB_ID = 'studio_current'
+
+class StudioDB extends Dexie {
+  jobs!: Table<StudioJob, string>
+
+  constructor() {
+    super('event-brief-studio')
+    this.version(1).stores({ jobs: 'id, updatedAt' })
+  }
+}
+
+let dbInstance: StudioDB | null = null
+
+function db(): StudioDB {
+  dbInstance ??= new StudioDB()
+  return dbInstance
+}
+
+/** 테스트 이음매: 새 fake-indexeddb를 집도록 캐시된 핸들을 버린다. */
+export function resetStudioStoreForTests(): void {
+  dbInstance = null
+}
+
+export async function clearAllStudioJobs(): Promise<void> {
+  await db().jobs.clear()
+}
+
+export async function loadStudioJob(id: string): Promise<StudioJob | null> {
+  return (await db().jobs.get(id)) ?? null
+}
+
+export async function saveStudioJob(job: StudioJob): Promise<void> {
+  await db().jobs.put(job)
+}
+
+/**
+ * 디자인팀이 연결한 제품 이미지의 자산 id 전부.
+ *
+ * 자산 blob 저장소는 작성기·전달 스냅숏·Studio가 함께 쓰는 하나의 풀이고,
+ * 정리(prune)는 "아무도 참조하지 않는 것"을 지운다. Studio가 연결한 누끼는
+ * 기획서 문서에 적히지 않으므로, 이 목록이 없으면 작성기 쪽 자동저장이 3초 뒤
+ * 남의 작업물을 지운다.
+ */
+export async function allStudioAssetIds(): Promise<string[]> {
+  const jobs = await db().jobs.toArray()
+  const ids = new Set<string>()
+  for (const job of jobs) for (const id of studioAssetIds(job)) ids.add(id)
+  return [...ids]
+}
