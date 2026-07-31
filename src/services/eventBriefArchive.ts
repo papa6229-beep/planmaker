@@ -127,7 +127,10 @@ export function isSafeArchivePath(path: string): boolean {
  */
 export function classifyAssetArea(brief: EventBrief, assetId: string): AssetArea {
   const referencing = brief.blocks.filter((b) => b.assetId === assetId)
-  return referencing.some((b) => b.aiVisibility === 'design') ? 'design' : 'reference'
+  // A capture the planner attached to show an idea belongs with the reference
+  // material, however the block itself is addressed to the AI.
+  const isDesignAsset = referencing.some((b) => b.aiVisibility === 'design' && b.image?.referenceOnly !== true)
+  return isDesignAsset ? 'design' : 'reference'
 }
 
 /** Builds the ZIP-internal path for an asset: `{area}/{assetId}__{safeName}`. */

@@ -27,6 +27,7 @@ import {
   type SummaryImage,
   type SummaryInstruction,
   type SummaryItem,
+  type SummaryImageSlot,
   type SummaryLayoutHint,
   type SummaryProduct,
   type SummaryText,
@@ -56,6 +57,15 @@ const LINK_TYPES: ReadonlySet<BlockType> = new Set<BlockType>([
   'reference_site_link',
   'gif_source_link',
 ])
+
+/**
+ * True when the image on this block is a reference capture rather than the
+ * image to use. Single place the rule lives, so nothing derives "use this file"
+ * from a picture the planner only pasted in as an example.
+ */
+export function isReferenceCapture(block: BriefBlock): boolean {
+  return block.image?.referenceOnly === true
+}
 
 function content(block: BriefBlock): string {
   return block.content?.trim() ?? ''
@@ -193,7 +203,9 @@ export function buildDesignSummary(brief: EventBrief, context: SummaryContext = 
         allowTransform: b.image?.allowTransform ?? true,
         required: b.required,
       }
-      if (b.assetId !== undefined) product.assetId = b.assetId
+      // A reference capture is not the product's asset. It is reported through
+      // `imageSlots` instead, so nothing here reads as "use this file".
+      if (b.assetId !== undefined && !isReferenceCapture(b)) product.assetId = b.assetId
       if (b.groupId !== undefined) product.groupId = b.groupId
       return product
     })
@@ -214,14 +226,31 @@ export function buildDesignSummary(brief: EventBrief, context: SummaryContext = 
     .map((b) => ({ blockId: b.id, text: content(b), hasLink: anyPublishingLink }))
 
   // Images to insert as-is: existing full images, plus any image block whose
-  // transform is explicitly disallowed.
+  // transform is explicitly disallowed. A reference capture is never one of
+  // these — inserting it as-is is exactly what must not happen.
   const verbatimImages: SummaryImage[] = blocks
+    .filter((b) => !isReferenceCapture(b))
     .filter((b) => b.type === 'existing_full_image' || b.image?.allowTransform === false)
     .map((b) => {
       const image: SummaryImage = { blockId: b.id, verbatim: true }
       if (b.assetId !== undefined) image.assetId = b.assetId
       if (b.image?.productName !== undefined) image.productName = b.image.productName
       return image
+    })
+
+  // Every image the brief asks for: the box, the planner's description, and the
+  // reference capture attached to it (if any), plainly marked as reference.
+  const imageSlots: SummaryImageSlot[] = designBlocks
+    .filter((b) => getBlockTypeMeta(b.type).requiresAsset)
+    .map((b) => {
+      const slot: SummaryImageSlot = { blockId: b.id, label: b.label, geometry: geometryOf(b) }
+      if (pageId !== undefined) slot.pageId = pageId
+      if (hasContent(b)) slot.description = content(b)
+      if (b.assetId !== undefined && isReferenceCapture(b)) {
+        slot.referenceAssetId = b.assetId
+        slot.referenceOnly = true
+      }
+      return slot
     })
 
   const layoutHints: SummaryLayoutHint[] = designBlocks
@@ -244,6 +273,7 @@ export function buildDesignSummary(brief: EventBrief, context: SummaryContext = 
     cautions,
     ctaButtons,
     verbatimImages,
+    imageSlots,
     layoutHints,
   }
 

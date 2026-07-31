@@ -6,8 +6,9 @@
  *    the block's size (`textFit`), so making a block bigger makes the wording
  *    bigger. When even the minimum readable size will not fit, the card says so
  *    instead of shrinking the text into illegibility.
- *  - 이미지: an empty block asks what image belongs there and takes the answer
- *    inline; dropping, clicking, or pasting puts the real image in.
+ *  - 이미지: the block asks what image belongs there and takes the answer
+ *    inline; dropping, picking, or pasting attaches a *reference capture* that
+ *    shows the idea — never the file the finished page will use.
  *  - 링크: a small chain control on 이미지 and 버튼 opens a URL field. The URL is
  *    stored in a paired publishing block, never in the design wording.
  *
@@ -18,6 +19,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { getBlockTypeMeta, type BlockCategory } from '../../domain/blockTypes'
 import { canCarryLink, cardKindLabel, drawsBareText } from '../../domain/simpleBlocks'
 import { CARD_CHROME_Y, CARD_PADDING_X, fitTextSize } from '../../domain/textFit'
+import { isReferenceCapture } from '../../domain/summaryBuilder'
 import type { BriefBlock } from '../../domain/briefSchema'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useAssets } from '../../features/assets/useAssets'
@@ -66,6 +68,16 @@ function hasImageFiles(types: readonly string[]): boolean {
   return types.includes('Files')
 }
 
+/** True for anything the user could be typing into right now. */
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target.isContentEditable
+  )
+}
+
 /** Small chain glyph used for the link control. */
 function LinkIcon() {
   return (
@@ -93,8 +105,9 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   const [linkDraft, setLinkDraft] = useState('')
   const [dropActive, setDropActive] = useState(false)
 
-  // Text blocks and empty image blocks both take wording in place.
-  const takesInlineText = meta.hasText || (meta.requiresAsset && thumbUrl === undefined)
+  // Text blocks take wording in place; an image block takes the description of
+  // what belongs there, with or without a reference capture attached to it.
+  const takesInlineText = meta.hasText || meta.requiresAsset
   const linkable = canCarryLink(block.type)
   // Printed wording is drawn bare, so its box is measured as pure text area;
   // the kinds that keep a card are measured with that card's chrome.
@@ -132,10 +145,13 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Paste an image straight onto the selected image block.
+  // Paste a reference capture straight onto the selected image block. Only an
+  // image on the clipboard is taken, and never while the paste is going into a
+  // field someone is typing in — ordinary text pasting is untouched.
   useEffect(() => {
     if (!selected || !meta.requiresAsset) return
     const onPaste = (e: ClipboardEvent) => {
+      if (isTypingTarget(e.target)) return
       const items = Array.from(e.clipboardData?.items ?? [])
       const files = items
         .filter((i) => i.kind === 'file' && ACCEPTED_MIME_TYPES.includes(i.type as never))
@@ -239,12 +255,17 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
         <div className="block-card__menu-panel">
           {meta.requiresAsset && (
             <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); openFilePicker() }}>
-              {thumbUrl ? '이미지 교체' : '이미지 넣기'}
+              {thumbUrl ? '참고 이미지 교체' : '참고 이미지 넣기'}
             </button>
           )}
           {meta.requiresAsset && thumbUrl && (
             <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); removeBlockAsset(block.id) }}>
-              이미지 제거
+              참고 이미지 제거
+            </button>
+          )}
+          {meta.requiresAsset && thumbUrl && (
+            <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); beginEdit() }}>
+              설명 수정
             </button>
           )}
           <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); duplicateBlock(block.id) }}>
@@ -348,7 +369,9 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
             {overflowBadge}
             {selected && tools}
           </span>
-          <span className="block-card__title">{block.label}</span>
+          {/* With a capture attached the badge already names the block, and the
+              room is better spent on the picture and its description. */}
+          {thumbUrl === undefined && <span className="block-card__title">{block.label}</span>}
         </>
       )}
 
@@ -375,7 +398,26 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
           }}
         />
       ) : thumbUrl ? (
-        <img className="block-card__thumb" src={thumbUrl} alt={block.image?.productName ?? block.label} draggable={false} />
+        // The capture, what it is a stand-in for, and — plainly — that it is
+        // only a stand-in (1-B §2.3).
+        <>
+          <span className="block-card__thumb-wrap">
+            <img className="block-card__thumb" src={thumbUrl} alt={block.image?.productName ?? block.label} draggable={false} />
+            {/* Sits on the picture itself, so what it is for is never in doubt. */}
+            {isReferenceCapture(block) && (
+              <span className="block-card__ref-note">참고용 이미지 · 최종 사용 이미지 아님</span>
+            )}
+          </span>
+          <span
+            className={`block-card__slot${hasContent(block) ? '' : ' block-card__content--placeholder'}`}
+            onDoubleClick={(e) => {
+              e.stopPropagation()
+              beginEdit()
+            }}
+          >
+            {hasContent(block) ? block.content : '어떤 이미지가 들어갈지 적어주세요'}
+          </span>
+        </>
       ) : meta.requiresAsset ? (
         <span
           className={`block-card__slot${hasContent(block) ? '' : ' block-card__content--placeholder'}`}

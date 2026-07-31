@@ -842,7 +842,7 @@ button { font-family: inherit; }
 .block-card__handle--ne { top: -6px; right: -6px; cursor: nesw-resize; }
 .block-card__handle--sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
 .block-card__handle--se { bottom: -6px; right: -6px; cursor: nwse-resize; }
-.block-card__head { display: flex; align-items: center; gap: 6px; }
+.block-card__head { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; min-width: 0; }
 /* ⋯ card menu (Phase 7 §11.3, §12.3) */
 .block-card__menu { position: relative; margin-left: auto; }
 .block-card__menu-trigger {
@@ -885,6 +885,8 @@ button { font-family: inherit; }
 .block-card__menu-item:hover { background: var(--color-panel-muted); }
 .block-card__menu-item--danger { color: var(--color-danger); }
 .block-card__visibility {
+  flex: none;
+  white-space: nowrap;
   font-size: 11px;
   color: var(--color-muted);
   background: #f1f3f7;
@@ -1026,6 +1028,42 @@ button { font-family: inherit; }
 }
 .block-card__link-save { padding: 5px 10px; font-size: 12px; }
 .block-card__link-note { flex-basis: 100%; margin: 0; font-size: 10px; color: var(--color-muted); }
+
+/* A capture attached to an image block is a stand-in, and says so (1-B §2.3).
+   The label sits on the picture, so it costs the block no height and cannot be
+   squeezed out however small the block is. */
+.block-card__thumb-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 34px;
+  display: flex;
+  min-width: 0;
+}
+.block-card__ref-note {
+  position: absolute;
+  left: 2px;
+  bottom: 2px;
+  max-width: calc(100% - 4px);
+  font-size: 10px;
+  color: var(--color-reference);
+  background: var(--color-reference-soft);
+  border-radius: 999px;
+  padding: 1px 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+/* With a capture attached the block holds picture and description at once, so
+   the description stays to one readable line. */
+.block-card__thumb-wrap ~ .block-card__slot {
+  flex: none;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* ── 내 기획서 보관함 (§6) ─────────────────────────────────────────────────── */
 .library { display: flex; flex-direction: column; gap: 10px; }

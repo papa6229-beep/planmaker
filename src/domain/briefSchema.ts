@@ -86,6 +86,17 @@ export interface BlockImageMeta {
    * (existing full images) this should be `false` (§9, §14 warning).
    */
   allowTransform?: boolean
+  /**
+   * The attached file is a *reference capture* the planner collected — a
+   * screenshot from a shop page, an old event, a photo that shows the idea —
+   * not the image the finished page will use (1-B §1). The design team picks
+   * the real cut-out or licensed photo later.
+   *
+   * Optional and absent by default, so a document written before this existed
+   * keeps meaning exactly what it meant: an attachment on an image block whose
+   * flag is missing is NOT retroactively called a reference.
+   */
+  referenceOnly?: true
 }
 
 /**
@@ -189,6 +200,28 @@ export interface SummaryImage {
   verbatim: boolean
 }
 
+/**
+ * An image the brief asks for: where it goes, what the planner said should be
+ * there, and — if they attached one — the reference capture that shows it
+ * (1-B §3).
+ *
+ * `referenceAssetId` is never the file to use. It is there so a human or an AI
+ * can look at what the planner had in mind; `referenceOnly` says so explicitly
+ * rather than leaving it to a naming convention.
+ */
+export interface SummaryImageSlot {
+  blockId: string
+  pageId?: string
+  label: string
+  /** What the planner wrote about the image that belongs here, verbatim. */
+  description?: string
+  geometry: SummaryGeometry
+  /** Identifier of the attached reference capture, when there is one. */
+  referenceAssetId?: string
+  /** Present only with `referenceAssetId`: look at it, never insert it. */
+  referenceOnly?: true
+}
+
 export interface SummaryLayoutHint {
   blockId: string
   region: LayoutRegion
@@ -279,6 +312,12 @@ export interface DesignSummary {
   ctaButtons: SummaryCta[]
   /** Images to insert as-is, e.g. existing full images. */
   verbatimImages: SummaryImage[]
+  /**
+   * Every image the brief asks for, with its description and any reference
+   * capture attached to it. Separated from `requiredProducts` /
+   * `verbatimImages` so a capture is never read as the asset to use.
+   */
+  imageSlots: SummaryImageSlot[]
   layoutHints: SummaryLayoutHint[]
 }
 

@@ -95,7 +95,10 @@ export function AssetsProvider({ children }: { children: ReactNode }) {
         })
         addUrl(id, file)
 
-        const image = { productName: baseName(file.name) }
+        // Everything attached here is a capture the planner collected to show
+        // what belongs in the spot — never the file the finished page will use
+        // (1-B §1). The design team picks the real image later.
+        const image = { productName: baseName(file.name), referenceOnly: true as const }
         if (index === 0 && options.targetBlockId !== undefined) {
           assignImage(options.targetBlockId, asset, image)
         } else if (index === 0 && options.position) {

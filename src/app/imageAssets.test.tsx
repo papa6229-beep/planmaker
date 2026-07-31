@@ -62,10 +62,11 @@ describe('image assets — upload', () => {
     expect(stored).toHaveLength(1)
     expect(stored[0]!.fileName).toBe('photo.png')
 
-    // Replace + remove now live on the card's ⋯ menu (§8).
+    // Replace + remove live on the card's ⋯ menu, named for what the file is:
+    // a reference capture, not the image the page will use (1-B).
     const canvas = screen.getByRole('region', { name: '기획 캔버스' })
-    expect(within(canvas).getByRole('button', { name: '이미지 교체' })).toBeTruthy()
-    expect(within(canvas).getByRole('button', { name: '이미지 제거' })).toBeTruthy()
+    expect(within(canvas).getByRole('button', { name: '참고 이미지 교체' })).toBeTruthy()
+    expect(within(canvas).getByRole('button', { name: '참고 이미지 제거' })).toBeTruthy()
   })
 
   it('drops multiple images onto the canvas as new image blocks', async () => {
