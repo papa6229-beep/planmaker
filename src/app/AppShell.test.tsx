@@ -106,7 +106,7 @@ describe('AppShell — deletion', () => {
   it('does NOT delete a block when Delete is pressed inside a text field', async () => {
     const user = userEvent.setup()
     renderShell()
-    const { palette, canvas, inspector } = panels()
+    const { palette, canvas } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
     // Editing happens in the block itself now; Delete inside it must not delete.
@@ -121,7 +121,7 @@ describe('AppShell — editing', () => {
   it('reflects edited wording on the canvas card', async () => {
     const user = userEvent.setup()
     renderShell()
-    const { palette, canvas, inspector } = panels()
+    const { palette, canvas } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
     await user.dblClick(canvas.querySelector('.block-card') as HTMLElement)
