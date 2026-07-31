@@ -31,6 +31,11 @@ import { ReferenceViewControls } from '../components/reference/ReferenceViewCont
 import { ReferenceSideView } from '../components/reference/ReferenceSideView'
 import { StartChoice } from '../components/start/StartChoice'
 import { ConceptField } from '../components/concept/ConceptField'
+import { ProductImagePanel } from '../components/studio/ProductImagePanel'
+import { GenerationRequestPreview } from '../components/studio/GenerationRequestPreview'
+
+/** 기획서 작성 · 요청 작업 · 이미지 생성기 작업판. */
+export type ShellMode = 'brief' | 'image' | 'studio'
 
 /** True when focus is in a text entry, so shortcuts must not fire. */
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -153,8 +158,9 @@ function GlobalEventBriefDrop() {
   return null
 }
 
-function Workspace({ mode, statusPanel }: { mode: 'brief' | 'image'; statusPanel?: ReactNode }) {
+function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: ReactNode }) {
   const [summaryOpen, setSummaryOpen] = useState(false)
+  const [requestOpen, setRequestOpen] = useState(false)
   const [startDismissed, setStartDismissed] = useState(false)
   const { activeReference } = useBriefDocument()
   const { state } = useBriefEditor()
@@ -165,7 +171,11 @@ function Workspace({ mode, statusPanel }: { mode: 'brief' | 'image'; statusPanel
     !startDismissed && state.brief.blocks.length === 0 && activeReference.assetId === undefined
   return (
     <div className="app">
-      <TopToolbar mode={mode} onShowSummary={() => setSummaryOpen(true)} />
+      <TopToolbar
+        mode={mode}
+        onShowSummary={() => setSummaryOpen(true)}
+        {...(mode === 'studio' ? { onShowGenerationRequest: () => setRequestOpen(true) } : {})}
+      />
       <main className="workspace">
         <div className="side-left">
           <ReferenceTools />
@@ -185,21 +195,26 @@ function Workspace({ mode, statusPanel }: { mode: 'brief' | 'image'; statusPanel
             {sideBySide && <ReferenceSideView />}
           </div>
         </div>
-        {/* 기획서 모드의 우측은 보관함; 이미지 작업 화면은 요청 편집이라 목록이 없다. */}
-        {mode === 'brief' ? <BriefLibrary /> : <PropertiesPanel />}
+        {/* 기획서 모드의 우측은 보관함, 작업판은 제품 이미지 연결; 이미지 요청
+            화면은 요청 편집이라 목록이 없다. */}
+        {mode === 'brief' ? <BriefLibrary /> : mode === 'studio' ? <ProductImagePanel /> : <PropertiesPanel />}
       </main>
       <KeyboardShortcuts />
       <GlobalPaste />
       <GlobalEventBriefDrop />
       <EventBriefIoDialogs />
       {summaryOpen && <SummaryPanel onClose={() => setSummaryOpen(false)} />}
+      {requestOpen && <GenerationRequestPreview onClose={() => setRequestOpen(false)} />}
     </div>
   )
 }
 
 export interface AppShellProps {
-  /** 'brief' = planning (전달하기); 'image' = design work on a request (§13.2). */
-  mode?: 'brief' | 'image'
+  /**
+   * 'brief' = planning (전달하기); 'image' = design work on a request (§13.2);
+   * 'studio' = the image studio work surface (이미지 생성기 0단계 §4).
+   */
+  mode?: ShellMode
   /** Overrides document load/save (used by the request work page). */
   binding?: DocumentBinding
   /** Extra panel rendered under the page tabs (request status + generation). */

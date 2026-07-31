@@ -36,7 +36,16 @@ function BackIcon() {
   )
 }
 
-export function TopToolbar({ mode = 'brief', onShowSummary }: { mode?: 'brief' | 'image'; onShowSummary: () => void }) {
+export function TopToolbar({
+  mode = 'brief',
+  onShowSummary,
+  onShowGenerationRequest,
+}: {
+  mode?: 'brief' | 'image' | 'studio'
+  onShowSummary: () => void
+  /** 이미지 생성기 작업판에서만 — GPT 제작 요청을 사람이 먼저 읽는다. */
+  onShowGenerationRequest?: () => void
+}) {
   const surface = useAppSurface()
   const { state, setProjectTitle, undo, redo, canUndo, canRedo, endInteraction } = useBriefEditor()
   const { undoPageDelete, requestTeam, setRequestTeam } = useBriefDocument()
@@ -74,7 +83,12 @@ export function TopToolbar({ mode = 'brief', onShowSummary }: { mode?: 'brief' |
             <span>요청 목록</span>
           </Link>
         )}
-        <span className={`editor-topbar__mode${mode === 'image' ? ' editor-topbar__mode--image' : ''}`} aria-label="현재 모드">{mode === 'image' ? '이미지 생성' : '기획서 생성'}</span>
+        <span
+          className={`editor-topbar__mode${mode === 'brief' ? '' : ' editor-topbar__mode--image'}`}
+          aria-label="현재 모드"
+        >
+          {mode === 'image' ? '이미지 생성' : mode === 'studio' ? '이미지 생성기' : '기획서 생성'}
+        </span>
         <select
           className="field__input editor-topbar__team"
           aria-label="작성팀"
@@ -118,6 +132,17 @@ export function TopToolbar({ mode = 'brief', onShowSummary }: { mode?: 'brief' |
           </button>
           <button type="button" className="btn" onClick={redo} disabled={!canRedo || busy} title="다시 실행 (Ctrl+Shift+Z)">다시 실행</button>
           <button type="button" className="btn" onClick={onShowSummary} disabled={busy} title="이미지 생성 AI가 읽는 정보 미리보기">AI 요약</button>
+          {onShowGenerationRequest !== undefined && (
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={onShowGenerationRequest}
+              disabled={busy}
+              title="GPT에게 나갈 제작 요청을 사람이 먼저 읽습니다"
+            >
+              AI 제작 요청 미리보기
+            </button>
+          )}
 
           <button
             type="button"

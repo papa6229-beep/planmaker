@@ -24,6 +24,7 @@ import { isReferenceCapture } from '../../domain/summaryBuilder'
 import type { BriefBlock } from '../../domain/briefSchema'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useAssets } from '../../features/assets/useAssets'
+import { useStudioJob } from '../../features/studio/useStudioJob'
 import { ACCEPTED_MIME_TYPES } from '../../features/assets/imageUtils'
 import { RESIZE_HANDLES, resizeRect, type ResizeHandle } from '../../features/editor/canvasGeometry'
 
@@ -115,6 +116,13 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   const meta = getBlockTypeMeta(block.type)
   const align = textAlignOf(block)
   const thumbUrl = meta.requiresAsset ? getUrl(block.assetId) : undefined
+  // 이미지 생성기 작업판에서만: 디자인팀이 이 자리에 연결한 실제 사용 제품
+  // 이미지. 작성기에는 provider 자체가 없어 언제나 `undefined`이므로, 같은 카드가
+  // 두 표면에서 그대로 쓰인다. 문서에는 아무것도 쓰이지 않는다 — 화면에서 참고
+  // 이미지와 실사용 이미지를 눈으로 가르기 위한 표시일 뿐이다.
+  const studio = useStudioJob()
+  const productUrl = meta.requiresAsset ? getUrl(studio?.productImageOf(block.id)) : undefined
+  const displayUrl = productUrl ?? thumbUrl
   const drag = useRef<DragState | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
   const menuRef = useRef<HTMLDetailsElement | null>(null)
@@ -455,7 +463,7 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
           </span>
           {/* With a capture attached the badge already names the block, and the
               room is better spent on the picture and its description. */}
-          {thumbUrl === undefined && <span className="block-card__title">{block.label}</span>}
+          {displayUrl === undefined && <span className="block-card__title">{block.label}</span>}
         </>
       )}
 
@@ -481,15 +489,24 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
             }
           }}
         />
-      ) : thumbUrl ? (
+      ) : displayUrl ? (
         // The capture, what it is a stand-in for, and — plainly — that it is
         // only a stand-in (1-B §2.3).
         <>
           <span className="block-card__thumb-wrap">
-            <img className="block-card__thumb" src={thumbUrl} alt={block.image?.productName ?? block.label} draggable={false} />
+            <img
+              className="block-card__thumb"
+              src={displayUrl}
+              alt={productUrl === undefined ? (block.image?.productName ?? block.label) : '실제 사용 제품 이미지'}
+              draggable={false}
+            />
             {/* Sits on the picture itself, so what it is for is never in doubt. */}
-            {isReferenceCapture(block) && (
-              <span className="block-card__ref-note">참고용 이미지 · 최종 사용 이미지 아님</span>
+            {productUrl !== undefined ? (
+              <span className="block-card__ref-note block-card__ref-note--product">실제 사용 제품 이미지</span>
+            ) : (
+              isReferenceCapture(block) && (
+                <span className="block-card__ref-note">참고용 이미지 · 최종 사용 이미지 아님</span>
+              )
             )}
           </span>
           <span
