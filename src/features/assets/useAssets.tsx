@@ -21,7 +21,7 @@ import {
 import { useBriefEditor } from '../editor/useBriefEditor'
 import { createId } from '../../domain/factory'
 import type { Asset, ImageMimeType } from '../../domain/briefSchema'
-import { baseName, isAcceptedImage, isAcceptedMime, readImageSize } from './imageUtils'
+import { isAcceptedImage, isAcceptedMime, readImageSize } from './imageUtils'
 import { getAllAssets, putAsset } from '../../services/assetStore'
 
 export interface UploadOptions {
@@ -98,7 +98,11 @@ export function AssetsProvider({ children }: { children: ReactNode }) {
         // Everything attached here is a capture the planner collected to show
         // what belongs in the spot — never the file the finished page will use
         // (1-B §1). The design team picks the real image later.
-        const image = { productName: baseName(file.name), referenceOnly: true as const }
+        //
+        // The file's own name is NOT copied onto the block: `capture.png` is
+        // storage bookkeeping, not a product the planner asked for. It stays on
+        // the stored asset, where export and alt text can still read it.
+        const image = { referenceOnly: true as const }
         if (index === 0 && options.targetBlockId !== undefined) {
           assignImage(options.targetBlockId, asset, image)
         } else if (index === 0 && options.position) {

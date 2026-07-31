@@ -167,7 +167,12 @@ export interface SummaryText {
 
 export interface SummaryProduct {
   blockId: string
-  productName: string
+  /**
+   * The product's name, when someone actually recorded one. Absent rather than
+   * guessed: a block's default caption or an uploaded file's name is not a
+   * product the planner asked for.
+   */
+  productName?: string
   assetId?: string
   allowTransform: boolean
   required: boolean

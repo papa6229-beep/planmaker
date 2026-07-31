@@ -67,6 +67,20 @@ export function isReferenceCapture(block: BriefBlock): boolean {
   return block.image?.referenceOnly === true
 }
 
+/**
+ * The product this block names, or nothing.
+ *
+ * Only a name someone actually recorded counts. The block's own default label
+ * (`이미지`) is a UI caption, and a file name picked up from an upload
+ * (`capture`) is storage bookkeeping — neither is a product, and passing either
+ * to the AI would invent a requirement the planner never wrote. What the
+ * planner did write about the image goes to `imageSlots.description` instead.
+ */
+function namedProduct(block: BriefBlock): string | undefined {
+  const name = block.image?.productName?.trim()
+  return name !== undefined && name.length > 0 ? name : undefined
+}
+
 function content(block: BriefBlock): string {
   return block.content?.trim() ?? ''
 }
@@ -194,20 +208,24 @@ export function buildDesignSummary(brief: EventBrief, context: SummaryContext = 
       priority: b.priority,
     }))
 
+  // Products the brief actually has: a name someone recorded, or a real image
+  // to use. A block with neither names no product — it is an image slot, and
+  // says what belongs there through `imageSlots` instead. A reference capture
+  // is never a product image, whatever it is called.
   const requiredProducts: SummaryProduct[] = blocks
-    .filter((b) => PRODUCT_IMAGE_TYPES.has(b.type))
-    .map((b) => {
+    .filter((b) => PRODUCT_IMAGE_TYPES.has(b.type) && !isReferenceCapture(b))
+    .flatMap((b) => {
+      const productName = namedProduct(b)
+      if (productName === undefined && b.assetId === undefined) return []
       const product: SummaryProduct = {
         blockId: b.id,
-        productName: b.image?.productName ?? b.label,
         allowTransform: b.image?.allowTransform ?? true,
         required: b.required,
       }
-      // A reference capture is not the product's asset. It is reported through
-      // `imageSlots` instead, so nothing here reads as "use this file".
-      if (b.assetId !== undefined && !isReferenceCapture(b)) product.assetId = b.assetId
+      if (productName !== undefined) product.productName = productName
+      if (b.assetId !== undefined) product.assetId = b.assetId
       if (b.groupId !== undefined) product.groupId = b.groupId
-      return product
+      return [product]
     })
 
   const requiredBenefits: SummaryItem[] = designBlocks

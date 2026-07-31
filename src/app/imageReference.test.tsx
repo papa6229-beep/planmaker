@@ -306,10 +306,9 @@ describe('§3 참고자료의 의미', () => {
     expect(slot.pageId).toBe(page.id)
     expect(slot.geometry.width).toBe(block.position.width)
 
-    // Nothing tells the AI to insert this file: it is not a product asset and
-    // not a verbatim image.
-    const product = design.requiredProducts.find((p) => p.blockId === block.id)!
-    expect(product.assetId).toBeUndefined()
+    // Nothing tells the AI to insert this file: a reference capture is not a
+    // product image at all, and not a verbatim image.
+    expect(design.requiredProducts.some((p) => p.blockId === block.id)).toBe(false)
     expect(design.verbatimImages.some((i) => i.assetId === 'asset_ref')).toBe(false)
   })
 

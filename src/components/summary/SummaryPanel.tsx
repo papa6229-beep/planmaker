@@ -146,7 +146,8 @@ export function SummaryPanel({ onClose }: { onClose: () => void }) {
           <List
             label="제품"
             items={design.requiredProducts.map(
-              (p) => `${p.productName}${p.required ? ' (필수)' : ''}${p.allowTransform ? '' : ' · 변형 불가'}`,
+              // No invented names: a product nobody named simply says so.
+              (p) => `${p.productName ?? '제품명 미입력'}${p.required ? ' (필수)' : ''}${p.allowTransform ? '' : ' · 변형 불가'}`,
             )}
           />
           <List label="혜택·조건" items={design.requiredBenefits.map((b) => `${b.label}: ${b.content}`)} />
