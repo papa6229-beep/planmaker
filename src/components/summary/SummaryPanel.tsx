@@ -120,6 +120,24 @@ export function SummaryPanel({ onClose }: { onClose: () => void }) {
           )}
         </section>
 
+        <section className="summary__area summary__area--design" aria-label="이미지 자리">
+          <h3 className="summary__area-title">이미지 자리 <span>어떤 이미지가 어디에 들어가는지</span></h3>
+          {design.imageSlots.length === 0 ? (
+            <p className="summary__empty">이미지 자리가 없습니다.</p>
+          ) : (
+            <ul className="summary__list">
+              {design.imageSlots.map((slot) => (
+                <li key={slot.blockId}>
+                  {slot.description ?? <span className="summary__empty">설명이 아직 없습니다.</span>}
+                  {slot.referenceOnly && (
+                    <span className="summary__tag summary__tag--reference">참고용 이미지 첨부됨 · 최종 사용 이미지 아님</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
         <section className="summary__area summary__area--design" aria-label="디자인 입력 요약">
           <h3 className="summary__area-title">디자인 입력 <span>이미지 생성 AI가 읽는 정보</span></h3>
           <Field label="메인 문구" value={design.mainHeadline} />

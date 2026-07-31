@@ -335,3 +335,25 @@ describe('§10.6 이미지 링크 · §10.7 버튼 문구와 URL', () => {
     expect(canvas().querySelectorAll('.block-card')).toHaveLength(1)
   })
 })
+
+describe('1-C §7.3 링크 표시', () => {
+  it('shows a link marker on a button even when the block is not selected', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+    await user.click(tool('버튼·링크'))
+    await user.type(screen.getByLabelText('버튼 내용'), '이벤트 상품 보러가기')
+    await user.keyboard('{Control>}{Enter}{/Control}')
+
+    const card = canvas().querySelector('.block-card') as HTMLElement
+    await user.click(within(card).getByRole('button', { name: '버튼 링크 연결' }))
+    await user.type(screen.getByLabelText('버튼 연결 주소'), 'https://example.com/event/arcwave/products')
+    await user.click(card.querySelector('.block-card__link-save') as HTMLElement)
+
+    // Deselect: whether a link is attached must still be readable at a glance.
+    fireEvent.pointerDown(canvas().querySelector('.canvas__sheet') as HTMLElement, { button: 0 })
+    await waitFor(() => {
+      expect((canvas().querySelector('.block-card') as HTMLElement).className).not.toContain('is-selected')
+    })
+    expect(within(canvas()).getByLabelText('연결된 주소 있음')).toBeTruthy()
+  })
+})

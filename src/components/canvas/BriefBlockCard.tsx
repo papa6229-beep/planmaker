@@ -346,18 +346,24 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
       }}
     >
       {bare ? (
-        // Floating bar, drawn above the block and outside its box (§3.2).
-        selected && (
-          <span className="block-toolbar" onPointerDown={(e) => e.stopPropagation()}>
-            {/* The block's own name (문구 · 버튼 · 혜택 …), which is what the
-                label line used to say inside the box. */}
-            <span className="block-toolbar__kind">{block.label}</span>
-            {block.groupId !== undefined && !paired && <span className="block-card__group" title="그룹">그룹</span>}
-            {linkBadge}
-            {overflowBadge}
-            {tools}
-          </span>
-        )
+        <>
+          {/* Whether an address is attached has to be readable without
+              selecting the block, so this marker sits on the block's own
+              corner, outside its layout (1-C §7.3). */}
+          {linkUrl !== undefined && !selected && <span className="block-card__link-mark">{linkBadge}</span>}
+          {/* Floating bar, drawn above the block and outside its box (§3.2). */}
+          {selected && (
+            <span className="block-toolbar" onPointerDown={(e) => e.stopPropagation()}>
+              {/* The block's own name (문구 · 버튼 · 혜택 …), which is what the
+                  label line used to say inside the box. */}
+              <span className="block-toolbar__kind">{block.label}</span>
+              {block.groupId !== undefined && !paired && <span className="block-card__group" title="그룹">그룹</span>}
+              {linkBadge}
+              {overflowBadge}
+              {tools}
+            </span>
+          )}
+        </>
       ) : (
         <>
           <span className="block-card__head">

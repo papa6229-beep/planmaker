@@ -809,6 +809,19 @@ button { font-family: inherit; }
   cursor: default;
 }
 .block-toolbar__kind { font-size: 11px; color: var(--color-muted); }
+/* Link marker for an unselected bare block: outside the wording area, so it
+   says "an address is attached" without taking any of the block's room. */
+.block-card__link-mark {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--color-panel);
+  box-shadow: 0 1px 3px rgba(20, 23, 33, 0.18);
+}
 .block-toolbar .block-card__tools { margin-left: 0; }
 /* Three information areas (WORK_PLAN §7, Phase 5): design / reference / publishing. */
 .block-card--vis-design { border-left-color: var(--color-design); }
@@ -1289,6 +1302,11 @@ button { font-family: inherit; }
   padding: 1px 7px;
   margin-left: 4px;
   white-space: nowrap;
+}
+.summary__tag--reference {
+  color: var(--color-reference);
+  background: var(--color-reference-soft);
+  border-color: var(--color-reference-soft);
 }
 .summary__field { display: flex; gap: 10px; margin-bottom: 8px; font-size: 13px; }
 .summary__field-label { flex: none; width: 120px; color: var(--color-muted); }
