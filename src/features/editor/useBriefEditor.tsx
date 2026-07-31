@@ -44,7 +44,7 @@ export interface BriefEditorApi {
    * Commits wording typed inside a block: stores it and trims the empty space
    * left under it, as one undo step (단계 1-A §3.3).
    */
-  commitText: (blockId: string, content: string) => void
+  commitText: (blockId: string, content: string, rect?: Rect) => void
   moveBlock: (blockId: string, x: number, y: number, coalesceKey?: string) => void
   resizeBlock: (blockId: string, rect: Rect, coalesceKey?: string) => void
   duplicateBlock: (blockId: string) => void
@@ -88,7 +88,10 @@ export function BriefEditorProvider({ children }: { children: ReactNode }) {
         dispatch(coalesceKey === undefined
           ? { type: 'UPDATE_BLOCK', blockId, patch }
           : { type: 'UPDATE_BLOCK', blockId, patch, coalesceKey }),
-      commitText: (blockId, content) => dispatch({ type: 'COMMIT_TEXT', blockId, content }),
+      commitText: (blockId, content, rect) =>
+        dispatch(rect === undefined
+          ? { type: 'COMMIT_TEXT', blockId, content }
+          : { type: 'COMMIT_TEXT', blockId, content, rect }),
       moveBlock: (blockId, x, y, coalesceKey) =>
         dispatch(coalesceKey === undefined
           ? { type: 'MOVE_BLOCK', blockId, x, y }

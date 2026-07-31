@@ -18,7 +18,8 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { getBlockTypeMeta, type BlockCategory } from '../../domain/blockTypes'
 import { canCarryLink, cardKindLabel, drawsBareText } from '../../domain/simpleBlocks'
-import { CARD_CHROME_Y, CARD_PADDING_X, fitTextSize } from '../../domain/textFit'
+import { CARD_CHROME_Y, CARD_PADDING_X, PLACEHOLDER_FONT_PX, fitBlockToText, fitTextSize } from '../../domain/textFit'
+import { createLineMeasurer } from '../../features/editor/measureText'
 import { isReferenceCapture } from '../../domain/summaryBuilder'
 import type { BriefBlock } from '../../domain/briefSchema'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
@@ -50,6 +51,8 @@ const CATEGORY_MODIFIER: Record<BlockCategory, string> = {
 }
 
 const IMAGE_ACCEPT = ACCEPTED_MIME_TYPES.join(',')
+/** Built once: measuring asks the browser for the card's own font. */
+const measureLine = createLineMeasurer()
 const DRAG_THRESHOLD_PX = 3
 
 interface DragState {
@@ -112,8 +115,18 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   // Printed wording is drawn bare, so its box is measured as pure text area;
   // the kinds that keep a card are measured with that card's chrome.
   const bare = drawsBareText(block)
-  const fitArea = bare ? {} : { padX: CARD_PADDING_X, padY: CARD_CHROME_Y }
+  const fitArea = bare
+    ? (measureLine ? { measure: measureLine } : {})
+    : { padX: CARD_PADDING_X, padY: CARD_CHROME_Y, ...(measureLine ? { measure: measureLine } : {}) }
   const fit = fitTextSize(block.content ?? '', block.position.width, block.position.height, fitArea)
+  // While typing, the wording on screen is the draft, so it is what decides the
+  // size. An empty field shows the hint, which is not the user's wording and is
+  // drawn at its own plain size.
+  const draftFit = editing
+    ? draft.trim().length === 0
+      ? PLACEHOLDER_FONT_PX
+      : fitTextSize(draft, block.position.width, block.position.height, fitArea).fontSize
+    : fit.fontSize
 
   const beginEdit = () => {
     if (!takesInlineText) return
@@ -122,7 +135,15 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   }
   const commitEdit = () => {
     setEditing(false)
-    if (draft !== (block.content ?? '')) commitText(block.id, draft)
+    if (draft === (block.content ?? '')) return
+    // Settle the box around the wording as it will actually be drawn, so no
+    // empty band is left beside or under it (손검수 1 §3).
+    if (bare) {
+      const settled = fitBlockToText(draft, block.position, fitArea)
+      commitText(block.id, draft, { ...block.position, width: settled.width, height: settled.height })
+    } else {
+      commitText(block.id, draft)
+    }
   }
   const openFilePicker = () => fileRef.current?.click()
   const closeMenu = () => menuRef.current?.removeAttribute('open')
@@ -144,6 +165,17 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
     // selection changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  /**
+   * A picture arriving ends the description edit (손검수 1 §4). While the field
+   * is open it covers the block: the capture would not be visible, the block
+   * would not drag, and the ⋯ menu would act on a card that looks unchanged.
+   */
+  useEffect(() => {
+    if (thumbUrl !== undefined && editing) commitEdit()
+    // Only the arrival of a picture matters here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thumbUrl])
 
   // Paste a reference capture straight onto the selected image block. Only an
   // image on the clipboard is taken, and never while the paste is going into a
@@ -212,9 +244,18 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
       const dy = (ev.clientY - startY) / scale
       resizeBlock(block.id, resizeRect(startRect, handle, dx, dy, canvasWidth, canvasHeight), `resize:${block.id}`)
     }
-    const onUp = () => {
+    const onUp = (ev: PointerEvent) => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
+      // One settling pass at the end of the gesture: the size the user dragged
+      // to decides the type size, and the wording then decides how much of that
+      // box is actually kept (손검수 1 §3). Same coalesce key, so the drag and
+      // its settling stay a single undo step.
+      if (bare && hasContent(block)) {
+        const dragged = resizeRect(startRect, handle, (ev.clientX - startX) / scale, (ev.clientY - startY) / scale, canvasWidth, canvasHeight)
+        const settled = fitBlockToText(block.content ?? '', dragged, fitArea)
+        resizeBlock(block.id, { ...dragged, width: settled.width, height: settled.height }, `resize:${block.id}`)
+      }
       // The reducer keeps layoutHint.emphasis in step with the size, so ending
       // the gesture commits both the box and the emphasis as one undo step.
       endInteraction()
@@ -388,7 +429,7 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
           autoFocus
           aria-label={`${block.label} 내용`}
           placeholder={meta.requiresAsset ? '어떤 이미지가 들어갈지 적어주세요' : `${meta.label} 입력…`}
-          style={{ fontSize: meta.requiresAsset ? undefined : fit.fontSize }}
+          style={{ fontSize: meta.requiresAsset ? undefined : draftFit }}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commitEdit}
           onPointerDown={(e) => e.stopPropagation()}

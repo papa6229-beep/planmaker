@@ -21,7 +21,17 @@ import { clearAll, resetAssetStoreForTests, saveDocument } from '../services/ass
 import { clearAllRequests, resetRequestStoreForTests } from '../services/requestStore'
 import { createEmptyDocument } from '../domain/pageSchema'
 import { createBlock, createEmptyBrief } from '../domain/factory'
-import { fitTextHeight, fitTextSize, MIN_FONT_PX, TEXT_PADDING_PX } from '../domain/textFit'
+import {
+  fitBlockToText,
+  fitTextHeight,
+  fitTextSize,
+  fitTextWidth,
+  MIN_FONT_PX,
+  PLACEHOLDER_FONT_PX,
+  TEXT_CHROME_PX,
+  TEXT_PADDING_PX,
+} from '../domain/textFit'
+import { loadDocument } from '../services/assetStore'
 import { briefStatus } from '../domain/briefStatus'
 import { documentFingerprint } from '../domain/documentFingerprint'
 import { createWorkRequest } from '../domain/workRequest'
@@ -133,7 +143,7 @@ describe('§3.1 문구 블록 본체는 문구만', () => {
   it('sizes the wording from the block box alone, with no card chrome removed', () => {
     // 320×96 of pure text area: only the 4px padding comes off each edge.
     const fit = fitTextSize('여름 특가', 320, 96)
-    const bare = fitTextSize('여름 특가', 320 - TEXT_PADDING_PX * 2, 96 - TEXT_PADDING_PX * 2, { padX: 0, padY: 0 })
+    const bare = fitTextSize('여름 특가', 320 - TEXT_CHROME_PX, 96 - TEXT_CHROME_PX, { padX: 0, padY: 0 })
     expect(fit.fontSize).toBe(bare.fontSize)
   })
 })
@@ -261,5 +271,77 @@ describe('§5 데이터 불변', () => {
     await user.click(cards()[0]!)
 
     expect(briefStatus([request], 'doc_1', doc)).toBe('delivered')
+  })
+})
+
+describe('손검수 1 · 안내문과 블록 맞춤', () => {
+  it('draws the placeholder at a plain readable size, not at the block\'s type size', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+    await user.click(tool('글 넣기'))
+
+    const editor = screen.getByLabelText('문구 내용') as HTMLTextAreaElement
+    expect(editor.placeholder).toBeTruthy()
+    // The empty block would otherwise draw its placeholder at the full 65px the
+    // box allows, which clips the hint and scrolls the field.
+    expect(Number.parseFloat(editor.style.fontSize)).toBe(PLACEHOLDER_FONT_PX)
+
+    // Typing switches to the size the wording is actually drawn at.
+    await user.type(editor, '아크웨이브 2.0 이벤트')
+    expect(Number.parseFloat(editor.style.fontSize)).toBeGreaterThan(PLACEHOLDER_FONT_PX)
+  })
+
+  it('keeps the placeholder out of the saved data and out of the type sizing', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+    await user.click(tool('글 넣기'))
+    await user.keyboard('{Escape}')
+
+    const card = cards()[0]!
+    expect(card.textContent).toContain('입력')
+    // Nothing of the hint reaches the document: content stays empty.
+    await waitFor(async () => {
+      const saved = await loadDocument()
+      expect(saved!.pages[0]!.blocks[0]!.content ?? '').toBe('')
+    }, { timeout: 6000 })
+  })
+
+  it('shrinks the block to the wording, sideways as well as down', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+    await user.click(tool('글 넣기'))
+    const startWidth = px(cards()[0]!.style.width)
+
+    await user.type(screen.getByLabelText('문구 내용'), '아크')
+    await user.keyboard('{Control>}{Enter}{/Control}')
+
+    const card = cards()[0]!
+    const width = px(card.style.width)
+    const height = px(card.style.height)
+    const fontSize = fitTextSize('아크', width, height).fontSize
+    expect(width).toBeLessThan(startWidth)
+    // The box is the wording plus its 4px breathing space, both ways.
+    // The settled width is the wording plus its padding, with a pixel of slack
+    // so a line that measures exactly to the edge cannot tip into a new one.
+    expect(width).toBe(fitTextWidth('아크', fontSize) + 1)
+    expect(height).toBe(fitTextHeight('아크', width, fontSize))
+  })
+
+  it('settles at one size instead of oscillating', () => {
+    const box = { width: 320, height: 96 }
+    const once = fitBlockToText('아크웨이브 2.0 이벤트', box)
+    const twice = fitBlockToText('아크웨이브 2.0 이벤트', once)
+    expect(twice).toEqual(once)
+    // And the size drawn in the settled box is the size it was settled for.
+    expect(fitTextSize('아크웨이브 2.0 이벤트', once.width, once.height).fontSize).toBe(once.fontSize)
+  })
+
+  it('measures a multi-line wording by its longest line', () => {
+    const text = '짧은 줄\n훨씬 더 긴 줄입니다'
+    // Wide enough that neither line has to wrap: the box lands on the longer one.
+    const fitted = fitBlockToText(text, { width: 1000, height: 200 })
+    expect(fitted.width).toBe(fitTextWidth(text, fitted.fontSize) + 1)
+    expect(fitted.height).toBe(fitTextHeight(text, fitted.width, fitted.fontSize))
+    expect(fitted.width).toBeLessThan(1000)
   })
 })

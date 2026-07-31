@@ -292,6 +292,41 @@ describe('마감 §2 제거하면 파일 정보도 함께 사라진다', () => {
   })
 })
 
+describe('손검수 1 §4 첨부 후에도 블록을 다룰 수 있다', () => {
+  it('leaves the description editor as soon as a capture arrives, and drags again', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+    await user.click(tool('이미지'))
+    // The description field is still open — the flow a planner actually takes.
+    await user.type(screen.getByLabelText('이미지 내용'), '참고 사진 설명')
+    await attach(user)
+
+    // The picture is visible, the field is closed, and the description is kept.
+    expect(screen.queryByLabelText('이미지 내용')).toBeNull()
+    expect(within(card()).getByText('참고 사진 설명')).toBeTruthy()
+
+    // And the block moves again.
+    const before = card().style.left
+    fireEvent.pointerDown(card(), { button: 0, clientX: 100, clientY: 100 })
+    fireEvent.pointerMove(window, { clientX: 40, clientY: 130 })
+    fireEvent.pointerUp(window, { clientX: 40, clientY: 130 })
+    expect(card().style.left).not.toBe(before)
+  })
+
+  it('keeps the ⋯ menu working on a block that holds a capture', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+    await user.click(tool('이미지'))
+    await user.type(screen.getByLabelText('이미지 내용'), '참고 사진 설명')
+    await attach(user)
+
+    await user.click(within(card()).getByLabelText('이미지 블록 메뉴'))
+    await user.click(within(card()).getByRole('button', { name: '참고 이미지 제거' }))
+    await waitFor(() => expect(canvas().querySelector('.block-card__thumb')).toBeNull())
+    expect(within(card()).getByText('참고 사진 설명')).toBeTruthy()
+  })
+})
+
 describe('§3 참고자료의 의미', () => {
   it('marks the attachment reference-only, never as the asset to use', () => {
     const state = withReference()

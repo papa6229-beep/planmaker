@@ -31,7 +31,7 @@ import {
   isPairedLinkUrl,
   withLinkPartners,
 } from '../../domain/simpleBlocks'
-import { CARD_CHROME_Y, CARD_PADDING_X, emphasisForBlockSize, fitTextHeight, fitTextSize } from '../../domain/textFit'
+import { CARD_CHROME_Y, CARD_PADDING_X, emphasisForBlockSize, fitBlockToText, fitTextSize } from '../../domain/textFit'
 import { boundedDelta, clampPosition, type Rect } from './canvasGeometry'
 
 /** Default title so a fresh brief still passes validation (needs a title). */
@@ -66,7 +66,7 @@ export type EditorAction =
   | { type: 'DELETE_BLOCK'; blockId: string }
   | { type: 'DELETE_SELECTED' }
   | { type: 'UPDATE_BLOCK'; blockId: string; patch: BlockPatch; coalesceKey?: string }
-  | { type: 'COMMIT_TEXT'; blockId: string; content: string }
+  | { type: 'COMMIT_TEXT'; blockId: string; content: string; rect?: Rect }
   | { type: 'MOVE_BLOCK'; blockId: string; x: number; y: number; coalesceKey?: string }
   | { type: 'RESIZE_BLOCK'; blockId: string; rect: Rect; coalesceKey?: string }
   | { type: 'DUPLICATE_BLOCK'; blockId: string }
@@ -227,7 +227,7 @@ function updateBlock(state: EditorState, blockId: string, patch: BlockPatch): Ed
  * how the type size is chosen. A block already too small keeps its 블록이 작아요
  * warning rather than being trimmed around illegible text.
  */
-function commitText(state: EditorState, blockId: string, content: string): EditorState {
+function commitText(state: EditorState, blockId: string, content: string, rect?: Rect): EditorState {
   const target = state.brief.blocks.find((b) => b.id === blockId)
   if (!target) return state
   const written = withDerivedEmphasis(applyPatch(target, { content }))
@@ -236,15 +236,21 @@ function commitText(state: EditorState, blockId: string, content: string): Edito
     return withBlocks(state, state.brief.blocks.map((b) => (b.id === blockId ? written : b)))
   }
 
-  const { width, height } = written.position
-  const fit = fitTextSize(content, width, height)
-  const needed = fitTextHeight(content, width, fit.fontSize)
-  const trimmed =
-    fit.overflow || needed >= height
-      ? written
-      : withDerivedEmphasis({ ...written, position: { ...written.position, height: needed } })
+  // The canvas can measure the wording with the real font, so when it hands a
+  // settled box over, that box wins. Without one (tests, programmatic edits)
+  // the estimate settles the box as well as it can.
+  const settled =
+    rect !== undefined
+      ? { ...written.position, width: rect.width, height: rect.height }
+      : (() => {
+          const { width, height } = written.position
+          const fit = fitTextSize(content, width, height)
+          const box = fitBlockToText(content, { width, height })
+          return fit.overflow ? written.position : { ...written.position, width: box.width, height: box.height }
+        })()
 
-  return withBlocks(state, state.brief.blocks.map((b) => (b.id === blockId ? trimmed : b)))
+  const next = withDerivedEmphasis({ ...written, position: settled })
+  return withBlocks(state, state.brief.blocks.map((b) => (b.id === blockId ? next : b)))
 }
 
 function moveBlock(state: EditorState, blockId: string, x: number, y: number): EditorState {
@@ -601,7 +607,7 @@ export function briefReducer(state: EditorState, action: EditorAction): EditorSt
     case 'UPDATE_BLOCK':
       return updateBlock(state, action.blockId, action.patch)
     case 'COMMIT_TEXT':
-      return commitText(state, action.blockId, action.content)
+      return commitText(state, action.blockId, action.content, action.rect)
     case 'MOVE_BLOCK':
       return moveBlock(state, action.blockId, action.x, action.y)
     case 'RESIZE_BLOCK':

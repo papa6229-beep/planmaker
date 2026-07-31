@@ -26,6 +26,23 @@ const LINE_HEIGHT = 1.35
 export const TEXT_PADDING_PX = 4
 
 /**
+ * The hairline the block draws around itself. It is invisible until the block
+ * is hovered or selected, but it takes width from the wording all the same —
+ * forgetting it is enough to push a line that measured exactly to the edge onto
+ * a second line, which is what left a band of empty space beside short wording.
+ */
+const TEXT_BORDER_PX = 1
+
+/**
+ * Size the "무엇을 적을까요" hint is drawn at while the block is still empty.
+ *
+ * Fixed on purpose: the hint is not the user's wording, so sizing it from the
+ * block would blow it up to whatever the empty box allows, clip it, and put a
+ * scrollbar in a field nobody has typed in yet (손검수 1 §2).
+ */
+export const PLACEHOLDER_FONT_PX = 24
+
+/**
  * Chrome a still-carded block spends before any wording is drawn, measured
  * against the rendered card: side padding plus its accent border horizontally,
  * and padding plus the kind badge row and the label line vertically. Image
@@ -34,17 +51,29 @@ export const TEXT_PADDING_PX = 4
 export const CARD_PADDING_X = 30
 export const CARD_CHROME_Y = 65
 
+/**
+ * Width of one line as the browser would draw it. Supplied by the canvas, which
+ * can ask the real font; without one the estimate below is used, which is
+ * deliberately generous so nothing is ever clipped.
+ */
+export type MeasureLine = (text: string, fontSize: number) => number
+
 export interface FitArea {
   /** Total horizontal space that is not wording. Defaults to the 4px padding. */
   padX?: number
   /** Total vertical space that is not wording. Defaults to the 4px padding. */
   padY?: number
+  /** Real text measurement, when the caller has a browser to ask. */
+  measure?: MeasureLine
 }
+
+/** Space a bare text block spends on padding and border, both edges together. */
+export const TEXT_CHROME_PX = (TEXT_PADDING_PX + TEXT_BORDER_PX) * 2
 
 function area(options: FitArea): { padX: number; padY: number } {
   return {
-    padX: options.padX ?? TEXT_PADDING_PX * 2,
-    padY: options.padY ?? TEXT_PADDING_PX * 2,
+    padX: options.padX ?? TEXT_CHROME_PX,
+    padY: options.padY ?? TEXT_CHROME_PX,
   }
 }
 
@@ -82,17 +111,76 @@ function averageCharRatio(text: string): number {
   return 0.58 + wideRatio * 0.42
 }
 
-/** Lines the text needs at a given font size, honouring explicit line breaks. */
-function lineCount(text: string, fontSize: number, innerWidth: number): number {
-  const charWidth = fontSize * averageCharRatio(text)
-  if (charWidth <= 0 || innerWidth <= 0) return 1
-  const perLine = Math.max(1, Math.floor(innerWidth / charWidth))
-  let lines = 0
-  for (const paragraph of text.split('\n')) {
-    const chars = [...paragraph].length
-    lines += Math.max(1, Math.ceil(chars / perLine))
+/** Estimated width of a line, used when no real measurement is available. */
+function estimateWidth(text: string, fontSize: number): number {
+  return [...text].length * fontSize * averageCharRatio(text)
+}
+
+/**
+ * The lines the wording actually breaks into, honouring explicit line breaks
+ * and wrapping the rest to the available width.
+ *
+ * Wrapping follows the browser: a line breaks at a space where it can, and only
+ * inside a run of characters when that run is itself too long — which is also
+ * how Korean without spaces breaks. Modelling this is what lets a block be
+ * settled around the wording instead of around a guess.
+ */
+function wrapLines(text: string, fontSize: number, innerWidth: number, measure?: MeasureLine): string[] {
+  const width = (line: string): number => (measure ? measure(line, fontSize) : estimateWidth(line, fontSize))
+  const lines: string[] = []
+
+  /** Longest prefix of `chars` that still fits, at least one character. */
+  const prefixThatFits = (chars: string[]): number => {
+    let low = 1
+    let high = chars.length
+    let take = 1
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2)
+      if (width(chars.slice(0, mid).join('')) <= innerWidth) {
+        take = mid
+        low = mid + 1
+      } else {
+        high = mid - 1
+      }
+    }
+    return take
   }
-  return Math.max(1, lines)
+
+  for (const paragraph of text.split('\n')) {
+    if (paragraph.length === 0 || width(paragraph) <= innerWidth) {
+      lines.push(paragraph)
+      continue
+    }
+    // Words keep their trailing space, so a break lands after it exactly as the
+    // browser would put it.
+    const words = paragraph.match(/\S+\s*/g) ?? [paragraph]
+    let line = ''
+    for (const word of words) {
+      const candidate = line + word
+      if (line.length > 0 && width(candidate.trimEnd()) > innerWidth) {
+        lines.push(line.trimEnd())
+        line = word
+      } else {
+        line = candidate
+      }
+      // A single word longer than the line breaks inside itself.
+      while (width(line.trimEnd()) > innerWidth && [...line].length > 1) {
+        const chars = [...line]
+        const take = prefixThatFits(chars)
+        if (take >= chars.length) break
+        lines.push(chars.slice(0, take).join(''))
+        line = chars.slice(take).join('')
+      }
+    }
+    lines.push(line.trimEnd())
+  }
+  return lines.length > 0 ? lines : ['']
+}
+
+/** Lines the text needs at a given font size, honouring explicit line breaks. */
+function lineCount(text: string, fontSize: number, innerWidth: number, measure?: MeasureLine): number {
+  if (innerWidth <= 0 || fontSize <= 0) return 1
+  return Math.max(1, wrapLines(text, fontSize, innerWidth, measure).length)
 }
 
 /**
@@ -114,7 +202,7 @@ export function fitTextSize(text: string, width: number, height: number, options
   }
 
   for (let size = MAX_FONT_PX; size >= MIN_FONT_PX; size -= 1) {
-    const needed = lineCount(trimmed, size, innerWidth) * size * LINE_HEIGHT
+    const needed = lineCount(trimmed, size, innerWidth, options.measure) * size * LINE_HEIGHT
     if (needed <= innerHeight) return { fontSize: size, overflow: false }
   }
   return { fontSize: MIN_FONT_PX, overflow: true }
@@ -132,7 +220,79 @@ export function fitTextHeight(text: string, width: number, fontSize: number, opt
   const trimmed = text.trim()
   if (trimmed.length === 0) return Math.ceil(fontSize * LINE_HEIGHT + padY)
   const innerWidth = Math.max(1, width - padX)
-  return Math.ceil(lineCount(trimmed, fontSize, innerWidth) * fontSize * LINE_HEIGHT + padY)
+  return Math.ceil(lineCount(trimmed, fontSize, innerWidth, options.measure) * fontSize * LINE_HEIGHT + padY)
+}
+
+/**
+ * Width the wording actually occupies at a given size, padding included —
+ * the longest line it breaks into, never wider than the canvas.
+ */
+export function fitTextWidth(
+  text: string,
+  fontSize: number,
+  options: FitArea & { innerWidth?: number } = {},
+): number {
+  const { padX } = area(options)
+  const trimmed = text.trim()
+  if (trimmed.length === 0) return Math.ceil(fontSize + padX)
+  const measure = options.measure
+  const bound = options.innerWidth ?? Number.POSITIVE_INFINITY
+  const lines = wrapLines(trimmed, fontSize, bound, measure)
+  const widest = lines.reduce(
+    (max, line) => Math.max(max, measure ? measure(line, fontSize) : estimateWidth(line, fontSize)),
+    0,
+  )
+  return Math.ceil(widest + padX)
+}
+
+/** A block's box in canvas units. */
+export interface BlockBox {
+  width: number
+  height: number
+}
+
+export interface FittedBlock extends BlockBox {
+  /** Size the wording is drawn at inside the settled box. */
+  fontSize: number
+}
+
+/**
+ * Settles a block's box around the wording it holds (손검수 1 §3).
+ *
+ * The size the user gave the block decides how big the type is; the wording
+ * then decides how much room the block actually keeps, so no empty band is left
+ * to the right of a short line or under a single line. It only ever shrinks —
+ * growing is what dragging a corner is for — and it settles in one pass: the
+ * box handed back produces the same type size it was measured at, so nothing
+ * oscillates between renders.
+ */
+export function fitBlockToText(text: string, box: BlockBox, options: FitArea = {}): FittedBlock {
+  const trimmed = text.trim()
+  const fit = fitTextSize(text, box.width, box.height, options)
+  if (trimmed.length === 0 || fit.overflow) return { ...box, fontSize: fit.fontSize }
+
+  const { padX } = area(options)
+  // Narrowing the box can make the wording re-wrap, which changes what the
+  // longest line is, so the width is settled by repeating until it stops
+  // moving. A pixel of slack keeps a line that measured exactly to the edge
+  // from tipping over into a new line when it is drawn.
+  let width = box.width
+  for (let pass = 0; pass < 4; pass += 1) {
+    const candidate = Math.min(
+      box.width,
+      fitTextWidth(trimmed, fit.fontSize, { ...options, innerWidth: Math.max(1, width - padX) }) + 1,
+    )
+    if (candidate >= width) break
+    width = candidate
+  }
+
+  const height = fitTextHeight(trimmed, width, fit.fontSize, options)
+  // If the settled width needs more lines than the block can hold, the user's
+  // width stays — a tighter box must never clip the wording.
+  if (height > box.height) {
+    return { width: box.width, height: Math.min(box.height, fitTextHeight(trimmed, box.width, fit.fontSize, options)), fontSize: fit.fontSize }
+  }
+  return { width, height, fontSize: fit.fontSize }
 }
 
 /**

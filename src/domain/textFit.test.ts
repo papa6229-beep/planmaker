@@ -4,7 +4,7 @@ import {
   CARD_PADDING_X,
   MAX_FONT_PX,
   MIN_FONT_PX,
-  TEXT_PADDING_PX,
+  TEXT_CHROME_PX,
   fitTextHeight,
   emphasisForBlockSize,
   emphasisForFontSize,
@@ -24,7 +24,7 @@ describe('fitTextSize — block size drives type size', () => {
     // A text block carries no card: 320×96 is 312×88 of wording area, and the
     // line box has to draw inside that.
     const fit = fitTextSize('일부 상품 제외', 320, 96)
-    expect(fit.fontSize * 1.35).toBeLessThanOrEqual(96 - TEXT_PADDING_PX * 2)
+    expect(fit.fontSize * 1.35).toBeLessThanOrEqual(96 - TEXT_CHROME_PX)
     expect(fit.overflow).toBe(false)
     // Blocks that keep a card are measured with that card's chrome instead.
     const carded = fitTextSize('일부 상품 제외', 320, 96, { padX: CARD_PADDING_X, padY: CARD_CHROME_Y })
@@ -63,10 +63,10 @@ describe('fitTextSize — block size drives type size', () => {
 describe('fitTextHeight — the room the wording actually takes', () => {
   it('returns the drawn line box plus the padding, and grows with the line count', () => {
     const one = fitTextHeight('여름 세일', 600, 40)
-    expect(one).toBe(Math.ceil(40 * 1.35 + TEXT_PADDING_PX * 2))
+    expect(one).toBe(Math.ceil(40 * 1.35 + TEXT_CHROME_PX))
 
     const two = fitTextHeight('첫 줄\n둘째 줄', 600, 40)
-    expect(two).toBe(Math.ceil(2 * 40 * 1.35 + TEXT_PADDING_PX * 2))
+    expect(two).toBe(Math.ceil(2 * 40 * 1.35 + TEXT_CHROME_PX))
   })
 })
 
