@@ -32,7 +32,7 @@ import {
   withLinkPartners,
 } from '../../domain/simpleBlocks'
 import { CARD_CHROME_Y, CARD_PADDING_X, emphasisForBlockSize, fitBlockToText, fitTextSize } from '../../domain/textFit'
-import { boundedDelta, clampPosition, type Rect } from './canvasGeometry'
+import { boundedDelta, clampCanvasHeight, clampPosition, type Rect } from './canvasGeometry'
 
 /** Default title so a fresh brief still passes validation (needs a title). */
 export const DEFAULT_BRIEF_TITLE = '새 기획서'
@@ -77,6 +77,7 @@ export type EditorAction =
   | { type: 'ADD_IMAGE_BLOCK'; asset: Asset; position?: { x: number; y: number }; blockType?: BlockType; image?: Partial<BlockImageMeta> }
   | { type: 'REMOVE_BLOCK_ASSET'; blockId: string }
   | { type: 'SET_PROJECT_TITLE'; title: string; coalesceKey?: string }
+  | { type: 'SET_CANVAS_HEIGHT'; height: number; coalesceKey?: string }
   | { type: 'NEW_BRIEF' }
 
 /** Builds the initial editor state (also used by "새로 만들기"). */
@@ -580,6 +581,20 @@ function removeBlockAsset(state: EditorState, blockId: string): EditorState {
 }
 
 /**
+ * Sets how long this page is (손검수 2 §3). The width stays 840; only the page
+ * the user is looking at changes, and the document's sync writes it back to
+ * that page alone.
+ *
+ * The page never shrinks past the wording already on it: the lowest block plus
+ * a margin is the floor, so nothing is left outside the canvas.
+ */
+function setCanvasHeight(state: EditorState, height: number): EditorState {
+  const clamped = clampCanvasHeight(height, state.brief.blocks)
+  if (clamped === state.brief.project.canvasHeight) return state
+  return { ...state, brief: { ...state.brief, project: { ...state.brief.project, canvasHeight: clamped } } }
+}
+
+/**
  * Sets the project title — the single source of truth for the name shown in the
  * top bar, the briefs list, and the gate (WORK_PLAN §7.1). Editing coalesces
  * into one undo step via the history wrapper.
@@ -628,6 +643,8 @@ export function briefReducer(state: EditorState, action: EditorAction): EditorSt
       return removeBlockAsset(state, action.blockId)
     case 'SET_PROJECT_TITLE':
       return setProjectTitle(state, action.title)
+    case 'SET_CANVAS_HEIGHT':
+      return setCanvasHeight(state, action.height)
     case 'NEW_BRIEF':
       return createInitialEditorState()
     default:

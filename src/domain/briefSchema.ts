@@ -19,6 +19,16 @@ export const SCHEMA_VERSION = '1.0.0'
 export const DEFAULT_CANVAS_WIDTH = 840
 export const DEFAULT_CANVAS_HEIGHT = 1800
 
+/**
+ * Height a brand-new page (and a brand-new brief's first page) starts at. Pages
+ * are their own length — one can be a long landing page and the next a short
+ * banner — so a new page starts at a comfortable default rather than inheriting
+ * whatever the last page grew to (손검수 2 §3). Documents written before this
+ * keep the height they were saved with; `DEFAULT_CANVAS_HEIGHT` is what a v1
+ * document is migrated with.
+ */
+export const NEW_PAGE_HEIGHT = 1000
+
 // ── Project ────────────────────────────────────────────────────────────────
 
 export type OutputType = 'event_page' | 'popup' | 'banner' | 'sns_image' | 'etc'

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { createBlock, createEmptyBrief, createId } from './factory'
-import { DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, SCHEMA_VERSION } from './briefSchema'
+import { NEW_PAGE_HEIGHT, DEFAULT_CANVAS_WIDTH, SCHEMA_VERSION } from './briefSchema'
 
 describe('createId', () => {
   it('produces unique ids', () => {
@@ -64,7 +64,9 @@ describe('createEmptyBrief', () => {
     expect(brief.schemaVersion).toBe(SCHEMA_VERSION)
     expect(brief.project.title).toBe('테스트')
     expect(brief.project.canvasWidth).toBe(DEFAULT_CANVAS_WIDTH)
-    expect(brief.project.canvasHeight).toBe(DEFAULT_CANVAS_HEIGHT)
+    // A new brief is one page long at the new-page length; DEFAULT_CANVAS_HEIGHT
+    // is what a v1 document is migrated with.
+    expect(brief.project.canvasHeight).toBe(NEW_PAGE_HEIGHT)
     expect(brief.blocks).toEqual([])
     expect(brief.assets).toEqual([])
   })

@@ -7,6 +7,26 @@
 export const MIN_BLOCK_WIDTH = 80
 export const MIN_BLOCK_HEIGHT = 48
 
+/** How short and how long a page may be (손검수 2 §3.2). */
+export const MIN_CANVAS_HEIGHT = 400
+export const MAX_CANVAS_HEIGHT = 30000
+/** Breathing room kept under the lowest block when a page is shortened. */
+export const CANVAS_BOTTOM_MARGIN = 80
+
+/**
+ * The page height to apply for a requested one: never so short that a block
+ * would fall outside the page, never shorter than 400px, never past 30,000px.
+ * Reaching a limit simply stops there — it is not an error.
+ */
+export function clampCanvasHeight(
+  requested: number,
+  blocks: readonly { position: { y: number; height: number } }[],
+): number {
+  const lowest = blocks.reduce((max, b) => Math.max(max, b.position.y + b.position.height), 0)
+  const floor = Math.max(MIN_CANVAS_HEIGHT, blocks.length > 0 ? Math.ceil(lowest + CANVAS_BOTTOM_MARGIN) : 0)
+  return Math.round(Math.min(MAX_CANVAS_HEIGHT, Math.max(floor, requested)))
+}
+
 export interface Rect {
   x: number
   y: number

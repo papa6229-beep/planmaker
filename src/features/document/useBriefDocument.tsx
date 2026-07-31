@@ -72,6 +72,12 @@ export interface BriefDocumentApi {
   addPage: () => void
   duplicatePage: (pageId: string) => void
   deletePage: (pageId: string) => void
+  /**
+   * The document as it was just before the last page deletion, if that is still
+   * the most recent thing that happened. Page structure lives outside the
+   * editor's undo history, so the toolbar restores it from here (손검수 2 §4.2).
+   */
+  undoPageDelete: (() => void) | null
   movePage: (pageId: string, delta: number) => void
   renamePage: (pageId: string, title: string) => void
   switchPage: (pageId: string) => void
@@ -146,6 +152,9 @@ export function BriefDocumentProvider({
   const { state, hydrate } = useBriefEditor()
   const { loadFromStore } = useAssets()
   const [doc, setDoc] = useState<BriefDocument>(() => briefToDocument(state.brief))
+  // Snapshot taken before a page is deleted, kept only while that deletion is
+  // still the newest change on screen.
+  const [deletedPage, setDeletedPage] = useState<BriefDocument | null>(null)
 
   const docRef = useRef(doc)
   docRef.current = doc
@@ -240,6 +249,16 @@ export function BriefDocumentProvider({
     [hydrate],
   )
 
+  /** Restores the document exactly as it was before the page was deleted. */
+  const restoreDeletedPage = useCallback(() => {
+    const snapshot = deletedPage
+    if (!snapshot) return
+    setDeletedPage(null)
+    docRef.current = snapshot
+    setDoc(snapshot)
+    hydrate(pageAsEventBrief(snapshot, getActivePage(snapshot)))
+  }, [deletedPage, hydrate])
+
   const replaceDocument = useCallback(
     (next: BriefDocument) => {
       readyRef.current = true
@@ -278,7 +297,13 @@ export function BriefDocumentProvider({
       activePageId: doc.activePageId,
       addPage: () => applyOp(addPage(docRef.current)),
       duplicatePage: (pageId) => applyOp(duplicatePage(docRef.current, pageId)),
-      deletePage: (pageId) => applyOp(deletePage(docRef.current, pageId)),
+      deletePage: (pageId) => {
+        // Everything the page held — blocks, its length, its reference image —
+        // comes back with one 실행 취소, so the snapshot is the whole document.
+        setDeletedPage(docRef.current)
+        applyOp(deletePage(docRef.current, pageId))
+      },
+      undoPageDelete: deletedPage === null ? null : restoreDeletedPage,
       movePage: (pageId, delta) => applyOp(movePage(docRef.current, pageId, delta)),
       renamePage: (pageId, title) => applyOp(renamePage(docRef.current, pageId, title)),
       switchPage: (pageId) => {
@@ -303,7 +328,7 @@ export function BriefDocumentProvider({
         await bindingRef.current.save(current, Date.now())
       },
     }),
-    [doc, applyOp, replaceDocument, setReferenceImage, mutateDoc],
+    [doc, applyOp, replaceDocument, setReferenceImage, mutateDoc, deletedPage, restoreDeletedPage],
   )
 
   return <BriefDocumentContext.Provider value={api}>{children}</BriefDocumentContext.Provider>

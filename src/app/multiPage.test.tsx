@@ -103,12 +103,13 @@ describe('multi-page editor', () => {
     renderEditor()
     // Only one page → delete is disabled.
     await user.click(within(strip()).getByLabelText('1페이지 페이지 메뉴'))
-    expect((within(menuOf('1페이지')).getByRole('button', { name: '삭제' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((within(menuOf('1페이지')).getByRole('button', { name: '페이지 삭제' }) as HTMLButtonElement).disabled).toBe(true)
 
     // Add a page, then delete it.
     await user.click(within(strip()).getByRole('button', { name: '+ 페이지 추가' }))
     await user.click(within(strip()).getByLabelText('2페이지 페이지 메뉴'))
-    await user.click(within(menuOf('2페이지')).getByRole('button', { name: '삭제' }))
+    // An empty page goes without a confirmation; one holding work asks first.
+    await user.click(within(menuOf('2페이지')).getByRole('button', { name: '페이지 삭제' }))
 
     const labels = within(strip()).getAllByRole('button').filter((b) => b.className.includes('page-tab__label'))
     expect(labels.map((l) => l.textContent)).toEqual(['1페이지'])

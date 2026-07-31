@@ -6,7 +6,7 @@
 
 import { getBlockTypeMeta, isImageBlock, type BlockType } from './blockTypes'
 import {
-  DEFAULT_CANVAS_HEIGHT,
+  NEW_PAGE_HEIGHT,
   DEFAULT_CANVAS_WIDTH,
   SCHEMA_VERSION,
   type BriefBlock,
@@ -82,7 +82,10 @@ export function createEmptyProject(title = ''): Project {
     title,
     outputType: 'event_page',
     canvasWidth: DEFAULT_CANVAS_WIDTH,
-    canvasHeight: DEFAULT_CANVAS_HEIGHT,
+    // A brief starts one page long at the new-page length; every page carries
+    // its own length from there (손검수 2 §3). `DEFAULT_CANVAS_HEIGHT` stays the
+    // height a v1 document is migrated with.
+    canvasHeight: NEW_PAGE_HEIGHT,
   }
 }
 

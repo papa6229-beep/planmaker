@@ -55,6 +55,8 @@ export interface BriefEditorApi {
   addImageBlock: (asset: Asset, position?: { x: number; y: number }, image?: Partial<BlockImageMeta>) => void
   removeBlockAsset: (blockId: string) => void
   setProjectTitle: (title: string, coalesceKey?: string) => void
+  /** Sets the open page's length; one drag collapses into one undo step. */
+  setCanvasHeight: (height: number, coalesceKey?: string) => void
   hydrate: (brief: EventBrief) => void
   newBrief: () => void
   undo: () => void
@@ -115,6 +117,10 @@ export function BriefEditorProvider({ children }: { children: ReactNode }) {
         dispatch(coalesceKey === undefined
           ? { type: 'SET_PROJECT_TITLE', title }
           : { type: 'SET_PROJECT_TITLE', title, coalesceKey }),
+      setCanvasHeight: (height, coalesceKey) =>
+        dispatch(coalesceKey === undefined
+          ? { type: 'SET_CANVAS_HEIGHT', height }
+          : { type: 'SET_CANVAS_HEIGHT', height, coalesceKey }),
       hydrate: (brief) => dispatch({ type: 'HYDRATE', brief }),
       newBrief: () => dispatch({ type: 'NEW_BRIEF' }),
       undo: () => dispatch({ type: 'UNDO' }),

@@ -28,8 +28,17 @@ function BackIcon() {
 
 export function TopToolbar({ mode = 'brief', onShowSummary }: { mode?: 'brief' | 'image'; onShowSummary: () => void }) {
   const { state, setProjectTitle, newBrief, undo, redo, canUndo, canRedo, endInteraction } = useBriefEditor()
-  const { getDocument } = useBriefDocument()
+  const { getDocument, undoPageDelete } = useBriefDocument()
   const { startExport, startImport, busy } = useEventBriefIo()
+  /**
+   * Page structure is not part of the editor's history, so a just-deleted page
+   * is restored from the document's own snapshot; everything else undoes
+   * through the editor as before (손검수 2 §4.2).
+   */
+  const undoLast = () => {
+    if (undoPageDelete !== null) undoPageDelete()
+    else undo()
+  }
   const { submit } = useRequests()
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const titleRef = useRef<HTMLInputElement | null>(null)
@@ -105,7 +114,15 @@ export function TopToolbar({ mode = 'brief', onShowSummary }: { mode?: 'brief' |
         <span className="editor-topbar__divider" aria-hidden="true" />
 
         <nav className="editor-topbar__actions" aria-label="주요 작업">
-          <button type="button" className="btn" onClick={undo} disabled={!canUndo || busy} title="실행 취소 (Ctrl+Z)">실행 취소</button>
+          <button
+            type="button"
+            className="btn"
+            onClick={undoLast}
+            disabled={(!canUndo && undoPageDelete === null) || busy}
+            title="실행 취소 (Ctrl+Z)"
+          >
+            실행 취소
+          </button>
           <button type="button" className="btn" onClick={redo} disabled={!canRedo || busy} title="다시 실행 (Ctrl+Shift+Z)">다시 실행</button>
           <button type="button" className="btn" onClick={onShowSummary} disabled={busy} title="이미지 생성 AI가 읽는 정보 미리보기">AI 요약</button>
 

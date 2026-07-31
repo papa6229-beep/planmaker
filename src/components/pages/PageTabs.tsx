@@ -19,6 +19,7 @@ export function PageTabs() {
     useBriefDocument()
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
+  const [confirmingId, setConfirming] = useState<string | null>(null)
 
   const beginRename = (id: string, title: string) => {
     setRenamingId(id)
@@ -37,6 +38,7 @@ export function PageTabs() {
   }
 
   const onlyOne = pages.length <= 1
+  const confirmingPage = pages.find((p) => p.id === confirmingId)
 
   return (
     <div className="page-tabs" role="group" aria-label="기획 페이지">
@@ -119,13 +121,21 @@ export function PageTabs() {
                     type="button"
                     className="page-tab__menu-item page-tab__menu-item--danger"
                     disabled={onlyOne}
+                    title={onlyOne ? '마지막 페이지는 삭제할 수 없습니다' : undefined}
                     onClick={(e) => {
                       closeMenu(e.currentTarget)
-                      if (!onlyOne) deletePage(page.id)
+                      if (onlyOne) return
+                      // A page holding work is never removed on one click.
+                      const holdsWork = page.blocks.length > 0 || page.reference.assetId !== undefined
+                      if (holdsWork) setConfirming(page.id)
+                      else deletePage(page.id)
                     }}
                   >
-                    삭제
+                    페이지 삭제
                   </button>
+                  {onlyOne && (
+                    <p className="page-tab__menu-note">마지막 페이지는 삭제할 수 없습니다</p>
+                  )}
                 </div>
               </details>
             </div>
@@ -136,6 +146,36 @@ export function PageTabs() {
           + 페이지 추가
         </button>
       </div>
+
+      {confirmingPage && (
+        <div className="confirm-backdrop" role="presentation" onClick={() => setConfirming(null)}>
+          <div
+            className="confirm"
+            role="alertdialog"
+            aria-modal="true"
+            aria-label="페이지 삭제 확인"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="confirm__text">
+              ‘{confirmingPage.title}’를 삭제할까요?<br />
+              이 페이지에 넣은 내용도 함께 삭제됩니다.
+            </p>
+            <div className="confirm__actions">
+              <button type="button" className="btn" onClick={() => setConfirming(null)}>취소</button>
+              <button
+                type="button"
+                className="btn btn--danger"
+                onClick={() => {
+                  deletePage(confirmingPage.id)
+                  setConfirming(null)
+                }}
+              >
+                페이지 삭제
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

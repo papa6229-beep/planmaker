@@ -25,6 +25,9 @@ function hasFiles(e: DragEvent): boolean {
   return Array.from(e.dataTransfer.types).includes('Files')
 }
 
+/** Room under the sheet for the page-length handle. */
+const HEIGHT_HANDLE_ROOM = 44
+
 /** Overlay image sizing in the 840px canvas space, per the fit method (§8.3). */
 function overlayStyle(ref: ReferenceLayer, canvasWidth: number): CSSProperties {
   const base: CSSProperties = { opacity: ref.opacity }
@@ -34,7 +37,7 @@ function overlayStyle(ref: ReferenceLayer, canvasWidth: number): CSSProperties {
 }
 
 export function BriefCanvas() {
-  const { state, selectBlock } = useBriefEditor()
+  const { state, selectBlock, setCanvasHeight, endInteraction } = useBriefEditor()
   const { uploadFiles, getUrl } = useAssets()
   const { activeReference } = useBriefDocument()
   const { zoom, reportViewport } = useCanvasView()
@@ -82,7 +85,7 @@ export function BriefCanvas() {
     <section className="canvas" aria-label="기획 캔버스" ref={canvasRef}>
       <div
         className="canvas__viewport"
-        style={{ width: canvasWidth * zoom, height: canvasHeight * zoom }}
+        style={{ width: canvasWidth * zoom, height: canvasHeight * zoom + HEIGHT_HANDLE_ROOM }}
       >
         <div
           ref={sheetRef}
@@ -135,6 +138,35 @@ export function BriefCanvas() {
             />
           ))}
         </div>
+
+        {/* Page length. Only this page changes; the 840px width is fixed. */}
+        <button
+          type="button"
+          className="canvas__height-handle"
+          style={{ top: canvasHeight * zoom }}
+          aria-label="페이지 길이 조절"
+          title="아래위로 끌어 페이지 길이를 조절합니다"
+          onPointerDown={(e) => {
+            if (e.button !== 0) return
+            e.preventDefault()
+            const startY = e.clientY
+            const startHeight = canvasHeight
+            const onMove = (ev: PointerEvent) => {
+              // Screen movement is converted back into document units, so the
+              // page grows by what the user actually dragged at any zoom.
+              setCanvasHeight(startHeight + (ev.clientY - startY) / zoom, 'canvas-height')
+            }
+            const onUp = () => {
+              window.removeEventListener('pointermove', onMove)
+              window.removeEventListener('pointerup', onUp)
+              endInteraction()
+            }
+            window.addEventListener('pointermove', onMove)
+            window.addEventListener('pointerup', onUp)
+          }}
+        >
+          ↕ 페이지 길이 조절 · {Math.round(canvasHeight)}px
+        </button>
       </div>
     </section>
   )

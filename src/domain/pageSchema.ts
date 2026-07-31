@@ -19,8 +19,8 @@
 
 import { createId } from './factory'
 import {
-  DEFAULT_CANVAS_HEIGHT,
   DEFAULT_CANVAS_WIDTH,
+  NEW_PAGE_HEIGHT,
   type Asset,
   type BriefBlock,
   type Project,
@@ -98,7 +98,7 @@ export function createPage(options: CreatePageOptions = {}): BriefPage {
     title: options.title ?? '1페이지',
     blocks: options.blocks ?? [],
     canvasWidth: options.canvasWidth ?? PAGE_CANVAS_WIDTH,
-    canvasHeight: options.canvasHeight ?? DEFAULT_CANVAS_HEIGHT,
+    canvasHeight: options.canvasHeight ?? NEW_PAGE_HEIGHT,
     reference: options.reference ?? createReferenceLayer(),
   }
 }

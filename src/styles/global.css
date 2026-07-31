@@ -771,6 +771,49 @@ button { font-family: inherit; }
    comes forward while it is in use. */
 .block-card.is-front { z-index: 2; }
 
+/* Confirmation for something that cannot be shrugged off (손검수 2 §4, §5). */
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 23, 33, 0.35);
+}
+.confirm {
+  max-width: 380px;
+  padding: 20px;
+  border-radius: var(--radius);
+  background: var(--color-panel);
+  box-shadow: var(--shadow-pop);
+}
+.confirm__text { margin: 0 0 16px; font-size: 14px; line-height: 1.6; }
+.confirm__actions { display: flex; justify-content: flex-end; gap: 8px; }
+.page-tab__menu-note { margin: 4px 6px 0; font-size: 11px; color: var(--color-muted); }
+
+/* Page length handle, centred under the sheet (손검수 2 §3.2). */
+.canvas__height-handle {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: var(--color-panel);
+  color: var(--color-muted);
+  font-size: 12px;
+  cursor: ns-resize;
+  user-select: none;
+  touch-action: none;
+  white-space: nowrap;
+}
+.canvas__height-handle:hover { border-color: var(--color-accent); color: var(--color-accent); }
+
 /* ── 문구 블록: the box IS the wording area (단계 1-A §3.1) ──────────────────── */
 /* No card, no badge row, no label line — just the wording, so the block's
    position and size describe where that wording actually goes. */

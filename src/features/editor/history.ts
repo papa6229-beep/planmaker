@@ -52,7 +52,8 @@ function coalesceKeyOf(action: EditorAction): string | null {
     (action.type === 'MOVE_BLOCK' ||
       action.type === 'RESIZE_BLOCK' ||
       action.type === 'UPDATE_BLOCK' ||
-      action.type === 'SET_PROJECT_TITLE') &&
+      action.type === 'SET_PROJECT_TITLE' ||
+      action.type === 'SET_CANVAS_HEIGHT') &&
     action.coalesceKey !== undefined
   ) {
     return action.coalesceKey
