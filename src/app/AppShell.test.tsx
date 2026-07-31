@@ -4,13 +4,16 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
 import { RequestsProvider } from '../features/requests/useRequests'
+import { DocumentsProvider } from '../features/documents/useDocuments'
 
 /** The editor runs inside the router (mounted at /briefs/new · /briefs/:id). */
 function renderShell() {
   return render(
     <MemoryRouter initialEntries={['/briefs/new']}>
       <RequestsProvider>
-        <AppShell />
+          <DocumentsProvider>
+          <AppShell />
+        </DocumentsProvider>
       </RequestsProvider>
     </MemoryRouter>,
   )
@@ -20,19 +23,22 @@ function panels() {
   return {
     palette: screen.getByRole('complementary', { name: '블록 팔레트' }),
     canvas: screen.getByRole('region', { name: '기획 캔버스' }),
-    inspector: screen.getByRole('complementary', { name: '선택 블록 설정' }),
+    // The right column is the brief library now; blocks are edited on the card.
+    library: screen.getByRole('complementary', { name: '내 기획서' }),
   }
 }
+
+const selectedCards = (canvas: HTMLElement) => canvas.querySelectorAll('.block-card.is-selected')
 
 describe('AppShell — 3-column layout', () => {
   it('renders palette, canvas, and inspector', () => {
     renderShell()
-    const { palette, canvas, inspector } = panels()
+    const { palette, canvas, library } = panels()
     expect(palette).toBeTruthy()
     expect(canvas).toBeTruthy()
-    expect(inspector).toBeTruthy()
+    expect(library).toBeTruthy()
     // Nothing selected initially.
-    expect(within(inspector).getByText('선택된 블록이 없습니다')).toBeTruthy()
+    expect(selectedCards(canvas)).toHaveLength(0)
   })
 
   it('offers the four authoring tools in the palette', () => {
@@ -46,31 +52,29 @@ describe('AppShell — block creation & selection', () => {
   it('creates a factory block from the palette and auto-selects it', async () => {
     const user = userEvent.setup()
     renderShell()
-    const { palette, canvas, inspector } = panels()
+    const { palette, canvas } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
 
-    // Card appears on the canvas…
+    // The card appears on the canvas and is the current selection.
     expect(within(canvas).getByRole('button', { name: /문구/ })).toBeTruthy()
-    // …and the inspector shows it as selected (empty-state gone).
-    expect(within(inspector).queryByText('선택된 블록이 없습니다')).toBeNull()
-    expect(within(inspector).getByText('글 넣기')).toBeTruthy()
+    expect(selectedCards(canvas)).toHaveLength(1)
   })
 
   it('switches selection when another canvas card is clicked', async () => {
     const user = userEvent.setup()
     renderShell()
-    const { palette, canvas, inspector } = panels()
+    const { palette, canvas } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
     await user.click(within(palette).getByRole('button', { name: '요청 메모' }))
-    // The memo is selected now (inspector header shows its tool name).
-    expect(within(inspector).getByText('요청 메모')).toBeTruthy()
+    // The memo is the new selection.
+    expect(selectedCards(canvas)[0]!.textContent).toContain('요청 메모')
 
-    // Click the text card → inspector reflects it.
+    // Clicking the text card moves the selection to it.
     await user.click(within(canvas).getByRole('button', { name: /문구/ }))
-    expect(within(inspector).getByText('글 넣기')).toBeTruthy()
-    expect(within(inspector).queryByText('요청 메모')).toBeNull()
+    expect(selectedCards(canvas)).toHaveLength(1)
+    expect(selectedCards(canvas)[0]!.textContent).toContain('글 넣기')
   })
 })
 
@@ -78,16 +82,16 @@ describe('AppShell — deletion', () => {
   it('deletes the selected block via the card menu and clears selection', async () => {
     const user = userEvent.setup()
     renderShell()
-    const { palette, canvas, inspector } = panels()
+    const { palette, canvas } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
     expect(within(canvas).getByRole('button', { name: /문구/ })).toBeTruthy()
 
-    // The inspector no longer has a delete button (§11.1); delete via the card ⋯ menu.
+    // Delete lives on the card ⋯ menu.
     await user.click(within(canvas).getByRole('button', { name: '삭제' }))
 
     expect(within(canvas).queryByRole('button', { name: /문구/ })).toBeNull()
-    expect(within(inspector).getByText('선택된 블록이 없습니다')).toBeTruthy()
+    expect(selectedCards(canvas)).toHaveLength(0)
   })
 
   it('deletes with the Delete key when focus is not in a text field', async () => {

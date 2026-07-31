@@ -4,13 +4,16 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
 import { RequestsProvider } from '../features/requests/useRequests'
+import { DocumentsProvider } from '../features/documents/useDocuments'
 
 /** The editor runs inside the router (mounted at /briefs/new · /briefs/:id). */
 function renderShell() {
   return render(
     <MemoryRouter initialEntries={['/briefs/new']}>
       <RequestsProvider>
-        <AppShell />
+          <DocumentsProvider>
+          <AppShell />
+        </DocumentsProvider>
       </RequestsProvider>
     </MemoryRouter>,
   )
@@ -20,7 +23,7 @@ function panels() {
   return {
     palette: screen.getByRole('complementary', { name: '블록 팔레트' }),
     canvas: screen.getByRole('region', { name: '기획 캔버스' }),
-    inspector: screen.getByRole('complementary', { name: '선택 블록 설정' }),
+
   }
 }
 
@@ -93,7 +96,7 @@ describe('canvas editing — multi-selection', () => {
   it('shift-selects a second block and reports the multi-selection', async () => {
     const user = userEvent.setup()
     renderShell()
-    const { palette, canvas, inspector } = panels()
+    const { palette, canvas } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '이미지' }))
     await user.click(within(palette).getByRole('button', { name: '요청 메모' }))
@@ -103,7 +106,7 @@ describe('canvas editing — multi-selection', () => {
     fireEvent.pointerDown(cards[1]!, { button: 0, clientX: 10, clientY: 10, shiftKey: true })
     fireEvent.pointerUp(window, { clientX: 10, clientY: 10 })
 
-    expect(within(inspector).getByText('2개 블록 선택됨')).toBeTruthy()
+    expect(canvas.querySelectorAll('.block-card.is-selected')).toHaveLength(2)
   })
 })
 

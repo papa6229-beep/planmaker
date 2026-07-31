@@ -24,6 +24,7 @@ import { BlockPalette } from '../components/palette/BlockPalette'
 import { BriefCanvas } from '../components/canvas/BriefCanvas'
 import { CanvasZoomControls } from '../components/canvas/CanvasZoomControls'
 import { PropertiesPanel } from '../components/inspector/PropertiesPanel'
+import { BriefLibrary } from '../components/library/BriefLibrary'
 import { SummaryPanel } from '../components/summary/SummaryPanel'
 import { ReferenceTools } from '../components/reference/ReferenceTools'
 import { ReferenceViewControls } from '../components/reference/ReferenceViewControls'
@@ -184,7 +185,8 @@ function Workspace({ mode, statusPanel }: { mode: 'brief' | 'image'; statusPanel
             {sideBySide && <ReferenceSideView />}
           </div>
         </div>
-        <PropertiesPanel />
+        {/* 기획서 모드의 우측은 보관함; 이미지 작업 화면은 요청 편집이라 목록이 없다. */}
+        {mode === 'brief' ? <BriefLibrary /> : <PropertiesPanel />}
       </main>
       <KeyboardShortcuts />
       <GlobalPaste />

@@ -14,6 +14,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
 import { RequestsProvider } from '../features/requests/useRequests'
+import { DocumentsProvider } from '../features/documents/useDocuments'
 import { clearAll, getAllAssets, resetAssetStoreForTests } from '../services/assetStore'
 import { clearAllRequests, resetRequestStoreForTests } from '../services/requestStore'
 import { briefReducer, createInitialEditorState, type EditorState } from '../features/editor/briefEditor'
@@ -32,7 +33,9 @@ function renderEditor() {
   return render(
     <MemoryRouter initialEntries={['/briefs/new']}>
       <RequestsProvider>
-        <AppShell />
+          <DocumentsProvider>
+          <AppShell />
+        </DocumentsProvider>
       </RequestsProvider>
     </MemoryRouter>,
   )
@@ -79,10 +82,10 @@ describe('§10.1 중앙 문구 직접 입력', () => {
     await user.keyboard('{Control>}{Enter}{/Control}')
 
     expect(within(canvas()).getByRole('button', { name: /여름 특가 40% \+ 사은품!!/ })).toBeTruthy()
-    // No duplicate wording input remains on the right.
-    const inspector = screen.getByRole('complementary', { name: '선택 블록 설정' })
-    expect(within(inspector).queryByLabelText('문구')).toBeNull()
-    expect(within(inspector).queryByRole('radiogroup', { name: '강조 정도' })).toBeNull()
+    // No duplicate wording input remains on the right — that column is the
+    // brief library now, and the emphasis control is gone entirely.
+    expect(screen.getByRole('complementary', { name: '내 기획서' })).toBeTruthy()
+    expect(screen.queryByRole('radiogroup', { name: '강조 정도' })).toBeNull()
   })
 
   it('records one inline edit as a single undo step', async () => {

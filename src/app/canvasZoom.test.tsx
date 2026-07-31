@@ -11,12 +11,15 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
 import { RequestsProvider } from '../features/requests/useRequests'
+import { DocumentsProvider } from '../features/documents/useDocuments'
 
 function renderShell() {
   return render(
     <MemoryRouter initialEntries={['/briefs/new']}>
       <RequestsProvider>
-        <AppShell />
+          <DocumentsProvider>
+          <AppShell />
+        </DocumentsProvider>
       </RequestsProvider>
     </MemoryRouter>,
   )

@@ -13,6 +13,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
 import { RequestsProvider } from '../features/requests/useRequests'
+import { DocumentsProvider } from '../features/documents/useDocuments'
 import { clearAll, resetAssetStoreForTests } from '../services/assetStore'
 import { clearAllRequests, resetRequestStoreForTests } from '../services/requestStore'
 import {
@@ -68,7 +69,9 @@ describe('§10.8 전체 컨셉', () => {
     render(
       <MemoryRouter initialEntries={['/briefs/x']}>
         <RequestsProvider>
-          <AppShell binding={binding} />
+            <DocumentsProvider>
+            <AppShell binding={binding} />
+          </DocumentsProvider>
         </RequestsProvider>
       </MemoryRouter>,
     )

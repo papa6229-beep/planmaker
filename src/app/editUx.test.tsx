@@ -14,6 +14,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
 import { RequestsProvider } from '../features/requests/useRequests'
+import { DocumentsProvider } from '../features/documents/useDocuments'
 import { clearAll, resetAssetStoreForTests, saveDocument } from '../services/assetStore'
 import { createEmptyDocument } from '../domain/pageSchema'
 import { createBlock, createEmptyBrief } from '../domain/factory'
@@ -22,7 +23,9 @@ function renderShell() {
   return render(
     <MemoryRouter initialEntries={['/briefs/new']}>
       <RequestsProvider>
-        <AppShell />
+          <DocumentsProvider>
+          <AppShell />
+        </DocumentsProvider>
       </RequestsProvider>
     </MemoryRouter>,
   )
@@ -30,7 +33,6 @@ function renderShell() {
 
 const palette = () => screen.getByRole('complementary', { name: '블록 팔레트' })
 const canvas = () => screen.getByRole('region', { name: '기획 캔버스' })
-const inspector = () => screen.getByRole('complementary', { name: '선택 블록 설정' })
 
 beforeEach(async () => {
   resetAssetStoreForTests()
@@ -71,22 +73,21 @@ describe('palette simplification (1차 단순화 §2.2)', () => {
   })
 })
 
-describe('right panel simplification (§11)', () => {
-  it('does not expose importance, AI-visibility, layout-hint, or a delete button', async () => {
+describe('right panel replaced by the brief library (§6, §8)', () => {
+  it('offers the library instead of any per-block form', async () => {
     const user = userEvent.setup()
     renderShell()
     await user.click(within(palette()).getByRole('button', { name: '글 넣기' }))
 
-    const insp = inspector()
-    expect(within(insp).queryByText('중요도')).toBeNull()
-    expect(within(insp).queryByText('AI 전달 여부')).toBeNull()
-    expect(within(insp).queryByText('위치 힌트 (소프트)')).toBeNull()
-    expect(within(insp).queryByRole('button', { name: '블록 삭제' })).toBeNull()
-    // Everything is edited on the canvas card now — the panel duplicates nothing.
-    expect(within(insp).queryByLabelText('문구')).toBeNull()
-    expect(within(insp).queryByRole('radiogroup', { name: '강조 정도' })).toBeNull()
-    expect(within(insp).queryByRole('textbox')).toBeNull()
-    expect(within(insp).getByText('글 넣기')).toBeTruthy()
+    const library = await screen.findByRole('complementary', { name: '내 기획서' })
+    expect(within(library).getByRole('searchbox', { name: '기획서 제목 검색' })).toBeTruthy()
+    expect(within(library).getByRole('button', { name: '새 기획서' })).toBeTruthy()
+
+    // None of the old per-block controls survive anywhere on screen.
+    expect(screen.queryByText('중요도')).toBeNull()
+    expect(screen.queryByText('AI 전달 여부')).toBeNull()
+    expect(screen.queryByRole('button', { name: '블록 삭제' })).toBeNull()
+    expect(screen.queryByRole('radiogroup', { name: '강조 정도' })).toBeNull()
   })
 })
 

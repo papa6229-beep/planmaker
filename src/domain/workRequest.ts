@@ -34,6 +34,12 @@ export const STATUS_LABELS: Record<WorkRequestStatus, string> = {
 
 export interface WorkRequest {
   id: string
+  /**
+   * The brief this was delivered from. Optional because requests created
+   * before briefs had ids carry no link — those are reported as "연결 없음"
+   * rather than guessed at by title, which would confuse same-named briefs.
+   */
+  documentId?: string
   title: string
   status: WorkRequestStatus
   /** Immutable delivery snapshot (never edited after creation). */
@@ -56,8 +62,10 @@ export function cloneDocument(doc: BriefDocument): BriefDocument {
  * deep-cloned so later edits to the live document never mutate it.
  */
 export function createWorkRequest(id: string, doc: BriefDocument, now: string): WorkRequest {
+  const documentId = doc.project.id
   return {
     id,
+    ...(documentId === undefined ? {} : { documentId }),
     title: doc.project.title.trim() || '제목 없는 기획서',
     status: 'submitted',
     submittedDoc: cloneDocument(doc),

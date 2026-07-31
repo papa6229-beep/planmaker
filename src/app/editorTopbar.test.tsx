@@ -13,15 +13,18 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { AppShell } from './AppShell'
 import { RequestsProvider } from '../features/requests/useRequests'
+import { DocumentsProvider } from '../features/documents/useDocuments'
 
 function renderEditor() {
   return render(
     <MemoryRouter initialEntries={['/briefs/new']}>
       <RequestsProvider>
-        <Routes>
+          <DocumentsProvider>
+          <Routes>
           <Route path="/" element={<h1>게이트 화면</h1>} />
           <Route path="/briefs/new" element={<AppShell />} />
         </Routes>
+        </DocumentsProvider>
       </RequestsProvider>
     </MemoryRouter>,
   )

@@ -983,7 +983,99 @@ button { font-family: inherit; }
 .block-card__link-save { padding: 5px 10px; font-size: 12px; }
 .block-card__link-note { flex-basis: 100%; margin: 0; font-size: 10px; color: var(--color-muted); }
 
-/* Right panel while it only orients (before the 보관함 replaces it). */
+/* ── 내 기획서 보관함 (§6) ─────────────────────────────────────────────────── */
+.library { display: flex; flex-direction: column; gap: 10px; }
+.library__header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.library__title { margin: 0; font-size: 15px; font-weight: 700; }
+.library__new { flex: none; padding: 6px 10px; font-size: 12px; }
+.library__search { flex: none; }
+.library__error { margin: 0; font-size: 12px; color: var(--color-danger); }
+.library__empty { margin: 8px 0; font-size: 12px; color: var(--color-muted); }
+.library__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.library__item {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-panel);
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.library__item:hover { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.library__item.is-open { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.library__open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.library__item-title {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.library__status {
+  align-self: flex-start;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.library__status.is-draft { color: var(--color-muted); background: var(--color-panel-muted); }
+.library__status.is-delivered { color: var(--color-success); background: #e8f7f0; }
+.library__status.is-edited { color: var(--color-warning); background: var(--color-reference-soft); }
+.library__dates { font-size: 10px; color: var(--color-muted); line-height: 1.5; }
+.library__menu { flex: none; position: relative; }
+.library__menu-trigger {
+  list-style: none;
+  padding: 8px 8px 0 4px;
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  user-select: none;
+}
+.library__menu-trigger::-webkit-details-marker { display: none; }
+.library__menu:not([open]) .library__menu-panel { display: none; }
+.library__menu-panel {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 0;
+  z-index: 30;
+  min-width: 200px;
+  padding: 5px;
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-pop);
+}
+.library__menu-item {
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.library__menu-item:hover:not(:disabled) { background: var(--color-panel-muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .library__item { transition: none; }
+}
+
+/* Right panel while it only orients (image-work mode). */
 .inspector__howto {
   list-style: disc;
   margin: 0;

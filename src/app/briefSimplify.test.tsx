@@ -18,6 +18,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
 import { RequestsProvider } from '../features/requests/useRequests'
+import { DocumentsProvider } from '../features/documents/useDocuments'
 import { clearAll, getAllAssets, resetAssetStoreForTests, saveDocument } from '../services/assetStore'
 import { clearAllRequests, resetRequestStoreForTests } from '../services/requestStore'
 import { createBlock, createEmptyBrief } from '../domain/factory'
@@ -44,14 +45,15 @@ function renderEditor() {
   return render(
     <MemoryRouter initialEntries={['/briefs/new']}>
       <RequestsProvider>
-        <AppShell />
+          <DocumentsProvider>
+          <AppShell />
+        </DocumentsProvider>
       </RequestsProvider>
     </MemoryRouter>,
   )
 }
 
 const palette = () => screen.getByRole('complementary', { name: '블록 팔레트' })
-const inspector = () => screen.getByRole('complementary', { name: '선택 블록 설정' })
 const canvas = () => screen.getByRole('region', { name: '기획 캔버스' })
 
 function pngFile(name = 'photo.png') {
@@ -168,9 +170,8 @@ describe('단순 팔레트 (§2.2)', () => {
     renderEditor()
     const card = await waitFor(() => within(canvas()).getByRole('button', { name: /1\+1 혜택/ }))
 
-    // The legacy type keeps its own name and stays editable in place.
+    // The legacy type stays editable in place, with its data intact.
     await user.click(card)
-    expect(within(inspector()).getByText('혜택')).toBeTruthy()
     await user.dblClick(card)
     const editor = screen.getByLabelText('혜택 내용') as HTMLTextAreaElement
     expect(editor.value).toBe('1+1 혜택')
