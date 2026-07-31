@@ -1,18 +1,23 @@
 /**
- * A meaning card on the canvas (WORK_PLAN §3, §4, §12). Renders a block as a
- * simple semantic card — never a styled design component. It is draggable
- * (move) and resizable (corner handles).
+ * A meaning card on the canvas (WORK_PLAN §3, §4, §12; 중앙 직접 편집 §2–§4).
  *
- * Step 6 adds in-canvas editing (§12): double-click or Enter starts inline text
- * editing (drag disabled while editing; Ctrl/Cmd+Enter or blur saves, Esc
- * cancels); double-click on an image block opens the file picker; and a "⋯"
- * card menu handles delete (and image replace/remove) since those controls were
- * removed from the right panel.
+ * Almost all editing happens here rather than in a side panel:
+ *  - 문구: double-click or Enter edits in place, and the drawn type size follows
+ *    the block's size (`textFit`), so making a block bigger makes the wording
+ *    bigger. When even the minimum readable size will not fit, the card says so
+ *    instead of shrinking the text into illegibility.
+ *  - 이미지: an empty block asks what image belongs there and takes the answer
+ *    inline; dropping, clicking, or pasting puts the real image in.
+ *  - 링크: a small chain control on 이미지 and 버튼 opens a URL field. The URL is
+ *    stored in a paired publishing block, never in the design wording.
+ *
+ * The card is draggable (move) and resizable (corner handles).
  */
 
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { getBlockTypeMeta, type BlockCategory } from '../../domain/blockTypes'
-import { cardKindLabel } from '../../domain/simpleBlocks'
+import { canCarryLink, cardKindLabel } from '../../domain/simpleBlocks'
+import { fitTextSize } from '../../domain/textFit'
 import type { BriefBlock } from '../../domain/briefSchema'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useAssets } from '../../features/assets/useAssets'
@@ -26,11 +31,13 @@ interface Props {
   canvasWidth: number
   canvasHeight: number
   /**
-   * True when this card is the visible half of a 버튼·링크 pair. The pair is held
+   * True when this card is the visible half of a link pair. The pair is held
    * together by a group id, but that is internal plumbing — the card must not
    * advertise itself as a user-made group.
    */
   paired?: boolean
+  /** URL currently attached through the paired publishing block, if any. */
+  linkUrl?: string
 }
 
 const CATEGORY_MODIFIER: Record<BlockCategory, string> = {
@@ -55,9 +62,25 @@ function hasContent(block: BriefBlock): boolean {
   return typeof block.content === 'string' && block.content.trim().length > 0
 }
 
-export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeight, paired = false }: Props) {
-  const { moveBlock, resizeBlock, selectBlock, endInteraction, updateBlock, deleteBlock, removeBlockAsset } =
-    useBriefEditor()
+function hasImageFiles(types: readonly string[]): boolean {
+  return types.includes('Files')
+}
+
+/** Small chain glyph used for the link control. */
+function LinkIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+      <path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" />
+      <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" />
+    </svg>
+  )
+}
+
+export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeight, paired = false, linkUrl }: Props) {
+  const {
+    moveBlock, resizeBlock, selectBlock, endInteraction, updateBlock,
+    deleteBlock, duplicateBlock, removeBlockAsset, setBlockLink,
+  } = useBriefEditor()
   const { getUrl, uploadFiles } = useAssets()
   const meta = getBlockTypeMeta(block.type)
   const thumbUrl = meta.requiresAsset ? getUrl(block.assetId) : undefined
@@ -66,9 +89,17 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   const menuRef = useRef<HTMLDetailsElement | null>(null)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
+  const [linkOpen, setLinkOpen] = useState(false)
+  const [linkDraft, setLinkDraft] = useState('')
+  const [dropActive, setDropActive] = useState(false)
+
+  // Text blocks and empty image blocks both take wording in place.
+  const takesInlineText = meta.hasText || (meta.requiresAsset && thumbUrl === undefined)
+  const linkable = canCarryLink(block.type)
+  const fit = fitTextSize(block.content ?? '', block.position.width, block.position.height)
 
   const beginEdit = () => {
-    if (!meta.hasText) return
+    if (!takesInlineText) return
     setDraft(block.content ?? '')
     setEditing(true)
   }
@@ -79,8 +110,26 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   const openFilePicker = () => fileRef.current?.click()
   const closeMenu = () => menuRef.current?.removeAttribute('open')
 
+  // Paste an image straight onto the selected image block.
+  useEffect(() => {
+    if (!selected || !meta.requiresAsset) return
+    const onPaste = (e: ClipboardEvent) => {
+      const items = Array.from(e.clipboardData?.items ?? [])
+      const files = items
+        .filter((i) => i.kind === 'file' && ACCEPTED_MIME_TYPES.includes(i.type as never))
+        .map((i) => i.getAsFile())
+        .filter((f): f is File => f !== null)
+      if (files.length === 0) return
+      e.preventDefault()
+      e.stopPropagation()
+      void uploadFiles(files, { targetBlockId: block.id })
+    }
+    window.addEventListener('paste', onPaste, true)
+    return () => window.removeEventListener('paste', onPaste, true)
+  }, [selected, meta.requiresAsset, block.id, uploadFiles])
+
   const startDrag = (e: ReactPointerEvent) => {
-    if (editing || e.button !== 0) return
+    if (editing || linkOpen || e.button !== 0) return
     const additive = e.shiftKey || e.metaKey || e.ctrlKey
     if (additive) {
       selectBlock(block.id, true)
@@ -128,10 +177,17 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
     const onUp = () => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
+      // The reducer keeps layoutHint.emphasis in step with the size, so ending
+      // the gesture commits both the box and the emphasis as one undo step.
       endInteraction()
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
+  }
+
+  const dropFiles = (files: File[]) => {
+    if (files.length === 0) return
+    void uploadFiles(files, { targetBlockId: block.id })
   }
 
   return (
@@ -142,6 +198,8 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
         `block-card--vis-${block.aiVisibility}`,
         block.groupId !== undefined && !paired ? 'block-card--grouped' : '',
         selected ? 'is-selected' : '',
+        dropActive ? 'is-drop-target' : '',
+        fit.overflow ? 'is-overflowing' : '',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -150,12 +208,28 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
       tabIndex={0}
       aria-pressed={selected}
       onPointerDown={startDrag}
-      onDoubleClick={() => (meta.requiresAsset ? openFilePicker() : beginEdit())}
+      onDoubleClick={() => (meta.requiresAsset && thumbUrl ? openFilePicker() : beginEdit())}
+      onDragOver={(e) => {
+        if (!meta.requiresAsset || !hasImageFiles(Array.from(e.dataTransfer.types))) return
+        e.preventDefault()
+        e.stopPropagation()
+        setDropActive(true)
+      }}
+      onDragLeave={(e) => {
+        if (e.target === e.currentTarget) setDropActive(false)
+      }}
+      onDrop={(e) => {
+        if (!meta.requiresAsset || !hasImageFiles(Array.from(e.dataTransfer.types))) return
+        e.preventDefault()
+        e.stopPropagation()
+        setDropActive(false)
+        dropFiles(Array.from(e.dataTransfer.files))
+      }}
       onKeyDown={(e) => {
         if (editing) return
         if (e.key === 'Enter') {
           e.preventDefault()
-          if (meta.hasText) beginEdit()
+          if (takesInlineText) beginEdit()
           else selectBlock(block.id, e.shiftKey)
         } else if (e.key === ' ') {
           e.preventDefault()
@@ -168,26 +242,54 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
             without knowing the internal type or AI-visibility vocabulary. */}
         <span className="block-card__visibility">{cardKindLabel(block)}</span>
         {block.groupId !== undefined && !paired && <span className="block-card__group" title="그룹">그룹</span>}
-        {block.required && <span className="block-card__required" title="필수 블록">필수</span>}
+        {linkUrl !== undefined && (
+          <span className="block-card__link-badge" title={`연결됨: ${linkUrl}`} aria-label="연결된 주소 있음">
+            <LinkIcon />
+          </span>
+        )}
+        {fit.overflow && (
+          <span className="block-card__overflow" title="글이 블록보다 깁니다. 블록을 키워 주세요.">
+            블록이 작아요
+          </span>
+        )}
         {selected && (
-          <details className="block-card__menu" ref={menuRef} onPointerDown={(e) => e.stopPropagation()}>
-            <summary className="block-card__menu-trigger" aria-label={`${block.label} 블록 메뉴`}>⋯</summary>
-            <div className="block-card__menu-panel">
-              {meta.requiresAsset && (
-                <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); openFilePicker() }}>
-                  {thumbUrl ? '이미지 교체' : '이미지 추가'}
-                </button>
-              )}
-              {meta.requiresAsset && thumbUrl && (
-                <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); removeBlockAsset(block.id) }}>
-                  이미지 제거
-                </button>
-              )}
-              <button type="button" className="block-card__menu-item block-card__menu-item--danger" onClick={() => { closeMenu(); deleteBlock(block.id) }}>
-                삭제
+          <span className="block-card__tools" onPointerDown={(e) => e.stopPropagation()}>
+            {linkable && (
+              <button
+                type="button"
+                className="block-card__tool"
+                aria-label={`${block.label} 링크 연결`}
+                title="연결 주소 입력"
+                onClick={() => {
+                  setLinkDraft(linkUrl ?? '')
+                  setLinkOpen((v) => !v)
+                }}
+              >
+                <LinkIcon />
               </button>
-            </div>
-          </details>
+            )}
+            <details className="block-card__menu" ref={menuRef}>
+              <summary className="block-card__menu-trigger" aria-label={`${block.label} 블록 메뉴`}>⋯</summary>
+              <div className="block-card__menu-panel">
+                {meta.requiresAsset && (
+                  <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); openFilePicker() }}>
+                    {thumbUrl ? '이미지 교체' : '이미지 넣기'}
+                  </button>
+                )}
+                {meta.requiresAsset && thumbUrl && (
+                  <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); removeBlockAsset(block.id) }}>
+                    이미지 제거
+                  </button>
+                )}
+                <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); duplicateBlock(block.id) }}>
+                  블록 복제
+                </button>
+                <button type="button" className="block-card__menu-item block-card__menu-item--danger" onClick={() => { closeMenu(); deleteBlock(block.id) }}>
+                  삭제
+                </button>
+              </div>
+            </details>
+          </span>
         )}
       </span>
 
@@ -199,7 +301,8 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
           value={draft}
           autoFocus
           aria-label={`${block.label} 내용`}
-          placeholder={`${meta.label} 입력…`}
+          placeholder={meta.requiresAsset ? '어떤 이미지가 들어갈지 적어주세요' : `${meta.label} 입력…`}
+          style={{ fontSize: meta.requiresAsset ? undefined : fit.fontSize }}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commitEdit}
           onPointerDown={(e) => e.stopPropagation()}
@@ -216,14 +319,56 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
         />
       ) : thumbUrl ? (
         <img className="block-card__thumb" src={thumbUrl} alt={block.image?.productName ?? block.label} draggable={false} />
-      ) : (
-        <span className={`block-card__content${hasContent(block) ? '' : ' block-card__content--placeholder'}`}>
-          {hasContent(block)
-            ? block.content
-            : meta.requiresAsset
-              ? '클릭 또는 붙여넣기로 이미지 추가'
-              : `${meta.label} 입력…`}
+      ) : meta.requiresAsset ? (
+        <span
+          className={`block-card__slot${hasContent(block) ? '' : ' block-card__content--placeholder'}`}
+          onDoubleClick={beginEdit}
+        >
+          {hasContent(block) ? block.content : '어떤 이미지가 들어갈지 적어주세요'}
         </span>
+      ) : (
+        <span
+          className={`block-card__content${hasContent(block) ? '' : ' block-card__content--placeholder'}`}
+          style={{ fontSize: fit.fontSize }}
+        >
+          {hasContent(block) ? block.content : `${meta.label} 입력…`}
+        </span>
+      )}
+
+      {linkOpen && (
+        <div className="block-card__link-editor" onPointerDown={(e) => e.stopPropagation()}>
+          <input
+            className="block-card__link-input"
+            type="text"
+            autoFocus
+            placeholder="https://"
+            aria-label={`${block.label} 연결 주소`}
+            value={linkDraft}
+            onChange={(e) => setLinkDraft(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation()
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                setBlockLink(block.id, linkDraft)
+                setLinkOpen(false)
+              } else if (e.key === 'Escape') {
+                e.preventDefault()
+                setLinkOpen(false)
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="btn block-card__link-save"
+            onClick={() => {
+              setBlockLink(block.id, linkDraft)
+              setLinkOpen(false)
+            }}
+          >
+            저장
+          </button>
+          <p className="block-card__link-note">주소는 퍼블리싱 정보로만 보관됩니다.</p>
+        </div>
       )}
 
       {meta.requiresAsset && (

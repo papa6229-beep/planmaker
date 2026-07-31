@@ -43,7 +43,7 @@ describe('palette simplification (1차 단순화 §2.2)', () => {
     const tools = within(screen.getByRole('list', { name: '기본 블록' })).getAllByRole('button')
     expect(tools.map((b) => b.querySelector('.simple-tool__label')?.textContent)).toEqual([
       '글 넣기',
-      '이미지 자리',
+      '이미지',
       '버튼·링크',
       '요청 메모',
     ])
@@ -82,9 +82,11 @@ describe('right panel simplification (§11)', () => {
     expect(within(insp).queryByText('AI 전달 여부')).toBeNull()
     expect(within(insp).queryByText('위치 힌트 (소프트)')).toBeNull()
     expect(within(insp).queryByRole('button', { name: '블록 삭제' })).toBeNull()
-    // 글 넣기 asks for the wording and how strongly to emphasise it — nothing else.
-    expect(within(insp).getByLabelText('문구')).toBeTruthy()
-    expect(within(insp).getByRole('radiogroup', { name: '강조 정도' })).toBeTruthy()
+    // Everything is edited on the canvas card now — the panel duplicates nothing.
+    expect(within(insp).queryByLabelText('문구')).toBeNull()
+    expect(within(insp).queryByRole('radiogroup', { name: '강조 정도' })).toBeNull()
+    expect(within(insp).queryByRole('textbox')).toBeNull()
+    expect(within(insp).getByText('글 넣기')).toBeTruthy()
   })
 })
 

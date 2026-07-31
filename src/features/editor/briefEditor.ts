@@ -12,7 +12,7 @@
  */
 
 import { createBlock, createEmptyBrief, createId } from '../../domain/factory'
-import type { AiVisibility, BlockType } from '../../domain/blockTypes'
+import { getBlockTypeMeta, type AiVisibility, type BlockType } from '../../domain/blockTypes'
 import type {
   Asset,
   BlockImageMeta,
@@ -22,12 +22,14 @@ import type {
 } from '../../domain/briefSchema'
 import { DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH } from '../../domain/briefSchema'
 import {
+  LINK_TYPE_FOR,
   LINK_URL_TYPE,
   SIMPLE_BLOCK_TYPE,
   findLinkPartner,
   isPairedLinkUrl,
   withLinkPartners,
 } from '../../domain/simpleBlocks'
+import { emphasisForBlockSize } from '../../domain/textFit'
 import { boundedDelta, clampPosition, type Rect } from './canvasGeometry'
 
 /** Default title so a fresh brief still passes validation (needs a title). */
@@ -57,6 +59,7 @@ export interface BlockPatch {
 export type EditorAction =
   | { type: 'ADD_BLOCK'; blockType: BlockType; label?: string }
   | { type: 'ADD_BUTTON_LINK'; label: string }
+  | { type: 'SET_BLOCK_LINK'; blockId: string; url: string }
   | { type: 'SELECT_BLOCK'; blockId: string | null; additive?: boolean }
   | { type: 'DELETE_BLOCK'; blockId: string }
   | { type: 'DELETE_SELECTED' }
@@ -199,7 +202,7 @@ function applyPatch(block: BriefBlock, patch: BlockPatch): BriefBlock {
 function updateBlock(state: EditorState, blockId: string, patch: BlockPatch): EditorState {
   return withBlocks(
     state,
-    state.brief.blocks.map((b) => (b.id === blockId ? applyPatch(b, patch) : b)),
+    state.brief.blocks.map((b) => (b.id === blockId ? withDerivedEmphasis(applyPatch(b, patch)) : b)),
   )
 }
 
@@ -235,15 +238,75 @@ function moveBlock(state: EditorState, blockId: string, x: number, y: number): E
   )
 }
 
+/**
+ * Keeps `layoutHint.emphasis` equal to the emphasis the block's size actually
+ * produces on screen (§2.2). The block type is never changed — a big block is
+ * emphatic wording, not a headline; deciding the role stays the AI's job.
+ */
+function withDerivedEmphasis(block: BriefBlock): BriefBlock {
+  if (!getBlockTypeMeta(block.type).hasText) return block
+  const emphasis = emphasisForBlockSize(block.content ?? '', block.position.width, block.position.height)
+  if (block.layoutHint.emphasis === emphasis) return block
+  return { ...block, layoutHint: { ...block.layoutHint, emphasis } }
+}
+
 function resizeBlock(state: EditorState, blockId: string, rect: Rect): EditorState {
   const pos = clampPosition(rect, state.brief.project.canvasWidth, state.brief.project.canvasHeight)
   return withBlocks(
     state,
     state.brief.blocks.map((b) =>
       b.id === blockId
-        ? { ...b, position: { x: pos.x, y: pos.y, width: rect.width, height: rect.height } }
+        ? withDerivedEmphasis({
+            ...b,
+            position: { x: pos.x, y: pos.y, width: rect.width, height: rect.height },
+          })
         : b,
     ),
+  )
+}
+
+/**
+ * Attaches, updates, or clears the URL of a link-capable block (버튼, 이미지).
+ *
+ * The URL lives in a paired publishing block so it never reaches the image AI.
+ * Creating the pair, editing it, and removing it are each a single action, so
+ * one undo covers the whole thing.
+ */
+function setBlockLink(state: EditorState, blockId: string, url: string): EditorState {
+  const block = state.brief.blocks.find((b) => b.id === blockId)
+  if (!block) return state
+  const linkType = LINK_TYPE_FOR[block.type]
+  if (linkType === undefined) return state
+
+  const partner = findLinkPartner(state.brief.blocks, block)
+  const trimmed = url.trim()
+
+  if (partner) {
+    if (trimmed.length === 0) {
+      // Clearing the URL removes the publishing block entirely.
+      return withBlocks(state, state.brief.blocks.filter((b) => b.id !== partner.id))
+    }
+    return withBlocks(
+      state,
+      state.brief.blocks.map((b) => (b.id === partner.id ? { ...b, content: trimmed } : b)),
+    )
+  }
+
+  if (trimmed.length === 0) return state
+
+  // No partner yet: pair the block with a fresh publishing link block. If the
+  // block belonged to a user-made group, it leaves that group so the pair stays
+  // unambiguous; the other members keep their grouping.
+  const groupId = createId('lnk')
+  const link = createBlock(linkType, {
+    label: `${block.label} 연결 주소`,
+    groupId,
+    content: trimmed,
+    position: { ...block.position },
+  })
+  return withBlocks(
+    state,
+    [...state.brief.blocks.map((b) => (b.id === blockId ? { ...b, groupId } : b)), link],
   )
 }
 
@@ -467,6 +530,8 @@ export function briefReducer(state: EditorState, action: EditorAction): EditorSt
       return addBlock(state, action.blockType, action.label)
     case 'ADD_BUTTON_LINK':
       return addButtonLink(state, action.label)
+    case 'SET_BLOCK_LINK':
+      return setBlockLink(state, action.blockId, action.url)
     case 'SELECT_BLOCK':
       return selectBlock(state, action.blockId, action.additive ?? false)
     case 'DELETE_BLOCK':

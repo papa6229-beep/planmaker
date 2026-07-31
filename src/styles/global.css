@@ -861,6 +861,90 @@ button { font-family: inherit; }
 
 .canvas__sheet.is-drag-over { outline: 3px dashed var(--color-accent); outline-offset: -3px; }
 
+/* ── In-canvas editing (중앙 직접 편집) ─────────────────────────────────────── */
+/* Wording is drawn at the size the block implies, so it wraps naturally. */
+.block-card__content {
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow: hidden;
+}
+/* An image block with no picture yet: the description reads as the slot note. */
+.block-card__slot {
+  flex: 1;
+  min-height: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-muted);
+  white-space: pre-wrap;
+  overflow: hidden;
+}
+.block-card.is-drop-target {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+/* The block is too small for its wording — say so instead of shrinking further. */
+.block-card.is-overflowing { border-color: var(--color-warning); }
+.block-card__overflow {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-warning);
+  background: var(--color-reference-soft);
+  border-radius: 999px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+.block-card__link-badge { display: inline-flex; color: var(--color-publishing); }
+.block-card__tools { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; }
+.block-card__menu { position: relative; }
+.block-card__tool {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+.block-card__tool:hover { background: var(--color-panel-muted); color: var(--color-accent); }
+.block-card__link-editor {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  width: max(260px, 100%);
+  padding: 8px;
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-pop);
+}
+.block-card__link-input {
+  flex: 1;
+  min-width: 140px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 12px;
+}
+.block-card__link-save { padding: 5px 10px; font-size: 12px; }
+.block-card__link-note { flex-basis: 100%; margin: 0; font-size: 10px; color: var(--color-muted); }
+
+/* Right panel while it only orients (before the 보관함 replaces it). */
+.inspector__howto {
+  list-style: disc;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--color-muted);
+}
+
 /* Inspector image field (WORK_PLAN §11) */
 .image-field__preview {
   width: 100%;

@@ -75,39 +75,35 @@ describe('canvas editing — resize', () => {
 })
 
 describe('canvas editing — duplicate', () => {
-  it('duplicates the selected block from the inspector', async () => {
+  it('duplicates the selected block from the card menu', async () => {
+    const user = userEvent.setup()
+    renderShell()
+    const { palette, canvas } = panels()
+
+    await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
+    expect(canvas.querySelectorAll('.block-card')).toHaveLength(1)
+
+    // 복제 moved onto the card's ⋯ menu (§8 — the right panel no longer edits).
+    await user.click(within(canvas).getByRole('button', { name: '블록 복제' }))
+    expect(canvas.querySelectorAll('.block-card')).toHaveLength(2)
+  })
+})
+
+describe('canvas editing — multi-selection', () => {
+  it('shift-selects a second block and reports the multi-selection', async () => {
     const user = userEvent.setup()
     renderShell()
     const { palette, canvas, inspector } = panels()
 
-    await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
-    expect(within(canvas).getAllByRole('button', { name: /문구/ })).toHaveLength(1)
-
-    await user.click(within(inspector).getByRole('button', { name: '블록 복제' }))
-    expect(within(canvas).getAllByRole('button', { name: /문구/ })).toHaveLength(2)
-  })
-})
-
-describe('canvas editing — grouping', () => {
-  it('groups two shift-selected blocks and can ungroup them', async () => {
-    const user = userEvent.setup()
-    const { container } = renderShell()
-    const { palette, canvas, inspector } = panels()
-
-    await user.click(within(palette).getByRole('button', { name: '이미지 자리' }))
+    await user.click(within(palette).getByRole('button', { name: '이미지' }))
     await user.click(within(palette).getByRole('button', { name: '요청 메모' }))
 
-    const cards = within(canvas).getAllByRole('button')
-    // Select first, then shift-select second → multi-selection.
+    const cards = Array.from(canvas.querySelectorAll('.block-card')) as HTMLElement[]
     await user.click(cards[0]!)
     fireEvent.pointerDown(cards[1]!, { button: 0, clientX: 10, clientY: 10, shiftKey: true })
     fireEvent.pointerUp(window, { clientX: 10, clientY: 10 })
 
-    await user.click(within(inspector).getByRole('button', { name: '그룹으로 묶기' }))
-    expect(container.querySelectorAll('.block-card--grouped')).toHaveLength(2)
-
-    await user.click(within(inspector).getByRole('button', { name: '그룹 해제' }))
-    expect(container.querySelectorAll('.block-card--grouped')).toHaveLength(0)
+    expect(within(inspector).getByText('2개 블록 선택됨')).toBeTruthy()
   })
 })
 

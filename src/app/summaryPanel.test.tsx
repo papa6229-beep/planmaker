@@ -20,13 +20,18 @@ const PUBLISHING_URL = 'https://shop.example.com/cta'
 
 async function buildBriefWithCtaAndUrl(user: ReturnType<typeof userEvent.setup>) {
   const palette = screen.getByRole('complementary', { name: '블록 팔레트' })
-  const inspector = screen.getByRole('complementary', { name: '선택 블록 설정' })
 
-  // One 버튼·링크 tool: the wording and the address are entered together, but
+  // One 버튼·링크 tool: wording and address are both entered on the card, but
   // stay two blocks internally (design button + publishing URL).
+  const canvas = screen.getByRole('region', { name: '기획 캔버스' })
   await user.click(within(palette).getByRole('button', { name: '버튼·링크' }))
-  await user.type(within(inspector).getByLabelText('버튼에 보일 문구'), '지금 구매')
-  await user.type(within(inspector).getByLabelText('연결 주소 (선택)'), PUBLISHING_URL)
+  await user.dblClick(canvas.querySelector('.block-card') as HTMLElement)
+  await user.type(screen.getByLabelText('버튼 내용'), '지금 구매')
+  await user.keyboard('{Control>}{Enter}{/Control}')
+
+  await user.click(within(canvas).getByRole('button', { name: '버튼 링크 연결' }))
+  await user.type(screen.getByLabelText('버튼 연결 주소'), PUBLISHING_URL)
+  await user.click(screen.getByRole('button', { name: '저장' }))
 }
 
 describe('AI summary panel — information-area separation (Phase 5 gate)', () => {

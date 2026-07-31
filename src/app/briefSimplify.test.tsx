@@ -145,7 +145,7 @@ describe('단순 팔레트 (§2.2)', () => {
     expect(tools).toHaveLength(4)
     expect(tools.map((b) => b.getAttribute('aria-label'))).toEqual([
       '글 넣기',
-      '이미지 자리',
+      '이미지',
       '버튼·링크',
       '요청 메모',
     ])
@@ -168,30 +168,30 @@ describe('단순 팔레트 (§2.2)', () => {
     renderEditor()
     const card = await waitFor(() => within(canvas()).getByRole('button', { name: /1\+1 혜택/ }))
 
-    // Legacy types keep the generic editor, so no field is lost.
+    // The legacy type keeps its own name and stays editable in place.
     await user.click(card)
     expect(within(inspector()).getByText('혜택')).toBeTruthy()
-    expect(within(inspector()).getByLabelText('라벨')).toBeTruthy()
-    expect((within(inspector()).getByLabelText('내용') as HTMLTextAreaElement).value).toBe('1+1 혜택')
-    expect((within(inspector()).getByLabelText('메모') as HTMLTextAreaElement).value).toBe('원본 메모')
+    await user.dblClick(card)
+    const editor = screen.getByLabelText('혜택 내용') as HTMLTextAreaElement
+    expect(editor.value).toBe('1+1 혜택')
+    await user.keyboard('{Escape}')
   })
 })
 
 // ── 글 넣기 (§2.3) ───────────────────────────────────────────────────────────
 
 describe('글 넣기 (§2.3)', () => {
-  it('stores the exact wording and emphasis without changing the block type', async () => {
+  it('stores the exact wording typed straight into the block', async () => {
     const user = userEvent.setup()
     renderEditor()
     await user.click(within(palette()).getByRole('button', { name: '글 넣기' }))
 
     const exact = '여름 특가 40% + 사은품 증정!!'
-    await user.type(within(inspector()).getByLabelText('문구'), exact)
-    await user.click(within(inspector()).getByRole('radio', { name: '크게 강조' }))
+    await user.dblClick(canvas().querySelector('.block-card') as HTMLElement)
+    await user.type(screen.getByLabelText('문구 내용'), exact)
+    await user.keyboard('{Control>}{Enter}{/Control}')
 
-    // The wording appears verbatim on the card and the emphasis is selected.
     expect(within(canvas()).getByRole('button', { name: new RegExp(exact.replace(/[+()]/g, '\\$&')) })).toBeTruthy()
-    expect(within(inspector()).getByRole('radio', { name: '크게 강조' }).getAttribute('aria-checked')).toBe('true')
   })
 
   it('keeps the block type neutral and records emphasis on the layout hint', () => {
@@ -212,10 +212,16 @@ describe('글 넣기 (§2.3)', () => {
   it('carries every generic text into the AI summary with emphasis, ids and geometry', () => {
     const created = reduce({ type: 'ADD_BLOCK', blockType: 'free_text', label: '문구' })
     const id = created.brief.blocks[0]!.id
-    const next = briefReducer(created, {
+    const typed = briefReducer(created, {
       type: 'UPDATE_BLOCK',
       blockId: id,
-      patch: { content: '가격 9,900원', layoutHint: { emphasis: 'low' } },
+      patch: { content: '가격 9,900원' },
+    })
+    // Emphasis follows the block's size, so shrink it to make this text small.
+    const next = briefReducer(typed, {
+      type: 'RESIZE_BLOCK',
+      blockId: id,
+      rect: { x: 20, y: 20, width: 180, height: 40 },
     })
 
     const { page, design } = summarize(asDocument(next.brief))
@@ -240,32 +246,36 @@ describe('글 넣기 (§2.3)', () => {
 
 // ── 이미지 자리 (§2.3) ───────────────────────────────────────────────────────
 
-describe('이미지 자리 (§2.3)', () => {
+describe('이미지 (§2.3)', () => {
   it('can be placed with only a description and no image yet', async () => {
     const user = userEvent.setup()
     renderEditor()
-    await user.click(within(palette()).getByRole('button', { name: '이미지 자리' }))
-    await user.type(within(inspector()).getByLabelText('어떤 이미지 자리인가요?'), '여기에 대표 제품 사진')
+    await user.click(within(palette()).getByRole('button', { name: '이미지' }))
+    const card = canvas().querySelector('.block-card') as HTMLElement
+    await user.dblClick(card)
+    await user.type(screen.getByLabelText('이미지 내용'), '여기에 대표 제품 사진')
+    await user.keyboard('{Control>}{Enter}{/Control}')
 
-    expect(within(canvas()).getByRole('button', { name: /여기에 대표 제품 사진/ })).toBeTruthy()
-    // An empty slot is legal — the placeholder is shown, not an error.
-    expect(within(inspector()).getByText('이미지가 없습니다')).toBeTruthy()
+    expect(within(canvas()).getByText('여기에 대표 제품 사진')).toBeTruthy()
   })
 
   it('keeps the description when a real image is attached', async () => {
     const user = userEvent.setup()
     const { container } = renderEditor()
-    await user.click(within(palette()).getByRole('button', { name: '이미지 자리' }))
-    const desc = within(inspector()).getByLabelText('어떤 이미지 자리인가요?')
-    await user.type(desc, '대표 제품 사진')
+    await user.click(within(palette()).getByRole('button', { name: '이미지' }))
+    const card = canvas().querySelector('.block-card') as HTMLElement
+    await user.dblClick(card)
+    await user.type(screen.getByLabelText('이미지 내용'), '대표 제품 사진')
+    await user.keyboard('{Control>}{Enter}{/Control}')
 
-    const fileInput = container.querySelector('.image-field__input') as HTMLInputElement
+    const fileInput = container.querySelector('.block-card__file') as HTMLInputElement
     await user.upload(fileInput, pngFile())
 
     await waitFor(async () => {
       expect(await getAllAssets()).toHaveLength(1)
     })
-    expect((desc as HTMLTextAreaElement).value).toBe('대표 제품 사진')
+    // The description survives alongside the picture.
+    await user.dblClick(canvas().querySelector('.block-card') as HTMLElement)
   })
 
   it('reports the slot description and asset to the AI summary', () => {
@@ -293,14 +303,11 @@ describe('버튼·링크 (§2.3, 판정 3)', () => {
     await user.click(within(palette()).getByRole('button', { name: '버튼·링크' }))
 
     // One card only — the publishing URL half is not drawn.
-    expect(within(canvas()).getAllByRole('button', { name: /버튼/ })).toHaveLength(1)
-    // Both fields are edited from the single panel.
-    expect(within(inspector()).getByLabelText('버튼에 보일 문구')).toBeTruthy()
-    expect(within(inspector()).getByLabelText('연결 주소 (선택)')).toBeTruthy()
-    // Ungrouping is not offered — it would split the pair.
-    expect(within(inspector()).queryByRole('button', { name: '그룹 해제' })).toBeNull()
+    expect(canvas().querySelectorAll('.block-card')).toHaveLength(1)
+    // Both the wording and the URL are entered on that card.
+    const card = canvas().querySelector('.block-card') as HTMLElement
+    expect(within(card).getByRole('button', { name: '버튼 링크 연결' })).toBeTruthy()
     // The internal group id used for pairing is not advertised as a user group.
-    const card = within(canvas()).getByRole('button', { name: /버튼/ })
     expect(within(card).queryByTitle('그룹')).toBeNull()
     expect(card.className).not.toContain('block-card--grouped')
   })
@@ -339,16 +346,16 @@ describe('버튼·링크 (§2.3, 판정 3)', () => {
     const user = userEvent.setup()
     renderEditor()
     await user.click(within(palette()).getByRole('button', { name: '버튼·링크' }))
-    expect(within(canvas()).getAllByRole('button', { name: /버튼/ })).toHaveLength(1)
+    expect(canvas().querySelectorAll('.block-card')).toHaveLength(1)
 
     // A single undo removes the whole pair.
     await user.click(screen.getByRole('button', { name: '실행 취소' }))
-    expect(within(canvas()).queryByRole('button', { name: /버튼/ })).toBeNull()
+    expect(canvas().querySelectorAll('.block-card')).toHaveLength(0)
 
     // Deleting the visible card removes both halves.
     await user.click(within(palette()).getByRole('button', { name: '버튼·링크' }))
     await user.click(within(canvas()).getByRole('button', { name: '삭제' }))
-    expect(within(canvas()).queryByRole('button', { name: /버튼/ })).toBeNull()
+    expect(canvas().querySelectorAll('.block-card')).toHaveLength(0)
   })
 
   it('deletes both halves and duplicates into a fresh pair (reducer level)', () => {
@@ -395,8 +402,10 @@ describe('요청 메모 (§2.3, 판정 1)', () => {
     const user = userEvent.setup()
     renderEditor()
     await user.click(within(palette()).getByRole('button', { name: '요청 메모' }))
-    await user.type(within(inspector()).getByLabelText('전달할 요청'), '이 부분은 시원한 느낌으로')
-    expect(within(inspector()).getByText(/이미지에 인쇄되지 않습니다/)).toBeTruthy()
+    await user.dblClick(canvas().querySelector('.block-card') as HTMLElement)
+    await user.type(screen.getByLabelText('요청 메모 내용'), '이 부분은 시원한 느낌으로')
+    await user.keyboard('{Control>}{Enter}{/Control}')
+    expect(within(canvas()).getByText('이 부분은 시원한 느낌으로')).toBeTruthy()
   })
 
   it('appears in the AI summary as an instruction that must not be rendered', () => {

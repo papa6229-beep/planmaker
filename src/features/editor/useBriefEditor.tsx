@@ -34,6 +34,8 @@ export interface BriefEditorApi {
   addBlock: (blockType: BlockType, label?: string) => void
   /** Creates a 버튼·링크: paired design button + publishing URL block. */
   addButtonLink: (label: string) => void
+  /** Sets (or clears, when empty) the publishing URL attached to a block. */
+  setBlockLink: (blockId: string, url: string) => void
   selectBlock: (blockId: string | null, additive?: boolean) => void
   deleteBlock: (blockId: string) => void
   deleteSelected: () => void
@@ -73,6 +75,7 @@ export function BriefEditorProvider({ children }: { children: ReactNode }) {
       addBlock: (blockType, label) =>
         dispatch(label === undefined ? { type: 'ADD_BLOCK', blockType } : { type: 'ADD_BLOCK', blockType, label }),
       addButtonLink: (label) => dispatch({ type: 'ADD_BUTTON_LINK', label }),
+      setBlockLink: (blockId, url) => dispatch({ type: 'SET_BLOCK_LINK', blockId, url }),
       selectBlock: (blockId, additive = false) => dispatch({ type: 'SELECT_BLOCK', blockId, additive }),
       deleteBlock: (blockId) => dispatch({ type: 'DELETE_BLOCK', blockId }),
       deleteSelected: () => dispatch({ type: 'DELETE_SELECTED' }),

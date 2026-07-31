@@ -40,13 +40,12 @@ describe('image assets — upload', () => {
     const user = userEvent.setup()
     const { container } = renderShell()
     const palette = screen.getByRole('complementary', { name: '블록 팔레트' })
-    const inspector = screen.getByRole('complementary', { name: '선택 블록 설정' })
 
-    await user.click(within(palette).getByRole('button', { name: '이미지 자리' }))
+    await user.click(within(palette).getByRole('button', { name: '이미지' }))
 
-    // Use the inspector's image input specifically (the toolbar also has a
-    // file input for .eventbrief import).
-    const fileInput = container.querySelector('.image-field__input') as HTMLInputElement
+    // Use the card's own image input (the toolbar also has a file input for
+    // .eventbrief import).
+    const fileInput = container.querySelector('.block-card__file') as HTMLInputElement
     expect(fileInput).not.toBeNull()
     await user.upload(fileInput, pngFile())
 
@@ -60,9 +59,10 @@ describe('image assets — upload', () => {
     expect(stored).toHaveLength(1)
     expect(stored[0]!.fileName).toBe('photo.png')
 
-    // Inspector now offers replace + remove.
-    expect(within(inspector).getByRole('button', { name: '이미지 교체' })).toBeTruthy()
-    expect(within(inspector).getByRole('button', { name: '이미지 제거' })).toBeTruthy()
+    // Replace + remove now live on the card's ⋯ menu (§8).
+    const canvas = screen.getByRole('region', { name: '기획 캔버스' })
+    expect(within(canvas).getByRole('button', { name: '이미지 교체' })).toBeTruthy()
+    expect(within(canvas).getByRole('button', { name: '이미지 제거' })).toBeTruthy()
   })
 
   it('drops multiple images onto the canvas as new image blocks', async () => {

@@ -41,7 +41,7 @@ export interface SimpleBlockDef {
 
 export const SIMPLE_BLOCKS: SimpleBlockDef[] = [
   { kind: 'text', label: '글 넣기', hint: '넣을 내용을 그대로 적습니다', blockLabel: '문구' },
-  { kind: 'imageSlot', label: '이미지 자리', hint: '어떤 이미지가 들어갈 자리인지 적습니다', blockLabel: '이미지 자리' },
+  { kind: 'imageSlot', label: '이미지', hint: '사진을 넣거나 들어갈 자리를 적습니다', blockLabel: '이미지' },
   { kind: 'buttonLink', label: '버튼·링크', hint: '버튼에 보일 글과 연결 주소', blockLabel: '버튼' },
   { kind: 'note', label: '요청 메모', hint: '이미지에 넣지 않고 전달할 요청입니다', blockLabel: '요청 메모' },
 ]
@@ -54,7 +54,33 @@ export const SIMPLE_BLOCK_TYPE: Record<SimpleBlockKind, BlockType> = {
   note: 'revision_reference',
 }
 
-/** The publishing half of a 버튼·링크 pair. */
+/**
+ * Which publishing block carries the link for a given design block.
+ *
+ * Both entries reuse an existing type with the right meaning rather than
+ * inventing one: a button links through `button_url`, and an image on an event
+ * page almost always links to the product detail page, which is exactly what
+ * `product_detail_link` means. Both stay `publishing`, so a URL never reaches
+ * the image AI.
+ */
+export const LINK_TYPE_FOR: Partial<Record<BlockType, BlockType>> = {
+  cta_button: 'button_url',
+  main_product_image: 'product_detail_link',
+  sub_product_image: 'product_detail_link',
+  product_group_image: 'product_detail_link',
+  existing_full_image: 'product_detail_link',
+  logo: 'product_detail_link',
+}
+
+/** Publishing types that can be the link half of a pair. */
+const LINK_TYPES: ReadonlySet<BlockType> = new Set(Object.values(LINK_TYPE_FOR))
+
+/** True when this design block can carry a link. */
+export function canCarryLink(type: BlockType): boolean {
+  return LINK_TYPE_FOR[type] !== undefined
+}
+
+/** @deprecated kept for the 버튼·링크 factory; prefer `LINK_TYPE_FOR`. */
 export const LINK_URL_TYPE: BlockType = 'button_url'
 
 /** The block type carrying a 요청 메모 (non-printing instruction). */
@@ -125,23 +151,35 @@ export function findLinkPartner(
 ): BriefBlock | undefined {
   const { groupId } = block
   if (groupId === undefined) return undefined
-  if (block.type !== SIMPLE_BLOCK_TYPE.buttonLink && block.type !== LINK_URL_TYPE) return undefined
+  const isCarrier = canCarryLink(block.type)
+  const isLink = LINK_TYPES.has(block.type)
+  if (!isCarrier && !isLink) return undefined
 
   const members = blocks.filter((b) => b.groupId === groupId)
   if (members.length !== 2) return undefined
-  const buttons = members.filter((b) => b.type === SIMPLE_BLOCK_TYPE.buttonLink)
-  const urls = members.filter((b) => b.type === LINK_URL_TYPE)
-  if (buttons.length !== 1 || urls.length !== 1) return undefined
+  const carriers = members.filter((b) => canCarryLink(b.type))
+  const links = members.filter((b) => LINK_TYPES.has(b.type))
+  if (carriers.length !== 1 || links.length !== 1) return undefined
+  // The link block must be the one this carrier would create.
+  if (LINK_TYPE_FOR[carriers[0]!.type] !== links[0]!.type) return undefined
 
-  return block.type === SIMPLE_BLOCK_TYPE.buttonLink ? urls[0] : buttons[0]
+  return isCarrier ? links[0] : carriers[0]
 }
 
 /**
  * True when the block is the URL half of a recognised pair — the canvas hides
- * it so one 버튼·링크 shows as a single card.
+ * it so one 버튼·링크 or linked 이미지 shows as a single card.
  */
 export function isPairedLinkUrl(blocks: readonly BriefBlock[], block: BriefBlock): boolean {
-  return block.type === LINK_URL_TYPE && findLinkPartner(blocks, block) !== undefined
+  return LINK_TYPES.has(block.type) && findLinkPartner(blocks, block) !== undefined
+}
+
+/** The URL currently attached to a design block, if any. */
+export function linkUrlOf(blocks: readonly BriefBlock[], block: BriefBlock): string | undefined {
+  const partner = findLinkPartner(blocks, block)
+  if (!partner || !canCarryLink(block.type)) return undefined
+  const url = partner.content?.trim()
+  return url && url.length > 0 ? url : undefined
 }
 
 /**

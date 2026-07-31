@@ -52,9 +52,9 @@ describe('AppShell — block creation & selection', () => {
 
     // Card appears on the canvas…
     expect(within(canvas).getByRole('button', { name: /문구/ })).toBeTruthy()
-    // …and the inspector shows it as selected (empty-state gone, edit fields present).
+    // …and the inspector shows it as selected (empty-state gone).
     expect(within(inspector).queryByText('선택된 블록이 없습니다')).toBeNull()
-    expect(within(inspector).getByLabelText('문구')).toBeTruthy()
+    expect(within(inspector).getByText('글 넣기')).toBeTruthy()
   })
 
   it('switches selection when another canvas card is clicked', async () => {
@@ -109,12 +109,11 @@ describe('AppShell — deletion', () => {
     const { palette, canvas, inspector } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
-    const labelInput = within(inspector).getByLabelText('문구')
-    await user.click(labelInput)
+    // Editing happens in the block itself now; Delete inside it must not delete.
+    await user.dblClick(canvas.querySelector('.block-card') as HTMLElement)
     await user.keyboard('{Delete}')
 
-    // Block survives — the shortcut is suppressed while typing.
-    expect(within(canvas).getByRole('button', { name: /문구/ })).toBeTruthy()
+    expect(canvas.querySelectorAll('.block-card')).toHaveLength(1)
   })
 })
 
@@ -125,9 +124,9 @@ describe('AppShell — editing', () => {
     const { palette, canvas, inspector } = panels()
 
     await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
-    const labelInput = within(inspector).getByLabelText('문구')
-    await user.clear(labelInput)
-    await user.type(labelInput, '여름 세일 헤드라인')
+    await user.dblClick(canvas.querySelector('.block-card') as HTMLElement)
+    await user.type(screen.getByLabelText('문구 내용'), '여름 세일 헤드라인')
+    await user.keyboard('{Control>}{Enter}{/Control}')
 
     expect(within(canvas).getByRole('button', { name: /여름 세일 헤드라인/ })).toBeTruthy()
   })

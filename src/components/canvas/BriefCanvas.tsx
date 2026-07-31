@@ -14,7 +14,7 @@ import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useAssets } from '../../features/assets/useAssets'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { useCanvasView } from '../../features/editor/useCanvasView'
-import { findLinkPartner, isPairedLinkUrl } from '../../domain/simpleBlocks'
+import { findLinkPartner, isPairedLinkUrl, linkUrlOf } from '../../domain/simpleBlocks'
 import type { ReferenceLayer } from '../../domain/pageSchema'
 import { BriefBlockCard } from './BriefBlockCard'
 
@@ -131,6 +131,7 @@ export function BriefCanvas() {
               canvasWidth={canvasWidth}
               canvasHeight={canvasHeight}
               paired={findLinkPartner(blocks, block) !== undefined}
+              {...(linkUrlOf(blocks, block) === undefined ? {} : { linkUrl: linkUrlOf(blocks, block)! })}
             />
           ))}
         </div>
