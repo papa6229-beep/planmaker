@@ -78,6 +78,9 @@ export interface BriefDocument {
 }
 
 /** A fresh reference layer with the documented defaults. */
+/** Name the one page of a brand-new brief starts with. */
+export const FIRST_PAGE_TITLE = '1페이지'
+
 export function createReferenceLayer(): ReferenceLayer {
   return { viewMode: 'canvas', opacity: DEFAULT_REFERENCE_OPACITY, fit: 'width', visible: false }
 }
@@ -95,7 +98,7 @@ export interface CreatePageOptions {
 export function createPage(options: CreatePageOptions = {}): BriefPage {
   return {
     id: options.id ?? createId('page'),
-    title: options.title ?? '1페이지',
+    title: options.title ?? FIRST_PAGE_TITLE,
     blocks: options.blocks ?? [],
     canvasWidth: options.canvasWidth ?? PAGE_CANVAS_WIDTH,
     canvasHeight: options.canvasHeight ?? NEW_PAGE_HEIGHT,
@@ -105,7 +108,7 @@ export function createPage(options: CreatePageOptions = {}): BriefPage {
 
 /** Creates an empty single-page document ready for editing. */
 export function createEmptyDocument(project: Project): BriefDocument {
-  const page = createPage({ title: '1페이지' })
+  const page = createPage({ title: FIRST_PAGE_TITLE })
   return {
     schemaVersion: DOCUMENT_SCHEMA_VERSION,
     project,

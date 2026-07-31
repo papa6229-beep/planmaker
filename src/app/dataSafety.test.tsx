@@ -147,9 +147,13 @@ describe('§3 공용 자산 저장소 보호', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '파일 불러오기' })).toBeTruthy())
     await importOver(file)
 
-    await waitFor(async () => expect(await storedIds()).toContain('asset_import'), { timeout: 8000 })
-    // Nothing that belonged to anyone else was taken away.
-    expect(await storedIds()).toEqual(['asset_a', 'asset_b', 'asset_import', 'asset_request'].toSorted())
+    // Nothing that belongs to anyone else is taken away: 나 기획서's picture and
+    // the delivered snapshot's stay, and the imported one arrives. 가 기획서's own
+    // old picture goes, because 가 기획서 is exactly what was just replaced — no
+    // brief and no delivered snapshot references it any more.
+    await waitFor(async () => {
+      expect(await storedIds()).toEqual(['asset_b', 'asset_import', 'asset_request'])
+    }, { timeout: 8000 })
     expect((await loadDocumentById(a))!.pages[0]!.blocks[0]!.assetId).toBe('asset_import')
   })
 
@@ -361,6 +365,13 @@ describe('§5 가져오기는 현재 기획서에 저장한다', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '파일 불러오기' })).toBeTruthy())
     await importOver(file)
     await waitFor(() => expect(screen.getByText('전달할 문구')).toBeTruthy(), { timeout: 8000 })
+    // The import is not over when the wording appears: assets are still being
+    // re-read and swept up, and every action in the bar is disabled until it
+    // is. Waiting for 전달하기 to come back is waiting for the import to end.
+    await waitFor(
+      () => expect((screen.getByRole('button', { name: '전달하기' }) as HTMLButtonElement).disabled).toBe(false),
+      { timeout: 8000 },
+    )
 
     await user.click(screen.getByRole('button', { name: '전달하기' }))
     await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/전달되었습니다/), {
@@ -411,6 +422,48 @@ describe('§6 덮어쓰기 확인은 문서 전체를 본다', () => {
     const viewChanged = createEmptyDocument(createEmptyProject('새 기획서'))
     viewChanged.pages[0]!.reference = { ...viewChanged.pages[0]!.reference, opacity: 0.9 }
     expect(hasUserWork(viewChanged)).toBe(true)
+
+    // Naming the one page is work: an import would take that name away.
+    const renamed = createEmptyDocument(createEmptyProject('새 기획서'))
+    renamed.pages[0]!.title = '메인 배너'
+    expect(hasUserWork(renamed)).toBe(true)
+
+    // Ids and creation times are not work: two untouched briefs both answer no.
+    const other = createEmptyDocument(createEmptyProject('새 기획서'))
+    other.project.id = 'doc_2'
+    expect(hasUserWork(other)).toBe(false)
+    expect(other.pages[0]!.id).not.toBe(fresh.pages[0]!.id)
+  })
+
+  it('asks before overwriting a brief whose only page was renamed', async () => {
+    const id = await createDocument(createEmptyDocument(createEmptyProject('새 기획서')), 1000)
+    const user = userEvent.setup()
+    renderShell({
+      load: () => loadDocumentById(id),
+      save: (d: BriefDocument) => saveDocumentById(id, d, Date.now()),
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: '1페이지 페이지 메뉴' })).toBeTruthy())
+    // The first-start choice sits over the workspace until it is dismissed.
+    const start = screen.queryByRole('button', { name: /빈 화면에서 시작/ })
+    if (start) await user.click(start)
+
+    await user.click(screen.getByRole('button', { name: '1페이지 페이지 메뉴' }))
+    await user.click(await screen.findByRole('button', { name: '이름 변경' }))
+    const field = await screen.findByRole('textbox', { name: '페이지 이름' })
+    await user.clear(field)
+    await user.type(field, '메인 배너{Enter}')
+    await waitFor(() => expect(screen.getByRole('button', { name: '메인 배너 페이지 메뉴' })).toBeTruthy())
+
+    const incoming = createEmptyDocument(createEmptyProject('불러온 기획서'))
+    incoming.pages[0]!.blocks = [createBlock('free_text', { id: 'blk_i', content: '불러온 문구' })]
+    await importFile(await fileOf(incoming, []))
+
+    await waitFor(() => expect(screen.getByRole('alertdialog', { name: '현재 작업 교체 확인' })).toBeTruthy(), {
+      timeout: 8000,
+    })
+    await user.click(screen.getByRole('button', { name: '취소' }))
+    // Cancelling keeps the name that was given.
+    expect(screen.getByRole('button', { name: '메인 배너 페이지 메뉴' })).toBeTruthy()
   })
 
   it('asks before overwriting a brief that holds only a concept', async () => {

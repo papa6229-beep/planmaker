@@ -20,6 +20,7 @@ const DEFAULT_NEW_BRIEF_TITLE = '새 기획서'
 import {
   createPage,
   createReferenceLayer,
+  FIRST_PAGE_TITLE,
   type BriefDocument,
   type BriefPage,
   type ReferenceLayer,
@@ -250,6 +251,8 @@ export function hasUserWork(doc: BriefDocument): boolean {
   const untouched = createReferenceLayer()
   return doc.pages.some(
     (page) =>
+      // Naming the page is work too: importing over it loses that name.
+      page.title !== FIRST_PAGE_TITLE ||
       page.blocks.length > 0 ||
       page.canvasHeight !== NEW_PAGE_HEIGHT ||
       page.reference.assetId !== undefined ||
