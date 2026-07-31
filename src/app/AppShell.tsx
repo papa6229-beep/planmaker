@@ -170,9 +170,9 @@ function Workspace({ mode, statusPanel }: { mode: 'brief' | 'image'; statusPanel
         <div className="side-left">
           <ReferenceTools />
           <BlockPalette />
+          <ConceptField />
         </div>
         <div className="workspace__center">
-          <ConceptField />
           <PageTabs />
           {statusPanel}
           <div className="canvas-controls">

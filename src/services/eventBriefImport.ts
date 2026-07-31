@@ -27,6 +27,26 @@ import {
 
 const SUPPORTED_SCHEMA_VERSIONS: readonly string[] = [SCHEMA_VERSION]
 
+/**
+ * Errors that actually stop a file from being opened: the archive is damaged or
+ * self-contradictory. What a brief *contains* — whether it has a title, a
+ * design block, or a filled-in required block — is authoring guidance, not a
+ * condition for reading a file back (자유 저장 §2.2). A brief that was saved as
+ * only a sentence of direction must open again as exactly that.
+ */
+const STRUCTURAL_ERROR_CODES: ReadonlySet<string> = new Set([
+  'DUPLICATE_BLOCK_ID',
+  'ASSET_REFERENCE_MISSING',
+])
+
+/** Throws only when the archive is structurally broken; content is left alone. */
+function assertStructurallySound(brief: EventBrief): void {
+  const blocking = validateBrief(brief).errors.filter((e) => STRUCTURAL_ERROR_CODES.has(e.code))
+  if (blocking.length > 0) {
+    throw new EventBriefError('VALIDATION_FAILED', blocking[0]!.message)
+  }
+}
+
 export interface ImportedBrief {
   brief: EventBrief
   assets: StoredAsset[]
@@ -114,10 +134,7 @@ export async function readEventBrief(data: ArrayBuffer | Uint8Array | Blob): Pro
 
   // 3. Structural integrity.
   assertNoDuplicateIds(brief)
-  const result = validateBrief(brief)
-  if (!result.ok) {
-    throw new EventBriefError('VALIDATION_FAILED', result.errors[0]?.message ?? '검증에 실패했습니다.')
-  }
+  assertStructurallySound(brief)
 
   // 4. Decode every referenced asset blob (byte-identical), verifying presence,
   //    mime, and size limits.
@@ -268,21 +285,17 @@ export async function readEventDocument(data: ArrayBuffer | Uint8Array | Blob): 
     doc = briefToDocument(toCanonicalBrief(briefRaw))
   }
 
-  // Structural integrity: unique ids across the document, then validate the
-  // whole document as one flattened brief. Per-page validation would wrongly
-  // reject legitimately empty or reference-only pages — the "needs a design
-  // block" rule is document-level (WORK_PLAN §9.3, §14).
+  // Structural integrity only: unique ids across the document, and blocks that
+  // point at assets the archive actually carries. A file opens as whatever it
+  // was saved as — a page of wording, a single line of direction, or nothing
+  // at all (자유 저장 §2.2).
   assertNoDuplicateDocumentIds(doc)
-  const flat: EventBrief = {
+  assertStructurallySound({
     schemaVersion: SCHEMA_VERSION,
     project: doc.project,
     blocks: doc.pages.flatMap((p) => p.blocks),
     assets: doc.assets,
-  }
-  const result = validateBrief(flat)
-  if (!result.ok) {
-    throw new EventBriefError('VALIDATION_FAILED', result.errors[0]?.message ?? '검증에 실패했습니다.')
-  }
+  })
 
   const assets = await decodeAssets(zip, manifest, doc.assets)
   return { doc, assets, manifest }

@@ -3,10 +3,13 @@
  * primary 전달하기 CTA; in 이미지 생성 mode (a request work page, §13.2) the mode
  * label changes and the CTA is replaced by the request's status panel.
  *
- * Step 7 wires 전달하기: it validates the title, snapshots the current
- * multi-page document, and creates a submitted WorkRequest that shows up in the
- * image-generation queue. The `.eventbrief` file actions stay in the overflow
- * (보조) menu.
+ * Step 7 wires 전달하기: it names the brief, snapshots the current multi-page
+ * document, and creates a submitted WorkRequest that shows up in the
+ * image-generation queue.
+ *
+ * Saving to and loading from a `.eventbrief` file are ordinary, frequent
+ * actions, so they sit in the bar itself rather than behind 보조 메뉴, which now
+ * holds only 새로 만들기 (자유 저장 §3).
  */
 
 import { useRef, useState } from 'react'
@@ -29,7 +32,7 @@ function BackIcon() {
 export function TopToolbar({ mode = 'brief', onShowSummary }: { mode?: 'brief' | 'image'; onShowSummary: () => void }) {
   const { state, setProjectTitle, newBrief, undo, redo, canUndo, canRedo, endInteraction } = useBriefEditor()
   const { getDocument, undoPageDelete } = useBriefDocument()
-  const { startExport, startImport, busy } = useEventBriefIo()
+  const { state: ioState, startExport, startImport, busy } = useEventBriefIo()
   /**
    * Page structure is not part of the editor's history, so a just-deleted page
    * is restored from the document's own snapshot; everything else undoes
@@ -68,11 +71,9 @@ export function TopToolbar({ mode = 'brief', onShowSummary }: { mode?: 'brief' |
       titleRef.current?.focus()
       return
     }
-    if (!doc.pages.some((p) => p.blocks.length > 0)) {
-      setDelivered(false)
-      setNotice('내용이 있는 블록을 추가한 뒤 전달하세요.')
-      return
-    }
+    // No shape of brief is turned away: one may be only wording, only the place
+    // a picture goes, or only the direction for the whole page (자유 저장 §2.2).
+    // A name is still required — it is how the request is found later.
     setSubmitting(true)
     try {
       await submit(doc, new Date().toISOString())
@@ -126,25 +127,31 @@ export function TopToolbar({ mode = 'brief', onShowSummary }: { mode?: 'brief' |
           <button type="button" className="btn" onClick={redo} disabled={!canRedo || busy} title="다시 실행 (Ctrl+Shift+Z)">다시 실행</button>
           <button type="button" className="btn" onClick={onShowSummary} disabled={busy} title="이미지 생성 AI가 읽는 정보 미리보기">AI 요약</button>
 
+          <button
+            type="button"
+            className="btn"
+            onClick={() => importInputRef.current?.click()}
+            disabled={busy}
+            title=".eventbrief 파일에서 기획서를 불러옵니다"
+          >
+            파일 불러오기
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void startExport()}
+            disabled={busy}
+            title="지금 상태 그대로 .eventbrief 파일로 저장합니다"
+          >
+            파일로 저장
+          </button>
+          <span className="editor-topbar__io-note" aria-live="polite">
+            {ioState.kind === 'exported' ? '기획서 파일을 저장했습니다' : ''}
+          </span>
+
           <details className="editor-topbar__menu" ref={menuRef}>
             <summary className="btn editor-topbar__menu-trigger">보조 메뉴</summary>
             <div className="editor-topbar__menu-panel" aria-label="파일 보조 메뉴">
-              <button
-                type="button"
-                className="editor-topbar__menu-item"
-                onClick={() => { closeMenu(); void startExport() }}
-                disabled={busy}
-              >
-                파일로 저장 (.eventbrief)
-              </button>
-              <button
-                type="button"
-                className="editor-topbar__menu-item"
-                onClick={() => { closeMenu(); importInputRef.current?.click() }}
-                disabled={busy}
-              >
-                파일 불러오기
-              </button>
               <button
                 type="button"
                 className="editor-topbar__menu-item"

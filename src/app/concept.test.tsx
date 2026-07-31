@@ -59,7 +59,7 @@ beforeEach(async () => {
 })
 
 describe('§10.8 전체 컨셉', () => {
-  it('is entered above the canvas, not as a block, and survives a save/reload', async () => {
+  it('is entered beside the canvas, not as a block, and survives a save/reload', async () => {
     const id = await createDocument(docWith('여름 기획전', '여름 세일'), 1)
     const binding = {
       load: () => loadDocumentById(id),
@@ -76,9 +76,7 @@ describe('§10.8 전체 컨셉', () => {
       </MemoryRouter>,
     )
 
-    const concept = await screen.findByRole('region', { name: '전체 컨셉' })
-    await user.click(within(concept).getByRole('button'))
-    await user.type(document.getElementById('concept-input') as HTMLTextAreaElement, '여름 바다처럼 시원하고 밝게')
+    await user.type(await screen.findByLabelText('원하는 분위기·컨셉'), '여름 바다처럼 시원하고 밝게')
 
     // It never becomes a canvas block.
     const canvas = screen.getByRole('region', { name: '기획 캔버스' })
@@ -107,9 +105,7 @@ describe('§10.8 전체 컨셉', () => {
       </MemoryRouter>,
     )
 
-    const region = await screen.findByRole('region', { name: '전체 컨셉' })
-    await user.click(within(region).getByRole('button'))
-    await user.type(document.getElementById('concept-input') as HTMLTextAreaElement, '시원하고 밝게')
+    await user.type(await screen.findByLabelText('원하는 분위기·컨셉'), '시원하고 밝게')
 
     await user.click(screen.getByRole('button', { name: 'AI 요약' }))
     const dialog = screen.getByRole('dialog', { name: 'AI 요약 미리보기' })

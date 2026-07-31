@@ -1,8 +1,8 @@
 /**
  * Phase 7 Step 3 — editor top bar (WORK_PLAN §7.1). Covers the required tests
  * for this step: the title input is the single source of truth and keeps its
- * value (§17.3), the 게이트로 돌아가기 link is present, the file actions live in
- * the 보조 메뉴, and 전달하기 is a non-functional placeholder that only surfaces
+ * value (§17.3), the 게이트로 돌아가기 link is present, the file actions are in
+ * the bar itself, and 전달하기 is a non-functional placeholder that only surfaces
  * an honest "다음 단계에서 연결" notice (no WorkRequest, no navigation).
  */
 
@@ -59,26 +59,32 @@ describe('editor top bar — Phase 7 Step 3', () => {
     expect(title.value).toBe('')
   })
 
-  it('moves the .eventbrief file actions into the 보조 메뉴', async () => {
+  it('keeps the .eventbrief file actions in the bar, with 새로 만들기 in the 보조 메뉴', async () => {
     const user = userEvent.setup()
     renderEditor()
+    // Saving and loading a file are everyday actions, so they are never hidden
+    // behind a menu (자유 저장 §3).
+    const bar = screen.getByRole('navigation', { name: '주요 작업' })
+    expect(within(bar).getByRole('button', { name: '파일로 저장' })).toBeTruthy()
+    expect(within(bar).getByRole('button', { name: '파일 불러오기' })).toBeTruthy()
+
     await user.click(screen.getByText('보조 메뉴'))
-    expect(screen.getByRole('button', { name: '파일로 저장 (.eventbrief)' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: '파일 불러오기' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '새로 만들기' })).toBeTruthy()
   })
 
-  it('validates before delivering — an empty brief creates no request and does not navigate', async () => {
+  it('asks for a name before delivering — an unnamed brief creates no request and does not navigate', async () => {
     const user = userEvent.setup()
     renderEditor()
 
     const submit = screen.getByRole('button', { name: '전달하기' })
     expect(screen.getByRole('status').textContent).toContain('이미지 생성 요청으로 전달합니다.')
 
+    await user.clear(screen.getByLabelText('기획서 제목'))
     await user.click(submit)
 
-    // Empty brief → validation blocks delivery; we stay in the editor.
-    expect(screen.getByRole('status').textContent).toContain('내용이 있는 블록을 추가한 뒤 전달하세요.')
+    // No name → nothing to find the request by later; we stay in the editor.
+    // What the brief *contains* never blocks delivery (자유 저장 §2.2).
+    expect(screen.getByRole('status').textContent).toContain('기획서 제목을 입력해야 전달할 수 있습니다.')
     expect(screen.getByRole('complementary', { name: '블록 팔레트' })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: '게이트 화면' })).toBeNull()
   })

@@ -66,13 +66,10 @@ describe('export UI', () => {
     const palette = screen.getByRole('complementary', { name: '블록 팔레트' })
     await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
 
-    // Export now lives in the top bar's 보조 메뉴 (overflow).
-    await user.click(screen.getByText('보조 메뉴'))
-    await user.click(screen.getByRole('button', { name: '파일로 저장 (.eventbrief)' }))
-
-    // A text-only brief triggers warnings (no required product) → confirm.
-    const warn = await screen.findByRole('alertdialog', { name: '내보내기 경고' })
-    await user.click(within(warn).getByRole('button', { name: '계속 진행' }))
+    // Saving a file is one click in the top bar, with nothing to confirm: a
+    // brief of any shape is preserved as it is (자유 저장 §2.2).
+    await user.click(screen.getByRole('button', { name: '파일로 저장' }))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
 
     // One of the created object URLs is the exported archive; it must parse as
     // a multi-page document (v2).

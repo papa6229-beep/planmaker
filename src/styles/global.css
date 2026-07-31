@@ -185,6 +185,9 @@ button { font-family: inherit; }
 .editor-topbar__menu-item:hover:not(:disabled) { background: var(--color-panel-muted); }
 .editor-topbar__menu-item:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Short confirmation that a file was written (자유 저장 §3). */
+.editor-topbar__io-note { font-size: 12px; color: var(--color-success); white-space: nowrap; }
+
 .editor-topbar__submit { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .editor-topbar__submit-hint { margin: 0; font-size: 11px; color: var(--color-muted); white-space: nowrap; }
 
@@ -247,53 +250,35 @@ button { font-family: inherit; }
 .req-status-btn.is-active { border-color: var(--color-publishing); background: var(--color-publishing); color: #fff; }
 .req-status-panel__gen { margin: 0; font-size: 12px; color: var(--color-muted); }
 
-/* ── 전체 컨셉 (§5) ────────────────────────────────────────────────────────── */
+/* ── 원하는 분위기·컨셉 (§5, 자유 저장 §4) ────────────────────────────────── */
+/* Lives in the left column under the three tools, always open — direction for
+   the whole brief is written while working, not hunted for. */
 .concept {
   flex: none;
-  padding: 8px 12px;
+  padding: 12px;
+  border-top: 1px solid var(--color-border);
   background: var(--color-panel);
-  border-bottom: 1px solid var(--color-border);
 }
-.concept__toggle {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  width: 100%;
-  padding: 4px 2px;
-  border: 0;
-  background: none;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.concept__toggle-label {
-  flex: none;
-  font-size: 12px;
+.concept__title {
+  margin: 0;
+  font-size: 13px;
   font-weight: 700;
-  color: var(--color-publishing);
-}
-.concept__toggle-value {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
   color: var(--color-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.concept__toggle-value.is-empty { color: var(--color-muted); }
-.concept__label { display: block; font-size: 12px; font-weight: 700; color: var(--color-publishing); }
+.concept__hint { margin: 2px 0 0; font-size: 11px; color: var(--color-muted); }
 .concept__input {
   width: 100%;
-  margin-top: 4px;
+  margin-top: 8px;
   padding: 8px 10px;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
   font: inherit;
   font-size: 13px;
+  line-height: 1.5;
   resize: vertical;
 }
-.concept__note { margin: 4px 0 0; font-size: 11px; color: var(--color-muted); }
+.concept__input::placeholder { color: var(--color-muted); }
+.concept__note { margin: 6px 0 0; font-size: 11px; color: var(--color-muted); }
 
 /* ── Page filmstrip (Phase 7 §9.2) ────────────────────────────────────────── */
 .page-tabs {

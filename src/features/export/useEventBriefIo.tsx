@@ -20,13 +20,15 @@ import { renderPreviewPng } from '../../services/previewRenderer'
 import { EventBriefError } from '../../services/eventBriefArchive'
 import { pageAsEventBrief } from '../../domain/briefMigration'
 import type { BriefDocument } from '../../domain/pageSchema'
-import { validateDocumentForExport, type ExportIssue } from './exportValidation'
+import type { ExportIssue } from './exportValidation'
 
 export type IoState =
   | { kind: 'idle' }
   | { kind: 'export-blocked'; errors: ExportIssue[] }
   | { kind: 'export-warn'; warnings: ExportIssue[] }
   | { kind: 'exporting'; message: string }
+  /** The file has been handed to the browser; shown briefly, then cleared. */
+  | { kind: 'exported' }
   | { kind: 'export-failed'; message: string }
   | { kind: 'import-confirm'; pending: ImportedDocument }
   | { kind: 'importing'; message: string }
@@ -99,7 +101,9 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
         createdAt: new Date().toISOString(),
       })
       triggerDownload(pkg.blob, pkg.fileName)
-      setState({ kind: 'idle' })
+      setState({ kind: 'exported' })
+      // The confirmation is a short note, not something to dismiss.
+      window.setTimeout(() => setState((s) => (s.kind === 'exported' ? { kind: 'idle' } : s)), 4000)
     } catch (err) {
       setState({ kind: 'export-failed', message: messageFor(err) })
     } finally {
@@ -107,22 +111,21 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
     }
   }, [getDocument])
 
+  /**
+   * Saving to a file preserves whatever the brief is right now. A brief may be
+   * only wording, only the place a picture goes, only a sentence about how the
+   * whole thing should feel, or nothing at all — the design team and, later,
+   * the image AI read the gaps. So no content rule stands between the click and
+   * the file (자유 저장 §2.2); the only failures reported are technical ones,
+   * which `doExport` surfaces from the packaging itself.
+   *
+   * `validateDocumentForExport` is deliberately still here, unchanged and
+   * tested: it is the advice a future AI-generation step will give. It is no
+   * longer wired to this path.
+   */
   const startExport = useCallback(async () => {
-    if (runningRef.current) return
-    const doc = getDocument()
-    const stored = await getAllAssets()
-    const availableIds = new Set(stored.map((a) => a.id))
-    const result = validateDocumentForExport(doc, availableIds)
-    if (result.errors.length > 0) {
-      setState({ kind: 'export-blocked', errors: result.errors })
-      return
-    }
-    if (result.warnings.length > 0) {
-      setState({ kind: 'export-warn', warnings: result.warnings })
-      return
-    }
     await doExport()
-  }, [doExport, getDocument])
+  }, [doExport])
 
   const confirmExportWithWarnings = useCallback(async () => {
     await doExport()
