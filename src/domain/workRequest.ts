@@ -13,6 +13,7 @@
  */
 
 import type { BriefDocument } from './pageSchema'
+import { referencedAssetIds } from './pageOps'
 
 /** Request lifecycle (WORK_PLAN §6, §13.3). Draft is out of scope this step. */
 export type WorkRequestStatus = 'submitted' | 'reviewed' | 'in_progress' | 'completed'
@@ -106,13 +107,12 @@ export function computeStats(requests: readonly WorkRequest[]): RequestStats {
 /** Every asset id referenced by a request's snapshot(s) — so shared blobs survive pruning. */
 export function requestAssetIds(request: WorkRequest): string[] {
   const ids = new Set<string>()
+  // What the snapshot actually shows: a block's picture, or a page's reference
+  // image. A stale metadata entry nobody points at is not part of the request
+  // and must not keep a binary alive forever (v1 동결 §4).
   const collect = (doc: BriefDocument | undefined) => {
     if (!doc) return
-    for (const asset of doc.assets) ids.add(asset.id)
-    for (const page of doc.pages) {
-      for (const b of page.blocks) if (b.assetId !== undefined) ids.add(b.assetId)
-      if (page.reference.assetId !== undefined) ids.add(page.reference.assetId)
-    }
+    for (const id of referencedAssetIds(doc)) ids.add(id)
   }
   collect(request.submittedDoc)
   collect(request.workingDoc)

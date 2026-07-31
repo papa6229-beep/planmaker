@@ -109,7 +109,34 @@ export async function pruneAssets(referencedIds: Iterable<string>): Promise<void
   if (orphans.length > 0) await db().assets.bulkDelete(orphans)
 }
 
-/** Atomically replaces all stored asset blobs (used by import). */
+/** One stored asset, or undefined. */
+export async function getAsset(id: string): Promise<StoredAsset | undefined> {
+  return db().assets.get(id)
+}
+
+/**
+ * Adds assets to the shared pool, leaving everything already there alone.
+ *
+ * This is what an import uses. The pool is shared by every brief and by every
+ * delivered snapshot, so opening a file may only ever *add* to it — the old
+ * clear-then-write took other briefs' images with it (v1 동결 §3).
+ */
+export async function putAssets(assets: readonly StoredAsset[]): Promise<void> {
+  if (assets.length === 0) return
+  await db().assets.bulkPut([...assets])
+}
+
+/** Deletes exactly these assets — used to roll back a failed import. */
+export async function deleteAssets(ids: readonly string[]): Promise<void> {
+  if (ids.length > 0) await db().assets.bulkDelete([...ids])
+}
+
+/**
+ * Atomically replaces all stored asset blobs.
+ *
+ * @deprecated Never use this for import: it empties the pool every brief and
+ * every delivered snapshot shares. Kept for a future explicit "reset".
+ */
 export async function replaceAssets(assets: StoredAsset[]): Promise<void> {
   await db().transaction('rw', db().assets, async () => {
     await db().assets.clear()

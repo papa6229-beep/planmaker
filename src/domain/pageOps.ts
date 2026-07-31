@@ -9,7 +9,14 @@
  */
 
 import { createId } from './factory'
-import type { BriefBlock } from './briefSchema'
+import { NEW_PAGE_HEIGHT, type Asset, type BriefBlock } from './briefSchema'
+
+/**
+ * Title a brand-new brief is created with. A brief still carrying it has not
+ * been named by anyone. Kept here rather than imported from the editor so the
+ * domain does not depend on a feature module.
+ */
+const DEFAULT_NEW_BRIEF_TITLE = '새 기획서'
 import {
   createPage,
   createReferenceLayer,
@@ -159,4 +166,96 @@ export function setReferenceOpacity(doc: BriefDocument, pageId: string, opacity:
 /** Resets a page's reference layer to defaults (also clears the image). */
 export function clearReference(doc: BriefDocument, pageId: string): BriefDocument {
   return replacePage(doc, pageId, (p) => ({ ...p, reference: createReferenceLayer() }))
+}
+
+// ── Assets a document actually uses ──────────────────────────────────────────
+
+/**
+ * Every asset the document really references: a block's picture on any page,
+ * and any page's 참고 이미지.
+ *
+ * This is the definition of "in use". A document's `assets` list is metadata
+ * *about* these, not a record of every image that ever passed through — an
+ * entry nobody points at any more would keep an image in an exported file and
+ * pin its binary in the store forever (v1 동결 §4).
+ */
+export function referencedAssetIds(doc: BriefDocument): string[] {
+  const ids = new Set<string>()
+  for (const page of doc.pages) {
+    for (const b of page.blocks) if (b.assetId !== undefined) ids.add(b.assetId)
+    if (page.reference.assetId !== undefined) ids.add(page.reference.assetId)
+  }
+  return [...ids]
+}
+
+/**
+ * The document with its asset list trimmed to what it references, preferring
+ * fresher metadata when the editor has some.
+ */
+export function withReferencedAssets(doc: BriefDocument, preferred: readonly Asset[] = []): BriefDocument {
+  const used = new Set(referencedAssetIds(doc))
+  const byId = new Map<string, Asset>()
+  for (const a of doc.assets) if (used.has(a.id)) byId.set(a.id, a)
+  for (const a of preferred) if (used.has(a.id)) byId.set(a.id, a)
+  const assets = [...byId.values()]
+  const unchanged = assets.length === doc.assets.length && assets.every((a, i) => a === doc.assets[i])
+  return unchanged ? doc : { ...doc, assets }
+}
+
+/**
+ * Rewrites asset ids across the whole document — metadata, block pictures, and
+ * page references — so an imported file can take new ids without any reference
+ * being left pointing at the old one (v1 동결 §3).
+ */
+export function remapAssetIds(doc: BriefDocument, mapping: ReadonlyMap<string, string>): BriefDocument {
+  if (mapping.size === 0) return doc
+  const to = (id: string): string => mapping.get(id) ?? id
+  return {
+    ...doc,
+    assets: doc.assets.map((a) => (mapping.has(a.id) ? { ...a, id: to(a.id) } : a)),
+    pages: doc.pages.map((page) => ({
+      ...page,
+      blocks: page.blocks.map((b) =>
+        b.assetId !== undefined && mapping.has(b.assetId) ? { ...b, assetId: to(b.assetId) } : b,
+      ),
+      reference:
+        page.reference.assetId !== undefined && mapping.has(page.reference.assetId)
+          ? { ...page.reference, assetId: to(page.reference.assetId) }
+          : page.reference,
+    })),
+  }
+}
+
+// ── "Is there anything here to lose?" ────────────────────────────────────────
+
+/**
+ * True when the document holds anything a person put there.
+ *
+ * Asked before an import replaces what is on screen. A brief that only *looks*
+ * empty because it has no blocks may still hold a title, the direction for the
+ * whole page, a team, extra pages, a page dragged longer, or a reference image
+ * — losing any of those without being asked is the bug this answers (v1 동결
+ * §6). Values nobody typed — the document id, the ids of its pages — are not
+ * work, so a brand-new brief answers false.
+ */
+export function hasUserWork(doc: BriefDocument): boolean {
+  const { project } = doc
+  const title = project.title.trim()
+  if (title !== '' && title !== DEFAULT_NEW_BRIEF_TITLE) return true
+  if ((project.concept ?? '').trim() !== '') return true
+  if ((project.requestTeam ?? '').trim() !== '') return true
+  if ((project.conceptNote ?? '').trim() !== '') return true
+  if (doc.pages.length > 1) return true
+
+  const untouched = createReferenceLayer()
+  return doc.pages.some(
+    (page) =>
+      page.blocks.length > 0 ||
+      page.canvasHeight !== NEW_PAGE_HEIGHT ||
+      page.reference.assetId !== undefined ||
+      page.reference.viewMode !== untouched.viewMode ||
+      page.reference.opacity !== untouched.opacity ||
+      page.reference.fit !== untouched.fit ||
+      page.reference.visible !== untouched.visible,
+  )
 }

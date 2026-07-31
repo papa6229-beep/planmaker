@@ -13,13 +13,16 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useAssets } from '../assets/useAssets'
 import { useBriefDocument } from '../document/useBriefDocument'
-import { getAllAssets, pruneAssets, replaceAssets, saveDocument } from '../../services/assetStore'
+import { deleteAssets, getAllAssets, pruneAssets, putAssets, saveDocument } from '../../services/assetStore'
+import { resolveAssetCollisions } from '../../services/importAssets'
+import { allDocumentAssetIds } from '../../services/documentStore'
+import { allRequestAssetIds } from '../../services/requestStore'
+import { hasUserWork, referencedAssetIds } from '../../domain/pageOps'
 import { packageEventDocument } from '../../services/eventBriefExport'
 import { readEventDocument, type ImportedDocument } from '../../services/eventBriefImport'
 import { renderPreviewPng } from '../../services/previewRenderer'
 import { EventBriefError } from '../../services/eventBriefArchive'
 import { pageAsEventBrief } from '../../domain/briefMigration'
-import type { BriefDocument } from '../../domain/pageSchema'
 import type { ExportIssue } from './exportValidation'
 
 export type IoState =
@@ -69,12 +72,8 @@ function triggerDownload(blob: Blob, fileName: string): void {
   }, 10_000)
 }
 
-function hasAnyBlocks(doc: BriefDocument): boolean {
-  return doc.pages.some((p) => p.blocks.length > 0)
-}
-
 export function EventBriefIoProvider({ children }: { children: ReactNode }) {
-  const { getDocument, replaceDocument } = useBriefDocument()
+  const { getDocument, importDocument } = useBriefDocument()
   const { loadFromStore } = useAssets()
   const [state, setState] = useState<IoState>({ kind: 'idle' })
   const runningRef = useRef(false)
@@ -136,27 +135,53 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
     await doExport()
   }, [doExport])
 
+  /**
+   * Takes an archive over as the brief that is open.
+   *
+   * The asset pool is shared by every brief and by every delivered snapshot, so
+   * an import may only ever *add* to it (v1 동결 §3). Where an incoming id is
+   * already taken by a different picture, the incoming one is given a fresh id
+   * and every reference in the imported document moves with it, so two briefs
+   * that happen to share an id never overwrite each other's image.
+   *
+   * The order is: write the new binaries, save the document into the open row,
+   * then swap the screen. If anything fails, the binaries this import added are
+   * removed again and nothing on screen or in any other brief has changed.
+   */
   const applyImport = useCallback(
     async (imported: ImportedDocument) => {
       setState({ kind: 'importing', message: '복원 중…' })
+      let added: string[] = []
       try {
-        // Transactional swap: persist first, then hydrate the UI.
-        await saveDocument(imported.doc, Date.now())
-        await replaceAssets(imported.assets)
-        const referenced = new Set<string>()
-        for (const page of imported.doc.pages) {
-          for (const b of page.blocks) if (b.assetId !== undefined) referenced.add(b.assetId)
-          if (page.reference.assetId !== undefined) referenced.add(page.reference.assetId)
-        }
-        await pruneAssets(referenced)
-        replaceDocument(imported.doc) // resets history + selection, hydrates active page
+        const resolved = await resolveAssetCollisions(imported.doc, imported.assets)
+        added = resolved.assets.map((a) => a.id)
+        await putAssets(resolved.assets)
+        // Saves into the row that is open, under that row's id, before the
+        // screen changes — an import must not depend on the autosave window.
+        await importDocument(resolved.doc)
         await loadFromStore() // rebuild object URLs from the new blobs
+        // Nothing any stored brief, delivered snapshot, or the freshly imported
+        // document still uses is ever swept up by this.
+        const keep = new Set(referencedAssetIds(resolved.doc))
+        for (const id of await allDocumentAssetIds()) keep.add(id)
+        for (const id of await allRequestAssetIds()) keep.add(id)
+        await pruneAssets(keep)
         setState({ kind: 'idle' })
       } catch (err) {
+        // Roll back what this import added, keeping anything another brief or a
+        // delivered snapshot has since come to rely on.
+        try {
+          const keep = new Set<string>()
+          for (const id of await allDocumentAssetIds()) keep.add(id)
+          for (const id of await allRequestAssetIds()) keep.add(id)
+          await deleteAssets(added.filter((id) => !keep.has(id)))
+        } catch {
+          // best effort: an orphan blob is harmless next to a failed import
+        }
         setState({ kind: 'import-failed', message: messageFor(err) })
       }
     },
-    [replaceDocument, loadFromStore],
+    [importDocument, loadFromStore],
   )
 
   const startImport = useCallback(
@@ -167,7 +192,7 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
       try {
         // Pass the File (a Blob) straight to JSZip — no arrayBuffer() needed.
         const imported = await readEventDocument(file)
-        if (hasAnyBlocks(getDocument())) {
+        if (hasUserWork(getDocument())) {
           setState({ kind: 'import-confirm', pending: imported })
         } else {
           await applyImport(imported)

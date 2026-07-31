@@ -40,10 +40,12 @@ import {
   renamePage,
   setActivePage,
   setReferenceFit as setPageReferenceFit,
+  referencedAssetIds,
   setReferenceImage as setPageReferenceImage,
   setReferenceOpacity as setPageReferenceOpacity,
   setReferenceViewMode as setPageReferenceViewMode,
   setReferenceVisible as setPageReferenceVisible,
+  withReferencedAssets,
 } from '../../domain/pageOps'
 import type { BriefDocument, BriefPage, ReferenceLayer } from '../../domain/pageSchema'
 import type { Asset, EventBrief } from '../../domain/briefSchema'
@@ -99,6 +101,12 @@ export interface BriefDocumentApi {
   setRequestTeam: (team: RequestTeam | undefined) => void
   /** Replaces the whole document (used by import); hydrates the active page. */
   replaceDocument: (doc: BriefDocument) => void
+  /**
+   * Takes an imported document over as *this* brief: it is saved into the row
+   * that is open, under that row's identity, before anything on screen changes
+   * (v1 동결 §5). Rejects without touching the screen if the write fails.
+   */
+  importDocument: (doc: BriefDocument) => Promise<void>
   /** Latest synced document (for export/persistence). */
   getDocument: () => BriefDocument
   /**
@@ -112,60 +120,37 @@ export interface BriefDocumentApi {
 const BriefDocumentContext = createContext<BriefDocumentApi | null>(null)
 
 /**
- * The document's asset pool after the editor has had its say.
+ * Writes the live editor brief back into the active page, then makes the
+ * document's asset list say exactly what the document uses.
  *
- * The editor knows the assets its blocks use; the document also holds assets no
- * block uses — most importantly each page's 참고 이미지, which is deliberately
- * not a block. Taking the editor's list wholesale therefore *deleted* the
- * reference image's metadata from the pool on the very next edit, and with the
- * metadata gone the export packed no binary for it: the file opened again with
- * a page pointing at an image that was no longer in the archive (v1 마감 §7).
- *
- * So the editor's entries win where both know an asset, and everything the
- * document knows on its own is kept.
+ * Two different mistakes meet here, so both are stated. The editor knows only
+ * the assets *its* blocks use, so taking its list wholesale deleted the page's
+ * 참고 이미지 metadata and left exported files with a picture missing. Keeping
+ * every asset the document had ever seen fixed that but left the opposite
+ * mark: an image the planner removed stayed in the file. The list is therefore
+ * derived — every asset any page references, with the editor's metadata
+ * preferred where both know one (v1 동결 §4).
  */
-function mergeAssets(docAssets: readonly Asset[], briefAssets: readonly Asset[]): Asset[] {
-  const fromEditor = new Set(briefAssets.map((a) => a.id))
-  const extra = docAssets.filter((a) => !fromEditor.has(a.id))
-  return extra.length === 0 ? [...briefAssets] : [...briefAssets, ...extra]
-}
-
-/** Writes the live editor brief back into the active page. No-op when unchanged. */
 function syncActivePage(doc: BriefDocument, brief: EventBrief): BriefDocument {
   const active = doc.pages.find((p) => p.id === doc.activePageId)
   if (!active) return doc
-  const assets = mergeAssets(doc.assets, brief.assets)
-  const sameAssets =
-    assets.length === doc.assets.length && assets.every((a, i) => a === doc.assets[i])
-  if (
+  const sameEdits =
     active.blocks === brief.blocks &&
     active.canvasWidth === brief.project.canvasWidth &&
     active.canvasHeight === brief.project.canvasHeight &&
-    doc.project.title === brief.project.title &&
-    sameAssets
-  ) {
-    return doc
-  }
-  return {
-    ...doc,
-    project: { ...doc.project, title: brief.project.title },
-    assets,
-    pages: doc.pages.map((p) =>
-      p.id === doc.activePageId
-        ? { ...p, blocks: brief.blocks, canvasWidth: brief.project.canvasWidth, canvasHeight: brief.project.canvasHeight }
-        : p,
-    ),
-  }
-}
-
-/** Every asset referenced by any page's blocks or reference layer. */
-function referencedAssetIds(doc: BriefDocument): string[] {
-  const ids = new Set<string>()
-  for (const page of doc.pages) {
-    for (const b of page.blocks) if (b.assetId !== undefined) ids.add(b.assetId)
-    if (page.reference.assetId !== undefined) ids.add(page.reference.assetId)
-  }
-  return [...ids]
+    doc.project.title === brief.project.title
+  const next = sameEdits
+    ? doc
+    : {
+        ...doc,
+        project: { ...doc.project, title: brief.project.title },
+        pages: doc.pages.map((p) =>
+          p.id === doc.activePageId
+            ? { ...p, blocks: brief.blocks, canvasWidth: brief.project.canvasWidth, canvasHeight: brief.project.canvasHeight }
+            : p,
+        ),
+      }
+  return withReferencedAssets(next, brief.assets)
 }
 
 export function BriefDocumentProvider({
@@ -263,13 +248,23 @@ export function BriefDocumentProvider({
     return () => clearTimeout(timer)
   }, [doc])
 
-  // Apply a page op; re-hydrate the editor only when the active page changed.
+  /**
+   * Applies a page op; re-hydrates the editor only when the active page changed.
+   *
+   * The asset list is settled here rather than left to the sync effect, so the
+   * document a page op produces is already final — deleting a page that held an
+   * image would otherwise be followed a tick later by a second, different
+   * document, which is exactly what the page-delete snapshot is compared
+   * against.
+   */
   const applyOp = useCallback(
     (next: BriefDocument) => {
       const prevActive = docRef.current.activePageId
-      setDoc(next)
-      if (next.activePageId !== prevActive) {
-        hydrate(pageAsEventBrief(next, getActivePage(next)))
+      const settled = withReferencedAssets(next, briefRef.current.assets)
+      docRef.current = settled
+      setDoc(settled)
+      if (settled.activePageId !== prevActive) {
+        hydrate(pageAsEventBrief(settled, getActivePage(settled)))
       }
     },
     [hydrate],
@@ -294,9 +289,28 @@ export function BriefDocumentProvider({
     [hydrate],
   )
 
+  /**
+   * Opening a file replaces the brief that is open — it does not create the
+   * brief the file came from. The row's own identity therefore wins over the
+   * `project.id` the file was written with, and the write happens *first*: an
+   * import that is only on screen is lost by a refresh, by moving to another
+   * brief, or by delivering before the autosave window elapses.
+   */
+  const importDocument = useCallback(
+    async (next: BriefDocument) => {
+      const currentId = docRef.current.project.id
+      const owned: BriefDocument =
+        currentId === undefined ? next : { ...next, project: { ...next.project, id: currentId } }
+      await bindingRef.current.save(owned, Date.now())
+      replaceDocument(owned)
+    },
+    [replaceDocument],
+  )
+
   // Reference-layer mutations live only in the document (not the editor brief),
   // so they never re-hydrate. The sync effect preserves the reference layer.
   const mutateDoc = useCallback((fn: (doc: BriefDocument) => BriefDocument) => {
+    // Same settling as `applyOp`: what the document becomes here is final.
     // `docRef.current` is refreshed on render, so several mutations fired in one
     // event handler would all read the same stale document and the last would
     // win. Advancing the ref here makes them compose (e.g. 참고 이미지 위에서
@@ -357,13 +371,14 @@ export function BriefDocumentProvider({
           else project.requestTeam = team
           return { ...d, project }
         }),
+      importDocument,
       getDocument: () => syncActivePage(docRef.current, briefRef.current),
       saveNow: async () => {
         const current = syncActivePage(docRef.current, briefRef.current)
         await bindingRef.current.save(current, Date.now())
       },
     }),
-    [doc, applyOp, replaceDocument, setReferenceImage, mutateDoc, deletedPage, restoreDeletedPage],
+    [doc, applyOp, replaceDocument, importDocument, setReferenceImage, mutateDoc, deletedPage, restoreDeletedPage],
   )
 
   return <BriefDocumentContext.Provider value={api}>{children}</BriefDocumentContext.Provider>
