@@ -34,6 +34,8 @@ export interface DocumentSummary {
   createdAt: number
   updatedAt: number
   pageCount: number
+  /** 작성팀 as stored on the document; absent means 팀 미지정 (v1 마감 §12). */
+  requestTeam?: string
 }
 
 /** Marks that the one-time import of the legacy single-autosave row is done. */
@@ -97,6 +99,7 @@ function summarize(row: DocumentRow): DocumentSummary {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     pageCount: row.doc.pages.length,
+    ...(row.doc.project.requestTeam === undefined ? {} : { requestTeam: row.doc.project.requestTeam }),
   }
 }
 

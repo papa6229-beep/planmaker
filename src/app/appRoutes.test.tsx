@@ -15,8 +15,8 @@ function renderAt(path: string) {
 
 describe('AppRoutes — Phase 7 Step 2 entry gate', () => {
   // §12.1 — the gate renders both entry cards
-  it('renders both entry cards at /', () => {
-    renderAt('/')
+  it('renders both entry cards at /gate', () => {
+    renderAt('/gate')
     expect(screen.getByRole('heading', { level: 1, name: '어떤 작업을 시작할까요?' })).toBeTruthy()
     expect(screen.getByRole('link', { name: /기획서 생성/ })).toBeTruthy()
     expect(screen.getByRole('link', { name: /이미지 생성/ })).toBeTruthy()
@@ -24,13 +24,13 @@ describe('AppRoutes — Phase 7 Step 2 entry gate', () => {
 
   // §12.8 — the common app header (brand) renders on the gate
   it('renders the common app header brand', () => {
-    renderAt('/')
+    renderAt('/gate')
     expect(screen.getByRole('link', { name: /Event Brief Builder 홈/ })).toBeTruthy()
   })
 
   // §12.9 — entry cards are keyboard-accessible links (real anchors with hrefs)
   it('exposes the entry cards as focusable links with hrefs', () => {
-    renderAt('/')
+    renderAt('/gate')
     const briefCard = screen.getByRole('link', { name: /기획서 생성/ })
     const imageCard = screen.getByRole('link', { name: /이미지 생성/ })
     expect(briefCard.tagName).toBe('A')
@@ -42,7 +42,7 @@ describe('AppRoutes — Phase 7 Step 2 entry gate', () => {
   // §12.2 — the 기획서 생성 card navigates to /briefs
   it('navigates from the 기획서 생성 card to /briefs', async () => {
     const user = userEvent.setup()
-    renderAt('/')
+    renderAt('/gate')
     await user.click(screen.getByRole('link', { name: /기획서 생성/ }))
     expect(screen.getByRole('heading', { level: 1, name: '기획서 생성' })).toBeTruthy()
     expect(screen.getByText('아직 작성하거나 전달한 기획서가 없습니다')).toBeTruthy()
@@ -51,7 +51,7 @@ describe('AppRoutes — Phase 7 Step 2 entry gate', () => {
   // §12.3 — the 이미지 생성 card navigates to /image-requests
   it('navigates from the 이미지 생성 card to /image-requests', async () => {
     const user = userEvent.setup()
-    renderAt('/')
+    renderAt('/gate')
     await user.click(screen.getByRole('link', { name: /이미지 생성/ }))
     expect(screen.getByRole('heading', { level: 1, name: '이미지 생성' })).toBeTruthy()
     expect(screen.getByText('아직 전달된 이미지 작업 요청이 없습니다')).toBeTruthy()
@@ -60,7 +60,7 @@ describe('AppRoutes — Phase 7 Step 2 entry gate', () => {
   // §12.7 — with no delivered requests, the image card shows no counts, only a
   // truthful "아직 전달된 요청이 없습니다" note (never fabricated numbers).
   it('shows no fake request counts on the image card', () => {
-    const { container } = renderAt('/')
+    const { container } = renderAt('/gate')
     expect(container.querySelector('.entry-card__stats')).toBeNull()
     expect(screen.getByText('아직 전달된 요청이 없습니다')).toBeTruthy()
   })
@@ -112,10 +112,15 @@ describe('AppRoutes — Phase 7 Step 2 entry gate', () => {
     expect(screen.getByRole('complementary', { name: '블록 팔레트' })).toBeTruthy()
   })
 
-  // §12.10 — unknown routes fall back to the gate
-  it('redirects unknown routes to the gate', () => {
+  // §12.10 — an unknown route, and the root itself, land in the brief maker:
+  // a planner opening the app is here to write a brief (v1 마감 §10.2).
+  it('sends unknown routes and the root into the brief maker', () => {
     renderAt('/nonexistent')
-    expect(screen.getByRole('heading', { level: 1, name: '어떤 작업을 시작할까요?' })).toBeTruthy()
+    expect(screen.getByText('기획서를 준비하는 중입니다…')).toBeTruthy()
+
+    renderAt('/')
+    expect(screen.getAllByText('기획서를 준비하는 중입니다…').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('heading', { level: 1, name: '어떤 작업을 시작할까요?' })).toBeNull()
   })
 
   // §12.12 — deep links resolve directly (refresh/direct-entry compatible)

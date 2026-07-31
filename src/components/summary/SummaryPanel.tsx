@@ -16,6 +16,7 @@ import { useEffect } from 'react'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { buildDesignSummary, buildPublishingInfo } from '../../domain/summaryBuilder'
+import { teamLabel } from '../../domain/requestTeam'
 
 /** Plain-language emphasis labels for the summary. */
 const EMPHASIS_TEXT: Record<string, string> = {
@@ -51,11 +52,18 @@ function List({ label, items }: { label: string; items: string[] }) {
 
 export function SummaryPanel({ onClose }: { onClose: () => void }) {
   const { state } = useBriefEditor()
-  const { activePageId, concept } = useBriefDocument()
-  // 전체 컨셉 belongs to the document, not to the page projection the editor
-  // holds, so it is folded in here — otherwise the summary would show the
-  // concept only after a reload.
-  const brief = { ...state.brief, project: { ...state.brief.project, concept } }
+  const { activePageId, concept, requestTeam } = useBriefDocument()
+  // 전체 컨셉 and 작성팀 belong to the document, not to the page projection the
+  // editor holds, so they are folded in here — otherwise the summary would show
+  // them only after a reload.
+  const brief = {
+    ...state.brief,
+    project: {
+      ...state.brief.project,
+      concept,
+      ...(requestTeam === undefined ? {} : { requestTeam }),
+    },
+  }
   const design = buildDesignSummary(brief, { pageId: activePageId })
   const publishing = buildPublishingInfo(brief)
   const instructionIds = new Set(design.instructions.map((i) => i.blockId))
@@ -140,6 +148,7 @@ export function SummaryPanel({ onClose }: { onClose: () => void }) {
 
         <section className="summary__area summary__area--design" aria-label="디자인 입력 요약">
           <h3 className="summary__area-title">디자인 입력 <span>이미지 생성 AI가 읽는 정보</span></h3>
+          <Field label="작성팀" value={design.requestTeam === undefined ? undefined : teamLabel(design.requestTeam)} />
           <Field label="메인 문구" value={design.mainHeadline} />
           <List label="서브 문구" items={design.subHeadlines} />
           <List label="필수 문구" items={design.requiredTexts.map((t) => `${t.label}: ${t.content}`)} />
@@ -165,7 +174,9 @@ export function SummaryPanel({ onClose }: { onClose: () => void }) {
           />
           <List
             label="대략적 배치 우선순위"
-            items={design.layoutHints.map((h, i) => `${i + 1}. ${labelOf(h.blockId)} (${h.region}/${h.emphasis})`)}
+            items={design.layoutHints.map(
+              (h, i) => `${i + 1}. ${labelOf(h.blockId)} (${h.region}/${h.emphasis}/${h.alignment})`,
+            )}
           />
         </section>
 

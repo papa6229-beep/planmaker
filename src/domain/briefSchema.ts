@@ -304,6 +304,12 @@ export interface SummaryInstruction {
  * MVP (§15). Crucially never contains publishing links (§34 Phase 5 gate).
  */
 export interface DesignSummary {
+  /**
+   * The team that asked for this brief (마케팅팀 · 상품팀 · CS팀), when one was
+   * chosen. Context for whoever — or whatever — makes the image; never wording
+   * to print (v1 마감 §11.2).
+   */
+  requestTeam?: string
   mainHeadline?: string
   subHeadlines: string[]
   /**

@@ -16,6 +16,7 @@ import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { loadDocumentById } from '../../services/documentStore'
 import { BRIEF_STATUS_LABELS, briefStatus, lastDeliveredAt, type BriefDeliveryStatus } from '../../domain/briefStatus'
 import { createdMonths, groupByCreatedDay, localMonthKey, monthLabel } from '../../domain/briefCalendar'
+import { NO_TEAM_LABEL, REQUEST_TEAMS, teamFilterKey, teamLabel } from '../../domain/requestTeam'
 import type { BriefDocument } from '../../domain/pageSchema'
 
 const STATUS_CLASS: Record<BriefDeliveryStatus, string> = {
@@ -31,13 +32,15 @@ function day(ms: number): string {
 export function BriefLibrary() {
   const { documents, loaded, createNew, duplicate, remove, refresh } = useDocuments()
   const { requests } = useRequests()
-  const { saveNow, getDocument } = useBriefDocument()
+  const { saveNow, getDocument, requestTeam: openTeam } = useBriefDocument()
   const navigate = useNavigate()
   const { id: openId } = useParams()
 
   const [query, setQuery] = useState('')
   /** `all`, or the `YYYY-MM` the brief was first written in. */
   const [month, setMonth] = useState('all')
+  /** `all`, a team code, or `none` for 팀 미지정. */
+  const [team, setTeam] = useState('all')
   const [confirmingId, setConfirming] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -69,10 +72,20 @@ export function BriefLibrary() {
   // brief was first written in, never the month it was last touched.
   const visible = useMemo(() => {
     const q = query.trim()
+    // The open brief is matched on what its card actually shows — the title as
+    // it is being typed — so searching never hides the row in front of you.
+    const titleOf = (d: { id: string; title: string }) =>
+      d.id === openId ? (getDocument().project.title.trim() || d.title) : d.title
     return documents.filter(
-      (d) => (q === '' || d.title.includes(q)) && (month === 'all' || localMonthKey(d.createdAt) === month),
+      (d) =>
+        (q === '' || titleOf(d).includes(q)) &&
+        (month === 'all' || localMonthKey(d.createdAt) === month) &&
+        // The brief on screen is filtered by the team it has right now, so
+        // choosing a team in the bar moves its card immediately.
+        (team === 'all' || teamFilterKey(d.id === openId ? openTeam : d.requestTeam) === team),
     )
-  }, [documents, query, month])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- getDocument is a stable ref reader
+  }, [documents, query, month, team, openId, openTeam])
   const months = useMemo(() => createdMonths(documents), [documents])
   const confirming = documents.find((d) => d.id === confirmingId)
   const groups = useMemo(() => groupByCreatedDay(visible), [visible])
@@ -181,6 +194,22 @@ export function BriefLibrary() {
         </select>
       </label>
 
+      <label className="library__month">
+        <span className="library__month-label">작성팀</span>
+        <select
+          className="field__input library__month-select"
+          aria-label="작성팀 필터"
+          value={team}
+          onChange={(e) => setTeam(e.target.value)}
+        >
+          <option value="all">전체 팀</option>
+          {REQUEST_TEAMS.map((t) => (
+            <option key={t.value} value={t.value}>{t.label}</option>
+          ))}
+          <option value="none">{NO_TEAM_LABEL}</option>
+        </select>
+      </label>
+
       {error && <p className="library__error" role="alert">{error}</p>}
 
       {!loaded ? (
@@ -189,9 +218,9 @@ export function BriefLibrary() {
         <p className="library__empty">
           {documents.length === 0
             ? '아직 저장된 기획서가 없습니다.'
-            : month === 'all'
+            : month === 'all' && team === 'all'
               ? '검색 결과가 없습니다.'
-              : '이 기간에 만든 기획서가 없습니다.'}
+              : '조건에 맞는 기획서가 없습니다.'}
         </p>
       ) : (
         <div className="library__groups">
@@ -218,7 +247,10 @@ export function BriefLibrary() {
                         onClick={() => void goTo(d.id)}
                       >
                         <span className="library__item-title">{title}</span>
-                        <span className={`library__status ${STATUS_CLASS[status]}`}>{BRIEF_STATUS_LABELS[status]}</span>
+                        <span className="library__meta">
+                          <span className="library__team">{teamLabel(isOpen ? openTeam : d.requestTeam)}</span>
+                          <span className={`library__status ${STATUS_CLASS[status]}`}>{BRIEF_STATUS_LABELS[status]}</span>
+                        </span>
                         <span className="library__dates">
                           작성 {day(d.createdAt)} · 수정 {day(d.updatedAt)}
                           {delivered ? ` · 전달 ${delivered.slice(0, 10)}` : ''}

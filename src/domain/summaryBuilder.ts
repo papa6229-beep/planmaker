@@ -182,6 +182,7 @@ export function buildDesignSummary(brief: EventBrief, context: SummaryContext = 
 
   // 전체 컨셉 applies to the whole brief, so it leads the instructions with no
   // position of its own — direction for the AI, never copy to print.
+  const requestTeam = project.requestTeam?.trim()
   const concept = project.concept?.trim()
   if (concept !== undefined && concept.length > 0) {
     instructions.unshift({
@@ -295,6 +296,7 @@ export function buildDesignSummary(brief: EventBrief, context: SummaryContext = 
     layoutHints,
   }
 
+  if (requestTeam !== undefined && requestTeam.length > 0) summary.requestTeam = requestTeam
   if (mainHeadline !== undefined) summary.mainHeadline = mainHeadline
   const period = firstContent(blocks, 'period')
   if (period !== undefined) summary.period = period

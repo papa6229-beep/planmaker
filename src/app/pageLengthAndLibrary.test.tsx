@@ -327,7 +327,7 @@ describe('§6 작성 월로 찾기', () => {
 
     // A month with no match says which kind of emptiness it is.
     await user.selectOptions(within(library()).getByLabelText('작성 월'), '2026-06')
-    await waitFor(() => expect(within(library()).getByText('이 기간에 만든 기획서가 없습니다.')).toBeTruthy())
+    await waitFor(() => expect(within(library()).getByText('조건에 맞는 기획서가 없습니다.')).toBeTruthy())
   })
 
   it('gives a copy its own creation date', async () => {

@@ -100,7 +100,8 @@ button { font-family: inherit; }
   align-items: center;
   gap: 10px;
   min-width: 0;
-  flex: 1 1 380px;
+  /* Shrinkable: the title gives way before it can run under the actions. */
+  flex: 1 1 320px;
 }
 .editor-topbar__back {
   display: inline-flex;
@@ -129,7 +130,7 @@ button { font-family: inherit; }
 .editor-topbar__mode--image { color: var(--color-publishing); background: var(--color-publishing-soft); }
 .editor-topbar__title {
   flex: 1 1 auto;
-  min-width: 140px;
+  min-width: 80px;
   max-width: 420px;
   padding: 7px 10px;
   border: 1px solid var(--color-border);
@@ -184,6 +185,17 @@ button { font-family: inherit; }
 }
 .editor-topbar__menu-item:hover:not(:disabled) { background: var(--color-panel-muted); }
 .editor-topbar__menu-item:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* 작성팀 selector, next to the mode chip (v1 마감 §11.2). The extra specificity
+   keeps `.field__input`'s width:100% from letting it swallow the bar. */
+.editor-topbar .editor-topbar__team {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 108px;
+  max-width: 140px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
 
 /* Naming a saved file (v1 마감 §4). */
 .save-dialog { min-width: 340px; }
@@ -789,6 +801,9 @@ button { font-family: inherit; }
   color: var(--color-muted);
 }
 .library__menu-item--danger { color: var(--color-danger); }
+/* 작성팀 on a card, beside the delivery status (v1 마감 §12.1). */
+.library__meta { display: flex; align-items: center; gap: 6px; }
+.library__team { font-size: 11px; color: var(--color-muted); }
 
 /* Confirmation for something that cannot be shrugged off (손검수 2 §4, §5). */
 .confirm-backdrop {
