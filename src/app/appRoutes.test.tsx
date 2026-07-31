@@ -81,7 +81,9 @@ describe('AppRoutes — Phase 7 Step 2 entry gate', () => {
     const [primary] = screen.getAllByRole('link', { name: '새 기획서 작성' })
     expect(primary?.getAttribute('href')).toBe('/briefs/new')
     if (primary) await user.click(primary)
-    expect(screen.getByRole('complementary', { name: '블록 팔레트' })).toBeTruthy()
+    // /briefs/new mints a brief and hands over to /briefs/:id, so the editor
+    // appears once that write resolves.
+    expect(await screen.findByRole('complementary', { name: '블록 팔레트' })).toBeTruthy()
   })
 
   // §12.6 — /image-requests renders a polished empty state with truthful zero counts
@@ -100,9 +102,9 @@ describe('AppRoutes — Phase 7 Step 2 entry gate', () => {
   })
 
   // §12.11 — the existing editor mounts unchanged at /briefs/new and /briefs/:id
-  it('mounts the editor at /briefs/new', () => {
+  it('mounts the editor at /briefs/new after creating the brief', async () => {
     renderAt('/briefs/new')
-    expect(screen.getByRole('complementary', { name: '블록 팔레트' })).toBeTruthy()
+    expect(await screen.findByRole('complementary', { name: '블록 팔레트' })).toBeTruthy()
   })
 
   it('mounts the editor at /briefs/:id', () => {

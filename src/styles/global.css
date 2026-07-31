@@ -247,6 +247,54 @@ button { font-family: inherit; }
 .req-status-btn.is-active { border-color: var(--color-publishing); background: var(--color-publishing); color: #fff; }
 .req-status-panel__gen { margin: 0; font-size: 12px; color: var(--color-muted); }
 
+/* ── 전체 컨셉 (§5) ────────────────────────────────────────────────────────── */
+.concept {
+  flex: none;
+  padding: 8px 12px;
+  background: var(--color-panel);
+  border-bottom: 1px solid var(--color-border);
+}
+.concept__toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 4px 2px;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.concept__toggle-label {
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-publishing);
+}
+.concept__toggle-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.concept__toggle-value.is-empty { color: var(--color-muted); }
+.concept__label { display: block; font-size: 12px; font-weight: 700; color: var(--color-publishing); }
+.concept__input {
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+.concept__note { margin: 4px 0 0; font-size: 11px; color: var(--color-muted); }
+
 /* ── Page filmstrip (Phase 7 §9.2) ────────────────────────────────────────── */
 .page-tabs {
   flex: none;

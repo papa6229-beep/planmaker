@@ -28,6 +28,12 @@ export type OutputType = 'event_page' | 'popup' | 'banner' | 'sns_image' | 'etc'
  * `eventType` is metadata only and never forces a layout template (§12, §22).
  */
 export interface Project {
+  /**
+   * Stable identity of the brief, matching the repository row and `/briefs/:id`.
+   * Optional so documents written before multi-document storage still load; the
+   * repository assigns one the first time such a document is opened.
+   */
+  id?: string
   title: string
   requestTeam?: string
   author?: string
@@ -39,6 +45,12 @@ export interface Project {
   canvasWidth: number
   canvasHeight: number
   conceptNote?: string
+  /**
+   * 전체 컨셉 — how the whole page should feel, written once for the document
+   * rather than placed as a block on the canvas. It is guidance for the AI and
+   * the design team and is never printed into the generated image.
+   */
+  concept?: string
 }
 
 // ── Layout hints & position ──────────────────────────────────────────────────
@@ -222,12 +234,19 @@ export interface SummaryTextEntry {
  * explicit contract separating a request from copy that must appear verbatim.
  */
 export interface SummaryInstruction {
-  blockId: string
+  /**
+   * `document` for 전체 컨셉, which applies to the whole brief and has no
+   * position; `block` for a memo placed on the canvas.
+   */
+  scope: 'document' | 'block'
+  /** Absent for a document-wide instruction. */
+  blockId?: string
   pageId?: string
   label: string
   /** The exact memo text. */
   content: string
-  geometry: SummaryGeometry
+  /** Absent for a document-wide instruction. */
+  geometry?: SummaryGeometry
   /** Always false — this text is guidance, never rendered into the image. */
   renderAsText: false
 }

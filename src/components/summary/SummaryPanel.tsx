@@ -102,13 +102,14 @@ export function SummaryPanel({ onClose }: { onClose: () => void }) {
         </section>
 
         <section className="summary__area summary__area--instruction" aria-label="요청 메모">
-          <h3 className="summary__area-title">요청 메모 <span>이미지에 인쇄하지 않는 지시</span></h3>
+          <h3 className="summary__area-title">전체 컨셉 · 요청 메모 <span>이미지에 인쇄하지 않는 지시</span></h3>
           {design.instructions.length === 0 ? (
-            <p className="summary__empty">요청 메모가 없습니다.</p>
+            <p className="summary__empty">전달할 컨셉이나 요청 메모가 없습니다.</p>
           ) : (
             <ul className="summary__list">
               {design.instructions.map((i) => (
-                <li key={i.blockId}>
+                <li key={i.blockId ?? 'document-concept'}>
+                  {i.scope === 'document' && <span className="summary__tag">전체 컨셉</span>}{' '}
                   {i.content} <span className="summary__tag">인쇄하지 않음</span>
                 </li>
               ))}

@@ -424,7 +424,8 @@ describe('요청 메모 (§2.3, 판정 1)', () => {
     expect(memo!.renderAsText).toBe(false)
     expect(memo!.pageId).toBe(page.id)
     expect(memo!.blockId).toBe(id)
-    expect(memo!.geometry.width).toBeGreaterThan(0)
+    expect(memo!.scope).toBe('block')
+    expect(memo!.geometry!.width).toBeGreaterThan(0)
 
     // Not something to print verbatim…
     expect(design.texts.some((t) => t.content === '이 부분은 시원한 느낌으로')).toBe(false)

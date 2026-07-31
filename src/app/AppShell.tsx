@@ -29,6 +29,7 @@ import { ReferenceTools } from '../components/reference/ReferenceTools'
 import { ReferenceViewControls } from '../components/reference/ReferenceViewControls'
 import { ReferenceSideView } from '../components/reference/ReferenceSideView'
 import { StartChoice } from '../components/start/StartChoice'
+import { ConceptField } from '../components/concept/ConceptField'
 
 /** True when focus is in a text entry, so shortcuts must not fire. */
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -170,6 +171,7 @@ function Workspace({ mode, statusPanel }: { mode: 'brief' | 'image'; statusPanel
           <BlockPalette />
         </div>
         <div className="workspace__center">
+          <ConceptField />
           <PageTabs />
           {statusPanel}
           <div className="canvas-controls">

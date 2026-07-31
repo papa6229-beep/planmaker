@@ -9,25 +9,28 @@
  */
 
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { AppShell } from './AppShell'
+import { BriefEditorRoute, NewBriefRoute } from './pages/BriefEditorRoute'
 import { EntryGate } from '../features/gate/EntryGate'
 import { BriefsPage } from './pages/BriefsPage'
 import { ImageRequestsPage } from './pages/ImageRequestsPage'
 import { ImageRequestWorkPage } from './pages/ImageRequestWorkPage'
 import { RequestsProvider } from '../features/requests/useRequests'
+import { DocumentsProvider } from '../features/documents/useDocuments'
 
 export function AppRoutes() {
   return (
     <RequestsProvider>
-      <Routes>
+      <DocumentsProvider>
+        <Routes>
         <Route path="/" element={<EntryGate />} />
         <Route path="/briefs" element={<BriefsPage />} />
-        <Route path="/briefs/new" element={<AppShell />} />
-        <Route path="/briefs/:id" element={<AppShell />} />
+        <Route path="/briefs/new" element={<NewBriefRoute />} />
+        <Route path="/briefs/:id" element={<BriefEditorRoute />} />
         <Route path="/image-requests" element={<ImageRequestsPage />} />
         <Route path="/image-requests/:id" element={<ImageRequestWorkPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+        </Routes>
+      </DocumentsProvider>
     </RequestsProvider>
   )
 }

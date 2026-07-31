@@ -49,6 +49,7 @@ import type { BriefDocument, BriefPage, ReferenceLayer } from '../../domain/page
 import type { Asset, EventBrief } from '../../domain/briefSchema'
 import { loadDocument, pruneAssets, saveDocument } from '../../services/assetStore'
 import { allRequestAssetIds } from '../../services/requestStore'
+import { allDocumentAssetIds } from '../../services/documentStore'
 
 const AUTOSAVE_DEBOUNCE_MS = 3000
 
@@ -83,10 +84,19 @@ export interface BriefDocumentApi {
   setReferenceOpacity: (opacity: number) => void
   setReferenceFit: (fit: ReferenceLayer['fit']) => void
   setReferenceVisible: (visible: boolean) => void
+  /** 전체 컨셉 — document-wide direction for the AI / design team (§5). */
+  concept: string
+  setConcept: (concept: string) => void
   /** Replaces the whole document (used by import); hydrates the active page. */
   replaceDocument: (doc: BriefDocument) => void
   /** Latest synced document (for export/persistence). */
   getDocument: () => BriefDocument
+  /**
+   * Flushes the current document through the binding immediately and rejects if
+   * the write fails. Used before switching to another brief so nothing is lost
+   * and, on failure, the switch can be abandoned.
+   */
+  saveNow: () => Promise<void>
 }
 
 const BriefDocumentContext = createContext<BriefDocumentApi | null>(null)
@@ -159,9 +169,19 @@ export function BriefDocumentProvider({
         const saved = await bindingRef.current.load()
         await loadFromStoreRef.current()
         if (!cancelled) {
-          if (saved) {
+          // A brief created moments ago is an empty row, so restoring it must
+          // not wipe blocks the user already added while the read was in
+          // flight — fold those in exactly as for "nothing saved yet".
+          const savedIsEmpty = saved !== null && saved.pages.every((p) => p.blocks.length === 0)
+          const editedBeforeRestore = briefRef.current.blocks.length > 0
+
+          if (saved && !(savedIsEmpty && editedBeforeRestore)) {
             setDoc(saved)
             hydrateRef.current(pageAsEventBrief(saved, getActivePage(saved)))
+          } else if (saved) {
+            // Keep the saved document's identity and pages, but carry the
+            // in-flight edits into its active page.
+            setDoc(syncActivePage(saved, briefRef.current))
           } else {
             // No saved document: fold in any edits made before restore resolved
             // (the sync effect was gated off until now), so nothing is dropped.
@@ -193,7 +213,11 @@ export function BriefDocumentProvider({
     const timer = setTimeout(() => {
       void bindingRef.current.save(doc, Date.now())
         .then(async () => {
+          // Keep every asset any *stored* brief or delivered request still
+          // needs — pruning must never strip another brief's images just
+          // because the one being edited stopped using them.
           const keep = new Set(referencedAssetIds(doc))
+          for (const id of await allDocumentAssetIds()) keep.add(id)
           for (const id of await allRequestAssetIds()) keep.add(id)
           await pruneAssets(keep)
         })
@@ -271,7 +295,13 @@ export function BriefDocumentProvider({
       // Sync the live editor brief on read so export/persistence never depend on
       // the async sync-effect timing (avoids a mount-race where a just-added
       // block isn't yet folded into the document).
+      concept: doc.project.concept ?? '',
+      setConcept: (next) => mutateDoc((d) => ({ ...d, project: { ...d.project, concept: next } })),
       getDocument: () => syncActivePage(docRef.current, briefRef.current),
+      saveNow: async () => {
+        const current = syncActivePage(docRef.current, briefRef.current)
+        await bindingRef.current.save(current, Date.now())
+      },
     }),
     [doc, applyOp, replaceDocument, setReferenceImage, mutateDoc],
   )

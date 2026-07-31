@@ -145,6 +145,7 @@ export function buildDesignSummary(brief: EventBrief, context: SummaryContext = 
     .filter((b) => b.type === NOTE_TYPE && hasContent(b))
     .map((b) => {
       const item: SummaryInstruction = {
+        scope: 'block',
         blockId: b.id,
         label: b.label,
         content: content(b),
@@ -154,6 +155,18 @@ export function buildDesignSummary(brief: EventBrief, context: SummaryContext = 
       if (pageId !== undefined) item.pageId = pageId
       return item
     })
+
+  // 전체 컨셉 applies to the whole brief, so it leads the instructions with no
+  // position of its own — direction for the AI, never copy to print.
+  const concept = project.concept?.trim()
+  if (concept !== undefined && concept.length > 0) {
+    instructions.unshift({
+      scope: 'document',
+      label: '전체 컨셉',
+      content: concept,
+      renderAsText: false,
+    })
+  }
 
   const subHeadlines = designBlocks
     .filter((b) => b.type === 'sub_headline' && hasContent(b))
