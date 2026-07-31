@@ -8,8 +8,12 @@
  * image-generation queue.
  *
  * Saving to and loading from a `.eventbrief` file are ordinary, frequent
- * actions, so they sit in the bar itself rather than behind 보조 메뉴, which now
- * holds only 새로 만들기 (자유 저장 §3).
+ * actions, so they sit in the bar itself. Saving asks what to call the file
+ * first — a folder full of "새 기획서.eventbrief" helps nobody — and the name
+ * chosen there never touches the brief's own title (v1 마감 §4).
+ *
+ * There is no 보조 메뉴: what was left in it (새로 만들기) is the 새 기획서 button
+ * in 내 기획서, and one way in is enough (v1 마감 §5).
  */
 
 import { useRef, useState } from 'react'
@@ -18,6 +22,8 @@ import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { useEventBriefIo } from '../../features/export/useEventBriefIo'
 import { useRequests } from '../../features/requests/useRequests'
+import { isRequestTeam, REQUEST_TEAMS, teamLabel, type RequestTeam } from '../../domain/requestTeam'
+import { EVENTBRIEF_EXTENSION, eventBriefFileName, FALLBACK_FILE_NAME } from '../../features/export/exportFileName'
 
 const TITLE_COALESCE_KEY = 'project-title'
 
@@ -30,8 +36,8 @@ function BackIcon() {
 }
 
 export function TopToolbar({ mode = 'brief', onShowSummary }: { mode?: 'brief' | 'image'; onShowSummary: () => void }) {
-  const { state, setProjectTitle, newBrief, undo, redo, canUndo, canRedo, endInteraction } = useBriefEditor()
-  const { getDocument, undoPageDelete } = useBriefDocument()
+  const { state, setProjectTitle, undo, redo, canUndo, canRedo, endInteraction } = useBriefEditor()
+  const { getDocument, undoPageDelete, requestTeam, setRequestTeam } = useBriefDocument()
   const { state: ioState, startExport, startImport, busy } = useEventBriefIo()
   /**
    * Page structure is not part of the editor's history, so a just-deleted page
@@ -45,22 +51,17 @@ export function TopToolbar({ mode = 'brief', onShowSummary }: { mode?: 'brief' |
   const { submit } = useRequests()
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const titleRef = useRef<HTMLInputElement | null>(null)
-  const menuRef = useRef<HTMLDetailsElement | null>(null)
   const [notice, setNotice] = useState('')
   const [delivered, setDelivered] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  // 파일로 저장 asks for a name first; `naming` is that small dialog.
+  const [naming, setNaming] = useState(false)
+  const [fileName, setFileName] = useState('')
   const title = state.brief.project.title
 
-  const closeMenu = () => {
-    if (menuRef.current) menuRef.current.open = false
-  }
-
-  const handleNew = () => {
-    closeMenu()
-    const empty = state.brief.blocks.length === 0
-    if (empty || window.confirm('현재 작업을 지우고 새 기획서를 시작할까요?')) {
-      newBrief()
-    }
+  const saveFile = () => {
+    setNaming(false)
+    void startExport(eventBriefFileName(fileName))
   }
 
   const handleSubmit = async () => {
@@ -90,11 +91,28 @@ export function TopToolbar({ mode = 'brief', onShowSummary }: { mode?: 'brief' |
   return (
     <header className="editor-topbar">
       <div className="editor-topbar__left">
-        <Link className="editor-topbar__back" to={mode === 'image' ? '/image-requests' : '/'} aria-label={mode === 'image' ? '요청 목록으로 돌아가기' : '게이트로 돌아가기'}>
-          <BackIcon />
-          <span>{mode === 'image' ? '요청 목록' : '게이트'}</span>
-        </Link>
+        {/* A planner writing a brief has nowhere else to be, so there is no way
+            back to the feature gate here. The image-generation screen is a
+            queue item and still returns to its list (v1 마감 §10). */}
+        {mode === 'image' && (
+          <Link className="editor-topbar__back" to="/image-requests" aria-label="요청 목록으로 돌아가기">
+            <BackIcon />
+            <span>요청 목록</span>
+          </Link>
+        )}
         <span className={`editor-topbar__mode${mode === 'image' ? ' editor-topbar__mode--image' : ''}`} aria-label="현재 모드">{mode === 'image' ? '이미지 생성' : '기획서 생성'}</span>
+        <select
+          className="field__input editor-topbar__team"
+          aria-label="작성팀"
+          value={isRequestTeam(requestTeam) ? requestTeam : ''}
+          disabled={busy}
+          onChange={(e) => setRequestTeam(e.target.value === '' ? undefined : (e.target.value as RequestTeam))}
+        >
+          <option value="">{teamLabel(isRequestTeam(requestTeam) ? undefined : requestTeam)}</option>
+          {REQUEST_TEAMS.map((t) => (
+            <option key={t.value} value={t.value}>{t.label}</option>
+          ))}
+        </select>
         <input
           ref={titleRef}
           className="editor-topbar__title"
@@ -139,9 +157,12 @@ export function TopToolbar({ mode = 'brief', onShowSummary }: { mode?: 'brief' |
           <button
             type="button"
             className="btn"
-            onClick={() => void startExport()}
+            onClick={() => {
+              setFileName(title.trim() || FALLBACK_FILE_NAME)
+              setNaming(true)
+            }}
             disabled={busy}
-            title="지금 상태 그대로 .eventbrief 파일로 저장합니다"
+            title="이름을 정해 .eventbrief 파일로 저장합니다"
           >
             파일로 저장
           </button>
@@ -149,19 +170,6 @@ export function TopToolbar({ mode = 'brief', onShowSummary }: { mode?: 'brief' |
             {ioState.kind === 'exported' ? '기획서 파일을 저장했습니다' : ''}
           </span>
 
-          <details className="editor-topbar__menu" ref={menuRef}>
-            <summary className="btn editor-topbar__menu-trigger">보조 메뉴</summary>
-            <div className="editor-topbar__menu-panel" aria-label="파일 보조 메뉴">
-              <button
-                type="button"
-                className="editor-topbar__menu-item"
-                onClick={handleNew}
-                disabled={busy}
-              >
-                새로 만들기
-              </button>
-            </div>
-          </details>
         </nav>
 
         {mode === 'brief' && (
@@ -199,6 +207,48 @@ export function TopToolbar({ mode = 'brief', onShowSummary }: { mode?: 'brief' |
           }}
         />
       </div>
+
+      {naming && (
+        <div className="confirm-backdrop" role="presentation" onClick={() => setNaming(false)}>
+          <div
+            className="confirm save-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="기획서 파일로 저장"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="save-dialog__title">기획서 파일로 저장</h2>
+            <label className="save-dialog__field">
+              <span className="save-dialog__label">파일명</span>
+              <span className="save-dialog__row">
+                <input
+                  className="field__input save-dialog__input"
+                  type="text"
+                  autoFocus
+                  aria-label="파일명"
+                  value={fileName}
+                  onChange={(e) => setFileName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      saveFile()
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault()
+                      setNaming(false)
+                    }
+                  }}
+                />
+                {/* The extension is fixed, so it is shown rather than typed. */}
+                <span className="save-dialog__ext">{EVENTBRIEF_EXTENSION}</span>
+              </span>
+            </label>
+            <div className="confirm__actions">
+              <button type="button" className="btn" onClick={() => setNaming(false)}>취소</button>
+              <button type="button" className="btn btn--primary" onClick={saveFile}>저장</button>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   )
 }

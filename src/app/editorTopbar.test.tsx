@@ -31,11 +31,11 @@ function renderEditor() {
 }
 
 describe('editor top bar — Phase 7 Step 3', () => {
-  it('shows the mode label and a back-to-gate link pointing to /', () => {
+  it('shows the mode label, and no way back to the feature gate', () => {
     renderEditor()
     expect(screen.getByLabelText('현재 모드').textContent).toBe('기획서 생성')
-    const back = screen.getByRole('link', { name: '게이트로 돌아가기' })
-    expect(back.getAttribute('href')).toBe('/')
+    // A planner writing a brief has nowhere else to be (v1 마감 §10).
+    expect(screen.queryByRole('link', { name: '게이트로 돌아가기' })).toBeNull()
   })
 
   it('keeps the title input value as the single source of truth', async () => {
@@ -59,8 +59,7 @@ describe('editor top bar — Phase 7 Step 3', () => {
     expect(title.value).toBe('')
   })
 
-  it('keeps the .eventbrief file actions in the bar, with 새로 만들기 in the 보조 메뉴', async () => {
-    const user = userEvent.setup()
+  it('keeps the .eventbrief file actions in the bar, and has no 보조 메뉴 at all', () => {
     renderEditor()
     // Saving and loading a file are everyday actions, so they are never hidden
     // behind a menu (자유 저장 §3).
@@ -68,8 +67,10 @@ describe('editor top bar — Phase 7 Step 3', () => {
     expect(within(bar).getByRole('button', { name: '파일로 저장' })).toBeTruthy()
     expect(within(bar).getByRole('button', { name: '파일 불러오기' })).toBeTruthy()
 
-    await user.click(screen.getByText('보조 메뉴'))
-    expect(screen.getByRole('button', { name: '새로 만들기' })).toBeTruthy()
+    // 새로 만들기 lived alone in the overflow menu and is the 새 기획서 button in
+    // 내 기획서; one way in is enough (v1 마감 §5).
+    expect(screen.queryByText('보조 메뉴')).toBeNull()
+    expect(screen.queryByRole('button', { name: '새로 만들기' })).toBeNull()
   })
 
   it('asks for a name before delivering — an unnamed brief creates no request and does not navigate', async () => {

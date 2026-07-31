@@ -67,11 +67,18 @@ function watchDownloads(): { blobs: Blob[]; restore: () => void } {
 }
 
 /** Saves the brief on screen and returns the archive that came out of it. */
-async function saveToFile(user: ReturnType<typeof userEvent.setup>) {
+async function saveToFile(user: ReturnType<typeof userEvent.setup>, name?: string) {
   const { blobs, restore } = watchDownloads()
   await user.click(saveButton())
-  // Nothing may stand between the click and the file.
+  // The only thing between the click and the file is what to call it — never a
+  // question about what the brief contains.
   expect(screen.queryByRole('alertdialog')).toBeNull()
+  const dialog = screen.getByRole('dialog', { name: '기획서 파일로 저장' })
+  if (name !== undefined) {
+    await user.clear(within(dialog).getByLabelText('파일명'))
+    await user.type(within(dialog).getByLabelText('파일명'), name)
+  }
+  await user.click(within(dialog).getByRole('button', { name: '저장' }))
 
   let parsed: { doc: BriefDocument } | null = null
   await waitFor(
@@ -204,11 +211,9 @@ describe('§3 파일 저장·불러오기는 화면에 그대로 보인다', () 
     expect(within(bar).getByRole('button', { name: '파일로 저장' })).toBeTruthy()
     expect(within(bar).getByRole('button', { name: '파일 불러오기' })).toBeTruthy()
 
-    // And they are not left duplicated inside the overflow menu.
-    const menu = screen.getByLabelText('파일 보조 메뉴')
-    expect(within(menu).queryByRole('button', { name: /파일로 저장/ })).toBeNull()
-    expect(within(menu).queryByRole('button', { name: /파일 불러오기/ })).toBeNull()
-    expect(within(menu).getByRole('button', { name: '새로 만들기' })).toBeTruthy()
+    // And there is no overflow menu left to duplicate them into (v1 마감 §5).
+    expect(screen.queryByLabelText('파일 보조 메뉴')).toBeNull()
+    expect(screen.queryByText('보조 메뉴')).toBeNull()
   })
 })
 

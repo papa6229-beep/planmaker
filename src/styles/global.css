@@ -185,6 +185,15 @@ button { font-family: inherit; }
 .editor-topbar__menu-item:hover:not(:disabled) { background: var(--color-panel-muted); }
 .editor-topbar__menu-item:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Naming a saved file (v1 마감 §4). */
+.save-dialog { min-width: 340px; }
+.save-dialog__title { margin: 0 0 14px; font-size: 15px; font-weight: 700; }
+.save-dialog__field { display: block; margin-bottom: 16px; }
+.save-dialog__label { display: block; margin-bottom: 6px; font-size: 12px; color: var(--color-muted); }
+.save-dialog__row { display: flex; align-items: center; gap: 6px; }
+.save-dialog__input { flex: 1; min-width: 0; }
+.save-dialog__ext { flex: none; font-size: 13px; color: var(--color-muted); }
+
 /* Short confirmation that a file was written (자유 저장 §3). */
 .editor-topbar__io-note { font-size: 12px; color: var(--color-success); white-space: nowrap; }
 

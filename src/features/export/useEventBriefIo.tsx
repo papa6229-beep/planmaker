@@ -37,7 +37,8 @@ export type IoState =
 export interface EventBriefIoApi {
   state: IoState
   busy: boolean
-  startExport: () => Promise<void>
+  /** Saves the file under `fileName` (already the full `.eventbrief` name). */
+  startExport: (fileName?: string) => Promise<void>
   confirmExportWithWarnings: () => Promise<void>
   startImport: (file: File) => Promise<void>
   confirmImport: () => Promise<void>
@@ -59,9 +60,13 @@ function triggerDownload(blob: Blob, fileName: string): void {
   a.download = fileName
   document.body.appendChild(a)
   a.click()
-  a.remove()
-  // Defer revocation so the browser doesn't abort the in-flight download.
-  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+  // The anchor is left in place for a moment: removing it in the same tick can
+  // cost the download the name it was given, and a file called "download" is
+  // exactly what naming it was meant to prevent.
+  setTimeout(() => {
+    a.remove()
+    URL.revokeObjectURL(url)
+  }, 10_000)
 }
 
 function hasAnyBlocks(doc: BriefDocument): boolean {
@@ -76,7 +81,7 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
 
   const dismiss = useCallback(() => setState({ kind: 'idle' }), [])
 
-  const doExport = useCallback(async () => {
+  const doExport = useCallback(async (fileName?: string) => {
     if (runningRef.current) return
     runningRef.current = true
     setState({ kind: 'exporting', message: '내보내기 준비 중…' })
@@ -100,7 +105,7 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
         previews,
         createdAt: new Date().toISOString(),
       })
-      triggerDownload(pkg.blob, pkg.fileName)
+      triggerDownload(pkg.blob, fileName ?? pkg.fileName)
       setState({ kind: 'exported' })
       // The confirmation is a short note, not something to dismiss.
       window.setTimeout(() => setState((s) => (s.kind === 'exported' ? { kind: 'idle' } : s)), 4000)
@@ -123,8 +128,8 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
    * tested: it is the advice a future AI-generation step will give. It is no
    * longer wired to this path.
    */
-  const startExport = useCallback(async () => {
-    await doExport()
+  const startExport = useCallback(async (fileName?: string) => {
+    await doExport(fileName)
   }, [doExport])
 
   const confirmExportWithWarnings = useCallback(async () => {

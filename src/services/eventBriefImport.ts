@@ -296,6 +296,16 @@ export async function readEventDocument(data: ArrayBuffer | Uint8Array | Blob): 
     blocks: doc.pages.flatMap((p) => p.blocks),
     assets: doc.assets,
   })
+  // A page's 참고 이미지 is not a block, so it needs its own check. A file that
+  // points at an image it does not carry is broken, and says so rather than
+  // opening quietly with the reference gone (v1 마감 §8).
+  const known = new Set(doc.assets.map((a) => a.id))
+  for (const page of doc.pages) {
+    const id = page.reference.assetId
+    if (id !== undefined && !known.has(id)) {
+      throw new EventBriefError('ASSET_BLOB_MISSING', `참고 이미지 파일이 누락되었습니다: ${page.title}`)
+    }
+  }
 
   const assets = await decodeAssets(zip, manifest, doc.assets)
   return { doc, assets, manifest }

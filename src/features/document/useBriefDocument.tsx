@@ -47,6 +47,7 @@ import {
 } from '../../domain/pageOps'
 import type { BriefDocument, BriefPage, ReferenceLayer } from '../../domain/pageSchema'
 import type { Asset, EventBrief } from '../../domain/briefSchema'
+import type { RequestTeam } from '../../domain/requestTeam'
 import { loadDocument, pruneAssets, saveDocument } from '../../services/assetStore'
 import { allRequestAssetIds } from '../../services/requestStore'
 import { allDocumentAssetIds } from '../../services/documentStore'
@@ -93,6 +94,9 @@ export interface BriefDocumentApi {
   /** 전체 컨셉 — document-wide direction for the AI / design team (§5). */
   concept: string
   setConcept: (concept: string) => void
+  /** 작성팀 — which team wrote this brief; `undefined` is 팀 미지정 (v1 마감 §11). */
+  requestTeam: string | undefined
+  setRequestTeam: (team: RequestTeam | undefined) => void
   /** Replaces the whole document (used by import); hydrates the active page. */
   replaceDocument: (doc: BriefDocument) => void
   /** Latest synced document (for export/persistence). */
@@ -107,23 +111,45 @@ export interface BriefDocumentApi {
 
 const BriefDocumentContext = createContext<BriefDocumentApi | null>(null)
 
+/**
+ * The document's asset pool after the editor has had its say.
+ *
+ * The editor knows the assets its blocks use; the document also holds assets no
+ * block uses — most importantly each page's 참고 이미지, which is deliberately
+ * not a block. Taking the editor's list wholesale therefore *deleted* the
+ * reference image's metadata from the pool on the very next edit, and with the
+ * metadata gone the export packed no binary for it: the file opened again with
+ * a page pointing at an image that was no longer in the archive (v1 마감 §7).
+ *
+ * So the editor's entries win where both know an asset, and everything the
+ * document knows on its own is kept.
+ */
+function mergeAssets(docAssets: readonly Asset[], briefAssets: readonly Asset[]): Asset[] {
+  const fromEditor = new Set(briefAssets.map((a) => a.id))
+  const extra = docAssets.filter((a) => !fromEditor.has(a.id))
+  return extra.length === 0 ? [...briefAssets] : [...briefAssets, ...extra]
+}
+
 /** Writes the live editor brief back into the active page. No-op when unchanged. */
 function syncActivePage(doc: BriefDocument, brief: EventBrief): BriefDocument {
   const active = doc.pages.find((p) => p.id === doc.activePageId)
   if (!active) return doc
+  const assets = mergeAssets(doc.assets, brief.assets)
+  const sameAssets =
+    assets.length === doc.assets.length && assets.every((a, i) => a === doc.assets[i])
   if (
     active.blocks === brief.blocks &&
     active.canvasWidth === brief.project.canvasWidth &&
     active.canvasHeight === brief.project.canvasHeight &&
     doc.project.title === brief.project.title &&
-    doc.assets === brief.assets
+    sameAssets
   ) {
     return doc
   }
   return {
     ...doc,
     project: { ...doc.project, title: brief.project.title },
-    assets: brief.assets,
+    assets,
     pages: doc.pages.map((p) =>
       p.id === doc.activePageId
         ? { ...p, blocks: brief.blocks, canvasWidth: brief.project.canvasWidth, canvasHeight: brief.project.canvasHeight }
@@ -322,6 +348,15 @@ export function BriefDocumentProvider({
       // block isn't yet folded into the document).
       concept: doc.project.concept ?? '',
       setConcept: (next) => mutateDoc((d) => ({ ...d, project: { ...d.project, concept: next } })),
+      requestTeam: doc.project.requestTeam,
+      setRequestTeam: (team) =>
+        mutateDoc((d) => {
+          const project = { ...d.project }
+          // 팀 미지정 is the absence of a team, not a team called "none".
+          if (team === undefined) delete project.requestTeam
+          else project.requestTeam = team
+          return { ...d, project }
+        }),
       getDocument: () => syncActivePage(docRef.current, briefRef.current),
       saveNow: async () => {
         const current = syncActivePage(docRef.current, briefRef.current)

@@ -66,10 +66,13 @@ describe('export UI', () => {
     const palette = screen.getByRole('complementary', { name: '블록 팔레트' })
     await user.click(within(palette).getByRole('button', { name: '글 넣기' }))
 
-    // Saving a file is one click in the top bar, with nothing to confirm: a
-    // brief of any shape is preserved as it is (자유 저장 §2.2).
+    // Saving a file asks only what to call it — never what the brief contains
+    // (자유 저장 §2.2, v1 마감 §4).
     await user.click(screen.getByRole('button', { name: '파일로 저장' }))
     expect(screen.queryByRole('alertdialog')).toBeNull()
+    await user.click(
+      within(screen.getByRole('dialog', { name: '기획서 파일로 저장' })).getByRole('button', { name: '저장' }),
+    )
 
     // One of the created object URLs is the exported archive; it must parse as
     // a multi-page document (v2).
