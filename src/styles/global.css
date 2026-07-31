@@ -340,24 +340,36 @@ button { font-family: inherit; }
   border-radius: 4px;
   font-size: 13px;
 }
-.page-tab__menu { flex: none; }
+.page-tab__menu { flex: none; display: flex; align-self: stretch; }
+/* A real button with a real target: 36×32 is the smallest thing a finger or a
+   hurried mouse hits reliably (긴급 교정 §4). */
 .page-tab__menu-trigger {
-  list-style: none;
-  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
   border-left: 1px solid var(--color-border);
+  border-radius: 0 5px 5px 0;
+  background: none;
   color: var(--color-muted);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1;
   user-select: none;
 }
-.page-tab__menu-trigger::-webkit-details-marker { display: none; }
-.page-tab__menu:not([open]) .page-tab__menu-panel { display: none; }
+.page-tab__menu-trigger:hover { background: var(--color-panel-muted); color: var(--color-text); }
+.page-tab__menu-trigger[aria-expanded='true'] { background: var(--color-accent-soft); color: var(--color-accent); }
+/* The open tab comes forward so its menu is never covered by the tab beside it
+   or by the canvas below. */
+.page-tab.is-menu-open { z-index: 40; }
 .page-tab__menu-panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 20;
+  /* Fixed to the viewport: the strip scrolls sideways and would otherwise clip
+     the menu away (긴급 교정 §4). Its coordinates come from the trigger. */
+  position: fixed;
+  z-index: 200;
   display: flex;
   flex-direction: column;
   min-width: 150px;
