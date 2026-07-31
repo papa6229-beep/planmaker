@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useDocuments } from '../../features/documents/useDocuments'
-import { useRequests } from '../../features/requests/useRequests'
+import { useDeliveries } from '../../features/requests/useRequests'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { loadDocumentById } from '../../services/documentStore'
 import { BRIEF_STATUS_LABELS, briefStatus, lastDeliveredAt, type BriefDeliveryStatus } from '../../domain/briefStatus'
@@ -31,7 +31,8 @@ function day(ms: number): string {
 
 export function BriefLibrary() {
   const { documents, loaded, createNew, duplicate, remove, refresh } = useDocuments()
-  const { requests } = useRequests()
+  // Read-only: a surface with no work queue simply has no deliveries.
+  const requests = useDeliveries()
   const { saveNow, getDocument, requestTeam: openTeam } = useBriefDocument()
   const navigate = useNavigate()
   const { id: openId } = useParams()

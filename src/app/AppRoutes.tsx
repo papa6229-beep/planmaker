@@ -3,13 +3,17 @@
  * tree (no Router) so `main.tsx` wraps it in <BrowserRouter> and tests wrap it
  * in <MemoryRouter>.
  *
- * Phase 7 Step 2: the gate, /briefs, and /image-requests are designed product
- * screens (no fake data). The editor (existing AppShell) mounts unchanged at
- * /briefs/new and /briefs/:id.
+ * The table depends on the surface this build runs as (타 팀 배포 §4):
  *
- * Opening the app puts a planner straight into a brief (v1 마감 §10.2). The gate
- * is still here — the image-generation side of the product needs it later — it
- * simply is not what anyone lands on now.
+ *  - `brief-writer` — the brief writer alone. `/`, every internal address, and
+ *    anything unknown all land in a brief. The internal screens are not mounted
+ *    at all, so typing their address cannot reach them, and `RequestsProvider`
+ *    is not mounted either: nothing here has a work queue to read.
+ *  - `studio` — the design team's build, unchanged: the gate, the image-request
+ *    list, and the request work page stay exactly where they were.
+ *
+ * Nothing internal is deleted, and both surfaces render the same editor from
+ * the same components. This file decides only what a deployment can reach.
  */
 
 import { Navigate, Route, Routes } from 'react-router-dom'
@@ -20,22 +24,56 @@ import { ImageRequestsPage } from './pages/ImageRequestsPage'
 import { ImageRequestWorkPage } from './pages/ImageRequestWorkPage'
 import { RequestsProvider } from '../features/requests/useRequests'
 import { DocumentsProvider } from '../features/documents/useDocuments'
+import { APP_SURFACE, type AppSurface } from './appSurface'
+import { AppSurfaceProvider } from './AppSurfaceContext'
 
-export function AppRoutes() {
+/** Where a planner lands: straight into a brief (v1 마감 §10.2). */
+const WRITER_HOME = '/briefs/new'
+
+function WriterRoutes() {
   return (
-    <RequestsProvider>
+    <Routes>
+      <Route path="/briefs/new" element={<NewBriefRoute />} />
+      <Route path="/briefs/:id" element={<BriefEditorRoute />} />
+      {/* `/`, `/gate`, `/image-requests`, and anything else all mean "write a
+          brief" here — never a 404, and never an internal screen. */}
+      <Route path="*" element={<Navigate to={WRITER_HOME} replace />} />
+    </Routes>
+  )
+}
+
+function StudioRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<Navigate to={WRITER_HOME} replace />} />
+      <Route path="/gate" element={<EntryGate />} />
+      <Route path="/briefs" element={<BriefsPage />} />
+      <Route path="/briefs/new" element={<NewBriefRoute />} />
+      <Route path="/briefs/:id" element={<BriefEditorRoute />} />
+      <Route path="/image-requests" element={<ImageRequestsPage />} />
+      <Route path="/image-requests/:id" element={<ImageRequestWorkPage />} />
+      <Route path="*" element={<Navigate to={WRITER_HOME} replace />} />
+    </Routes>
+  )
+}
+
+export function AppRoutes({ surface = APP_SURFACE }: { surface?: AppSurface } = {}) {
+  if (surface === 'studio') {
+    return (
+      <AppSurfaceProvider surface="studio">
+        <RequestsProvider>
+          <DocumentsProvider>
+            <StudioRoutes />
+          </DocumentsProvider>
+        </RequestsProvider>
+      </AppSurfaceProvider>
+    )
+  }
+  return (
+    <AppSurfaceProvider surface="brief-writer">
       <DocumentsProvider>
-        <Routes>
-        <Route path="/" element={<Navigate to="/briefs/new" replace />} />
-        <Route path="/gate" element={<EntryGate />} />
-        <Route path="/briefs" element={<BriefsPage />} />
-        <Route path="/briefs/new" element={<NewBriefRoute />} />
-        <Route path="/briefs/:id" element={<BriefEditorRoute />} />
-        <Route path="/image-requests" element={<ImageRequestsPage />} />
-        <Route path="/image-requests/:id" element={<ImageRequestWorkPage />} />
-        <Route path="*" element={<Navigate to="/briefs/new" replace />} />
-        </Routes>
+        <WriterRoutes />
       </DocumentsProvider>
-    </RequestsProvider>
+    </AppSurfaceProvider>
   )
 }

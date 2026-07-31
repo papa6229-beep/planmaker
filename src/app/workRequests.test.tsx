@@ -17,7 +17,8 @@ import { clearAllRequests, resetRequestStoreForTests } from '../services/request
 function renderApp(path = '/briefs/new') {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <AppRoutes />
+      {/* 전달하기 and the queue are studio features (타 팀 배포 §5). */}
+      <AppRoutes surface="studio" />
     </MemoryRouter>,
   )
 }

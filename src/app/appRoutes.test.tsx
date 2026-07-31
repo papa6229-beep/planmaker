@@ -8,7 +8,8 @@ import { AppRoutes } from './AppRoutes'
 function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <AppRoutes />
+      {/* the internal screens live on the studio surface (타 팀 배포 §5). */}
+      <AppRoutes surface="studio" />
     </MemoryRouter>,
   )
 }

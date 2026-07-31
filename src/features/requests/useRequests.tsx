@@ -124,3 +124,19 @@ export function useRequests(): RequestsApi {
   if (api === null) throw new Error('useRequests must be used within a RequestsProvider')
   return api
 }
+
+/** No deliveries — what a surface without a work queue sees. */
+const NO_DELIVERIES: readonly WorkRequest[] = []
+
+/**
+ * Deliveries, for screens that only *describe* them.
+ *
+ * 내 기획서 shows whether a brief has been delivered and whether it changed
+ * since. On the 타 팀 배포 surface there is no queue at all and no provider is
+ * mounted, so the honest answer there is "none" rather than a crash (타 팀 배포
+ * §6.1). Anything that creates or changes a request keeps using `useRequests`
+ * and therefore still requires the provider.
+ */
+export function useDeliveries(): readonly WorkRequest[] {
+  return useContext(RequestsContext)?.requests ?? NO_DELIVERIES
+}

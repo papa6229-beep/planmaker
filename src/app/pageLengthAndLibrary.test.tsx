@@ -250,7 +250,9 @@ describe('§5 기획서 삭제', () => {
 
     const user = userEvent.setup()
     renderApp(`/briefs/${open}`)
-    await waitFor(() => expect(screen.getByText('지금 보는 기획서')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('지금 보는 기획서')).toBeTruthy(), { timeout: 8000 })
+    // The list loads separately from the brief on screen; wait for its row.
+    await waitFor(() => expect(within(library()).getByText('지금 보는 기획서')).toBeTruthy(), { timeout: 8000 })
 
     const row = within(library()).getByText('지금 보는 기획서').closest('li') as HTMLElement
     await user.click(within(row).getByLabelText('지금 보는 기획서 메뉴'))

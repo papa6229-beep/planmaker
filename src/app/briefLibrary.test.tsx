@@ -53,7 +53,8 @@ function docWith(title: string, text: string, id?: string): BriefDocument {
 function renderApp(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <AppRoutes />
+      {/* delivery status needs the studio surface (타 팀 배포 §5). */}
+      <AppRoutes surface="studio" />
     </MemoryRouter>,
   )
 }
