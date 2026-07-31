@@ -163,9 +163,15 @@ export function BriefDocumentProvider({
   const { state, hydrate } = useBriefEditor()
   const { loadFromStore } = useAssets()
   const [doc, setDoc] = useState<BriefDocument>(() => briefToDocument(state.brief))
-  // Snapshot taken before a page is deleted, kept only while that deletion is
-  // still the newest change on screen.
-  const [deletedPage, setDeletedPage] = useState<BriefDocument | null>(null)
+  /**
+   * The document as it was just before a page was deleted, and the document the
+   * deletion produced. Both halves matter: the first is what 실행 취소 restores,
+   * and the second is how we know the deletion is still the newest thing that
+   * happened. Page structure lives outside the editor's undo history, so
+   * without this the snapshot survived later edits and 실행 취소 would restore
+   * the whole document — throwing away everything done since (v1 동결 §7).
+   */
+  const [deletedPage, setDeletedPage] = useState<{ before: BriefDocument; after: BriefDocument } | null>(null)
 
   const docRef = useRef(doc)
   docRef.current = doc
@@ -272,7 +278,7 @@ export function BriefDocumentProvider({
 
   /** Restores the document exactly as it was before the page was deleted. */
   const restoreDeletedPage = useCallback(() => {
-    const snapshot = deletedPage
+    const snapshot = deletedPage?.before
     if (!snapshot) return
     setDeletedPage(null)
     docRef.current = snapshot
@@ -280,9 +286,18 @@ export function BriefDocumentProvider({
     hydrate(pageAsEventBrief(snapshot, getActivePage(snapshot)))
   }, [deletedPage, hydrate])
 
+  // One boundary for the rule: the moment the document moves on from the page
+  // deletion — a block edited, a page added or renamed, a page dragged longer,
+  // the reference changed, the title, concept or team touched, a file opened —
+  // the snapshot stops being what 실행 취소 means.
+  useEffect(() => {
+    if (deletedPage !== null && doc !== deletedPage.after) setDeletedPage(null)
+  }, [doc, deletedPage])
+
   const replaceDocument = useCallback(
     (next: BriefDocument) => {
       readyRef.current = true
+      setDeletedPage(null)
       setDoc(next)
       hydrate(pageAsEventBrief(next, getActivePage(next)))
     },
@@ -340,8 +355,10 @@ export function BriefDocumentProvider({
       deletePage: (pageId) => {
         // Everything the page held — blocks, its length, its reference image —
         // comes back with one 실행 취소, so the snapshot is the whole document.
-        setDeletedPage(docRef.current)
-        applyOp(deletePage(docRef.current, pageId))
+        const before = docRef.current
+        const after = withReferencedAssets(deletePage(before, pageId), briefRef.current.assets)
+        setDeletedPage({ before, after })
+        applyOp(after)
       },
       undoPageDelete: deletedPage === null ? null : restoreDeletedPage,
       movePage: (pageId, delta) => applyOp(movePage(docRef.current, pageId, delta)),
