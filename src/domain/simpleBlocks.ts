@@ -56,6 +56,29 @@ export const SIMPLE_BLOCKS: SimpleBlockDef[] = [
  */
 export const PALETTE_TOOLS: SimpleBlockDef[] = SIMPLE_BLOCKS.filter((tool) => tool.kind !== 'note')
 
+/**
+ * Default box for a *new* 이미지 block. Taller than a text block on purpose: a
+ * reference capture the design team cannot make out is not reference material,
+ * and at the old 96px the picture was left about 34px of room.
+ *
+ * Only new blocks get this. Blocks in existing documents keep the size they
+ * were saved with, and attaching a picture never resizes a block the planner
+ * has already placed.
+ */
+export const NEW_IMAGE_BLOCK_HEIGHT = 210
+
+/**
+ * Rows the image card spends around the picture — its padding, the kind badge
+ * row, the gaps, and the one-line description underneath. Measured against the
+ * rendered card, so `imagePreviewHeight` says what the planner actually sees.
+ */
+const IMAGE_CARD_CHROME_Y = 62
+
+/** Height left for the picture inside an image block of this height. */
+export function imagePreviewHeight(blockHeight: number): number {
+  return Math.max(0, blockHeight - IMAGE_CARD_CHROME_Y)
+}
+
 /** Block type each tool creates. 버튼·링크 additionally creates `button_url`. */
 export const SIMPLE_BLOCK_TYPE: Record<SimpleBlockKind, BlockType> = {
   text: 'free_text',

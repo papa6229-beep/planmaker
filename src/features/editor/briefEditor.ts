@@ -24,6 +24,7 @@ import { DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH } from '../../domain/briefS
 import {
   LINK_TYPE_FOR,
   LINK_URL_TYPE,
+  NEW_IMAGE_BLOCK_HEIGHT,
   SIMPLE_BLOCK_TYPE,
   drawsBareText,
   findLinkPartner,
@@ -85,6 +86,14 @@ export function createInitialEditorState(): EditorState {
 
 const NEW_BLOCK_WIDTH = 320
 const NEW_BLOCK_HEIGHT = 96
+
+/**
+ * A new block's box. Wording starts at the modest text height; a block that
+ * will hold a picture starts tall enough to show one (1-B 마감 §1).
+ */
+function newBlockHeight(blockType: BlockType): number {
+  return getBlockTypeMeta(blockType).requiresAsset ? NEW_IMAGE_BLOCK_HEIGHT : NEW_BLOCK_HEIGHT
+}
 const PLACEMENT_MARGIN = 24
 const DUPLICATE_OFFSET = 24
 
@@ -137,7 +146,7 @@ function addBlock(state: EditorState, blockType: BlockType, label?: string): Edi
   const { brief } = state
   const position = nextBlockPosition(brief.blocks, brief.project.canvasWidth, brief.project.canvasHeight)
   const block = createBlock(blockType, {
-    position: { ...position, width: NEW_BLOCK_WIDTH, height: NEW_BLOCK_HEIGHT },
+    position: { ...position, width: NEW_BLOCK_WIDTH, height: newBlockHeight(blockType) },
     ...(label === undefined ? {} : { label }),
   })
   return { brief: { ...brief, blocks: [...brief.blocks, block] }, selectedIds: [block.id] }
@@ -516,14 +525,15 @@ function addImageBlock(
 ): EditorState {
   const { brief } = state
   const base = position ?? nextBlockPosition(brief.blocks, brief.project.canvasWidth, brief.project.canvasHeight)
+  const height = newBlockHeight(blockType)
   const pos = clampPosition(
-    { x: base.x, y: base.y, width: NEW_BLOCK_WIDTH, height: NEW_BLOCK_HEIGHT },
+    { x: base.x, y: base.y, width: NEW_BLOCK_WIDTH, height },
     brief.project.canvasWidth,
     brief.project.canvasHeight,
   )
   const block = createBlock(blockType, {
     assetId: asset.id,
-    position: { x: pos.x, y: pos.y, width: NEW_BLOCK_WIDTH, height: NEW_BLOCK_HEIGHT },
+    position: { x: pos.x, y: pos.y, width: NEW_BLOCK_WIDTH, height },
   })
   if (image) block.image = { ...block.image, ...image }
 
@@ -533,6 +543,14 @@ function addImageBlock(
   }
 }
 
+/**
+ * Takes the attached picture off a block, and with it everything that only
+ * described *that file* (1-B 마감 §2): the id, the file's display name, and the
+ * reference-capture marker. Leaving those behind would let a later reader — a
+ * person or the image AI reading `imageSlots` — believe a capture is still
+ * attached. What the planner wrote, where the block sits, and the link it
+ * carries are untouched, and the previous state is left intact for undo.
+ */
 function removeBlockAsset(state: EditorState, blockId: string): EditorState {
   const target = state.brief.blocks.find((b) => b.id === blockId)
   if (!target || target.assetId === undefined) return state
@@ -542,6 +560,13 @@ function removeBlockAsset(state: EditorState, blockId: string): EditorState {
     if (b.id !== blockId) return b
     const next = { ...b }
     delete next.assetId
+    if (next.image) {
+      const { productName: _name, referenceOnly: _ref, ...rest } = next.image
+      // `allowTransform` is an instruction about the image that belongs here,
+      // not about the file that was attached, so it stays.
+      if (Object.keys(rest).length > 0) next.image = rest
+      else delete next.image
+    }
     return next
   })
   const assets = pruneOrphanAsset(state.brief.assets, blocks, removedId)

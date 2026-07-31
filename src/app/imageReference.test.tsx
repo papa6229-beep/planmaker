@@ -27,6 +27,7 @@ import { createEmptyDocument } from '../domain/pageSchema'
 import { duplicatePage } from '../domain/pageOps'
 import { createBlock, createEmptyBrief } from '../domain/factory'
 import { classifyAssetArea } from '../services/eventBriefArchive'
+import { findLinkPartner, imagePreviewHeight } from '../domain/simpleBlocks'
 import { packageEventDocument } from '../services/eventBriefExport'
 import { readEventDocument } from '../services/eventBriefImport'
 import { createWorkRequest, requestAssetIds } from '../domain/workRequest'
@@ -185,6 +186,109 @@ describe('§2.2 참고자료 첨부', () => {
     expect(within(card()).getByText('모델이 제품을 든 사진')).toBeTruthy()
     expect(within(card()).getByLabelText('연결된 주소 있음')).toBeTruthy()
     expect(canvas().querySelectorAll('.block-card')).toHaveLength(1)
+  })
+})
+
+describe('마감 §1 새 이미지 블록은 참고 사진이 보이는 크기', () => {
+  it('gives a new image block enough height to actually show the capture', () => {
+    const created = reduce({ type: 'ADD_BLOCK', blockType: 'main_product_image', label: '이미지' })
+    const { width, height } = created.brief.blocks[0]!.position
+    expect(width).toBe(320)
+    expect(height).toBeGreaterThanOrEqual(200)
+    expect(height).toBeLessThanOrEqual(220)
+    // What is left for the picture once the card's own rows are taken out.
+    expect(imagePreviewHeight(height)).toBeGreaterThanOrEqual(120)
+  })
+
+  it('leaves 문구 and 버튼 blocks at the size they had', () => {
+    const text = reduce({ type: 'ADD_BLOCK', blockType: 'free_text', label: '문구' })
+    expect(text.brief.blocks[0]!.position.height).toBe(96)
+    const button = reduce({ type: 'ADD_BUTTON_LINK', label: '버튼' })
+    expect(button.brief.blocks[0]!.position.height).toBe(96)
+    expect(button.brief.blocks[0]!.position.width).toBe(320)
+  })
+
+  it('never resizes a block that already exists', async () => {
+    const old = createBlock('main_product_image', {
+      id: 'blk_old',
+      label: '이미지',
+      position: { x: 10, y: 10, width: 300, height: 96 },
+    })
+    const doc = createEmptyDocument(createEmptyBrief('과거 문서').project)
+    doc.pages[0]!.blocks = [old]
+    await saveDocument(doc, 1)
+
+    renderEditor()
+    await waitFor(() => expect(canvas().querySelectorAll('.block-card')).toHaveLength(1))
+    expect(card().style.height).toBe('96px')
+    expect(card().style.width).toBe('300px')
+  })
+})
+
+describe('마감 §2 제거하면 파일 정보도 함께 사라진다', () => {
+  it('keeps the description, the box, and the link, and drops the file data', () => {
+    const state = withReference()
+    const id = state.brief.blocks[0]!.id
+    const linked = briefReducer(state, { type: 'SET_BLOCK_LINK', blockId: id, url: 'https://shop.example.com/item/1' })
+    const before = linked.brief.blocks[0]!
+    expect(before.assetId).toBe('asset_ref')
+    expect(before.image?.referenceOnly).toBe(true)
+
+    const removed = briefReducer(linked, { type: 'REMOVE_BLOCK_ASSET', blockId: id })
+    const after = removed.brief.blocks[0]!
+
+    expect(after.assetId).toBeUndefined()
+    expect(after.image?.referenceOnly).toBeUndefined()
+    expect(after.image?.productName).toBeUndefined()
+    // What the planner wrote, where the block sits, and the link all stay.
+    expect(after.content).toBe('아크웨이브 제품 누끼 이미지')
+    expect(after.position).toEqual(before.position)
+    expect(findLinkPartner(removed.brief.blocks, after)).not.toBeNull()
+  })
+
+  it('leaves no trace of an attachment in the AI summary', () => {
+    const state = withReference()
+    const id = state.brief.blocks[0]!.id
+    const linked = briefReducer(state, { type: 'SET_BLOCK_LINK', blockId: id, url: 'https://shop.example.com/item/1' })
+    const removed = briefReducer(linked, { type: 'REMOVE_BLOCK_ASSET', blockId: id })
+
+    const { design, publishing } = summarize(removed.brief)
+    const slot = design.imageSlots.find((s) => s.blockId === id)!
+    expect(slot.description).toBe('아크웨이브 제품 누끼 이미지')
+    expect(slot.referenceAssetId).toBeUndefined()
+    expect(slot.referenceOnly).toBeUndefined()
+    expect(JSON.stringify(design)).not.toContain('asset_ref')
+    // The publishing link is untouched.
+    expect(publishing.links.some((l) => l.url === 'https://shop.example.com/item/1')).toBe(true)
+  })
+
+  it('takes a fresh capture again after a removal', () => {
+    const state = withReference()
+    const id = state.brief.blocks[0]!.id
+    const removed = briefReducer(state, { type: 'REMOVE_BLOCK_ASSET', blockId: id })
+
+    const next: Asset = { id: 'asset_new', fileName: 'second.png', mimeType: 'image/png' }
+    const again = briefReducer(removed, {
+      type: 'ASSIGN_IMAGE',
+      blockId: id,
+      asset: next,
+      image: { productName: 'second', referenceOnly: true },
+    })
+    const block = again.brief.blocks[0]!
+    expect(block.assetId).toBe('asset_new')
+    expect(block.image?.productName).toBe('second')
+    expect(block.image?.referenceOnly).toBe(true)
+    expect(summarize(again.brief).design.imageSlots[0]!.referenceAssetId).toBe('asset_new')
+  })
+
+  it('undoes a removal back to the attached state', () => {
+    const state = withReference()
+    const id = state.brief.blocks[0]!.id
+    const removed = briefReducer(state, { type: 'REMOVE_BLOCK_ASSET', blockId: id })
+    expect(removed.brief.blocks[0]!.assetId).toBeUndefined()
+    // The pre-removal state is untouched, which is what undo restores.
+    expect(state.brief.blocks[0]!.assetId).toBe('asset_ref')
+    expect(state.brief.blocks[0]!.image?.referenceOnly).toBe(true)
   })
 })
 
