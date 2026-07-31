@@ -28,6 +28,8 @@ import {
   SIMPLE_BLOCK_TYPE,
   drawsBareText,
   findLinkPartner,
+  textAlignOf,
+  type TextAlign,
   isPairedLinkUrl,
   withLinkPartners,
 } from '../../domain/simpleBlocks'
@@ -78,6 +80,7 @@ export type EditorAction =
   | { type: 'REMOVE_BLOCK_ASSET'; blockId: string }
   | { type: 'SET_PROJECT_TITLE'; title: string; coalesceKey?: string }
   | { type: 'SET_CANVAS_HEIGHT'; height: number; coalesceKey?: string }
+  | { type: 'SET_TEXT_ALIGN'; blockId: string; align: TextAlign }
   | { type: 'NEW_BRIEF' }
 
 /** Builds the initial editor state (also used by "새로 만들기"). */
@@ -581,6 +584,22 @@ function removeBlockAsset(state: EditorState, blockId: string): EditorState {
 }
 
 /**
+ * Sets how the wording sits inside its block (v1 마감 §3.2).
+ *
+ * The choice is written to the existing `layoutHint.alignment`, so it reaches
+ * the AI through the layout hints already being sent rather than through a
+ * second field meaning the same thing. Nothing about the block's position or
+ * size changes — alignment says where the wording sits *within* the box the
+ * planner drew.
+ */
+function setTextAlign(state: EditorState, blockId: string, align: TextAlign): EditorState {
+  const target = state.brief.blocks.find((b) => b.id === blockId)
+  if (!target || textAlignOf(target) === align) return state
+  const next = { ...target, layoutHint: { ...target.layoutHint, alignment: align } }
+  return withBlocks(state, state.brief.blocks.map((b) => (b.id === blockId ? next : b)))
+}
+
+/**
  * Sets how long this page is (손검수 2 §3). The width stays 840; only the page
  * the user is looking at changes, and the document's sync writes it back to
  * that page alone.
@@ -643,6 +662,8 @@ export function briefReducer(state: EditorState, action: EditorAction): EditorSt
       return removeBlockAsset(state, action.blockId)
     case 'SET_PROJECT_TITLE':
       return setProjectTitle(state, action.title)
+    case 'SET_TEXT_ALIGN':
+      return setTextAlign(state, action.blockId, action.align)
     case 'SET_CANVAS_HEIGHT':
       return setCanvasHeight(state, action.height)
     case 'NEW_BRIEF':

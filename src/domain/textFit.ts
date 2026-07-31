@@ -14,7 +14,12 @@
 /** Never shrink below this — past it the text stops being readable. */
 export const MIN_FONT_PX = 12
 /** Cap so a huge block does not produce absurd type. */
-export const MAX_FONT_PX = 72
+/**
+ * The largest type a block may hold. An 840px event page carries main wording
+ * far bigger than a paragraph — a headline that fills the width is normal — so
+ * the ceiling is the canvas's own scale, not a document-text scale (v1 마감 §2).
+ */
+export const MAX_FONT_PX = 200
 /** Line box as a multiple of the font size. */
 const LINE_HEIGHT = 1.35
 /**
@@ -201,11 +206,23 @@ export function fitTextSize(text: string, width: number, height: number, options
     return { fontSize: size, overflow: false }
   }
 
-  for (let size = MAX_FONT_PX; size >= MIN_FONT_PX; size -= 1) {
-    const needed = lineCount(trimmed, size, innerWidth, options.measure) * size * LINE_HEIGHT
-    if (needed <= innerHeight) return { fontSize: size, overflow: false }
+  // Binary search rather than a walk down from the ceiling: measuring a line is
+  // a DOM layout in the browser, and the range is now 12–200px. Fitting is
+  // monotonic — if the wording fits at a size it fits at every smaller one — so
+  // the search lands on the same size the walk did, in ~8 measurements.
+  const fits = (size: number): boolean =>
+    lineCount(trimmed, size, innerWidth, options.measure) * size * LINE_HEIGHT <= innerHeight
+
+  if (!fits(MIN_FONT_PX)) return { fontSize: MIN_FONT_PX, overflow: true }
+
+  let low = MIN_FONT_PX
+  let high = MAX_FONT_PX
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2)
+    if (fits(mid)) low = mid
+    else high = mid - 1
   }
-  return { fontSize: MIN_FONT_PX, overflow: true }
+  return { fontSize: low, overflow: false }
 }
 
 /**
@@ -301,7 +318,11 @@ export function fitBlockToText(text: string, box: BlockBox, options: FitArea = {
  * from the visible result rather than from a separate control the user has to
  * remember to set.
  */
-export function emphasisForFontSize(fontSize: number): 'low' | 'normal' | 'high' {
+export function emphasisForFontSize(fontSize: number): 'low' | 'normal' | 'high' | 'very_high' {
+  // One scale, one calculation: the size the wording is actually drawn at is
+  // what tells the AI how loud it is. With the ceiling at 200px, type that
+  // fills an 840px page reads louder than a 32px line, so it says so.
+  if (fontSize >= 96) return 'very_high'
   if (fontSize >= 32) return 'high'
   if (fontSize <= 15) return 'low'
   return 'normal'
@@ -313,6 +334,6 @@ export function emphasisForBlockSize(
   width: number,
   height: number,
   options: FitArea = {},
-): 'low' | 'normal' | 'high' {
+): 'low' | 'normal' | 'high' | 'very_high' {
   return emphasisForFontSize(fitTextSize(text, width, height, options).fontSize)
 }

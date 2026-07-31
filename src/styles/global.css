@@ -841,7 +841,19 @@ button { font-family: inherit; }
   box-shadow: none;
 }
 .block-card--bare.is-overflowing { border-color: var(--color-warning); }
-.block-card--bare .block-card__content { flex: 1; min-height: 0; }
+/* Printed wording is never clamped: the sizing rule already chose a size at
+   which every line fits, so clamping it to two lines would ellipsis away
+   wording the block has room for (v1 마감 §2.2). */
+.block-card--bare .block-card__content {
+  flex: 1;
+  min-height: 0;
+  display: block;
+  overflow: visible;
+  text-overflow: clip;
+  -webkit-line-clamp: none;
+  line-clamp: none;
+  white-space: pre-wrap;
+}
 .block-card--bare .block-card__editor { border-radius: 2px; padding: 0; }
 
 /* The kind and the ⋯ menu float above the selected block, outside its box. */
@@ -862,6 +874,23 @@ button { font-family: inherit; }
   cursor: default;
 }
 .block-toolbar__kind { font-size: 11px; color: var(--color-muted); }
+/* 문구 정렬 — real buttons with a real target (v1 마감 §3.1). */
+.block-toolbar__aligns { display: inline-flex; align-items: center; gap: 2px; }
+.block-toolbar__align {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+.block-toolbar__align:hover { background: var(--color-panel-muted); color: var(--color-text); }
+.block-toolbar__align.is-active { background: var(--color-accent-soft); color: var(--color-accent); }
 /* Link marker for an unselected bare block: outside the wording area, so it
    says "an address is attached" without taking any of the block's room. */
 .block-card__link-mark {

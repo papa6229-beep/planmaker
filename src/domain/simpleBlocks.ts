@@ -173,6 +173,30 @@ export function drawsBareText(block: BriefBlock): boolean {
   return getBlockTypeMeta(block.type).hasText && block.aiVisibility === 'design'
 }
 
+// ── 문구 정렬 ────────────────────────────────────────────────────────────────
+
+/**
+ * How the wording sits inside its block (v1 마감 §3).
+ *
+ * Stored in the existing `layoutHint.alignment`, which the AI summary already
+ * carries, rather than in a second field meaning the same thing. `free` — what
+ * the hint means when nobody chose — reads as 왼쪽 here, so a document written
+ * before this feature keeps looking exactly as it did.
+ */
+export type TextAlign = 'left' | 'center' | 'right'
+
+export const TEXT_ALIGNS: { value: TextAlign; label: string }[] = [
+  { value: 'left', label: '왼쪽 정렬' },
+  { value: 'center', label: '가운데 정렬' },
+  { value: 'right', label: '오른쪽 정렬' },
+]
+
+/** The alignment a block is drawn with; 왼쪽 unless one was chosen. */
+export function textAlignOf(block: BriefBlock): TextAlign {
+  const hint = block.layoutHint.alignment
+  return hint === 'center' || hint === 'right' ? hint : 'left'
+}
+
 /** Short kind label shown on the canvas card so blocks are told apart at a glance. */
 export function cardKindLabel(block: BriefBlock): string {
   const kind = simpleKindOf(block)

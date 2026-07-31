@@ -17,7 +17,7 @@
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { getBlockTypeMeta, type BlockCategory } from '../../domain/blockTypes'
-import { canCarryLink, cardKindLabel, drawsBareText } from '../../domain/simpleBlocks'
+import { canCarryLink, cardKindLabel, drawsBareText, textAlignOf, TEXT_ALIGNS, type TextAlign } from '../../domain/simpleBlocks'
 import { CARD_CHROME_Y, CARD_PADDING_X, PLACEHOLDER_FONT_PX, fitBlockToText, fitTextSize } from '../../domain/textFit'
 import { createLineMeasurer } from '../../features/editor/measureText'
 import { isReferenceCapture } from '../../domain/summaryBuilder'
@@ -54,6 +54,21 @@ const IMAGE_ACCEPT = ACCEPTED_MIME_TYPES.join(',')
 /** Built once: measuring asks the browser for the card's own font. */
 const measureLine = createLineMeasurer()
 const DRAG_THRESHOLD_PX = 3
+
+/**
+ * Alignment icon: three lines, the middle one short, pushed to the side the
+ * wording will sit on. Shape only — the button's accessible name is Korean.
+ */
+function AlignIcon({ align }: { align: TextAlign }) {
+  const short = { left: 'M2 8h8', center: 'M4 8h8', right: 'M6 8h8' }[align]
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+      <path d="M2 4h12" />
+      <path d={short} />
+      <path d="M2 12h12" />
+    </svg>
+  )
+}
 
 interface DragState {
   startX: number
@@ -94,10 +109,11 @@ function LinkIcon() {
 export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeight, paired = false, linkUrl }: Props) {
   const {
     moveBlock, resizeBlock, selectBlock, endInteraction, commitText,
-    deleteBlock, duplicateBlock, removeBlockAsset, setBlockLink,
+    deleteBlock, duplicateBlock, removeBlockAsset, setBlockLink, setTextAlign,
   } = useBriefEditor()
   const { getUrl, uploadFiles } = useAssets()
   const meta = getBlockTypeMeta(block.type)
+  const align = textAlignOf(block)
   const thumbUrl = meta.requiresAsset ? getUrl(block.assetId) : undefined
   const drag = useRef<DragState | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
@@ -398,6 +414,27 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
               {/* The block's own name (문구 · 버튼 · 혜택 …), which is what the
                   label line used to say inside the box. */}
               <span className="block-toolbar__kind">{block.label}</span>
+              {/* Where the wording sits inside the box the planner drew. Only
+                  wording has a side to sit on, so only 문구 blocks show it. */}
+              <span className="block-toolbar__aligns" role="group" aria-label="문구 정렬">
+                {TEXT_ALIGNS.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={`block-toolbar__align${align === value ? ' is-active' : ''}`}
+                    aria-label={label}
+                    aria-pressed={align === value}
+                    title={label}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setTextAlign(block.id, value)
+                    }}
+                  >
+                    <AlignIcon align={value} />
+                  </button>
+                ))}
+              </span>
               {block.groupId !== undefined && !paired && <span className="block-card__group" title="그룹">그룹</span>}
               {linkBadge}
               {overflowBadge}
@@ -429,7 +466,7 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
           autoFocus
           aria-label={`${block.label} 내용`}
           placeholder={meta.requiresAsset ? '어떤 이미지가 들어갈지 적어주세요' : `${meta.label} 입력…`}
-          style={{ fontSize: meta.requiresAsset ? undefined : draftFit }}
+          style={{ fontSize: meta.requiresAsset ? undefined : draftFit, textAlign: align }}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commitEdit}
           onPointerDown={(e) => e.stopPropagation()}
@@ -475,7 +512,7 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
       ) : (
         <span
           className={`block-card__content${hasContent(block) ? '' : ' block-card__content--placeholder'}`}
-          style={{ fontSize: fit.fontSize }}
+          style={{ fontSize: fit.fontSize, textAlign: align }}
         >
           {hasContent(block) ? block.content : `${meta.label} 입력…`}
         </span>

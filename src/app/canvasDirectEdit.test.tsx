@@ -122,7 +122,7 @@ describe('§10.2–3 크기에 따른 글자 크기와 emphasis', () => {
       rect: { x: 20, y: 20, width: 180, height: 26 },
     })
 
-    expect(big.brief.blocks[0]!.layoutHint.emphasis).toBe('high')
+    expect(big.brief.blocks[0]!.layoutHint.emphasis).toBe('very_high')
     expect(small.brief.blocks[0]!.layoutHint.emphasis).toBe('low')
     // The semantic type is never rewritten by resizing.
     expect(big.brief.blocks[0]!.type).toBe('free_text')
@@ -164,7 +164,7 @@ describe('§10.2–3 크기에 따른 글자 크기와 emphasis', () => {
 
     const { design } = summarize(resized.brief)
     const entry = design.texts.find((t) => t.content === '50% 할인')!
-    expect(entry.emphasis).toBe('high')
+    expect(entry.emphasis).toBe('very_high')
     expect(entry.geometry.width).toBe(600)
   })
 })

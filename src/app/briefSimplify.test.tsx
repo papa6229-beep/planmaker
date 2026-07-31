@@ -213,7 +213,9 @@ describe('글 넣기 (§2.3)', () => {
     // Emphasis never rewrites the semantic type — large text is not a headline.
     expect(block.type).toBe('free_text')
     expect(block.content).toBe('여름 세일')
-    expect(block.layoutHint.emphasis).toBe('high')
+    // A 600×240 block now draws far bigger type than the old 72px ceiling
+    // allowed, and the emphasis says so (v1 마감 §2).
+    expect(block.layoutHint.emphasis).toBe('very_high')
     // A cramped block reads as 작게 with the same wording and no type change.
     const cramped = briefReducer(written, {
       type: 'RESIZE_BLOCK',

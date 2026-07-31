@@ -71,14 +71,16 @@ describe('fitTextHeight — the room the wording actually takes', () => {
 })
 
 describe('emphasis derived from the visible size', () => {
-  it('maps drawn size onto the three emphasis levels', () => {
+  it('maps drawn size onto the emphasis levels', () => {
+    // Type that fills an event page is louder than a 48px line, and says so.
+    expect(emphasisForFontSize(140)).toBe('very_high')
     expect(emphasisForFontSize(48)).toBe('high')
     expect(emphasisForFontSize(20)).toBe('normal')
     expect(emphasisForFontSize(13)).toBe('low')
   })
 
-  it('reports high emphasis for a big block and low for a cramped one', () => {
-    expect(emphasisForBlockSize('50% 할인', 600, 220)).toBe('high')
+  it('reports loud emphasis for a big block and low for a cramped one', () => {
+    expect(emphasisForBlockSize('50% 할인', 600, 220)).toBe('very_high')
     expect(emphasisForBlockSize('작은 안내 문구입니다 일부 상품 제외 조건이 있습니다', 200, 44)).toBe('low')
   })
 })

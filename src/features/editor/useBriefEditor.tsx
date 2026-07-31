@@ -21,6 +21,7 @@ import {
   createInitialHistoryState,
   historyReducer,
 } from './history'
+import type { TextAlign } from '../../domain/simpleBlocks'
 import type { Rect } from './canvasGeometry'
 
 export interface BriefEditorApi {
@@ -57,6 +58,7 @@ export interface BriefEditorApi {
   setProjectTitle: (title: string, coalesceKey?: string) => void
   /** Sets the open page's length; one drag collapses into one undo step. */
   setCanvasHeight: (height: number, coalesceKey?: string) => void
+  setTextAlign: (blockId: string, align: TextAlign) => void
   hydrate: (brief: EventBrief) => void
   newBrief: () => void
   undo: () => void
@@ -121,6 +123,7 @@ export function BriefEditorProvider({ children }: { children: ReactNode }) {
         dispatch(coalesceKey === undefined
           ? { type: 'SET_CANVAS_HEIGHT', height }
           : { type: 'SET_CANVAS_HEIGHT', height, coalesceKey }),
+      setTextAlign: (blockId, align) => dispatch({ type: 'SET_TEXT_ALIGN', blockId, align }),
       hydrate: (brief) => dispatch({ type: 'HYDRATE', brief }),
       newBrief: () => dispatch({ type: 'NEW_BRIEF' }),
       undo: () => dispatch({ type: 'UNDO' }),
