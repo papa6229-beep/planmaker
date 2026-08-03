@@ -78,10 +78,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-/** 신뢰할 수 없는 `studio.json`을 좁힌다. 형태가 어긋나면 `null`. */
+/**
+ * 신뢰할 수 없는 `studio.json`을 좁힌다. 형태가 어긋나면 `null`.
+ *
+ * 버전은 이 빌드가 아는 그 하나여야 한다. 모르는 버전을 "문자열이니 통과"로
+ * 받아들이면, 뒤 판의 다른 뜻으로 적힌 연결을 이 판의 뜻으로 읽어 엉뚱한 그림을
+ * 연결하거나 연결을 잃는다. 읽을 수 없다고 말하는 편이 낫다.
+ */
 export function parseStudioFileState(raw: unknown): StudioFileState | null {
   if (!isRecord(raw)) return null
-  if (typeof raw.version !== 'string') return null
+  if (raw.version !== STUDIO_FILE_VERSION) return null
 
   const links = raw.productImages
   if (!isRecord(links)) return null
@@ -102,5 +108,5 @@ export function parseStudioFileState(raw: unknown): StudioFileState | null {
     }
   }
 
-  return { version: raw.version, source, productImages }
+  return { version: STUDIO_FILE_VERSION, source, productImages }
 }

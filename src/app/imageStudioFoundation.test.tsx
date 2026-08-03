@@ -39,6 +39,7 @@ import {
   unlinkProductImage,
   withSource,
 } from '../domain/studioJob'
+import { referencedAssetIds } from '../domain/pageOps'
 import { buildGenerationRequest, buildGenerationRequests } from '../domain/generationRequest'
 import { createEmptyDocument, createPage, PAGE_CANVAS_WIDTH } from '../domain/pageSchema'
 import { createBlock, createEmptyProject } from '../domain/factory'
@@ -337,13 +338,31 @@ describe('§9.1-4·10 작업판 화면', () => {
     })
     await waitFor(() => expect(row().textContent).toContain('실제 사용 제품 이미지'), { timeout: 5000 })
 
-    await waitFor(async () => expect((await allStudioAssetIds()).length).toBe(1), { timeout: 5000 })
+    // 세는 것은 디자인팀이 연결한 제품 이미지다. 저장소 쪽 `allStudioAssetIds`는
+    // 정리가 지우면 안 되는 것 전부(작업본 문서가 쓰는 이미지까지)를 말하므로,
+    // 여기서 묻는 것과 다르다.
+    await waitFor(async () => {
+      expect(studioAssetIds((await loadStudioJob(STUDIO_JOB_ID))!)).toHaveLength(1)
+    }, { timeout: 5000 })
+
+    // 정리가 지키는 목록은 그보다 넓다: 연결한 누끼와, 작업본 문서가 쓰는
+    // 이미지까지. 작업본은 보관함의 어느 행도 아니어서, 이 목록이 좁으면 다른
+    // 쪽 정리가 하던 작업의 참고 이미지를 지운다.
+    const protectedIds = await allStudioAssetIds()
+    const job = (await loadStudioJob(STUDIO_JOB_ID))!
+    expect(protectedIds).toContain(job.productImages['blk_image'])
+    // 참고 이미지도 페이지 참고 이미지도 — 불러오면서 새 번호를 받았더라도.
+    const docIds = referencedAssetIds(job.doc)
+    expect(docIds.length).toBeGreaterThan(0)
+    for (const id of docIds) expect(protectedIds).toContain(id)
 
     fireEvent.pointerDown(row(), { button: 0 })
     await waitFor(() => expect(within(row()).getByRole('button', { name: '제품 이미지 제거' })).toBeTruthy())
     fireEvent.click(within(row()).getByRole('button', { name: '제품 이미지 제거' }))
     await waitFor(() => expect(row().textContent).toContain('참고용 이미지'), { timeout: 5000 })
-    await waitFor(async () => expect((await allStudioAssetIds()).length).toBe(0), { timeout: 5000 })
+    await waitFor(async () => {
+      expect(studioAssetIds((await loadStudioJob(STUDIO_JOB_ID))!)).toHaveLength(0)
+    }, { timeout: 5000 })
   }, 20000)
 
   it('shows the request in plain Korean, with the missing product image called out', async () => {

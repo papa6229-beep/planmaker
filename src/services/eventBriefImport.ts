@@ -17,6 +17,7 @@ import type { StoredAsset } from './assetStore'
 import {
   BRIEF_PATH,
   DOCUMENT_PATH,
+  EVENTBRIEF_STUDIO_VERSION,
   EventBriefError,
   MANIFEST_PATH,
   MAX_ENTRY_BYTES,
@@ -215,11 +216,54 @@ function assertNoDuplicateDocumentIds(doc: BriefDocument): void {
   }
 }
 
+/**
+ * 파일 하나가 풀어놓을 수 있는 용량 (Studio 파일 안전 경계 §3).
+ *
+ * 기획서 이미지와 제품 이미지는 서로 다른 폴더에 있지만 열리는 곳은 같은 한 대의
+ * 기기다. 각자 한도를 따로 세면, 둘 다 한도 아래인데 합치면 한도를 훨씬 넘는
+ * 파일이 그대로 통과한다. 그래서 눈금은 하나다 — 여기를 지나가는 모든 바이트가
+ * 같은 눈금에 쌓인다.
+ */
+interface SizeLimits {
+  maxEntryBytes: number
+  maxTotalBytes: number
+}
+
+interface ByteBudget {
+  limits: SizeLimits
+  used: number
+}
+
+function newBudget(limits?: Partial<SizeLimits>): ByteBudget {
+  return {
+    limits: {
+      maxEntryBytes: limits?.maxEntryBytes ?? MAX_ENTRY_BYTES,
+      maxTotalBytes: limits?.maxTotalBytes ?? MAX_TOTAL_BYTES,
+    },
+    used: 0,
+  }
+}
+
+/** 바이트를 눈금에 올린다. 낱장이 크거나 합이 한도를 넘으면 거기서 멈춘다. */
+function charge(budget: ByteBudget, byteLength: number, label: string): void {
+  if (byteLength > budget.limits.maxEntryBytes) {
+    throw new EventBriefError('TOO_LARGE', `이미지가 너무 큽니다: ${label}`)
+  }
+  budget.used += byteLength
+  if (budget.used > budget.limits.maxTotalBytes) {
+    throw new EventBriefError('TOO_LARGE', '전체 용량이 허용 한도를 초과했습니다.')
+  }
+}
+
 /** Decodes every referenced asset blob byte-for-byte (presence, mime, size limits). */
-async function decodeAssets(zip: JSZip, manifest: EventBriefManifest, metas: readonly Asset[]): Promise<StoredAsset[]> {
+async function decodeAssets(
+  zip: JSZip,
+  manifest: EventBriefManifest,
+  metas: readonly Asset[],
+  budget: ByteBudget,
+): Promise<StoredAsset[]> {
   const entryByAssetId = new Map(manifest.assets.map((e) => [e.assetId, e]))
   const assets: StoredAsset[] = []
-  let totalBytes = 0
 
   for (const meta of metas) {
     const entry = entryByAssetId.get(meta.id)
@@ -231,13 +275,7 @@ async function decodeAssets(zip: JSZip, manifest: EventBriefManifest, metas: rea
     if (!file) throw new EventBriefError('ASSET_BLOB_MISSING', `이미지 파일 누락: ${entry.path}`)
 
     const bytes = await file.async('uint8array')
-    if (bytes.byteLength > MAX_ENTRY_BYTES) {
-      throw new EventBriefError('TOO_LARGE', `이미지가 너무 큽니다: ${entry.originalFileName}`)
-    }
-    totalBytes += bytes.byteLength
-    if (totalBytes > MAX_TOTAL_BYTES) {
-      throw new EventBriefError('TOO_LARGE', '전체 용량이 허용 한도를 초과했습니다.')
-    }
+    charge(budget, bytes.byteLength, entry.originalFileName)
 
     const stored: StoredAsset = {
       id: meta.id,
@@ -266,6 +304,7 @@ async function decodeProductAssets(
   manifest: EventBriefManifest,
   studio: StudioFileState,
   already: ReadonlySet<string>,
+  budget: ByteBudget,
 ): Promise<StoredAsset[]> {
   const entryByAssetId = new Map(manifest.assets.map((e) => [e.assetId, e]))
   const assets: StoredAsset[] = []
@@ -284,9 +323,7 @@ async function decodeProductAssets(
       throw new EventBriefError('ASSET_BLOB_MISSING', `제품 이미지 파일이 누락되었습니다: ${entry.path}`)
     }
     const bytes = await file.async('uint8array')
-    if (bytes.byteLength > MAX_ENTRY_BYTES) {
-      throw new EventBriefError('TOO_LARGE', `이미지가 너무 큽니다: ${entry.originalFileName}`)
-    }
+    charge(budget, bytes.byteLength, entry.originalFileName)
     assets.push({
       id: assetId,
       blob: new Blob([bytes], { type: entry.mimeType }),
@@ -303,9 +340,16 @@ async function decodeProductAssets(
  * document format (document.json) and legacy v1 single-page files (brief.json),
  * which migrate to a one-page document. Validates the whole archive in memory
  * before returning, so a corrupt file never clobbers current work.
+ *
+ * `limits`는 검사에서 한도 경계를 실제로 넘겨보기 위한 것이다 — 비워 두면 제품이
+ * 쓰는 한도 그대로다.
  */
-export async function readEventDocument(data: ArrayBuffer | Uint8Array | Blob): Promise<ImportedDocument> {
+export async function readEventDocument(
+  data: ArrayBuffer | Uint8Array | Blob,
+  limits?: Partial<SizeLimits>,
+): Promise<ImportedDocument> {
   const zip = await loadZip(data)
+  const budget = newBudget(limits)
 
   const manifestText = await readText(zip, MANIFEST_PATH, 'MANIFEST_MISSING')
   let manifestRaw: unknown
@@ -360,11 +404,20 @@ export async function readEventDocument(data: ArrayBuffer | Uint8Array | Blob): 
     }
   }
 
-  const assets = await decodeAssets(zip, manifest, doc.assets)
+  const assets = await decodeAssets(zip, manifest, doc.assets, budget)
 
   // Studio 상태는 있을 때만 읽는다. 있는데 읽을 수 없으면 반쪽짜리로 열지 않는다.
+  //
+  // 2.1 파일은 그 상태를 지니고 있다고 스스로 적은 파일이다. 그런데 없으면 그건
+  // 손상이지 "Studio 없는 보통 기획서"가 아니다. 조용히 열면 제품 이미지 연결만
+  // 사라진 채로 열리고, 사용자는 그 사실을 저장해 버린 뒤에야 안다.
   const studioFile = zip.file(STUDIO_PATH)
-  if (!studioFile) return { doc, assets, manifest }
+  if (!studioFile) {
+    if (manifest.version === EVENTBRIEF_STUDIO_VERSION) {
+      throw new EventBriefError('STUDIO_STATE_INVALID', 'studio.json 이(가) 없습니다.')
+    }
+    return { doc, assets, manifest }
+  }
 
   let studioRaw: unknown
   try {
@@ -377,6 +430,6 @@ export async function readEventDocument(data: ArrayBuffer | Uint8Array | Blob): 
     throw new EventBriefError('STUDIO_STATE_INVALID', 'studio.json 형식이 올바르지 않습니다.')
   }
 
-  const products = await decodeProductAssets(zip, manifest, studio, new Set(assets.map((a) => a.id)))
+  const products = await decodeProductAssets(zip, manifest, studio, new Set(assets.map((a) => a.id)), budget)
   return { doc, assets: [...assets, ...products], manifest, studio }
 }

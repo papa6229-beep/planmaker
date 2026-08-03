@@ -149,6 +149,11 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
    * 파일을 여는 것은 편집이 아니라 원본 채택이다. 문서의 신원도 파일이 지니고
    * 있던 그대로 둔다 — Studio 작업은 보관함의 행이 아니다. 파일이 Studio 상태를
    * 지니고 있으면 그 안의 원본 지문과 제품 이미지 연결을 함께 되살린다.
+   *
+   * 편집과 달리 여기서는 저장이 **먼저**다. 보통의 편집은 화면을 먼저 바꾸고
+   * 저장이 뒤따라도 잃을 것이 다음 한 글자뿐이지만, 채택은 하던 작업 전체를
+   * 물러나게 한다. 저장이 실패했는데 화면만 넘어가 있으면, 새 작업은 어디에도
+   * 없고 하던 작업은 화면에서 사라진 상태가 된다.
    */
   const adoptFile = useCallback(
     async (doc: BriefDocument, state: StudioFileState | null) => {
@@ -165,11 +170,13 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
               source: adopted.source === null ? null : { ...adopted.source, fingerprint: state.source?.fingerprint ?? adopted.source.fingerprint },
               productImages: { ...state.productImages },
             }
+      await saveStudioJob(next)
       setPast([])
       setFuture([])
-      await commit(next)
+      jobRef.current = next
+      setJob(next)
     },
-    [commit],
+    [],
   )
 
   const api = useMemo<StudioJobApi | null>(() => {

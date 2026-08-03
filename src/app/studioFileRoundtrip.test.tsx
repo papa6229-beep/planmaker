@@ -390,3 +390,52 @@ describe('§1 새 브라우저에서 작업을 이어갈 수 있다', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   }, 30000)
 })
+
+
+describe('§교정1 2.1 파일의 Studio 상태는 있어야 하고, 버전이 맞아야 한다', () => {
+  it('refuses a 2.1 file whose studio.json is gone', async () => {
+    const pkg = await saveStudioFile(jobWithProducts())
+    const zip = await JSZip.loadAsync(pkg.blob)
+    zip.remove('studio.json')
+    const stripped = await zip.generateAsync({ type: 'blob' })
+
+    // 제품 이미지 연결을 잃은 채 조용히 열리면 안 된다.
+    await expect(readEventDocument(stripped)).rejects.toThrow(EventBriefError)
+  })
+
+  it('refuses a studio.json written by a version it does not know', async () => {
+    const pkg = await saveStudioFile(jobWithProducts())
+    const zip = await JSZip.loadAsync(pkg.blob)
+    const raw = JSON.parse(await zip.file('studio.json')!.async('string'))
+    zip.file('studio.json', JSON.stringify({ ...raw, version: '999.0.0' }))
+    const future = await zip.generateAsync({ type: 'blob' })
+
+    await expect(readEventDocument(future)).rejects.toThrow(EventBriefError)
+    // 순수 계층에서도 같은 판정이다.
+    expect(parseStudioFileState({ ...raw, version: '999.0.0' })).toBeNull()
+  })
+
+  it('still opens v1 and v2 writer files, which carry no studio state at all', async () => {
+    const doc = sampleDoc()
+    const pkg = await packageEventDocument({
+      doc,
+      assets: BRIEF_ASSETS(),
+      previews: [new Blob([new Uint8Array([1])], { type: 'image/png' })],
+      createdAt: new Date(0).toISOString(),
+    })
+    const imported = await readEventDocument(pkg.blob)
+    expect(imported.manifest.version).toBe('2.0.0')
+    expect(imported.studio).toBeUndefined()
+  })
+})
+
+describe('§교정3 전체 용량 한도는 제품 이미지까지 함께 센다', () => {
+  it('counts brief assets and product images against one total', async () => {
+    const pkg = await saveStudioFile(jobWithProducts())
+    // 자산 4장 × 8바이트 = 32바이트. 장당 한도는 넉넉하고 합계만 넘긴다.
+    await expect(readEventDocument(pkg.blob, { maxTotalBytes: 20 })).rejects.toThrow(EventBriefError)
+    // 합계가 한도 안이면 그대로 열린다.
+    const fine = await readEventDocument(pkg.blob, { maxTotalBytes: 64 })
+    expect(fine.assets).toHaveLength(4)
+  })
+})

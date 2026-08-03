@@ -9,7 +9,7 @@
  */
 
 import Dexie, { type Table } from 'dexie'
-import { studioAssetIds, type StudioJob } from '../domain/studioJob'
+import { studioLiveAssetIds, type StudioJob } from '../domain/studioJob'
 
 /** 0단계의 단일 작업 행. */
 export const STUDIO_JOB_ID = 'studio_current'
@@ -48,16 +48,17 @@ export async function saveStudioJob(job: StudioJob): Promise<void> {
 }
 
 /**
- * 디자인팀이 연결한 제품 이미지의 자산 id 전부.
+ * Studio가 아직 쓰고 있는 자산 id 전부 — 연결한 제품 이미지와, 작업본 문서가
+ * 쓰는 이미지까지.
  *
  * 자산 blob 저장소는 작성기·전달 스냅숏·Studio가 함께 쓰는 하나의 풀이고,
  * 정리(prune)는 "아무도 참조하지 않는 것"을 지운다. Studio가 연결한 누끼는
- * 기획서 문서에 적히지 않으므로, 이 목록이 없으면 작성기 쪽 자동저장이 3초 뒤
- * 남의 작업물을 지운다.
+ * 기획서 문서에 적히지 않고, 작업본 문서는 보관함의 어느 행도 아니다. 그래서
+ * 이 목록이 없으면 다른 쪽 정리가 남의 작업물을 지운다.
  */
 export async function allStudioAssetIds(): Promise<string[]> {
   const jobs = await db().jobs.toArray()
   const ids = new Set<string>()
-  for (const job of jobs) for (const id of studioAssetIds(job)) ids.add(id)
+  for (const job of jobs) for (const id of studioLiveAssetIds(job)) ids.add(id)
   return [...ids]
 }

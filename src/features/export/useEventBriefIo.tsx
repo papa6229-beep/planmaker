@@ -14,7 +14,7 @@ import { createContext, useCallback, useContext, useMemo, useRef, useState, type
 import { useAssets } from '../assets/useAssets'
 import { useBriefDocument } from '../document/useBriefDocument'
 import { useStudioJob } from '../studio/useStudioJob'
-import { remapStudioFileState, toStudioFileState } from '../../domain/studioFile'
+import { remapStudioFileState, studioFileAssetIds, toStudioFileState } from '../../domain/studioFile'
 import { deleteAssets, getAllAssets, pruneAssets, putAssets } from '../../services/assetStore'
 import { resolveAssetCollisions } from '../../services/importAssets'
 import { allDocumentAssetIds } from '../../services/documentStore'
@@ -158,9 +158,18 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
    * and every reference in the imported document moves with it, so two briefs
    * that happen to share an id never overwrite each other's image.
    *
-   * The order is: write the new binaries, save the document into the open row,
-   * then swap the screen. If anything fails, the binaries this import added are
-   * removed again and nothing on screen or in any other brief has changed.
+   * The order is: everything that can fail first — write the new binaries,
+   * rebuild the picture cache, sweep — and only then the step that puts the
+   * imported brief in front of the user. Anything that fails does so while the
+   * previous document, the previous Studio job and every one of its links are
+   * still exactly what they were; the binaries this import added are removed
+   * again and nothing on screen or in any other brief has changed.
+   *
+   * This order matters more than it looks. A sweep that failed *after* the swap
+   * left the user reading "불러오기 실패" while sitting on top of the new file,
+   * with their own work gone from the screen — the one thing a failed import
+   * must never do. Making the sweep quietly ignore its own failure would have
+   * hidden the message, not the loss.
    */
   const applyImport = useCallback(
     async (imported: ImportedDocument) => {
@@ -169,26 +178,35 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
       try {
         const resolved = await resolveAssetCollisions(imported.doc, imported.assets)
         added = resolved.assets.map((a) => a.id)
+        // 연결 재번호는 기획서 참조와 **같은 매핑**으로 한다.
+        const studioState =
+          studio === null || imported.studio === undefined
+            ? null
+            : remapStudioFileState(imported.studio, resolved.renamed)
         await putAssets(resolved.assets)
-        // Saves into the row that is open, under that row's id, before the
-        // screen changes — an import must not depend on the autosave window.
-        if (studio !== null) {
-          // 작업판: 문서·원본 지문·제품 이미지 연결이 한 행에 함께 저장된 뒤에야
-          // 화면이 바뀐다. 연결 재번호는 기획서 참조와 **같은 매핑**으로 한다.
-          const state = imported.studio === undefined ? null : remapStudioFileState(imported.studio, resolved.renamed)
-          await studio.adoptFile(resolved.doc, state)
-          replaceDocument(resolved.doc)
-        } else {
-          await importDocument(resolved.doc)
-        }
         await loadFromStore() // rebuild object URLs from the new blobs
-        // Nothing any stored brief, delivered snapshot, or the freshly imported
-        // document still uses is ever swept up by this.
+        // Nothing any stored brief, delivered snapshot, the Studio job as it
+        // stands, or the brief about to be opened still uses is swept up here.
+        // The incoming file's own images are named explicitly: the rows that
+        // will point at them have not been written yet.
         const keep = new Set(referencedAssetIds(resolved.doc))
+        if (studioState !== null) for (const id of studioFileAssetIds(studioState)) keep.add(id)
         for (const id of await allDocumentAssetIds()) keep.add(id)
         for (const id of await allRequestAssetIds()) keep.add(id)
         for (const id of await allStudioAssetIds()) keep.add(id)
         await pruneAssets(keep)
+
+        // 여기서부터가 교체다. 위의 어느 단계가 실패했다면 이 줄에 오지 않는다.
+        if (studio !== null) {
+          // 작업판: 문서·원본 지문·제품 이미지 연결이 한 행에 함께 저장된 뒤에야
+          // 화면이 바뀐다.
+          await studio.adoptFile(resolved.doc, studioState)
+          replaceDocument(resolved.doc)
+        } else {
+          // Saves into the row that is open, under that row's id, before the
+          // screen changes — an import must not depend on the autosave window.
+          await importDocument(resolved.doc)
+        }
         setState({ kind: 'idle' })
       } catch (err) {
         // Roll back what this import added, keeping anything another brief or a

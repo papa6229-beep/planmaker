@@ -181,7 +181,13 @@ describe('§3 공용 자산 저장소 보호', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '파일 불러오기' })).toBeTruthy())
     await importOver(file)
 
-    await waitFor(async () => expect((await getAllAssets()).length).toBe(2), { timeout: 8000 })
+    // 불러오기는 화면을 바꾸기 전에 실패할 수 있는 일을 모두 끝낸다. 그래서 자산
+    // 개수는 행이 쓰이기 전에 이미 2가 된다 — 기다릴 신호는 행 자체다.
+    await waitFor(async () => {
+      const row = await loadDocumentById(a)
+      expect(row?.pages[0]?.blocks[0]?.assetId).not.toBe('asset_shared')
+    }, { timeout: 8000 })
+    expect((await getAllAssets()).length).toBe(2)
     const saved = (await loadDocumentById(a))!
     const newId = saved.pages[0]!.blocks[0]!.assetId!
     expect(newId).not.toBe('asset_shared')

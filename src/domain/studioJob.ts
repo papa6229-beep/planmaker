@@ -18,6 +18,7 @@
 
 import { createId } from './factory'
 import { documentFingerprint } from './documentFingerprint'
+import { referencedAssetIds } from './pageOps'
 import type { BriefDocument } from './pageSchema'
 
 export const STUDIO_JOB_VERSION = '0.1.0'
@@ -91,9 +92,21 @@ export function productImageOf(job: StudioJob | null, blockId: string): string |
   return job?.productImages[blockId]
 }
 
-/** 디자인팀이 연결한 자산 id 전부 — 자산 정리가 지우면 안 되는 것들. */
+/** 디자인팀이 연결한 자산 id 전부 — 기획서 문서가 지니지 않는 것들. */
 export function studioAssetIds(job: StudioJob): string[] {
   return [...new Set(Object.values(job.productImages))]
+}
+
+/**
+ * 이 작업이 아직 쓰고 있는 자산 id 전부 — 자산 정리가 지우면 안 되는 것들.
+ *
+ * 연결한 제품 누끼만이 아니라 작업본 문서가 쓰는 이미지까지 함께 센다. 작업본은
+ * 작성기 보관함의 어느 행도 아니어서, 여기서 말하지 않으면 그 이미지를 아무도
+ * 대신 지켜 주지 않는다 — 앞의 목록만 지키면, 하던 작업의 참고 이미지가 정리에
+ * 쓸려 나간다.
+ */
+export function studioLiveAssetIds(job: StudioJob): string[] {
+  return [...new Set([...referencedAssetIds(job.doc), ...Object.values(job.productImages)])]
 }
 
 /**
