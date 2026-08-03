@@ -1,8 +1,12 @@
 /**
  * Reference view-mode controls above the canvas (WORK_PLAN §8.3). Switches
- * between 캔버스만 / 나란히 보기 / 오버레이, and — in overlay mode — toggles
- * visibility, sets opacity (0–100%, default 35%), and the fit method.
- * View mode / opacity / fit are per-page reference state (§9.3); they persist.
+ * between 캔버스만 / 오버레이, and — in overlay mode — toggles visibility, sets
+ * opacity (0–100%, default 35%), and the fit method. View mode / opacity / fit
+ * are per-page reference state (§9.3); they persist.
+ *
+ * 나란히 보기는 없앴다 (1단계 §4). 중앙에 새로 생긴 `AI 결과 비교`와 이름도
+ * 역할도 겹쳐, 나란히 놓인 두 장이 무엇인지 화면에서 구별되지 않았기 때문이다.
+ * 참고 이미지를 겹쳐 보는 일은 오버레이가 그대로 한다.
  */
 
 import { useBriefDocument } from '../../features/document/useBriefDocument'
@@ -10,7 +14,6 @@ import type { ReferenceLayer } from '../../domain/pageSchema'
 
 const MODES: { value: ReferenceLayer['viewMode']; label: string }[] = [
   { value: 'canvas', label: '캔버스만' },
-  { value: 'side', label: '나란히 보기' },
   { value: 'overlay', label: '오버레이' },
 ]
 
@@ -50,7 +53,7 @@ export function ReferenceViewControls() {
         ))}
       </div>
 
-      {!hasImage && <span className="ref-view__hint">참고 이미지를 추가하면 나란히·오버레이를 사용할 수 있습니다.</span>}
+      {!hasImage && <span className="ref-view__hint">참고 이미지를 추가하면 오버레이를 사용할 수 있습니다.</span>}
 
       {hasImage && viewMode === 'overlay' && (
         <div className="ref-view__overlay-ctl">

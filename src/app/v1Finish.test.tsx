@@ -340,7 +340,8 @@ describe('§7-8 페이지 참고 이미지 왕복', () => {
     doc.pages.push(
       createPage({
         title: '2페이지',
-        reference: { assetId: 'asset_b', viewMode: 'side', opacity: 0.6, fit: 'original', visible: false },
+        // 예전 판의 보기 방식. 지금은 없어졌지만 파일이 깨지면 안 된다 (1단계 §4).
+        reference: { assetId: 'asset_b', viewMode: 'side' as never, opacity: 0.6, fit: 'original', visible: false },
       }),
     )
 
@@ -366,9 +367,10 @@ describe('§7-8 페이지 참고 이미지 왕복', () => {
       fit: 'width',
       visible: true,
     })
+    // 없어진 보기 방식만 캔버스만으로 접히고, 이미지·투명도·맞춤·표시는 그대로다.
     expect(read.doc.pages[1]!.reference).toEqual({
       assetId: 'asset_b',
-      viewMode: 'side',
+      viewMode: 'canvas',
       opacity: 0.6,
       fit: 'original',
       visible: false,

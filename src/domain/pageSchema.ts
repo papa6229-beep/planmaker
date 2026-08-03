@@ -32,7 +32,12 @@ export const DOCUMENT_SCHEMA_VERSION = '2.0.0'
 /** Fixed logical canvas width for every page (WORK_PLAN §9, §21⑤). */
 export const PAGE_CANVAS_WIDTH = DEFAULT_CANVAS_WIDTH // 840
 
-export type ReferenceViewMode = 'canvas' | 'side' | 'overlay'
+/**
+ * 참고 이미지 보기 방식. 예전 판에는 `'side'`(나란히 보기)가 있었고, 그때 저장된
+ * 파일에는 지금도 그 값이 들어 있다. 파일을 깨뜨리지 않기 위해 그 값을 읽되,
+ * 화면 상태로는 `'canvas'`로 정규화한다 (1단계 §4) — 지금 판에는 그 화면이 없다.
+ */
+export type ReferenceViewMode = 'canvas' | 'overlay'
 export type ReferenceFit = 'width' | 'original' | 'center'
 
 /** Default overlay opacity (WORK_PLAN §8.3: 35%). Stored 0..1. */
@@ -85,6 +90,19 @@ export function createReferenceLayer(): ReferenceLayer {
   return { viewMode: 'canvas', opacity: DEFAULT_REFERENCE_OPACITY, fit: 'width', visible: false }
 }
 
+/**
+ * 저장된 참고 이미지 상태를 지금 판이 아는 모양으로 좁힌다.
+ *
+ * 없어진 보기 방식(`'side'`)이나 알 수 없는 값이 들어 있으면 `'canvas'`로 둔다.
+ * 파일 안의 값을 고쳐 쓰는 것이 아니라 **화면 상태만** 정규화하는 것이므로,
+ * 참고 이미지도 투명도도 맞춤 방식도 그대로 남는다.
+ */
+export function normalizeReferenceLayer(layer: ReferenceLayer | undefined): ReferenceLayer {
+  if (layer === undefined) return createReferenceLayer()
+  const viewMode: ReferenceViewMode = layer.viewMode === 'overlay' ? 'overlay' : 'canvas'
+  return { ...layer, viewMode }
+}
+
 export interface CreatePageOptions {
   id?: string
   title?: string
@@ -102,7 +120,8 @@ export function createPage(options: CreatePageOptions = {}): BriefPage {
     blocks: options.blocks ?? [],
     canvasWidth: options.canvasWidth ?? PAGE_CANVAS_WIDTH,
     canvasHeight: options.canvasHeight ?? NEW_PAGE_HEIGHT,
-    reference: options.reference ?? createReferenceLayer(),
+    // 모든 불러오기가 이 자리를 지난다 — 없어진 보기 방식은 여기서 한 번에 접힌다.
+    reference: normalizeReferenceLayer(options.reference),
   }
 }
 

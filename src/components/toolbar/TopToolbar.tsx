@@ -27,6 +27,8 @@ import { EVENTBRIEF_EXTENSION, eventBriefFileName, FALLBACK_FILE_NAME } from '..
 import { useAppSurface } from '../../app/AppSurfaceContext'
 import { clearSelectedTeam, selectedTeam } from '../../features/team/teamSession'
 import { useStudioJob } from '../../features/studio/useStudioJob'
+import { useImageGeneration } from '../../features/studio/useImageGeneration'
+import { clearApiKey, hasApiKey, saveApiKey } from '../../features/studio/apiKeySession'
 import { countStudioStorage, resetStudioStorage, type StorageCount } from '../../services/storageReset'
 
 const TITLE_COALESCE_KEY = 'project-title'
@@ -71,6 +73,10 @@ export function TopToolbar({
   // 갈아 끼우면 남의 팀 목록으로 기획서가 넘어가는 우회로가 된다 (§4).
   const gateTeam = surface === 'brief-writer' ? selectedTeam() : null
   const [studioWipe, setStudioWipe] = useState<StorageCount | null>(null)
+  // 실제 생성은 작업판에만 있다. 작성기 표면에는 provider 자체가 없으므로 `null`.
+  const generation = useImageGeneration()
+  const [keyPanel, setKeyPanel] = useState(false)
+  const [keyDraft, setKeyDraft] = useState('')
 
   /** 팀 변경: 지금 작업을 저장한 뒤 게이트로 돌아간다. */
   const changeTeam = async () => {
@@ -207,13 +213,41 @@ export function TopToolbar({
           {onShowGenerationRequest !== undefined && (
             <button
               type="button"
-              className="btn btn--primary"
+              className="btn"
               onClick={onShowGenerationRequest}
               disabled={busy}
               title="GPT에게 나갈 제작 요청을 사람이 먼저 읽습니다"
             >
               AI 제작 요청 미리보기
             </button>
+          )}
+          {/* 실제 생성. 돈이 드는 유일한 버튼이라 상태를 감추지 않는다 — 나가
+              있는 동안은 잠기고, 결과가 있으면 "다시"라고 말한다. */}
+          {generation !== null && (
+            <>
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={generation.begin}
+                disabled={busy || generation.state.kind === 'running'}
+                title="현재 페이지를 이미지 1장으로 생성합니다"
+              >
+                {generation.state.kind === 'running'
+                  ? '이미지 생성 중…'
+                  : generation.hasResult
+                    ? '다시 생성하기'
+                    : '이미지 생성하기'}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setKeyPanel(true)}
+                disabled={busy}
+                title="테스트용 OpenAI API 키를 다시 입력하거나 지웁니다"
+              >
+                API 키
+              </button>
+            </>
           )}
 
           <button
@@ -294,6 +328,63 @@ export function TopToolbar({
                 }}
               >
                 모두 지우기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 키를 다시 넣거나 지우는 자리. 작업판에만 있고, 값은 이 탭을 벗어나지
+          않는다 — 여기서도 화면에 되비추지 않는다. */}
+      {keyPanel && (
+        <div className="confirm-backdrop" role="presentation" onClick={() => setKeyPanel(false)}>
+          <div
+            className="confirm"
+            role="dialog"
+            aria-modal="true"
+            aria-label="테스트용 OpenAI API 키"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="confirm__title">테스트용 OpenAI API 키</h2>
+            <p className="confirm__body">
+              {hasApiKey() ? '이 탭에 키가 저장되어 있습니다.' : '아직 키가 없습니다.'} 키는 이 탭에만 보관되며 탭을
+              닫으면 지워집니다. 파일·저장소·기획서에는 남지 않습니다.
+            </p>
+            <label className="save-dialog__field">
+              <span className="save-dialog__label">새 키 입력</span>
+              <input
+                className="field__input"
+                type="password"
+                autoFocus
+                aria-label="새 API 키"
+                value={keyDraft}
+                onChange={(e) => setKeyDraft(e.target.value)}
+              />
+            </label>
+            <div className="confirm__actions">
+              <button
+                type="button"
+                className="btn btn--danger"
+                onClick={() => {
+                  clearApiKey()
+                  setKeyDraft('')
+                  setKeyPanel(false)
+                }}
+              >
+                키 지우기
+              </button>
+              <button type="button" className="btn" onClick={() => setKeyPanel(false)}>취소</button>
+              <button
+                type="button"
+                className="btn btn--primary"
+                disabled={keyDraft.trim().length === 0}
+                onClick={() => {
+                  saveApiKey(keyDraft)
+                  setKeyDraft('')
+                  setKeyPanel(false)
+                }}
+              >
+                저장
               </button>
             </div>
           </div>

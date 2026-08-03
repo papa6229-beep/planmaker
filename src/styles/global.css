@@ -509,33 +509,6 @@ button { font-family: inherit; }
   color: var(--color-accent);
 }
 
-.ref-side {
-  flex: 0 0 40%;
-  min-width: 220px;
-  display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--color-border);
-  background: var(--color-panel);
-  min-height: 0;
-}
-.ref-side__bar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--color-border);
-  flex-wrap: wrap;
-}
-.ref-side__label { font-size: 12px; font-weight: 600; color: var(--color-muted); }
-.ref-side__zoom { display: inline-flex; align-items: center; gap: 4px; }
-.ref-side__zoom .btn { padding: 4px 8px; }
-.ref-side__zoom-value { min-width: 42px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; }
-.ref-side__viewer { flex: 1; overflow: auto; padding: 12px; background: var(--color-bg); min-height: 0; }
-.ref-side__img { display: block; height: auto; max-width: none; }
-.ref-side__empty { margin: 24px 0; text-align: center; font-size: 12px; color: var(--color-muted); }
-
 /* Overlay reference image sits in the 840px canvas space, behind the blocks. */
 .canvas__overlay {
   position: absolute;
@@ -1966,3 +1939,81 @@ button { font-family: inherit; }
   border-radius: var(--radius-sm, 6px);
   padding: 8px 10px;
 }
+
+/* ── 중앙 보기 전환: 기획서 작업 / AI 결과 비교 (1단계 §5) ─────────────────
+   참고 이미지 보기(.ref-view)와는 다른 축이라 생김새도 나란히 두지 않는다. */
+.studio-view {
+  flex: none;
+  display: flex;
+  gap: 4px;
+  padding: 6px 12px 0;
+}
+.studio-view__tab {
+  padding: 6px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+.studio-view__tab.is-active {
+  background: var(--color-accent, #6d28d9);
+  border-color: var(--color-accent, #6d28d9);
+  color: #fff;
+}
+
+/* 기획서와 결과를 같은 흐름에서 나란히. 좁으면 위아래로 접힌다. */
+.compare {
+  flex: 1;
+  display: flex;
+  gap: 12px;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+}
+.compare__pane {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.compare__brief .canvas { flex: 1; min-height: 0; min-width: 0; }
+.compare__result { overflow: auto; padding: 0 12px 12px; }
+.compare__head {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 12px;
+  flex-wrap: wrap;
+}
+.compare__label { margin: 0; font-size: 13px; font-weight: 700; }
+.compare__note { margin: 0; font-size: 12px; color: var(--color-muted); }
+.compare__stale {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 600;
+}
+/* 원본 비율 그대로. 폭만 기획서 쪽과 맞춘다 — 자르지 않는다. */
+.compare__image { display: block; width: 100%; height: auto; }
+.compare__empty { margin: 24px 0; text-align: center; font-size: 12px; color: var(--color-muted); }
+
+@media (max-width: 1100px) {
+  .compare { flex-direction: column; }
+}
+
+/* 생성 확인 창 — 무엇을 얼마나 쓰는지 먼저 보여 준다 (§6). */
+.gen-dialog__facts { margin: 8px 0 12px; display: grid; gap: 4px; }
+.gen-dialog__facts > div { display: flex; gap: 8px; font-size: 13px; }
+.gen-dialog__facts dt { min-width: 84px; color: var(--color-muted); }
+.gen-dialog__facts dd { margin: 0; font-weight: 600; }
+.gen-dialog__field { display: block; margin-bottom: 12px; }
+.gen-dialog__label { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 600; }
+.gen-dialog__hint { display: block; margin-top: 4px; font-size: 11px; color: var(--color-muted); }

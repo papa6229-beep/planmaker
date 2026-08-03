@@ -78,20 +78,19 @@ describe('reference image — tools', () => {
   })
 })
 
-describe('reference image — 나란히 보기', () => {
-  it('shows the reference viewer beside the canvas', async () => {
-    const user = userEvent.setup()
+describe('reference image — 보기 방식', () => {
+  /**
+   * 나란히 보기는 없앴다 (1단계 §4). 그 자리를 중앙의 `AI 결과 비교`가 쓰고,
+   * 참고 이미지를 겹쳐 보는 일은 오버레이가 그대로 한다.
+   */
+  it('offers only 캔버스만 and 오버레이', async () => {
     const { container } = renderShell()
-    // Side/overlay modes are disabled until an image exists.
-    expect((screen.getByRole('radio', { name: '나란히 보기' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole('radio', { name: '나란히 보기' })).toBeNull()
+    expect((screen.getByRole('radio', { name: '오버레이' }) as HTMLButtonElement).disabled).toBe(true)
 
     await addReference(container)
-    await user.click(screen.getByRole('radio', { name: '나란히 보기' }))
-
-    const viewer = screen.getByRole('complementary', { name: '참고 이미지 뷰어' })
-    expect(within(viewer).getByRole('img', { name: '참고 이미지' })).toBeTruthy()
-    // Zoom is view-only; the reset control is present.
-    expect(within(viewer).getByRole('button', { name: '원본 비율 맞춤' })).toBeTruthy()
+    expect((screen.getByRole('radio', { name: '오버레이' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.getByRole('radio', { name: '캔버스만' })).toBeTruthy()
   })
 })
 

@@ -28,11 +28,13 @@ import { BriefLibrary } from '../components/library/BriefLibrary'
 import { SummaryPanel } from '../components/summary/SummaryPanel'
 import { ReferenceTools } from '../components/reference/ReferenceTools'
 import { ReferenceViewControls } from '../components/reference/ReferenceViewControls'
-import { ReferenceSideView } from '../components/reference/ReferenceSideView'
 import { StartChoice } from '../components/start/StartChoice'
 import { ConceptField } from '../components/concept/ConceptField'
 import { AiNoteField, DesignerNoteField } from '../components/concept/HandoffNotes'
 import { GenerationRequestPreview } from '../components/studio/GenerationRequestPreview'
+import { GenerateImageDialog } from '../components/studio/GenerateImageDialog'
+import { ResultCompare } from '../components/studio/ResultCompare'
+import { ImageGenerationProvider, useImageGeneration } from '../features/studio/useImageGeneration'
 
 /** 기획서 작성 · 요청 작업 · 이미지 생성기 작업판. */
 export type ShellMode = 'brief' | 'image' | 'studio'
@@ -158,13 +160,43 @@ function GlobalEventBriefDrop() {
   return null
 }
 
+/**
+ * 중앙 패널이 무엇을 보여 줄지 — 기획서 작업이냐, 방금 만든 결과와의 비교냐.
+ * 참고 이미지 보기 방식과는 다른 축이고, 상태도 다른 곳에 있다.
+ */
+function StudioViewTabs() {
+  const generation = useImageGeneration()
+  if (generation === null) return null
+  const tabs: { value: 'brief' | 'compare'; label: string }[] = [
+    { value: 'brief', label: '기획서 작업' },
+    { value: 'compare', label: 'AI 결과 비교' },
+  ]
+  return (
+    <div className="studio-view" role="radiogroup" aria-label="중앙 보기">
+      {tabs.map((t) => (
+        <button
+          key={t.value}
+          type="button"
+          role="radio"
+          aria-checked={generation.view === t.value}
+          className={`studio-view__tab${generation.view === t.value ? ' is-active' : ''}`}
+          onClick={() => generation.setView(t.value)}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: ReactNode }) {
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [requestOpen, setRequestOpen] = useState(false)
   const [startDismissed, setStartDismissed] = useState(false)
   const { activeReference } = useBriefDocument()
   const { state } = useBriefEditor()
-  const sideBySide = activeReference.viewMode === 'side' && activeReference.assetId !== undefined
+  const generation = useImageGeneration()
+  const compare = generation?.view === 'compare'
   // Offer the first-start choice only on a genuinely untouched page — a document
   // already being worked on never sees it again.
   const showStart =
@@ -188,14 +220,16 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
         <div className="workspace__center">
           <PageTabs />
           {statusPanel}
+          {/* 작업판에서 결과가 생기면, 중앙이 무엇을 보여 줄지 고를 수 있다.
+              결과가 없을 때는 고를 것이 없으므로 나타나지도 않는다. */}
+          {generation !== null && generation.hasResult && <StudioViewTabs />}
           <div className="canvas-controls">
             <ReferenceViewControls />
             <CanvasZoomControls />
           </div>
-          {showStart && <StartChoice onDismiss={() => setStartDismissed(true)} />}
+          {showStart && !compare && <StartChoice onDismiss={() => setStartDismissed(true)} />}
           <div className="stage">
-            <BriefCanvas />
-            {sideBySide && <ReferenceSideView />}
+            {compare ? <ResultCompare /> : <BriefCanvas />}
           </div>
         </div>
         {/* 기획서 모드의 우측은 보관함; 작업판과 이미지 요청 화면은 공통 편집기의
@@ -209,6 +243,7 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
       <EventBriefIoDialogs />
       {summaryOpen && <SummaryPanel onClose={() => setSummaryOpen(false)} />}
       {requestOpen && <GenerationRequestPreview onClose={() => setRequestOpen(false)} />}
+      <GenerateImageDialog />
     </div>
   )
 }
@@ -232,7 +267,11 @@ export function AppShell({ mode = 'brief', binding, statusPanel }: AppShellProps
         <BriefDocumentProvider {...(binding ? { binding } : {})}>
           <EventBriefIoProvider>
             <CanvasViewProvider>
-              <Workspace mode={mode} statusPanel={statusPanel} />
+              {/* 작업판 밖에서는 이 provider 안의 훅이 전부 `null`을 내므로,
+                  작성기 화면에는 생성 버튼도 결과 비교도 나타나지 않는다. */}
+              <ImageGenerationProvider>
+                <Workspace mode={mode} statusPanel={statusPanel} />
+              </ImageGenerationProvider>
             </CanvasViewProvider>
           </EventBriefIoProvider>
         </BriefDocumentProvider>
