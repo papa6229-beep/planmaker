@@ -106,6 +106,12 @@ export interface BriefDocumentApi {
   /** 전체 컨셉 — document-wide direction for the AI / design team (§5). */
   concept: string
   setConcept: (concept: string) => void
+  /** 디자인팀에게 전달할 말 — the planner's request to whoever makes the image. */
+  designerNote: string
+  setDesignerNote: (note: string) => void
+  /** AI에게 추가로 전달할 말 — the studio worker's own instruction (§6-2). */
+  aiNote: string
+  setAiNote: (note: string) => void
   /** 작성팀 — which team wrote this brief; `undefined` is 팀 미지정 (v1 마감 §11). */
   requestTeam: string | undefined
   setRequestTeam: (team: RequestTeam | undefined) => void
@@ -400,6 +406,10 @@ export function BriefDocumentProvider({
       // block isn't yet folded into the document).
       concept: doc.project.concept ?? '',
       setConcept: (next) => mutateDoc((d) => ({ ...d, project: { ...d.project, concept: next } })),
+      designerNote: doc.project.designerNote ?? '',
+      setDesignerNote: (next) => mutateDoc((d) => ({ ...d, project: { ...d.project, designerNote: next } })),
+      aiNote: doc.project.aiNote ?? '',
+      setAiNote: (next) => mutateDoc((d) => ({ ...d, project: { ...d.project, aiNote: next } })),
       requestTeam: doc.project.requestTeam,
       setRequestTeam: (team) =>
         mutateDoc((d) => {

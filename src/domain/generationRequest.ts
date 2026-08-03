@@ -236,6 +236,19 @@ export function buildGenerationRequest(
     if (ref.fileName !== undefined) reference.fileName = ref.fileName
   }
 
+  // 작업자가 작업판에서 적은 AI 지시. 작성자의 전달 메모(디자인 요약이 이미
+  // 지시로 실어 준다)와 이름이 다르므로, 읽는 쪽에서 둘을 섞을 일이 없다.
+  const instructions: SummaryInstruction[] = [...design.instructions]
+  const aiNote = doc.project.aiNote?.trim()
+  if (aiNote !== undefined && aiNote.length > 0) {
+    instructions.push({
+      scope: 'document',
+      label: 'AI에게 추가로 전달할 말',
+      content: aiNote,
+      renderAsText: false,
+    })
+  }
+
   const document: GenerationDocumentInfo = {
     fingerprint: documentDigest(doc),
     title: doc.project.title,
@@ -257,7 +270,7 @@ export function buildGenerationRequest(
       texts,
       imageSlots,
       buttons,
-      instructions: design.instructions,
+      instructions,
       reference,
       constraints: GENERATION_CONSTRAINTS,
       missingProductImages: imageSlots.filter((s) => s.status === 'missing').map((s) => s.blockId),

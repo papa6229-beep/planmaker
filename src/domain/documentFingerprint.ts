@@ -107,6 +107,10 @@ export function documentFingerprint(doc: BriefDocument): string {
         title: project.title,
         concept: project.concept,
         conceptNote: project.conceptNote,
+        // 작성자가 디자인팀에게 남긴 말은 기획서의 내용이다. 반면 작업판에서
+        // 작업자가 적는 AI 지시(`aiNote`)는 기획서가 달라진 것이 아니므로
+        // 여기 없다 — 그것까지 세면 메모 한 줄에 "원본이 바뀌었다"가 된다.
+        designerNote: project.designerNote,
         outputType: project.outputType,
         canvasWidth: project.canvasWidth,
         canvasHeight: project.canvasHeight,

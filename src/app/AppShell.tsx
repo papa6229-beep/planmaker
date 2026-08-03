@@ -31,6 +31,7 @@ import { ReferenceViewControls } from '../components/reference/ReferenceViewCont
 import { ReferenceSideView } from '../components/reference/ReferenceSideView'
 import { StartChoice } from '../components/start/StartChoice'
 import { ConceptField } from '../components/concept/ConceptField'
+import { AiNoteField, DesignerNoteField } from '../components/concept/HandoffNotes'
 import { ProductImagePanel } from '../components/studio/ProductImagePanel'
 import { GenerationRequestPreview } from '../components/studio/GenerationRequestPreview'
 
@@ -181,6 +182,9 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
           <ReferenceTools />
           <BlockPalette />
           <ConceptField />
+          {/* 작성기는 디자인팀에게 남길 말만, 작업판은 그 말을 읽고 AI 지시를
+              따로 적는다 (첫 사용 흐름 §6). */}
+          {mode === 'studio' ? <AiNoteField /> : <DesignerNoteField />}
         </div>
         <div className="workspace__center">
           <PageTabs />

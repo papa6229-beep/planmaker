@@ -1883,3 +1883,16 @@ button { font-family: inherit; }
   border-radius: var(--radius-sm, 6px);
   padding: 8px;
 }
+
+/* 작업판에서 읽기 전용으로 보여 주는 작성자의 전달 메모 (첫 사용 흐름 §6-2). */
+.concept--readonly .concept__title { font-size: 13px; }
+.concept__quote {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  background: var(--color-panel-muted);
+  border-left: 3px solid var(--color-reference);
+  border-radius: var(--radius-sm, 6px);
+  padding: 8px 10px;
+}
