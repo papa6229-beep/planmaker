@@ -13,6 +13,8 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useAssets } from '../assets/useAssets'
 import { useBriefDocument } from '../document/useBriefDocument'
+import { useStudioJob } from '../studio/useStudioJob'
+import { remapStudioFileState, toStudioFileState } from '../../domain/studioFile'
 import { deleteAssets, getAllAssets, pruneAssets, putAssets } from '../../services/assetStore'
 import { resolveAssetCollisions } from '../../services/importAssets'
 import { allDocumentAssetIds } from '../../services/documentStore'
@@ -74,8 +76,14 @@ function triggerDownload(blob: Blob, fileName: string): void {
 }
 
 export function EventBriefIoProvider({ children }: { children: ReactNode }) {
-  const { getDocument, importDocument, saveNow } = useBriefDocument()
+  const { getDocument, importDocument, replaceDocument, saveNow } = useBriefDocument()
   const { loadFromStore } = useAssets()
+  /**
+   * 작업판에서만 있는 것. 파일에 함께 담기는 Studio 상태와, 파일에서 되살릴 곳이
+   * 여기 하나로 모인다 — 직렬화·검증·재매핑 자체는 `domain/studioFile`의 순수
+   * 함수가 맡고, 여기서는 순서만 지킨다.
+   */
+  const studio = useStudioJob()
   const [state, setState] = useState<IoState>({ kind: 'idle' })
   const runningRef = useRef(false)
 
@@ -106,6 +114,9 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
         assets: stored,
         previews,
         createdAt: new Date().toISOString(),
+        // 작업판에서 저장한 파일에는 연결한 제품 이미지 원본과 그 연결정보가
+        // 함께 들어간다. 하나라도 원본을 찾지 못하면 여기서 저장이 실패한다.
+        ...(studio === null ? {} : { studio: toStudioFileState(studio.job) }),
       })
       triggerDownload(pkg.blob, fileName ?? pkg.fileName)
       setState({ kind: 'exported' })
@@ -116,7 +127,7 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
     } finally {
       runningRef.current = false
     }
-  }, [getDocument, saveNow])
+  }, [getDocument, saveNow, studio])
 
   /**
    * Saving to a file preserves whatever the brief is right now. A brief may be
@@ -161,7 +172,15 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
         await putAssets(resolved.assets)
         // Saves into the row that is open, under that row's id, before the
         // screen changes — an import must not depend on the autosave window.
-        await importDocument(resolved.doc)
+        if (studio !== null) {
+          // 작업판: 문서·원본 지문·제품 이미지 연결이 한 행에 함께 저장된 뒤에야
+          // 화면이 바뀐다. 연결 재번호는 기획서 참조와 **같은 매핑**으로 한다.
+          const state = imported.studio === undefined ? null : remapStudioFileState(imported.studio, resolved.renamed)
+          await studio.adoptFile(resolved.doc, state)
+          replaceDocument(resolved.doc)
+        } else {
+          await importDocument(resolved.doc)
+        }
         await loadFromStore() // rebuild object URLs from the new blobs
         // Nothing any stored brief, delivered snapshot, or the freshly imported
         // document still uses is ever swept up by this.
@@ -186,7 +205,7 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
         setState({ kind: 'import-failed', message: messageFor(err) })
       }
     },
-    [importDocument, loadFromStore],
+    [importDocument, replaceDocument, loadFromStore, studio],
   )
 
   const startImport = useCallback(

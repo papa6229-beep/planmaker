@@ -65,15 +65,6 @@ const AUTOSAVE_DEBOUNCE_MS = 3000
 export interface DocumentBinding {
   load: () => Promise<BriefDocument | null>
   save: (doc: BriefDocument, now: number) => Promise<void>
-  /**
-   * Called instead of `save` when a *file* is opened into this binding.
-   *
-   * For the brief writer there is no difference — an opened file becomes the
-   * brief in the row that is open. The image studio needs the difference: there,
-   * opening a file means taking it on as the job's original, keeping the
-   * identity the file was written with (이미지 생성기 0단계 §3.1).
-   */
-  adopt?: (doc: BriefDocument, now: number) => Promise<void>
 }
 
 const DEFAULT_BINDING: DocumentBinding = { load: loadDocument, save: saveDocument }
@@ -332,14 +323,6 @@ export function BriefDocumentProvider({
    */
   const importDocument = useCallback(
     async (next: BriefDocument) => {
-      // A binding that adopts files decides identity itself; forcing the open
-      // row's id onto the document would be wrong there.
-      const adopt = bindingRef.current.adopt
-      if (adopt !== undefined) {
-        await adopt(next, Date.now())
-        replaceDocument(next)
-        return
-      }
       const currentId = docRef.current.project.id
       const owned: BriefDocument =
         currentId === undefined ? next : { ...next, project: { ...next.project, id: currentId } }

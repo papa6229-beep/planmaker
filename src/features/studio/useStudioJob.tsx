@@ -30,6 +30,7 @@ import {
   type StudioJob,
 } from '../../domain/studioJob'
 import { loadStudioJob, saveStudioJob, STUDIO_JOB_ID } from '../../services/studioStore'
+import type { StudioFileState } from '../../domain/studioFile'
 import { createEmptyDocument } from '../../domain/pageSchema'
 import { createEmptyProject } from '../../domain/factory'
 import type { BriefDocument } from '../../domain/pageSchema'
@@ -45,6 +46,14 @@ export interface StudioJobApi {
   removeProductImage: (blockId: string) => void
   /** 원본 기획서와 작업본이 달라졌는지 (§7). 자동 병합은 하지 않는다. */
   sourceChanged: boolean
+  /**
+   * 파일 하나를 이 작업으로 채택한다 — 문서, 원본 지문, 제품 이미지 연결까지 한
+   * 번에. Studio 상태가 없는 보통 기획서 파일이면 `state`가 `null`이고, 그때는
+   * 지금까지처럼 새 원본으로 시작하며 연결은 비어 있다 (Studio 파일 §4.4).
+   *
+   * 저장이 끝난 뒤에야 화면을 바꾸는 것은 호출부의 몫이다.
+   */
+  adoptFile: (doc: BriefDocument, state: StudioFileState | null) => Promise<void>
   /**
    * 제품 이미지 연결의 실행 취소·다시 실행.
    *
@@ -132,13 +141,34 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
         if (!current) return
         await commit(withWorkingDoc(current, doc, now))
       },
-      // 파일을 여는 것은 편집이 아니라 원본 채택이다. 문서의 신원도 파일이
-      // 지니고 있던 그대로 둔다 — Studio 작업은 보관함의 행이 아니다.
-      adopt: async (doc: BriefDocument, now: number) => {
-        const current = jobRef.current ?? emptyJob(now)
-        await commit(withSource(current, doc, now))
-      },
     }),
+    [commit],
+  )
+
+  /**
+   * 파일을 여는 것은 편집이 아니라 원본 채택이다. 문서의 신원도 파일이 지니고
+   * 있던 그대로 둔다 — Studio 작업은 보관함의 행이 아니다. 파일이 Studio 상태를
+   * 지니고 있으면 그 안의 원본 지문과 제품 이미지 연결을 함께 되살린다.
+   */
+  const adoptFile = useCallback(
+    async (doc: BriefDocument, state: StudioFileState | null) => {
+      const now = Date.now()
+      const base = jobRef.current ?? emptyJob(now)
+      const adopted = withSource(base, doc, now, state?.source?.fileName)
+      const next: StudioJob =
+        state === null
+          ? adopted
+          : {
+              ...adopted,
+              // 파일이 기억한 원본 지문을 그대로 쓴다. 저장할 때 이미 달라져
+              // 있었다면 그 사실까지 복원되어야 판정이 거짓말을 하지 않는다.
+              source: adopted.source === null ? null : { ...adopted.source, fingerprint: state.source?.fingerprint ?? adopted.source.fingerprint },
+              productImages: { ...state.productImages },
+            }
+      setPast([])
+      setFuture([])
+      await commit(next)
+    },
     [commit],
   )
 
@@ -151,6 +181,7 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       setProductImage: (blockId, assetId) => commitLinks(linkProductImage(job, blockId, assetId)),
       removeProductImage: (blockId) => commitLinks(unlinkProductImage(job, blockId)),
       sourceChanged: jobSourceChanged(job),
+      adoptFile,
       canUndo: past.length > 0,
       canRedo: future.length > 0,
       undo: () => {
@@ -169,7 +200,7 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       },
       lastChangeAt,
     }
-  }, [job, binding, commitLinks, applyLinks, past, future, lastChangeAt])
+  }, [job, binding, commitLinks, applyLinks, adoptFile, past, future, lastChangeAt])
 
   // 작업을 읽는 동안에는 편집기를 만들지 않는다.
   if (api === null) return null

@@ -6,10 +6,12 @@
  * Archive layout:
  *   project.eventbrief (ZIP)
  *   ├─ manifest.json
- *   ├─ brief.json
- *   ├─ preview.png
+ *   ├─ brief.json | document.json
+ *   ├─ studio.json   Studio 작업 상태 (있을 때만)
+ *   ├─ preview.png | previews/page-01.png…
  *   ├─ assets/      design images
- *   └─ references/  reference / publishing images
+ *   ├─ references/  reference / publishing images
+ *   └─ products/    실제 사용 제품 이미지 (Studio가 연결한 것)
  */
 
 import type { EventBrief, Manifest } from '../domain/briefSchema'
@@ -18,7 +20,15 @@ export const EVENTBRIEF_FORMAT = 'eventbrief'
 export const EVENTBRIEF_VERSION = '1.0.0'
 /** Multi-page archive version (Phase 7 Step 4). */
 export const EVENTBRIEF_DOCUMENT_VERSION = '2.0.0'
-export const SUPPORTED_VERSIONS: readonly string[] = ['1.0.0', '2.0.0']
+/**
+ * Studio 상태(`studio.json` + `products/`)를 함께 담은 파일의 버전.
+ *
+ * 형식이 넓어진 것을 버전으로 드러낸다. 이 파일을 모르는 예전 빌드는 열지 못하고
+ * 멈추며, 제품 이미지를 조용히 버린 채 열지 않는다. 반대로 이 빌드는 예전 파일을
+ * 전부 그대로 읽는다.
+ */
+export const EVENTBRIEF_STUDIO_VERSION = '2.1.0'
+export const SUPPORTED_VERSIONS: readonly string[] = ['1.0.0', '2.0.0', '2.1.0']
 export const GENERATOR = 'event-brief-builder'
 
 export const MANIFEST_PATH = 'manifest.json'
@@ -26,6 +36,8 @@ export const BRIEF_PATH = 'brief.json'
 export const PREVIEW_PATH = 'preview.png'
 /** v2 document payload path (all pages). */
 export const DOCUMENT_PATH = 'document.json'
+/** Studio 작업 상태 payload path (2.1.0에서만). */
+export const STUDIO_PATH = 'studio.json'
 
 /**
  * ZIP path for a page's preview, 1-based and zero-padded (WORK_PLAN §9.5):
@@ -40,7 +52,17 @@ export const MAX_ASSET_COUNT = 500
 export const MAX_ENTRY_BYTES = 50 * 1024 * 1024 // 50 MB per file
 export const MAX_TOTAL_BYTES = 200 * 1024 * 1024 // 200 MB total
 
-export type AssetArea = 'design' | 'reference'
+/**
+ * 이미지가 파일 안에서 어디에 놓이는가.
+ *
+ *  - `design`     — AI에게 그대로 쓰라고 준 이미지
+ *  - `reference`  — 작성자가 참고하라고 붙인 캡처와 페이지 참고 이미지
+ *  - `product`    — 디자인팀이 최종 이미지에 넣으려고 연결한 실제 제품 이미지
+ *
+ * 셋은 뜻이 다르므로 폴더도 다르다. 참고 이미지가 제품 이미지 자리로 옮겨 가는
+ * 일은 없다.
+ */
+export type AssetArea = 'design' | 'reference' | 'product'
 
 /** Per-asset mapping stored in the manifest so import can locate each blob. */
 export interface AssetArchiveEntry {
@@ -68,6 +90,7 @@ export type EventBriefErrorCode =
   | 'SCHEMA_UNSUPPORTED'
   | 'VALIDATION_FAILED'
   | 'ASSET_BLOB_MISSING'
+  | 'STUDIO_STATE_INVALID'
   | 'DUPLICATE_ID'
   | 'UNSAFE_PATH'
   | 'TOO_LARGE'
@@ -134,9 +157,14 @@ export function classifyAssetArea(brief: EventBrief, assetId: string): AssetArea
 }
 
 /** Builds the ZIP-internal path for an asset: `{area}/{assetId}__{safeName}`. */
+const AREA_FOLDER: Record<AssetArea, string> = {
+  design: 'assets',
+  reference: 'references',
+  product: 'products',
+}
+
 export function assetArchivePath(assetId: string, originalFileName: string, area: AssetArea): string {
-  const folder = area === 'design' ? 'assets' : 'references'
-  return `${folder}/${assetId}__${sanitizeArchiveFileName(originalFileName)}`
+  return `${AREA_FOLDER[area]}/${assetId}__${sanitizeArchiveFileName(originalFileName)}`
 }
 
 export function buildManifest(
@@ -188,7 +216,7 @@ export function parseManifest(raw: unknown): EventBriefManifest {
       originalFileName: a.originalFileName,
       mimeType: a.mimeType,
       size: typeof a.size === 'number' ? a.size : 0,
-      area: a.area === 'design' ? 'design' : 'reference',
+      area: a.area === 'design' ? 'design' : a.area === 'product' ? 'product' : 'reference',
     }
   })
   if (entries.length > MAX_ASSET_COUNT) {

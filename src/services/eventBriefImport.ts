@@ -22,8 +22,10 @@ import {
   MAX_ENTRY_BYTES,
   MAX_TOTAL_BYTES,
   parseManifest,
+  STUDIO_PATH,
   type EventBriefManifest,
 } from './eventBriefArchive'
+import { parseStudioFileState, studioFileAssetIds, type StudioFileState } from '../domain/studioFile'
 
 const SUPPORTED_SCHEMA_VERSIONS: readonly string[] = [SCHEMA_VERSION]
 
@@ -179,8 +181,14 @@ export async function readEventBrief(data: ArrayBuffer | Uint8Array | Blob): Pro
 
 export interface ImportedDocument {
   doc: BriefDocument
+  /**
+   * Every blob the file carries: the document's own assets and, for a Studio
+   * file, the product image originals its links point at.
+   */
   assets: StoredAsset[]
   manifest: EventBriefManifest
+  /** Studio 작업 상태. 이 상태가 없는 보통 기획서 파일에서는 없다. */
+  studio?: StudioFileState
 }
 
 /** Narrows an untrusted document.json to a BriefDocument (migrateToDocument normalizes). */
@@ -246,6 +254,51 @@ async function decodeAssets(zip: JSZip, manifest: EventBriefManifest, metas: rea
 }
 
 /**
+ * Reads the product image originals a Studio file carries.
+ *
+ * These have no entry in `doc.assets` on purpose — they are not part of the
+ * brief — so their metadata comes from the manifest. A link that points at a
+ * picture the file does not carry is a broken file, and says so rather than
+ * opening with the connection quietly gone.
+ */
+async function decodeProductAssets(
+  zip: JSZip,
+  manifest: EventBriefManifest,
+  studio: StudioFileState,
+  already: ReadonlySet<string>,
+): Promise<StoredAsset[]> {
+  const entryByAssetId = new Map(manifest.assets.map((e) => [e.assetId, e]))
+  const assets: StoredAsset[] = []
+
+  for (const assetId of studioFileAssetIds(studio)) {
+    if (already.has(assetId)) continue
+    const entry = entryByAssetId.get(assetId)
+    if (!entry) {
+      throw new EventBriefError('ASSET_BLOB_MISSING', `제품 이미지 매핑이 누락되었습니다: ${assetId}`)
+    }
+    if (!isAcceptedMime(entry.mimeType)) {
+      throw new EventBriefError('BRIEF_INVALID', `허용되지 않는 MIME 타입: ${entry.mimeType}`)
+    }
+    const file = zip.file(entry.path)
+    if (!file) {
+      throw new EventBriefError('ASSET_BLOB_MISSING', `제품 이미지 파일이 누락되었습니다: ${entry.path}`)
+    }
+    const bytes = await file.async('uint8array')
+    if (bytes.byteLength > MAX_ENTRY_BYTES) {
+      throw new EventBriefError('TOO_LARGE', `이미지가 너무 큽니다: ${entry.originalFileName}`)
+    }
+    assets.push({
+      id: assetId,
+      blob: new Blob([bytes], { type: entry.mimeType }),
+      fileName: entry.originalFileName,
+      mimeType: entry.mimeType,
+      byteSize: bytes.byteLength,
+    })
+  }
+  return assets
+}
+
+/**
  * Reads a `.eventbrief` archive as a multi-page document. Handles both the v2
  * document format (document.json) and legacy v1 single-page files (brief.json),
  * which migrate to a one-page document. Validates the whole archive in memory
@@ -264,7 +317,7 @@ export async function readEventDocument(data: ArrayBuffer | Uint8Array | Blob): 
   const manifest = parseManifest(manifestRaw)
 
   let doc: BriefDocument
-  if (manifest.version === '2.0.0') {
+  if (manifest.version === '2.0.0' || manifest.version === '2.1.0') {
     const docText = await readText(zip, DOCUMENT_PATH, 'BRIEF_MISSING')
     let docRaw: unknown
     try {
@@ -308,5 +361,22 @@ export async function readEventDocument(data: ArrayBuffer | Uint8Array | Blob): 
   }
 
   const assets = await decodeAssets(zip, manifest, doc.assets)
-  return { doc, assets, manifest }
+
+  // Studio 상태는 있을 때만 읽는다. 있는데 읽을 수 없으면 반쪽짜리로 열지 않는다.
+  const studioFile = zip.file(STUDIO_PATH)
+  if (!studioFile) return { doc, assets, manifest }
+
+  let studioRaw: unknown
+  try {
+    studioRaw = JSON.parse(await studioFile.async('string'))
+  } catch {
+    throw new EventBriefError('STUDIO_STATE_INVALID', 'studio.json 파싱 실패.')
+  }
+  const studio = parseStudioFileState(studioRaw)
+  if (studio === null) {
+    throw new EventBriefError('STUDIO_STATE_INVALID', 'studio.json 형식이 올바르지 않습니다.')
+  }
+
+  const products = await decodeProductAssets(zip, manifest, studio, new Set(assets.map((a) => a.id)))
+  return { doc, assets: [...assets, ...products], manifest, studio }
 }

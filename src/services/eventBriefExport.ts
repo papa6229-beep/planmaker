@@ -18,14 +18,17 @@ import {
   classifyAssetArea,
   DOCUMENT_PATH,
   EVENTBRIEF_DOCUMENT_VERSION,
+  EVENTBRIEF_STUDIO_VERSION,
   EventBriefError,
   MANIFEST_PATH,
   pagePreviewPath,
   PREVIEW_PATH,
   sanitizeArchiveFileName,
+  STUDIO_PATH,
   type AssetArchiveEntry,
   type EventBriefManifest,
 } from './eventBriefArchive'
+import { studioFileAssetIds, type StudioFileState } from '../domain/studioFile'
 
 export interface PackagedBrief {
   blob: Blob
@@ -91,10 +94,19 @@ export async function packageEventBrief({ brief, assets, preview, createdAt }: P
 
 export interface PackageDocumentArgs {
   doc: BriefDocument
+  /**
+   * Blobs available to write. Must contain every asset the document references
+   * *and* every product image the Studio state links, or packaging fails.
+   */
   assets: StoredAsset[]
   /** One preview PNG per page, in page order. May be empty in tests. */
   previews: Blob[]
   createdAt: string
+  /**
+   * Studio 작업 상태. 있으면 `studio.json`과 `products/`가 함께 쓰이고 파일
+   * 버전이 2.1.0이 된다. 없으면 지금까지의 2.0.0 파일 그대로다 (Studio 파일 §4.2).
+   */
+  studio?: StudioFileState
 }
 
 function documentFileName(doc: BriefDocument): string {
@@ -109,15 +121,20 @@ function allBlocks(doc: BriefDocument): BriefBlock[] {
 
 /**
  * Packages a whole multi-page document into a v2 `.eventbrief` ZIP:
- *   manifest.json (version 2.0.0) · document.json (all pages) ·
- *   previews/page-01.png… · assets/ · references/
- * The shared asset pool is written once; each page references assets by id.
+ *   manifest.json · document.json (all pages) · previews/page-01.png… ·
+ *   assets/ · references/ — and, for a Studio job, studio.json · products/.
+ *
+ * The shared asset pool is written once; each page references assets by id. The
+ * product images a Studio job links are *not* in that pool (they are deliberately
+ * outside the brief), so they are gathered from the Studio state and written
+ * alongside — once per image, however many blocks point at it.
  */
 export async function packageEventDocument({
   doc,
   assets,
   previews,
   createdAt,
+  studio,
 }: PackageDocumentArgs): Promise<PackagedBrief> {
   const zip = new JSZip()
   const assetById = new Map(assets.map((a) => [a.id, a]))
@@ -148,11 +165,44 @@ export async function packageEventDocument({
     zip.file(path, stored.blob)
   }
 
-  const manifest = buildManifest(entries, createdAt, EVENTBRIEF_DOCUMENT_VERSION)
+  // 디자인팀이 연결한 실제 제품 이미지. 기획서 자산 풀 밖에 있으므로 여기서
+  // 따로 모은다. 같은 이미지가 여러 블록에 연결됐어도 바이너리는 한 번만 쓴다.
+  if (studio) {
+    const written = new Set(entries.map((e) => e.assetId))
+    for (const assetId of studioFileAssetIds(studio)) {
+      if (written.has(assetId)) continue
+      const stored = assetById.get(assetId)
+      if (!stored) {
+        // 연결정보가 가리키는 그림이 없으면 손상된 파일을 만들지 않는다.
+        throw new EventBriefError(
+          'ASSET_BLOB_MISSING',
+          `연결된 제품 이미지의 원본을 찾을 수 없어 저장할 수 없습니다: ${assetId}`,
+        )
+      }
+      const path = assetArchivePath(assetId, stored.fileName, 'product')
+      entries.push({
+        assetId,
+        path,
+        originalFileName: stored.fileName,
+        mimeType: stored.mimeType,
+        size: stored.byteSize ?? stored.blob.size,
+        area: 'product',
+      })
+      zip.file(path, stored.blob)
+      written.add(assetId)
+    }
+  }
+
+  const manifest = buildManifest(
+    entries,
+    createdAt,
+    studio ? EVENTBRIEF_STUDIO_VERSION : EVENTBRIEF_DOCUMENT_VERSION,
+  )
   zip.file(MANIFEST_PATH, JSON.stringify(manifest, null, 2))
 
   // document.json is the canonical multi-page snapshot (pages, order, activePageId).
   zip.file(DOCUMENT_PATH, serializeDocument(doc))
+  if (studio) zip.file(STUDIO_PATH, JSON.stringify(studio, null, 2))
 
   previews.forEach((preview, i) => {
     if (preview) zip.file(pagePreviewPath(i), preview)
