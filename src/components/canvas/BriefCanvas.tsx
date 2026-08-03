@@ -15,6 +15,7 @@ import { useAssets } from '../../features/assets/useAssets'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { useCanvasView } from '../../features/editor/useCanvasView'
 import { findLinkPartner, isPairedLinkUrl, linkUrlOf } from '../../domain/simpleBlocks'
+import { autoScrollStep, heightForPointer } from '../../features/editor/heightDrag'
 import type { ReferenceLayer } from '../../domain/pageSchema'
 import { BriefBlockCard } from './BriefBlockCard'
 
@@ -55,6 +56,12 @@ export function BriefCanvas() {
   const canvasRef = useRef<HTMLElement | null>(null)
   const sheetRef = useRef<HTMLDivElement | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  /** Everything one height drag needs to be stopped from anywhere. */
+  const heightDrag = useRef<{ stop: () => void } | null>(null)
+
+  // A drag that outlives the canvas would keep a timer running against a
+  // detached element, so leaving the screen ends it like letting go does.
+  useEffect(() => () => heightDrag.current?.stop(), [])
 
   // Measure the available width so fit-to-view can size the fixed 840px canvas.
   useEffect(() => {
@@ -149,20 +156,60 @@ export function BriefCanvas() {
           onPointerDown={(e) => {
             if (e.button !== 0) return
             e.preventDefault()
-            const startY = e.clientY
-            const startHeight = canvasHeight
-            const onMove = (ev: PointerEvent) => {
-              // Screen movement is converted back into document units, so the
-              // page grows by what the user actually dragged at any zoom.
-              setCanvasHeight(startHeight + (ev.clientY - startY) / zoom, 'canvas-height')
+            heightDrag.current?.stop()
+
+            const sheet = sheetRef.current
+            const scroller = canvasRef.current
+            if (!sheet || !scroller) return
+            // Where the pointer sits relative to the page's end, so the grab
+            // point is kept for the whole drag.
+            const grabOffset = heightForPointer(e.clientY, sheet.getBoundingClientRect().top, zoom, 0) - canvasHeight
+            let pointerY = e.clientY
+
+            /**
+             * Height is read from where the pointer *is* in document space, not
+             * from how far it has moved. The sheet's screen position is re-read
+             * every time, so when the work area scrolls under a still pointer
+             * the page keeps growing — which is what makes one grab enough for a
+             * page many screens long.
+             */
+            const applyHeight = () => {
+              const top = sheetRef.current?.getBoundingClientRect().top
+              if (top === undefined) return
+              setCanvasHeight(heightForPointer(pointerY, top, zoom, grabOffset), 'canvas-height')
             }
-            const onUp = () => {
+
+            const timer = window.setInterval(() => {
+              const box = scroller.getBoundingClientRect()
+              const step = autoScrollStep(pointerY, box.top, box.bottom)
+              if (step !== 0) scroller.scrollTop += step
+              // Even with no scrolling left to do, re-applying is harmless: the
+              // clamp decides, and a page that cannot grow simply stops.
+              if (step !== 0) applyHeight()
+            }, 16)
+
+            const onMove = (ev: PointerEvent) => {
+              pointerY = ev.clientY
+              applyHeight()
+            }
+            const stop = () => {
+              window.clearInterval(timer)
               window.removeEventListener('pointermove', onMove)
-              window.removeEventListener('pointerup', onUp)
+              window.removeEventListener('pointerup', stop)
+              window.removeEventListener('pointercancel', stop)
+              window.removeEventListener('keydown', onKey)
+              heightDrag.current = null
               endInteraction()
             }
+            const onKey = (ev: KeyboardEvent) => {
+              if (ev.key === 'Escape') stop()
+            }
+
+            heightDrag.current = { stop }
             window.addEventListener('pointermove', onMove)
-            window.addEventListener('pointerup', onUp)
+            window.addEventListener('pointerup', stop)
+            window.addEventListener('pointercancel', stop)
+            window.addEventListener('keydown', onKey)
           }}
         >
           ↕ 페이지 길이 조절 · {Math.round(canvasHeight)}px
