@@ -1940,3 +1940,20 @@ button { font-family: inherit; }
 }
 .editor-topbar__team-change { flex: 0 0 auto; padding: 4px 10px; font-size: 12px; }
 .library__scope { margin: 0; font-size: 11px; line-height: 1.5; color: var(--color-muted); }
+
+/* 팀 미지정 이전 자료 정리 (첫 사용 흐름 교정). */
+.team-gate__teamless { width: min(680px, 100%); text-align: left; }
+.team-gate__list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.team-gate__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-panel-muted);
+}
+.team-gate__row-title { flex: 1 1 160px; font-size: 13px; font-weight: 600; min-width: 0; }
+.team-gate__row-meta { flex: 0 0 auto; font-size: 11px; color: var(--color-muted); }
+.team-gate__row-team { flex: 0 0 auto; width: auto; min-width: 110px; }

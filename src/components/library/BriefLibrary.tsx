@@ -35,8 +35,9 @@ export function BriefLibrary() {
   const { documents, loaded, createNew, duplicate, remove, refresh } = useDocuments()
   /**
    * 작성기에서는 게이트에서 고른 팀의 기획서만 보인다. 팀을 정하지 않고 쓴 옛
-   * 자료는 지우지 않았으므로 함께 보여 준다 — 어느 팀 것도 아니어서 어느 팀이
-   * 보아도 남의 작업이 아니다.
+   * 자료는 지우지 않지만 여기 섞이지도 않는다 — 어느 팀 것도 아닌 것을 모든 팀에
+   * 보여 주면 "자기 팀 것만 본다"가 아니게 되기 때문이다. 그 자료는 게이트의
+   * '팀 미지정 이전 자료'에서 팀을 정한 뒤에 이 목록에 나타난다.
    */
   const surface = useAppSurface()
   const sessionTeam = surface === 'brief-writer' ? selectedTeam() : null
@@ -92,8 +93,8 @@ export function BriefLibrary() {
       (d) =>
         (q === '' || titleOf(d).includes(q)) &&
         (month === 'all' || localMonthKey(d.createdAt) === month) &&
-        // 게이트에서 팀을 골랐다면 그 팀 것(과 팀 미지정 옛 자료)만 남는다.
-        (sessionTeam === null || teamOf(d) === sessionTeam || teamOf(d) === 'none') &&
+        // 게이트에서 팀을 골랐다면 그 팀 것만 남는다.
+        (sessionTeam === null || teamOf(d) === sessionTeam) &&
         // The brief on screen is filtered by the team it has right now, so
         // choosing a team in the bar moves its card immediately.
         (team === 'all' || teamOf(d) === team),
@@ -226,7 +227,7 @@ export function BriefLibrary() {
         </label>
       ) : (
         <p className="library__scope">
-          {teamLabel(sessionTeam)} 기획서만 보입니다. 팀을 정하지 않고 쓴 이전 자료도 함께 보입니다.
+          {teamLabel(sessionTeam)} 기획서만 보입니다. 팀을 정하지 않고 쓴 이전 자료는 시작 화면에서 정리할 수 있습니다.
         </p>
       )}
 

@@ -14,12 +14,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDocuments } from '../../features/documents/useDocuments'
 import { selectTeam } from '../../features/team/teamSession'
-import { isRequestTeam, REQUEST_TEAMS, type RequestTeam } from '../../domain/requestTeam'
+import { isRequestTeam, REQUEST_TEAMS, teamLabel, type RequestTeam } from '../../domain/requestTeam'
 import { countWriterStorage, resetWriterStorage, type StorageCount } from '../../services/storageReset'
 import { readEventDocument } from '../../services/eventBriefImport'
 import { resolveAssetCollisions } from '../../services/importAssets'
 import { putAssets } from '../../services/assetStore'
-import { createDocument } from '../../services/documentStore'
+import { assignDocumentTeam, createDocument, listTeamlessDocuments, type DocumentSummary } from '../../services/documentStore'
 
 export function TeamGatePage() {
   const { createNew, refresh } = useDocuments()
@@ -31,11 +31,19 @@ export function TeamGatePage() {
   const [failed, setFailed] = useState(false)
   const [counts, setCounts] = useState<StorageCount | null>(null)
   const [confirming, setConfirming] = useState(false)
+  /** 팀을 정하지 않고 쓴 이전 자료. 목록을 연 동안에만 읽는다. */
+  const [teamless, setTeamless] = useState<DocumentSummary[] | null>(null)
+  const [picked, setPicked] = useState<Record<string, RequestTeam>>({})
+  const [filed, setFiled] = useState<Record<string, RequestTeam>>({})
+  const [teamlessCount, setTeamlessCount] = useState(0)
 
   const recount = useCallback(() => {
     void countWriterStorage()
       .then(setCounts)
       .catch(() => setCounts(null))
+    void listTeamlessDocuments()
+      .then((rows) => setTeamlessCount(rows.length))
+      .catch(() => setTeamlessCount(0))
   }, [])
 
   useEffect(recount, [recount])
@@ -77,6 +85,34 @@ export function TeamGatePage() {
       setFailed(true)
       startingRef.current = false
       setBusy(false)
+    }
+  }
+
+  const openTeamless = async () => {
+    setPicked({})
+    setFiled({})
+    try {
+      setTeamless(await listTeamlessDocuments())
+    } catch {
+      setTeamless([])
+    }
+  }
+
+  /**
+   * 이전 자료를 한 팀 소속으로 옮긴다. 사용자가 팀을 고른 뒤에만 일어나고,
+   * 바뀌는 것은 소속 하나뿐이다 — 문서도 이미지도 날짜도 그대로다.
+   */
+  const fileUnder = async (id: string) => {
+    const team = picked[id]
+    if (team === undefined) return
+    try {
+      await assignDocumentTeam(id, team)
+      setFiled((f) => ({ ...f, [id]: team }))
+      setTeamless((rows) => (rows ?? []).filter((r) => r.id !== id))
+      await refresh()
+      recount()
+    } catch {
+      setFailed(true)
     }
   }
 
@@ -123,6 +159,15 @@ export function TeamGatePage() {
           </button>
           <button
             type="button"
+            className="btn"
+            disabled={busy}
+            onClick={() => void openTeamless()}
+            title="팀을 정하지 않고 쓴 이전 기획서를 팀별로 정리합니다"
+          >
+            팀 미지정 이전 자료{teamlessCount > 0 ? ` (${teamlessCount})` : ''}
+          </button>
+          <button
+            type="button"
             className="btn team-gate__wipe"
             disabled={busy || counts === null || counts.briefs === 0}
             onClick={() => setConfirming(true)}
@@ -148,6 +193,71 @@ export function TeamGatePage() {
           }}
         />
       </main>
+
+      {teamless !== null && (
+        <div className="confirm-backdrop" role="presentation" onClick={() => setTeamless(null)}>
+          <div
+            className="confirm team-gate__teamless"
+            role="dialog"
+            aria-modal="true"
+            aria-label="팀 미지정 이전 자료 정리"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="confirm__title">팀 미지정 이전 자료</h2>
+            <p className="confirm__body">
+              팀을 정하기 전에 쓴 기획서입니다. 지워지지 않았고, 어느 팀에도 자동으로 들어가지 않습니다. 소속 팀을
+              정해 주면 그 팀의 목록에 나타나고 그때부터 열 수 있습니다.
+            </p>
+
+            {teamless.length === 0 ? (
+              <p className="team-gate__note">
+                {Object.keys(filed).length > 0 ? '정리할 자료가 더 없습니다.' : '팀 미지정 이전 자료가 없습니다.'}
+              </p>
+            ) : (
+              <ul className="team-gate__list">
+                {teamless.map((row) => (
+                  <li key={row.id} className="team-gate__row">
+                    <span className="team-gate__row-title">{row.title || '제목 없음'}</span>
+                    <span className="team-gate__row-meta">
+                      {new Date(row.createdAt).toLocaleDateString('ko-KR')} · {row.pageCount}페이지
+                    </span>
+                    <select
+                      className="field__input team-gate__row-team"
+                      aria-label={`${row.title || '제목 없음'} 소속 팀`}
+                      value={picked[row.id] ?? ''}
+                      onChange={(e) => {
+                        const value = e.target.value
+                        if (isRequestTeam(value)) setPicked((p) => ({ ...p, [row.id]: value }))
+                      }}
+                    >
+                      <option value="">팀 선택</option>
+                      {REQUEST_TEAMS.map((t) => (
+                        <option key={t.value} value={t.value}>{t.label}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={picked[row.id] === undefined}
+                      onClick={() => void fileUnder(row.id)}
+                    >
+                      이 팀 자료로 옮기기
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {Object.entries(filed).map(([id, team]) => (
+              <p key={id} className="team-gate__note">{teamLabel(team)} 자료로 옮겼습니다.</p>
+            ))}
+
+            <div className="confirm__actions">
+              <button type="button" className="btn" onClick={() => setTeamless(null)}>닫기</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {confirming && counts !== null && (
         <div className="confirm-backdrop" role="presentation" onClick={() => setConfirming(false)}>

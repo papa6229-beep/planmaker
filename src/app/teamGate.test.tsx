@@ -16,6 +16,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { AppRoutes } from './AppRoutes'
 import { clearAll, getAllAssets, putAsset, resetAssetStoreForTests, type StoredAsset } from '../services/assetStore'
 import {
+  assignDocumentTeam,
   clearAllDocuments,
   createDocument,
   listDocuments,
@@ -106,7 +107,7 @@ describe('§4 팀 선택 게이트', () => {
     expect(selectedTeam()).toBe('marketing')
   })
 
-  it("shows only the chosen team's briefs, plus untitled-team material from before", async () => {
+  it("shows only the chosen team's briefs — no other team, and no team-less material", async () => {
     await createDocument(teamDoc('마케팅 기획서', 'marketing'), 3)
     await createDocument(teamDoc('상품 기획서', 'product'), 2)
     await createDocument(teamDoc('팀 없는 옛 기획서', undefined), 1)
@@ -117,8 +118,9 @@ describe('§4 팀 선택 게이트', () => {
 
     await waitFor(() => expect(within(library()).getByText('마케팅 기획서')).toBeTruthy(), { timeout: 5000 })
     expect(within(library()).queryByText('상품 기획서')).toBeNull()
-    // 구자료는 지우지 않았고, 어느 팀 것도 아니므로 계속 열 수 있다.
-    expect(within(library()).getByText('팀 없는 옛 기획서')).toBeTruthy()
+    // 팀 미지정 자료는 어느 팀의 목록에도 섞이지 않는다. 지우지도 않는다.
+    expect(within(library()).queryByText('팀 없는 옛 기획서')).toBeNull()
+    expect((await listDocuments()).some((d) => d.title === '팀 없는 옛 기획서')).toBe(true)
   })
 
   it("refuses another team's brief typed straight into the address", async () => {
@@ -127,6 +129,15 @@ describe('§4 팀 선택 게이트', () => {
     renderWriter(`/briefs/${otherId}`)
 
     await waitFor(() => expect(screen.getByText('다른 팀의 기획서입니다')).toBeTruthy(), { timeout: 5000 })
+    expect(document.querySelector('.canvas__sheet')).toBeNull()
+  })
+
+  it('refuses a team-less brief typed straight into the address', async () => {
+    const oldId = await createDocument(teamDoc('팀 없는 옛 기획서', undefined), 1)
+    selectTeam('marketing')
+    renderWriter(`/briefs/${oldId}`)
+
+    await waitFor(() => expect(screen.getByText('팀이 지정되지 않은 이전 자료입니다')).toBeTruthy(), { timeout: 5000 })
     expect(document.querySelector('.canvas__sheet')).toBeNull()
   })
 
@@ -213,5 +224,77 @@ describe('§5 이 브라우저의 모든 기획서 초기화', () => {
 
     expect(await listDocuments()).toHaveLength(0)
     expect((await getAllAssets()).map((a) => a.id)).toEqual(['asset_cutout'])
+  })
+})
+
+
+describe('§교정 이전 자료 정리', () => {
+  it('shows the team-less briefs that exist, and changes nothing on cancel', async () => {
+    const oldId = await createDocument(teamDoc('팀 없는 옛 기획서', undefined, 'asset_old'), 1)
+    await createDocument(teamDoc('마케팅 기획서', 'marketing'), 2)
+    await putAsset(storedAsset('asset_old'))
+    const before = await loadDocumentById(oldId)
+
+    renderWriter('/')
+    await waitFor(() => expect(gateTitle()).toBeTruthy())
+    fireEvent.click(await screen.findByRole('button', { name: /팀 미지정 이전 자료/ }))
+
+    const panel = await screen.findByRole('dialog', { name: '팀 미지정 이전 자료 정리' })
+    // 자료가 있다는 것을 여기서는 확인할 수 있다.
+    expect(within(panel).getByText('팀 없는 옛 기획서')).toBeTruthy()
+    // 팀이 있는 기획서는 정리 대상이 아니다.
+    expect(within(panel).queryByText('마케팅 기획서')).toBeNull()
+
+    fireEvent.click(within(panel).getByRole('button', { name: '닫기' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '팀 미지정 이전 자료 정리' })).toBeNull())
+    // 취소는 아무것도 바꾸지 않는다.
+    expect(await loadDocumentById(oldId)).toEqual(before)
+  })
+
+  it('files an old brief under the team the user picks, losing nothing', async () => {
+    const oldId = await createDocument(teamDoc('팀 없는 옛 기획서', undefined, 'asset_old'), 1)
+    await putAsset(storedAsset('asset_old'))
+    const before = (await loadDocumentById(oldId))!
+    const rowBefore = (await listDocuments()).find((d) => d.id === oldId)!
+
+    renderWriter('/')
+    await waitFor(() => expect(gateTitle()).toBeTruthy())
+    fireEvent.click(await screen.findByRole('button', { name: /팀 미지정 이전 자료/ }))
+    const panel = await screen.findByRole('dialog', { name: '팀 미지정 이전 자료 정리' })
+
+    // 대상 팀을 명시적으로 고른 뒤에만 옮겨진다.
+    fireEvent.change(within(panel).getByLabelText('팀 없는 옛 기획서 소속 팀'), { target: { value: 'cs' } })
+    fireEvent.click(within(panel).getByRole('button', { name: '이 팀 자료로 옮기기' }))
+
+    await waitFor(async () => {
+      expect((await loadDocumentById(oldId))?.project.requestTeam).toBe('cs')
+    }, { timeout: 5000 })
+
+    // 문서·이미지·작성일·수정일·페이지·블록은 그대로다.
+    const after = (await loadDocumentById(oldId))!
+    const rowAfter = (await listDocuments()).find((d) => d.id === oldId)!
+    expect(after.pages).toEqual(before.pages)
+    expect(after.assets).toEqual(before.assets)
+    expect(after.project.title).toBe(before.project.title)
+    expect(rowAfter.createdAt).toBe(rowBefore.createdAt)
+    expect(rowAfter.updatedAt).toBe(rowBefore.updatedAt)
+    expect(await getAllAssets()).toHaveLength(1)
+  })
+
+  it('makes the filed brief appear in that team and nowhere else', async () => {
+    const oldId = await createDocument(teamDoc('팀 없는 옛 기획서', undefined), 1)
+    await assignDocumentTeam(oldId, 'cs')
+
+    selectTeam('cs')
+    const csId = await createDocument(teamDoc('CS 지금', 'cs'), 2)
+    const { unmount } = renderWriter(`/briefs/${csId}`)
+    await waitFor(() => expect(within(library()).getByText('팀 없는 옛 기획서')).toBeTruthy(), { timeout: 5000 })
+    unmount()
+
+    selectTeam('marketing')
+    const mktId = await createDocument(teamDoc('마케팅 지금', 'marketing'), 3)
+    renderWriter(`/briefs/${mktId}`)
+    await waitFor(() => expect(within(library()).getByText('마케팅 지금')).toBeTruthy(), { timeout: 5000 })
+    expect(within(library()).queryByText('팀 없는 옛 기획서')).toBeNull()
   })
 })

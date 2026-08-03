@@ -62,13 +62,14 @@ export function BriefEditorRoute() {
   const { id } = useParams()
   const surface = useAppSurface()
   /**
-   * Whose brief this is. Typing another team's address is not a way into their
-   * work: the gate picked a team, and a brief that belongs to a different one
-   * simply does not open here (첫 사용 흐름 §4). A brief with no team at all is
-   * older material that predates the gate, and stays open to everyone.
+   * Whose brief this is. Typing an address is not a way into somebody else's
+   * work: the gate picked a team, and only that team's briefs open here (첫 사용
+   * 흐름 §4). A brief with no team at all belongs to nobody yet — it is not
+   * deleted and not given a team behind the user's back; it waits in the gate's
+   * '팀 미지정 이전 자료' until someone says which team it is.
    */
   const gateTeam = surface === 'brief-writer' ? selectedTeam() : null
-  const [denied, setDenied] = useState(false)
+  const [denied, setDenied] = useState<'other-team' | 'teamless' | null>(null)
 
   useEffect(() => {
     if (id === undefined || gateTeam === null) return
@@ -77,7 +78,7 @@ export function BriefEditorRoute() {
       const doc = await loadDocumentById(id)
       if (cancelled || doc === null) return
       const owner = teamFilterKey(doc.project.requestTeam)
-      setDenied(owner !== 'none' && owner !== gateTeam)
+      setDenied(owner === 'none' ? 'teamless' : owner === gateTeam ? null : 'other-team')
     })()
     return () => {
       cancelled = true
@@ -92,12 +93,16 @@ export function BriefEditorRoute() {
     }
   }, [id])
 
-  if (denied) {
+  if (denied !== null) {
     return (
       <AppShellLayout>
         <PageHeader
-          title="다른 팀의 기획서입니다"
-          description={`지금은 ${teamLabel(gateTeam ?? undefined)}으로 일하고 있습니다. 이 기획서는 다른 팀의 것이라 열 수 없습니다.`}
+          title={denied === 'teamless' ? '팀이 지정되지 않은 이전 자료입니다' : '다른 팀의 기획서입니다'}
+          description={
+            denied === 'teamless'
+              ? '어느 팀 자료인지 아직 정해지지 않아 여기서는 열 수 없습니다. 시작 화면의 팀 미지정 이전 자료에서 팀을 정한 뒤 열어 주세요.'
+              : `지금은 ${teamLabel(gateTeam ?? undefined)}으로 일하고 있습니다. 이 기획서는 다른 팀의 것이라 열 수 없습니다.`
+          }
         />
         <p className="page-note"><Link to="/">팀 선택 화면으로 돌아가기</Link></p>
       </AppShellLayout>
