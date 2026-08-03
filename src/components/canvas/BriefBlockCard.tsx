@@ -121,8 +121,12 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   // 두 표면에서 그대로 쓰인다. 문서에는 아무것도 쓰이지 않는다 — 화면에서 참고
   // 이미지와 실사용 이미지를 눈으로 가르기 위한 표시일 뿐이다.
   const studio = useStudioJob()
-  const productUrl = meta.requiresAsset ? getUrl(studio?.productImageOf(block.id)) : undefined
-  const displayUrl = productUrl ?? thumbUrl
+  const productAssetId = meta.requiresAsset ? studio?.productImageOf(block.id) : undefined
+  const productUrl = getUrl(productAssetId)
+  // 작업자가 잠깐 원래 참고 캡처를 다시 볼 수 있다 (첫 사용 흐름 §7).
+  const [showingReference, setShowingReference] = useState(false)
+  const displayUrl = showingReference ? (thumbUrl ?? productUrl) : (productUrl ?? thumbUrl)
+  const showingProduct = displayUrl !== undefined && displayUrl === productUrl && !showingReference
   const drag = useRef<DragState | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
   const menuRef = useRef<HTMLDetailsElement | null>(null)
@@ -320,12 +324,26 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
         <div className="block-card__menu-panel">
           {meta.requiresAsset && (
             <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); openFilePicker() }}>
-              {thumbUrl ? '참고 이미지 교체' : '참고 이미지 넣기'}
+              {studio === null
+                ? (thumbUrl ? '참고 이미지 교체' : '참고 이미지 넣기')
+                : (productAssetId === undefined ? '제품 이미지 넣기' : '제품 이미지 교체')}
             </button>
           )}
-          {meta.requiresAsset && thumbUrl && (
+          {meta.requiresAsset && studio === null && thumbUrl && (
             <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); removeBlockAsset(block.id) }}>
               참고 이미지 제거
+            </button>
+          )}
+          {/* 작업판에서 지우는 것은 연결한 제품 이미지뿐이다. 작성자가 붙인
+              참고 캡처는 기획서의 내용이라 여기서 지울 수 없다. */}
+          {meta.requiresAsset && studio !== null && productAssetId !== undefined && (
+            <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); setShowingReference(false); studio.removeProductImage(block.id) }}>
+              제품 이미지 제거
+            </button>
+          )}
+          {meta.requiresAsset && studio !== null && thumbUrl !== undefined && productAssetId !== undefined && (
+            <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); setShowingReference((v) => !v) }}>
+              {showingReference ? '제품 이미지 보기' : '참고 이미지 보기'}
             </button>
           )}
           {meta.requiresAsset && thumbUrl && (
@@ -497,11 +515,11 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
             <img
               className="block-card__thumb"
               src={displayUrl}
-              alt={productUrl === undefined ? (block.image?.productName ?? block.label) : '실제 사용 제품 이미지'}
+              alt={showingProduct ? '실제 사용 제품 이미지' : (block.image?.productName ?? block.label)}
               draggable={false}
             />
             {/* Sits on the picture itself, so what it is for is never in doubt. */}
-            {productUrl !== undefined ? (
+            {showingProduct ? (
               <span className="block-card__ref-note block-card__ref-note--product">실제 사용 제품 이미지</span>
             ) : (
               isReferenceCapture(block) && (

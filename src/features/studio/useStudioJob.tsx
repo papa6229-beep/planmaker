@@ -45,6 +45,18 @@ export interface StudioJobApi {
   removeProductImage: (blockId: string) => void
   /** 원본 기획서와 작업본이 달라졌는지 (§7). 자동 병합은 하지 않는다. */
   sourceChanged: boolean
+  /**
+   * 제품 이미지 연결의 실행 취소·다시 실행.
+   *
+   * 연결은 기획서 문서 밖에 있으므로 편집기의 히스토리에 들어가지 않는다. 그래서
+   * 여기서 따로 쌓고, 상단바는 "마지막에 일어난 일"을 되돌린다 — 그 판정을 위해
+   * 마지막 변경 시각을 함께 내놓는다 (첫 사용 흐름 §7).
+   */
+  canUndo: boolean
+  canRedo: boolean
+  undo: () => void
+  redo: () => void
+  lastChangeAt: number
 }
 
 const StudioJobContext = createContext<StudioJobApi | null>(null)
@@ -53,10 +65,16 @@ function emptyJob(now: number): StudioJob {
   return createStudioJob(createEmptyDocument(createEmptyProject('')), now, STUDIO_JOB_ID)
 }
 
+type Links = Record<string, string>
+
 export function StudioJobProvider({ children }: { children: ReactNode }) {
   const [job, setJob] = useState<StudioJob | null>(null)
   const jobRef = useRef<StudioJob | null>(null)
   jobRef.current = job
+  // 연결만 담는 얕은 히스토리. 문서 편집은 편집기가 이미 되돌린다.
+  const [past, setPast] = useState<Links[]>([])
+  const [future, setFuture] = useState<Links[]>([])
+  const [lastChangeAt, setLastChangeAt] = useState(0)
 
   // 작업을 먼저 읽고 나서 편집기를 마운트한다. 편집기는 마운트 순간 한 번
   // `binding.load()`를 호출하므로, 그 전에 작업이 손에 있어야 새로고침 복원이
@@ -84,6 +102,28 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
     await saveStudioJob(next)
   }, [])
 
+  /** 연결을 바꾸면서 되돌릴 자리를 남긴다. */
+  const commitLinks = useCallback(
+    (next: StudioJob) => {
+      const before = jobRef.current?.productImages ?? {}
+      setPast((p) => [...p, before])
+      setFuture([])
+      setLastChangeAt(Date.now())
+      void commit(next)
+    },
+    [commit],
+  )
+
+  const applyLinks = useCallback(
+    (links: Links) => {
+      const current = jobRef.current
+      if (!current) return
+      setLastChangeAt(Date.now())
+      void commit({ ...current, productImages: links })
+    },
+    [commit],
+  )
+
   const binding = useMemo<DocumentBinding>(
     () => ({
       load: async () => jobRef.current?.doc ?? null,
@@ -108,15 +148,28 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       job,
       binding,
       productImageOf: (blockId) => productImageOf(job, blockId),
-      setProductImage: (blockId, assetId) => {
-        void commit(linkProductImage(job, blockId, assetId))
-      },
-      removeProductImage: (blockId) => {
-        void commit(unlinkProductImage(job, blockId))
-      },
+      setProductImage: (blockId, assetId) => commitLinks(linkProductImage(job, blockId, assetId)),
+      removeProductImage: (blockId) => commitLinks(unlinkProductImage(job, blockId)),
       sourceChanged: jobSourceChanged(job),
+      canUndo: past.length > 0,
+      canRedo: future.length > 0,
+      undo: () => {
+        const previous = past.at(-1)
+        if (previous === undefined) return
+        setPast((p) => p.slice(0, -1))
+        setFuture((f) => [...f, job.productImages])
+        applyLinks(previous)
+      },
+      redo: () => {
+        const next = future.at(-1)
+        if (next === undefined) return
+        setFuture((f) => f.slice(0, -1))
+        setPast((p) => [...p, job.productImages])
+        applyLinks(next)
+      },
+      lastChangeAt,
     }
-  }, [job, binding, commit])
+  }, [job, binding, commitLinks, applyLinks, past, future, lastChangeAt])
 
   // 작업을 읽는 동안에는 편집기를 만들지 않는다.
   if (api === null) return null

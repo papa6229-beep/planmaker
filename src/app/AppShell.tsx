@@ -32,7 +32,6 @@ import { ReferenceSideView } from '../components/reference/ReferenceSideView'
 import { StartChoice } from '../components/start/StartChoice'
 import { ConceptField } from '../components/concept/ConceptField'
 import { AiNoteField, DesignerNoteField } from '../components/concept/HandoffNotes'
-import { ProductImagePanel } from '../components/studio/ProductImagePanel'
 import { GenerationRequestPreview } from '../components/studio/GenerationRequestPreview'
 
 /** 기획서 작성 · 요청 작업 · 이미지 생성기 작업판. */
@@ -199,9 +198,10 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
             {sideBySide && <ReferenceSideView />}
           </div>
         </div>
-        {/* 기획서 모드의 우측은 보관함, 작업판은 제품 이미지 연결; 이미지 요청
-            화면은 요청 편집이라 목록이 없다. */}
-        {mode === 'brief' ? <BriefLibrary /> : mode === 'studio' ? <ProductImagePanel /> : <PropertiesPanel />}
+        {/* 기획서 모드의 우측은 보관함; 작업판과 이미지 요청 화면은 공통 편집기의
+            기본 패널을 그대로 쓴다. 제품 이미지는 이미지 블록에서 직접 넣으므로
+            같은 정보를 받는 패널을 따로 두지 않는다 (첫 사용 흐름 §8). */}
+        {mode === 'brief' ? <BriefLibrary /> : <PropertiesPanel />}
       </main>
       <KeyboardShortcuts />
       <GlobalPaste />

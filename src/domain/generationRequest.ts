@@ -22,9 +22,9 @@
 
 import { buildDesignSummary, buildPublishingInfo, isReferenceCapture } from './summaryBuilder'
 import { pageAsEventBrief } from './briefMigration'
-import { documentDigest } from './documentFingerprint'
-import { textAlignOf, type TextAlign } from './simpleBlocks'
-import { productImageOf, sourceChanged, type StudioJob } from './studioJob'
+import { documentDigest, documentFingerprint } from './documentFingerprint'
+import { linkUrlOf, textAlignOf, type TextAlign } from './simpleBlocks'
+import { productImageOf, type StudioJob } from './studioJob'
 import type { Asset, LayoutEmphasis, PublishingInfo, SummaryInstruction } from './briefSchema'
 import type { BriefDocument, BriefPage, ReferenceFit } from './pageSchema'
 
@@ -179,7 +179,12 @@ export function buildGenerationRequest(
   const ratio = (box: GenerationBox) => ratioOf(box, width, height)
   const blockOf = (blockId: string) => page.blocks.find((b) => b.id === blockId)
 
-  const texts: GenerationTextEntry[] = design.texts.map((t) => {
+  // 버튼 문구는 버튼 목록이 맡는다. 디자인 요약의 `texts`는 "빠뜨리지 않기"가
+  // 목적이라 버튼도 포함하는 상위집합인데, 제작 요청에서 그대로 두면 같은 문구가
+  // 두 번 요구된다 (첫 사용 흐름 §9).
+  const buttonIds = new Set(design.ctaButtons.map((c) => c.blockId))
+
+  const texts: GenerationTextEntry[] = design.texts.filter((t) => !buttonIds.has(t.blockId)).map((t) => {
     const block = blockOf(t.blockId)
     return {
       blockId: t.blockId,
@@ -221,7 +226,9 @@ export function buildGenerationRequest(
     const box: GenerationBox = block
       ? { x: block.position.x, y: block.position.y, width: block.position.width, height: block.position.height }
       : { x: 0, y: 0, width: 0, height: 0 }
-    return { blockId: cta.blockId, text: cta.text, box, ratio: ratio(box), hasLink: cta.hasLink }
+    // 링크가 "이 페이지 어딘가에 있다"가 아니라 **이 버튼의 짝**인지로 판정한다.
+    const hasLink = block !== undefined && linkUrlOf(page.blocks, block) !== undefined
+    return { blockId: cta.blockId, text: cta.text, box, ratio: ratio(box), hasLink }
   })
 
   const reference: GenerationPageReference = {
@@ -276,7 +283,9 @@ export function buildGenerationRequest(
       missingProductImages: imageSlots.filter((s) => s.status === 'missing').map((s) => s.blockId),
     },
     publishing,
-    sourceChanged: sourceChanged(job),
+    // 저장된 작업본이 아니라 **지금 화면의 문서**를 원본과 견준다. 방금 고친
+    // 내용이 3초 뒤에야 "달라졌다"고 나오면 판정으로서 의미가 없다 (§9).
+    sourceChanged: job.source !== null && documentFingerprint(doc) !== job.source.fingerprint,
   }
 }
 

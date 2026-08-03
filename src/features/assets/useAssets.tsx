@@ -22,6 +22,7 @@ import { useBriefEditor } from '../editor/useBriefEditor'
 import { createId } from '../../domain/factory'
 import type { Asset, ImageMimeType } from '../../domain/briefSchema'
 import { isAcceptedImage, isAcceptedMime, readImageSize } from './imageUtils'
+import { useStudioJob } from '../studio/useStudioJob'
 import { getAllAssets, putAsset } from '../../services/assetStore'
 
 export interface UploadOptions {
@@ -60,6 +61,9 @@ function revokeUrl(url: string | undefined): void {
 
 export function AssetsProvider({ children }: { children: ReactNode }) {
   const { assignImage, addImageBlock } = useBriefEditor()
+  // 작업판에서만 있는 것. 작성기에는 provider가 없으므로 언제나 `null`이고,
+  // 아래 분기는 통째로 없는 것과 같다.
+  const studio = useStudioJob()
   const [urls, setUrls] = useState<Record<string, string>>({})
   const urlsRef = useRef(urls)
   urlsRef.current = urls
@@ -95,6 +99,15 @@ export function AssetsProvider({ children }: { children: ReactNode }) {
         })
         addUrl(id, file)
 
+        // 작업판에서 이미지 블록에 직접 올린 파일은 **실제로 쓸 제품 이미지**다.
+        // 기획서 문서는 손대지 않으므로 작성자의 참고 캡처·설명·좌표는 그대로
+        // 남고, 연결은 Studio 작업자료에만 적힌다 (첫 사용 흐름 §7).
+        if (studio !== null && options.targetBlockId !== undefined) {
+          studio.setProductImage(options.targetBlockId, id)
+          index += 1
+          continue
+        }
+
         // Everything attached here is a capture the planner collected to show
         // what belongs in the spot — never the file the finished page will use
         // (1-B §1). The design team picks the real image later.
@@ -114,7 +127,7 @@ export function AssetsProvider({ children }: { children: ReactNode }) {
       }
       return index
     },
-    [assignImage, addImageBlock, addUrl],
+    [assignImage, addImageBlock, addUrl, studio],
   )
 
   const storeImage = useCallback<AssetsApi['storeImage']>(async (file) => {

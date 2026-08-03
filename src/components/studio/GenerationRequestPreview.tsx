@@ -67,7 +67,7 @@ export function GenerationRequestPreview({ onClose }: { onClose: () => void }) {
           <button type="button" className="btn" onClick={onClose} aria-label="닫기">닫기</button>
         </header>
         <p className="summary__note">
-          아직 이미지를 만들지 않습니다. 지금 기획서를 GPT가 어떻게 읽는지만 보여 줍니다.
+          아직 이미지를 생성하거나 외부로 전송하지 않습니다. AI에게 전달될 제작 요청만 미리 확인합니다.
         </p>
         {first?.sourceChanged === true && (
           <p className="summary__note summary__note--warn">

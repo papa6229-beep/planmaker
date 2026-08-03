@@ -26,6 +26,7 @@ import { isRequestTeam, REQUEST_TEAMS, teamLabel, type RequestTeam } from '../..
 import { EVENTBRIEF_EXTENSION, eventBriefFileName, FALLBACK_FILE_NAME } from '../../features/export/exportFileName'
 import { useAppSurface } from '../../app/AppSurfaceContext'
 import { clearSelectedTeam, selectedTeam } from '../../features/team/teamSession'
+import { useStudioJob } from '../../features/studio/useStudioJob'
 import { countStudioStorage, resetStudioStorage, type StorageCount } from '../../services/storageReset'
 
 const TITLE_COALESCE_KEY = 'project-title'
@@ -50,6 +51,18 @@ export function TopToolbar({
 }) {
   const surface = useAppSurface()
   const { state, setProjectTitle, undo, redo, canUndo, canRedo, endInteraction } = useBriefEditor()
+  const studio = useStudioJob()
+  /**
+   * 편집기의 마지막 변경 시각. 작업판에서는 문서 편집과 제품 이미지 연결이 서로
+   * 다른 히스토리에 쌓이므로, 실행 취소는 둘 중 **나중에 일어난 쪽**을 되돌린다.
+   */
+  const editorChangedAt = useRef(0)
+  const lastBrief = useRef(state.brief)
+  if (lastBrief.current !== state.brief) {
+    lastBrief.current = state.brief
+    editorChangedAt.current = Date.now()
+  }
+  const studioIsNewer = studio !== null && studio.lastChangeAt > editorChangedAt.current
   const { undoPageDelete, requestTeam, setRequestTeam } = useBriefDocument()
   const { state: ioState, startExport, startImport, busy } = useEventBriefIo()
   const { saveNow } = useBriefDocument()
@@ -76,8 +89,13 @@ export function TopToolbar({
    * through the editor as before (손검수 2 §4.2).
    */
   const undoLast = () => {
-    if (undoPageDelete !== null) undoPageDelete()
+    if (studio !== null && studio.canUndo && studioIsNewer) studio.undo()
+    else if (undoPageDelete !== null) undoPageDelete()
     else undo()
+  }
+  const redoLast = () => {
+    if (studio !== null && studio.canRedo && !canRedo) studio.redo()
+    else redo()
   }
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const titleRef = useRef<HTMLInputElement | null>(null)
@@ -160,12 +178,20 @@ export function TopToolbar({
             type="button"
             className="btn"
             onClick={undoLast}
-            disabled={(!canUndo && undoPageDelete === null) || busy}
+            disabled={(!canUndo && undoPageDelete === null && !(studio?.canUndo ?? false)) || busy}
             title="실행 취소 (Ctrl+Z)"
           >
             실행 취소
           </button>
-          <button type="button" className="btn" onClick={redo} disabled={!canRedo || busy} title="다시 실행 (Ctrl+Shift+Z)">다시 실행</button>
+          <button
+            type="button"
+            className="btn"
+            onClick={redoLast}
+            disabled={(!canRedo && !(studio?.canRedo ?? false)) || busy}
+            title="다시 실행 (Ctrl+Shift+Z)"
+          >
+            다시 실행
+          </button>
           <button type="button" className="btn" onClick={onShowSummary} disabled={busy} title="이미지 생성 AI가 읽는 정보 미리보기">AI 요약</button>
           {mode === 'studio' && (
             <button

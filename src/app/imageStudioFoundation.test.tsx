@@ -149,9 +149,14 @@ function renderAt(path: string, surface: 'brief-writer' | 'studio' = 'studio') {
   )
 }
 
-/** 작업판이 실제로 열릴 때까지 기다린다. */
+/**
+ * 작업판이 실제로 열릴 때까지 기다린다.
+ *
+ * 제품 이미지 연결 전용 패널은 첫 사용 흐름 §8에서 없어졌다 — 같은 정보를 두
+ * 군데에서 받지 않기 위해서다. 연결은 이제 이미지 블록에서 직접 한다.
+ */
 async function studioReady() {
-  await waitFor(() => expect(document.querySelector('.studio-panel')).not.toBeNull(), { timeout: 5000 })
+  await waitFor(() => expect(document.querySelector('.canvas__sheet')).not.toBeNull(), { timeout: 5000 })
 }
 
 const openBriefFile = async (file: File) => {
@@ -159,9 +164,9 @@ const openBriefFile = async (file: File) => {
   fireEvent.change(input, { target: { files: [file] } })
 }
 
-/** 이미지 자리 한 줄(설명으로 찾는다). */
+/** 이미지 자리 카드(설명으로 찾는다). */
 function slotRow(description: string): HTMLElement {
-  const rows = [...document.querySelectorAll('.studio-slot')] as HTMLElement[]
+  const rows = [...document.querySelectorAll('.block-card')] as HTMLElement[]
   const row = rows.find((r) => r.textContent?.includes(description))
   if (!row) throw new Error(`이미지 자리를 찾지 못했습니다: ${description}`)
   return row
@@ -321,26 +326,25 @@ describe('§9.1-4·10 작업판 화면', () => {
     renderAt('/studio')
     await studioReady()
     await openBriefFile(await briefFile(sampleDoc()))
-    await waitFor(() => expect(document.querySelector('.studio-slot')).not.toBeNull(), { timeout: 5000 })
+    await waitFor(() => expect(slotRow('니트 정면 컷이 들어갑니다')).toBeTruthy(), { timeout: 5000 })
 
     const row = () => slotRow('니트 정면 컷이 들어갑니다')
-    expect(row().textContent).toContain('제품 이미지 미연결')
+    // 연결 전에는 작성자의 참고 캡처가 참고 캡처라고 적힌 채 보인다.
+    expect(row().textContent).toContain('참고용 이미지')
 
-    fireEvent.change(row().querySelector('.studio-slot__file') as HTMLInputElement, {
+    fireEvent.change(row().querySelector('.block-card__file') as HTMLInputElement, {
       target: { files: [pngFile('cutout.png', 9)] },
     })
-    await waitFor(() => expect(slotRow('니트 정면 컷이 들어갑니다').textContent).toContain('실사용'), { timeout: 5000 })
-    expect(row().textContent).not.toContain('제품 이미지 미연결')
-    // 참고 이미지는 그대로 참고 이미지로 남는다.
-    expect(row().textContent).toContain('참고')
+    await waitFor(() => expect(row().textContent).toContain('실제 사용 제품 이미지'), { timeout: 5000 })
 
     await waitFor(async () => expect((await allStudioAssetIds()).length).toBe(1), { timeout: 5000 })
 
+    fireEvent.pointerDown(row(), { button: 0 })
+    await waitFor(() => expect(within(row()).getByRole('button', { name: '제품 이미지 제거' })).toBeTruthy())
     fireEvent.click(within(row()).getByRole('button', { name: '제품 이미지 제거' }))
-    await waitFor(() => expect(slotRow('니트 정면 컷이 들어갑니다').textContent).toContain('제품 이미지 미연결'), {
-      timeout: 5000,
-    })
-  })
+    await waitFor(() => expect(row().textContent).toContain('참고용 이미지'), { timeout: 5000 })
+    await waitFor(async () => expect((await allStudioAssetIds()).length).toBe(0), { timeout: 5000 })
+  }, 20000)
 
   it('shows the request in plain Korean, with the missing product image called out', async () => {
     await putAsset(storedAsset('asset_ref', 3))
@@ -348,7 +352,7 @@ describe('§9.1-4·10 작업판 화면', () => {
     renderAt('/studio')
     await studioReady()
     await openBriefFile(await briefFile(sampleDoc()))
-    await waitFor(() => expect(document.querySelector('.studio-slot')).not.toBeNull(), { timeout: 5000 })
+    await waitFor(() => expect(slotRow('니트 정면 컷이 들어갑니다')).toBeTruthy(), { timeout: 5000 })
 
     // 파일 불러오기가 끝나기 전에는 상단바 버튼이 잠겨 있다. 시간을 늘리는 대신
     // 실제로 눌릴 수 있는 상태가 될 때까지 기다린다.
@@ -389,7 +393,9 @@ describe('§9.1-11·12 복원과 표면 분리', () => {
     await waitFor(() => {
       expect((document.querySelector('.editor-topbar__title') as HTMLInputElement).value).toBe('가을 신상 예약판매')
     }, { timeout: 5000 })
-    await waitFor(() => expect(slotRow('니트 정면 컷이 들어갑니다').textContent).toContain('실사용'), { timeout: 5000 })
+    await waitFor(() => expect(slotRow('니트 정면 컷이 들어갑니다').textContent).toContain('실제 사용 제품 이미지'), {
+      timeout: 5000,
+    })
   })
 
   it('detects that the original brief has drifted from the work copy', () => {
@@ -406,11 +412,14 @@ describe('§9.1-11·12 복원과 표면 분리', () => {
 
   it('shows nothing of the studio on the brief-writer surface', async () => {
     renderAt('/studio', 'brief-writer')
-    await waitFor(() => expect(document.querySelector('.block-card, .start-choice')).not.toBeNull(), { timeout: 5000 })
+    // 작성기의 첫 화면은 팀 선택이다 (첫 사용 흐름 §4).
+    await waitFor(() => expect(screen.getByRole('heading', { name: '어느 팀으로 기획서를 쓰시나요?' })).toBeTruthy(), {
+      timeout: 5000,
+    })
 
-    expect(document.querySelector('.studio-panel')).toBeNull()
     expect(screen.queryByRole('button', { name: 'AI 제작 요청 미리보기' })).toBeNull()
-    expect(document.body.textContent).not.toContain('제품 이미지 연결')
+    expect(screen.queryByLabelText('AI에게 추가로 전달할 말')).toBeNull()
+    expect(document.body.textContent).not.toContain('제품 이미지')
   })
 })
 
