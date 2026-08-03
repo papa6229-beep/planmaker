@@ -24,13 +24,18 @@ import { BriefsPage } from './pages/BriefsPage'
 import { ImageRequestsPage } from './pages/ImageRequestsPage'
 import { ImageRequestWorkPage } from './pages/ImageRequestWorkPage'
 import { StudioWorkPage } from './pages/StudioWorkPage'
+import { TeamGatePage } from './pages/TeamGatePage'
 import { RequestsProvider } from '../features/requests/useRequests'
 import { DocumentsProvider } from '../features/documents/useDocuments'
 import { APP_SURFACE, type AppSurface } from './appSurface'
 import { AppSurfaceProvider } from './AppSurfaceContext'
 
-/** Where a planner lands: straight into a brief (v1 마감 §10.2). */
-const WRITER_HOME = '/briefs/new'
+/**
+ * Where a planner lands: the team gate (첫 사용 흐름 §4). Arriving at the shared
+ * address must not open somebody else's work, so the first question is which
+ * team is writing — and the answer starts an empty brief of its own.
+ */
+const WRITER_HOME = '/'
 
 /** Where the design team lands: the image studio work surface. */
 const STUDIO_HOME = '/studio'
@@ -38,10 +43,11 @@ const STUDIO_HOME = '/studio'
 function WriterRoutes() {
   return (
     <Routes>
+      <Route path="/" element={<TeamGatePage />} />
       <Route path="/briefs/new" element={<NewBriefRoute />} />
       <Route path="/briefs/:id" element={<BriefEditorRoute />} />
-      {/* `/`, `/gate`, `/image-requests`, and anything else all mean "write a
-          brief" here — never a 404, and never an internal screen. */}
+      {/* `/gate`, `/image-requests`, and anything else all mean "start here" —
+          never a 404, and never an internal screen. */}
       <Route path="*" element={<Navigate to={WRITER_HOME} replace />} />
     </Routes>
   )
@@ -58,7 +64,7 @@ function StudioRoutes() {
       <Route path="/briefs/:id" element={<BriefEditorRoute />} />
       <Route path="/image-requests" element={<ImageRequestsPage />} />
       <Route path="/image-requests/:id" element={<ImageRequestWorkPage />} />
-      <Route path="*" element={<Navigate to={WRITER_HOME} replace />} />
+      <Route path="*" element={<Navigate to={STUDIO_HOME} replace />} />
     </Routes>
   )
 }

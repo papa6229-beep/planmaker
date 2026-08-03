@@ -73,27 +73,36 @@ describe('§3 표면 결정', () => {
   })
 })
 
+/**
+ * 첫 화면은 팀 선택이다 (첫 사용 흐름 §4). 내부 화면에 닿을 수 없다는 계약은
+ * 그대로이고, 닿는 곳이 "바로 기획서"에서 "작성기 자신의 첫 화면"으로 바뀌었다.
+ */
+const gateShown = async () =>
+  waitFor(() => expect(screen.getByRole('heading', { name: '어느 팀으로 기획서를 쓰시나요?' })).toBeTruthy(), {
+    timeout: 5000,
+  })
+
 describe('§4 타 팀 작성기 표면', () => {
-  it('lands in a brief from the root', async () => {
+  it('asks which team is writing from the root', async () => {
     renderSurface('/', 'brief-writer')
-    await editorShown()
+    await gateShown()
   })
 
   it('sends the gate address into the brief writer', async () => {
     renderSurface('/gate', 'brief-writer')
-    await editorShown()
+    await gateShown()
     expect(screen.queryByRole('heading', { name: '어떤 작업을 시작할까요?' })).toBeNull()
   })
 
   it('sends the image-request list into the brief writer', async () => {
     renderSurface('/image-requests', 'brief-writer')
-    await editorShown()
+    await gateShown()
     expect(screen.queryByRole('heading', { name: /이미지 생성 요청/ })).toBeNull()
   })
 
   it('sends a single image request into the brief writer', async () => {
     renderSurface('/image-requests/req_1', 'brief-writer')
-    await editorShown()
+    await gateShown()
     expect(screen.queryByText(/요청을 찾을 수 없습니다/)).toBeNull()
   })
 

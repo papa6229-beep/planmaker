@@ -420,13 +420,14 @@ describe('§5·10 보조 메뉴와 게이트', () => {
     expect(within(library()).getByRole('button', { name: '새 기획서' })).toBeTruthy()
   })
 
-  it('opens the brief maker at the root', async () => {
+  it('asks which team is writing at the root, and never opens the old gate', async () => {
     render(
       <MemoryRouter initialEntries={['/']}>
         <AppRoutes />
       </MemoryRouter>,
     )
-    await waitFor(() => expect(screen.getByText('기획서를 준비하는 중입니다…')).toBeTruthy())
+    // 첫 화면은 팀 선택으로 바뀌었다 (첫 사용 흐름 §4). 옛 게이트는 여전히 없다.
+    await waitFor(() => expect(screen.getByRole('heading', { name: '어느 팀으로 기획서를 쓰시나요?' })).toBeTruthy())
     expect(screen.queryByRole('heading', { name: '어떤 작업을 시작할까요?' })).toBeNull()
   })
 })

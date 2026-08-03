@@ -1896,3 +1896,47 @@ button { font-family: inherit; }
   border-radius: var(--radius-sm, 6px);
   padding: 8px 10px;
 }
+
+/* ── 팀 선택 게이트 (첫 사용 흐름 §4·§5) ────────────────────────────────────── */
+/* 인증 화면이 아니라 "어느 팀으로 시작할지" 묻는 첫 화면이다. */
+.team-gate {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--color-canvas, #f5f6f8);
+}
+.team-gate__card {
+  width: min(560px, 100%);
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 12px);
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
+}
+.team-gate__title { margin: 0; font-size: 20px; }
+.team-gate__lead { margin: 0; font-size: 13px; line-height: 1.7; color: var(--color-muted); }
+.team-gate__teams { display: flex; flex-wrap: wrap; gap: 8px; }
+.team-gate__team { flex: 1 1 140px; padding: 12px 16px; font-size: 15px; }
+.team-gate__tools { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 6px; border-top: 1px solid var(--color-border); }
+.team-gate__wipe { color: var(--color-danger); }
+.team-gate__note { margin: 0; font-size: 12px; line-height: 1.6; color: var(--color-muted); }
+.team-gate__error { margin: 0; font-size: 13px; color: var(--color-danger); }
+
+/* 편집 화면의 팀 표시. 여기서 팀을 바꾸는 select는 없다 (§4). */
+.editor-topbar__team-label {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--color-panel-muted);
+  border: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+.editor-topbar__team-change { flex: 0 0 auto; padding: 4px 10px; font-size: 12px; }
+.library__scope { margin: 0; font-size: 11px; line-height: 1.5; color: var(--color-muted); }

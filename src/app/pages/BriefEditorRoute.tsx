@@ -12,12 +12,15 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { AppShell } from '../AppShell'
 import { AppShellLayout } from '../../components/shell/AppShellLayout'
 import { PageHeader } from '../../components/shell/PageHeader'
 import { useDocuments } from '../../features/documents/useDocuments'
 import { loadDocumentById, saveDocumentById } from '../../services/documentStore'
+import { selectedTeam } from '../../features/team/teamSession'
+import { teamFilterKey, teamLabel } from '../../domain/requestTeam'
+import { useAppSurface } from '../AppSurfaceContext'
 import type { DocumentBinding } from '../../features/document/useBriefDocument'
 
 /** `/briefs/new` — create, then hand over to the id-based route. */
@@ -57,6 +60,29 @@ export function NewBriefRoute() {
 /** `/briefs/:id` — opens one stored brief through the repository. */
 export function BriefEditorRoute() {
   const { id } = useParams()
+  const surface = useAppSurface()
+  /**
+   * Whose brief this is. Typing another team's address is not a way into their
+   * work: the gate picked a team, and a brief that belongs to a different one
+   * simply does not open here (첫 사용 흐름 §4). A brief with no team at all is
+   * older material that predates the gate, and stays open to everyone.
+   */
+  const gateTeam = surface === 'brief-writer' ? selectedTeam() : null
+  const [denied, setDenied] = useState(false)
+
+  useEffect(() => {
+    if (id === undefined || gateTeam === null) return
+    let cancelled = false
+    void (async () => {
+      const doc = await loadDocumentById(id)
+      if (cancelled || doc === null) return
+      const owner = teamFilterKey(doc.project.requestTeam)
+      setDenied(owner !== 'none' && owner !== gateTeam)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [id, gateTeam])
 
   const binding = useMemo<DocumentBinding | undefined>(() => {
     if (id === undefined) return undefined
@@ -65,6 +91,18 @@ export function BriefEditorRoute() {
       save: (doc) => saveDocumentById(id, doc, Date.now()),
     }
   }, [id])
+
+  if (denied) {
+    return (
+      <AppShellLayout>
+        <PageHeader
+          title="다른 팀의 기획서입니다"
+          description={`지금은 ${teamLabel(gateTeam ?? undefined)}으로 일하고 있습니다. 이 기획서는 다른 팀의 것이라 열 수 없습니다.`}
+        />
+        <p className="page-note"><Link to="/">팀 선택 화면으로 돌아가기</Link></p>
+      </AppShellLayout>
+    )
+  }
 
   if (id === undefined || binding === undefined) {
     return (

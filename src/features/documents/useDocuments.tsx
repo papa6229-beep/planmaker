@@ -28,14 +28,15 @@ import { loadDocument as loadLegacyAutosave } from '../../services/assetStore'
 import { createEmptyDocument } from '../../domain/pageSchema'
 import { createEmptyProject } from '../../domain/factory'
 import { DEFAULT_BRIEF_TITLE } from '../editor/briefEditor'
+import type { RequestTeam } from '../../domain/requestTeam'
 
 export interface DocumentsApi {
   /** Saved briefs, most recently edited first. */
   documents: DocumentSummary[]
   /** False until the first listing (and the legacy import) has completed. */
   loaded: boolean
-  /** Creates an empty brief and returns its id. */
-  createNew: () => Promise<string>
+  /** Creates an empty brief — owned by `team` when one is given — and returns its id. */
+  createNew: (team?: RequestTeam) => Promise<string>
   /** Copies a brief into an independent new one; returns the copy's id. */
   duplicate: (id: string) => Promise<string | null>
   /** Removes a brief from this browser. Delivered snapshots are untouched. */
@@ -74,8 +75,11 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
     })()
   }, [])
 
-  const createNew = useCallback(async () => {
-    const doc = createEmptyDocument(createEmptyProject(DEFAULT_BRIEF_TITLE))
+  const createNew = useCallback(async (team?: RequestTeam) => {
+    const project = createEmptyProject(DEFAULT_BRIEF_TITLE)
+    // 팀은 게이트에서 한 번 정해지고, 그 뒤로는 기획서가 스스로 지닌다.
+    if (team !== undefined) project.requestTeam = team
+    const doc = createEmptyDocument(project)
     const id = await createDocument(doc, Date.now())
     await refresh()
     return id

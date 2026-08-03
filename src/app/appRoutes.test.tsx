@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import 'fake-indexeddb/auto'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AppRoutes } from './AppRoutes'
@@ -115,12 +115,16 @@ describe('AppRoutes — Phase 7 Step 2 entry gate', () => {
 
   // §12.10 — an unknown route, and the root itself, land in the brief maker:
   // a planner opening the app is here to write a brief (v1 마감 §10.2).
-  it('sends unknown routes and the root into the brief maker', () => {
+  it('sends unknown routes and the root into the image studio', async () => {
+    // 디자인팀 빌드의 첫 화면은 작업판이다 (이미지 생성기 0단계 §4). 작업을 읽는
+    // 동안에는 아직 편집기가 없으므로 열릴 때까지 기다린다.
     renderAt('/nonexistent')
-    expect(screen.getByText('기획서를 준비하는 중입니다…')).toBeTruthy()
+    await waitFor(() => expect(document.querySelector('.canvas__sheet')).not.toBeNull(), { timeout: 5000 })
 
     renderAt('/')
-    expect(screen.getAllByText('기획서를 준비하는 중입니다…').length).toBeGreaterThan(0)
+    await waitFor(() => expect(document.querySelectorAll('.canvas__sheet').length).toBeGreaterThan(1), {
+      timeout: 5000,
+    })
     expect(screen.queryByRole('heading', { level: 1, name: '어떤 작업을 시작할까요?' })).toBeNull()
   })
 
