@@ -10,6 +10,7 @@
 
 import Dexie, { type Table } from 'dexie'
 import { studioLiveAssetIds, type StudioJob } from '../domain/studioJob'
+import { normalizeReferenceLayer } from '../domain/pageSchema'
 
 /** 0단계의 단일 작업 행. */
 export const STUDIO_JOB_ID = 'studio_current'
@@ -39,8 +40,24 @@ export async function clearAllStudioJobs(): Promise<void> {
   await db().jobs.clear()
 }
 
+/**
+ * 저장된 작업 한 건.
+ *
+ * 작업본 문서는 보관함을 지나지 않으므로 작성기 쪽 정규화가 닿지 않는다. 예전
+ * 판에서 저장된 행에는 없어진 참고 이미지 보기 방식이 그대로 남아 있을 수 있어,
+ * 읽는 자리에서 한 번 접어 준다 (1단계 §4). 저장된 값을 고쳐 쓰는 것이 아니라
+ * 화면이 쓸 모양으로만 좁히는 것이므로, 참고 이미지도 연결도 그대로다.
+ */
 export async function loadStudioJob(id: string): Promise<StudioJob | null> {
-  return (await db().jobs.get(id)) ?? null
+  const row = await db().jobs.get(id)
+  if (row === undefined) return null
+  return {
+    ...row,
+    doc: {
+      ...row.doc,
+      pages: row.doc.pages.map((page) => ({ ...page, reference: normalizeReferenceLayer(page.reference) })),
+    },
+  }
 }
 
 export async function saveStudioJob(job: StudioJob): Promise<void> {

@@ -25,10 +25,12 @@ import {
   productImageOf,
   sourceChanged as jobSourceChanged,
   unlinkProductImage,
+  withPageResult,
   withSource,
   withWorkingDoc,
   type StudioJob,
 } from '../../domain/studioJob'
+import type { GeneratedPageResult } from '../../domain/imageGeneration'
 import { loadStudioJob, saveStudioJob, STUDIO_JOB_ID } from '../../services/studioStore'
 import type { StudioFileState } from '../../domain/studioFile'
 import { createEmptyDocument } from '../../domain/pageSchema'
@@ -54,6 +56,11 @@ export interface StudioJobApi {
    * 저장이 끝난 뒤에야 화면을 바꾸는 것은 호출부의 몫이다.
    */
   adoptFile: (doc: BriefDocument, state: StudioFileState | null) => Promise<void>
+  /**
+   * 한 페이지의 AI 생성 결과를 남긴다 (1단계 §11). 저장이 끝난 뒤에야 화면이
+   * 결과를 갖는다 — 새로고침하면 사라지는 결과를 보여 주지 않기 위해서다.
+   */
+  recordResult: (result: GeneratedPageResult) => Promise<void>
   /**
    * 제품 이미지 연결의 실행 취소·다시 실행.
    *
@@ -179,11 +186,25 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  /**
+   * 결과는 편집이 아니므로 되돌리기 자리에 쌓지 않는다. 저장이 먼저이고, 저장이
+   * 실패하면 화면도 결과를 갖지 않는다.
+   */
+  const recordResult = useCallback(async (result: GeneratedPageResult) => {
+    const current = jobRef.current
+    if (current === null) return
+    const next = withPageResult(current, result, Date.now())
+    await saveStudioJob(next)
+    jobRef.current = next
+    setJob(next)
+  }, [])
+
   const api = useMemo<StudioJobApi | null>(() => {
     if (!job) return null
     return {
       job,
       binding,
+      recordResult,
       productImageOf: (blockId) => productImageOf(job, blockId),
       setProductImage: (blockId, assetId) => commitLinks(linkProductImage(job, blockId, assetId)),
       removeProductImage: (blockId) => commitLinks(unlinkProductImage(job, blockId)),
@@ -207,7 +228,7 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       },
       lastChangeAt,
     }
-  }, [job, binding, commitLinks, applyLinks, adoptFile, past, future, lastChangeAt])
+  }, [job, binding, commitLinks, applyLinks, adoptFile, recordResult, past, future, lastChangeAt])
 
   // 작업을 읽는 동안에는 편집기를 만들지 않는다.
   if (api === null) return null
