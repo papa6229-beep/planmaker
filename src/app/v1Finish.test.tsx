@@ -15,6 +15,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
 import { AppRoutes } from './AppRoutes'
+import { AppSurfaceProvider } from './AppSurfaceContext'
 import { RequestsProvider } from '../features/requests/useRequests'
 import { DocumentsProvider } from '../features/documents/useDocuments'
 import { clearAll, resetAssetStoreForTests } from '../services/assetStore'
@@ -53,10 +54,14 @@ vi.mock('../services/previewRenderer', () => ({
 
 function renderShell(binding?: { load: () => Promise<BriefDocument | null>; save: (d: BriefDocument) => Promise<void> }) {
   return render(
+    // 팀 게이트는 작성기 표면의 첫 화면이다 (첫 사용 흐름 §4). 여기서 보는 것은
+    // 보관함과 작성팀 계약이라, 게이트가 없는 studio 표면에서 그대로 확인한다.
     <MemoryRouter initialEntries={['/briefs/new']}>
-      <RequestsProvider>
-        <DocumentsProvider>{binding ? <AppShell binding={binding} /> : <AppShell />}</DocumentsProvider>
-      </RequestsProvider>
+      <AppSurfaceProvider surface="studio">
+        <RequestsProvider>
+          <DocumentsProvider>{binding ? <AppShell binding={binding} /> : <AppShell />}</DocumentsProvider>
+        </RequestsProvider>
+      </AppSurfaceProvider>
     </MemoryRouter>,
   )
 }
@@ -501,7 +506,7 @@ describe('§11-12 작성팀', () => {
     const user = userEvent.setup()
     render(
       <MemoryRouter initialEntries={[`/briefs/${open}`]}>
-        <AppRoutes />
+        <AppRoutes surface="studio" />
       </MemoryRouter>,
     )
     await waitFor(() => expect(within(library()).getByText('여름 마케팅 기획전')).toBeTruthy())

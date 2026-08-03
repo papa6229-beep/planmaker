@@ -1957,3 +1957,12 @@ button { font-family: inherit; }
 .team-gate__row-title { flex: 1 1 160px; font-size: 13px; font-weight: 600; min-width: 0; }
 .team-gate__row-meta { flex: 0 0 auto; font-size: 11px; color: var(--color-muted); }
 .team-gate__row-team { flex: 0 0 auto; width: auto; min-width: 110px; }
+.team-gate__imported {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-reference);
+  background: var(--color-reference-soft);
+  border-radius: var(--radius-sm, 6px);
+  padding: 8px 10px;
+}

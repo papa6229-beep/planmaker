@@ -30,6 +30,7 @@ import { createStudioJob, linkProductImage } from '../domain/studioJob'
 import { createEmptyDocument } from '../domain/pageSchema'
 import { createBlock, createEmptyProject } from '../domain/factory'
 import { countWriterStorage, resetWriterStorage } from '../services/storageReset'
+import { packageEventDocument } from '../services/eventBriefExport'
 import type { RequestTeam } from '../domain/requestTeam'
 import type { BriefDocument } from '../domain/pageSchema'
 
@@ -56,6 +57,17 @@ function teamDoc(title: string, team: RequestTeam | undefined, assetId?: string)
     doc.pages[0]!.blocks = [createBlock('main_product_image', { id: `blk_${assetId}`, assetId })]
   }
   return doc
+}
+
+/** 대표 파일 하나를 실제 아카이브로 만든다. */
+async function briefFileOf(doc: BriefDocument): Promise<File> {
+  const pkg = await packageEventDocument({
+    doc,
+    assets: [],
+    previews: doc.pages.map(() => new Blob([new Uint8Array([1])], { type: 'image/png' })),
+    createdAt: new Date(0).toISOString(),
+  })
+  return new File([pkg.blob], 'gate.eventbrief', { type: 'application/zip' })
 }
 
 function renderWriter(path = '/') {
@@ -296,5 +308,84 @@ describe('§교정 이전 자료 정리', () => {
     renderWriter(`/briefs/${mktId}`)
     await waitFor(() => expect(within(library()).getByText('마케팅 지금')).toBeTruthy(), { timeout: 5000 })
     expect(within(library()).queryByText('팀 없는 옛 기획서')).toBeNull()
+  })
+})
+
+
+describe('§교정2 팀을 고르기 전에는 아무 기획서도 열리지 않는다', () => {
+  it('sends a team-owned brief address back to the gate, showing nothing of it', async () => {
+    const id = await createDocument(teamDoc('마케팅 기획서', 'marketing'), 1)
+    // 팀 선택 없음
+    renderWriter(`/briefs/${id}`)
+
+    await waitFor(() => expect(gateTitle()).toBeTruthy(), { timeout: 5000 })
+    expect(document.querySelector('.canvas__sheet')).toBeNull()
+    expect(document.body.textContent).not.toContain('마케팅 기획서')
+  })
+
+  it('sends a team-less brief address back to the gate too', async () => {
+    const id = await createDocument(teamDoc('팀 없는 옛 기획서', undefined), 1)
+    renderWriter(`/briefs/${id}`)
+
+    await waitFor(() => expect(gateTitle()).toBeTruthy(), { timeout: 5000 })
+    expect(document.querySelector('.canvas__sheet')).toBeNull()
+    expect(document.body.textContent).not.toContain('팀 없는 옛 기획서')
+  })
+
+  it('does not mint a brief from /briefs/new without a team', async () => {
+    renderWriter('/briefs/new')
+
+    await waitFor(() => expect(gateTitle()).toBeTruthy(), { timeout: 5000 })
+    expect(document.querySelector('.canvas__sheet')).toBeNull()
+    expect(await listDocuments()).toHaveLength(0)
+  })
+
+  it("still opens the chosen team's own brief", async () => {
+    selectTeam('marketing')
+    const id = await createDocument(teamDoc('마케팅 기획서', 'marketing'), 1)
+    renderWriter(`/briefs/${id}`)
+
+    await waitFor(() => expect(document.querySelector('.canvas__sheet')).not.toBeNull(), { timeout: 5000 })
+    await waitFor(() => {
+      expect((document.querySelector('.editor-topbar__title') as HTMLInputElement).value).toBe('마케팅 기획서')
+    }, { timeout: 5000 })
+  })
+})
+
+describe('§교정2 팀 미지정 파일과 저장소 경계', () => {
+  it('keeps a team-less file out of the editor and puts it in the tidy-up list', async () => {
+    renderWriter('/')
+    await waitFor(() => expect(gateTitle()).toBeTruthy())
+
+    const file = await briefFileOf(teamDoc('팀 없는 파일', undefined))
+    fireEvent.change(document.querySelector('.toolbar__file-input') as HTMLInputElement, { target: { files: [file] } })
+
+    // 저장은 되지만 편집기로 들어가지 않는다.
+    await waitFor(async () => expect(await listDocuments()).toHaveLength(1), { timeout: 6000 })
+    expect(gateTitle()).toBeTruthy()
+    expect(document.querySelector('.canvas__sheet')).toBeNull()
+    expect(selectedTeam()).toBeNull()
+
+    // 정리 목록에서 찾을 수 있다.
+    fireEvent.click(await screen.findByRole('button', { name: /팀 미지정 이전 자료/ }))
+    const panel = await screen.findByRole('dialog', { name: '팀 미지정 이전 자료 정리' })
+    await waitFor(() => expect(within(panel).getByText('팀 없는 파일')).toBeTruthy())
+  }, 20000)
+
+  it('opens a file that already names a valid team', async () => {
+    renderWriter('/')
+    await waitFor(() => expect(gateTitle()).toBeTruthy())
+
+    const file = await briefFileOf(teamDoc('상품팀 파일', 'product'))
+    fireEvent.change(document.querySelector('.toolbar__file-input') as HTMLInputElement, { target: { files: [file] } })
+
+    await waitFor(() => expect(document.querySelector('.canvas__sheet')).not.toBeNull(), { timeout: 6000 })
+    expect(selectedTeam()).toBe('product')
+  }, 20000)
+
+  it('never moves a brief that already belongs to a team', async () => {
+    const id = await createDocument(teamDoc('마케팅 기획서', 'marketing'), 1)
+    await assignDocumentTeam(id, 'cs')
+    expect((await loadDocumentById(id))?.project.requestTeam).toBe('marketing')
   })
 })

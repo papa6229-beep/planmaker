@@ -403,9 +403,11 @@ describe('§6 덮어쓰기 확인은 문서 전체를 본다', () => {
     withConcept.project.concept = '시원하게'
     expect(hasUserWork(withConcept)).toBe(true)
 
+    // 작성팀은 게이트가 새 기획서마다 붙여 주는 값이라 "쓴 것"이 아니다
+    // (첫 사용 흐름 §4). 팀만 있는 빈 기획서는 여전히 갓 만든 기획서다.
     const withTeam = createEmptyDocument(createEmptyProject('새 기획서'))
     withTeam.project.requestTeam = 'marketing'
-    expect(hasUserWork(withTeam)).toBe(true)
+    expect(hasUserWork(withTeam)).toBe(false)
 
     const withBlock = createEmptyDocument(createEmptyProject('새 기획서'))
     withBlock.pages[0]!.blocks = [createBlock('free_text', { id: 'b', content: '문구' })]

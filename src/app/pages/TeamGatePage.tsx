@@ -36,6 +36,8 @@ export function TeamGatePage() {
   const [picked, setPicked] = useState<Record<string, RequestTeam>>({})
   const [filed, setFiled] = useState<Record<string, RequestTeam>>({})
   const [teamlessCount, setTeamlessCount] = useState(0)
+  /** 방금 불러온 팀 미지정 파일의 제목 — 어디로 갔는지 알려 주기 위해서만. */
+  const [importedTeamless, setImportedTeamless] = useState<string | null>(null)
 
   const recount = useCallback(() => {
     void countWriterStorage()
@@ -65,8 +67,12 @@ export function TeamGatePage() {
 
   /**
    * 게이트에서 여는 파일은 지금 열려 있는 기획서를 교체하는 것이 아니라 새
-   * 기획서 한 건이 된다. 이미지는 공용 풀에 *더하기만* 하고, 파일이 지녔던 팀을
-   * 그대로 이어받는다.
+   * 기획서 한 건이 된다. 이미지는 공용 풀에 *더하기만* 한다.
+   *
+   * 팀이 적힌 파일은 그 팀으로 들어가 바로 열린다. 팀이 없는 파일은 저장은 하되
+   * **편집기로 들어가지 않는다** — 어느 팀 자료인지 아무도 말하지 않았는데 열어
+   * 주면, 주소로 여는 것을 막아 둔 것이 파일 한 번으로 무너진다 (교정2 §3).
+   * 원본은 손대지 않고 그대로 저장한 뒤, 정리 경로에서 팀을 정하게 한다.
    */
   const openFile = async (file: File) => {
     if (startingRef.current) return
@@ -77,10 +83,17 @@ export function TeamGatePage() {
       const resolved = await resolveAssetCollisions(imported.doc, imported.assets)
       await putAssets(resolved.assets)
       const team = resolved.doc.project.requestTeam
-      if (isRequestTeam(team)) selectTeam(team)
       const id = await createDocument(resolved.doc, Date.now())
       await refresh()
-      navigate(`/briefs/${id}`, { replace: true })
+      if (isRequestTeam(team)) {
+        selectTeam(team)
+        navigate(`/briefs/${id}`, { replace: true })
+        return
+      }
+      setImportedTeamless(resolved.doc.project.title)
+      recount()
+      startingRef.current = false
+      setBusy(false)
     } catch {
       setFailed(true)
       startingRef.current = false
@@ -91,6 +104,7 @@ export function TeamGatePage() {
   const openTeamless = async () => {
     setPicked({})
     setFiled({})
+    setImportedTeamless(null)
     try {
       setTeamless(await listTeamlessDocuments())
     } catch {
@@ -152,6 +166,13 @@ export function TeamGatePage() {
         </div>
 
         {failed && <p className="team-gate__error">기획서를 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.</p>}
+
+        {importedTeamless !== null && (
+          <p className="team-gate__imported" role="status">
+            «{importedTeamless || '제목 없음'}» 파일에는 팀이 적혀 있지 않아 저장만 했습니다. 아래 팀 미지정 이전
+            자료에서 소속 팀을 정하면 열 수 있습니다.
+          </p>
+        )}
 
         <div className="team-gate__tools">
           <button type="button" className="btn" disabled={busy} onClick={() => fileRef.current?.click()}>

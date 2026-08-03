@@ -291,8 +291,9 @@ describe('§4 원하는 분위기·컨셉', () => {
 
     const user = userEvent.setup()
     render(
+      // 보관함을 오가는 검사라 게이트가 없는 studio 표면에서 연다 (첫 사용 흐름 §4).
       <MemoryRouter initialEntries={[`/briefs/${a}`]}>
-        <AppRoutes />
+        <AppRoutes surface="studio" />
       </MemoryRouter>,
     )
 
@@ -321,7 +322,7 @@ describe('§4 원하는 분위기·컨셉', () => {
     const user = userEvent.setup()
     render(
       <MemoryRouter initialEntries={[`/briefs/${id}`]}>
-        <AppRoutes />
+        <AppRoutes surface="studio" />
       </MemoryRouter>,
     )
     const library = await screen.findByRole('complementary', { name: '내 기획서' })

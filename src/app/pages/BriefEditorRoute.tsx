@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { AppShell } from '../AppShell'
 import { AppShellLayout } from '../../components/shell/AppShellLayout'
 import { PageHeader } from '../../components/shell/PageHeader'
@@ -28,15 +28,23 @@ export function NewBriefRoute() {
   const { createNew, loaded } = useDocuments()
   const navigate = useNavigate()
   const [failed, setFailed] = useState(false)
+  const surface = useAppSurface()
+  // 팀을 고르기 전에는 기획서를 만들지도 않는다 — 만들면 주인 없는 문서가 하나
+  // 생기고, 그것이 곧 팀 미지정 자료가 된다 (첫 사용 흐름 교정2 §1).
+  const needsTeam = surface === 'brief-writer' && selectedTeam() === null
 
   useEffect(() => {
+    if (needsTeam) return
     // Wait for the legacy import so a first-run user does not end up with both
     // an imported brief and a redundant empty one.
     if (!loaded) return
     let cancelled = false
     void (async () => {
       try {
-        const id = await createNew()
+        // 지금 일하고 있는 팀의 기획서로 만든다. 팀 없이 만들면 그 순간 주인 없는
+        // 문서가 되고, 방금 만든 사람조차 열 수 없게 된다.
+        const team = selectedTeam()
+        const id = await createNew(...(team === null ? [] : [team]))
         if (!cancelled) navigate(`/briefs/${id}`, { replace: true })
       } catch {
         if (!cancelled) setFailed(true)
@@ -45,7 +53,9 @@ export function NewBriefRoute() {
     return () => {
       cancelled = true
     }
-  }, [loaded, createNew, navigate])
+  }, [loaded, createNew, navigate, needsTeam])
+
+  if (needsTeam) return <Navigate to="/" replace />
 
   return (
     <AppShellLayout>
@@ -69,14 +79,26 @@ export function BriefEditorRoute() {
    * '팀 미지정 이전 자료' until someone says which team it is.
    */
   const gateTeam = surface === 'brief-writer' ? selectedTeam() : null
-  const [denied, setDenied] = useState<'other-team' | 'teamless' | null>(null)
+  /**
+   * 팀을 고르기 전에는 어떤 기획서도 읽지 않는다. 주소만으로 남의 작업이 잠깐
+   * 스쳐 보이는 일도 없어야 하므로, 저장소를 읽기 전에 게이트로 돌려보낸다.
+   */
+  const needsTeam = surface === 'brief-writer' && gateTeam === null
+  const [denied, setDenied] = useState<'other-team' | 'teamless' | 'checking' | null>(
+    surface === 'brief-writer' ? 'checking' : null,
+  )
 
   useEffect(() => {
     if (id === undefined || gateTeam === null) return
     let cancelled = false
     void (async () => {
       const doc = await loadDocumentById(id)
-      if (cancelled || doc === null) return
+      if (cancelled) return
+      // 아직 저장되지 않은 새 기획서는 곧 이 자리에 저장된다 — 남의 것이 아니다.
+      if (doc === null) {
+        setDenied(null)
+        return
+      }
       const owner = teamFilterKey(doc.project.requestTeam)
       setDenied(owner === 'none' ? 'teamless' : owner === gateTeam ? null : 'other-team')
     })()
@@ -92,6 +114,18 @@ export function BriefEditorRoute() {
       save: (doc) => saveDocumentById(id, doc, Date.now()),
     }
   }, [id])
+
+  if (needsTeam) return <Navigate to="/" replace />
+
+  // 누구 것인지 확인되기 전에는 아무것도 그리지 않는다. 그리고 나서 물리면 남의
+  // 기획서가 한순간 스쳐 보인다.
+  if (denied === 'checking') {
+    return (
+      <AppShellLayout>
+        <PageHeader title="기획서" description="기획서를 여는 중입니다…" />
+      </AppShellLayout>
+    )
+  }
 
   if (denied !== null) {
     return (
