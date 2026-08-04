@@ -155,7 +155,11 @@ export function studioLiveAssetIds(job: StudioJob): string[] {
     ...new Set([
       ...referencedAssetIds(job.doc),
       ...Object.values(job.productImages),
-      ...Object.values(jobResults(job)).map((r) => r.assetId),
+      // 지금 것만이 아니라 최초 생성본과 직전 결과까지 — 되돌리기가 가리키는
+      // 그림을 정리가 고아로 오판해 지우면 되돌릴 곳이 사라진다 (부분수정 §4).
+      ...Object.values(jobResults(job)).flatMap((r) =>
+        [r.assetId, r.originalAssetId, r.previousAssetId].filter((id): id is string => id !== undefined),
+      ),
     ]),
   ]
 }

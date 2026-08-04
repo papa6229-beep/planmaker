@@ -8,6 +8,8 @@
  * 새로고침마다 그 덩어리를 다시 읽게 된다.
  */
 
+import type { EditTarget } from './editTargets.js'
+
 /** 이번 단계에서 쓰는 모델과 품질 — 화면에도 이 값을 그대로 보여 준다. */
 export const IMAGE_MODEL = 'gpt-image-2'
 export const IMAGE_QUALITY = 'medium'
@@ -48,8 +50,28 @@ export interface ImageGenerationMetadata {
 
 export interface GeneratedPageResult extends ImageGenerationMetadata {
   pageId: string
-  /** 결과 이미지가 저장된 자산 번호. 이미지 자체는 여기 들어오지 않는다. */
+  /** 지금 보고 있는 결과. 이미지 자체는 여기 들어오지 않는다. */
   assetId: string
+  /**
+   * 부분수정을 위한 세 상태 (부분수정 §4). 이전 판에서 저장된 결과에는 없다.
+   *
+   *  - `originalAssetId` — 맨 처음 만든 것. 몇 번을 고쳐도 여기로 돌아올 수 있다.
+   *  - `previousAssetId` — 바로 직전 것. 방금 한 수정이 마음에 안 들 때.
+   *
+   * 되돌리기는 이 번호들을 가리키기만 한다. 외부를 다시 부르지 않는다.
+   */
+  originalAssetId?: string
+  previousAssetId?: string
+  /**
+   * 생성 순간에 얼려 둔 편집 대상 목록.
+   *
+   * 왼쪽 기획서는 계속 바뀌므로, 이 결과를 고칠 때 쓰는 번호와 원문은 살아 있는
+   * 문서가 아니라 여기서 나온다 — 그러지 않으면 "문구 3"이 가리키는 것이 조용히
+   * 달라진다.
+   */
+  targets?: EditTarget[]
+  /** 이 결과가 몇 번의 부분수정을 거쳤는가. 이력을 담지는 않는다. */
+  editCount?: number
 }
 
 /** 서버 함수가 성공했을 때 돌려주는 것. */
@@ -81,6 +103,8 @@ export type ImageGenerationErrorCode =
   | 'no_image'
   | 'save_failed'
   | 'too_many_inputs'
+  | 'target_not_found'
+  | 'rate_limited'
   | 'aspect_out_of_range'
   | 'unknown'
 
@@ -101,6 +125,9 @@ export const ERROR_TEXT: Record<ImageGenerationErrorCode, string> = {
   no_image: '응답에서 이미지를 받지 못했습니다. 다시 시도해 주세요.',
   save_failed: '생성은 되었지만 결과를 저장하지 못했습니다. 다시 시도해 주세요.',
   too_many_inputs: '한 번에 보낼 수 있는 이미지 수를 넘었습니다. 연결한 이미지를 줄여 주세요.',
+  target_not_found:
+    '수정할 대상을 현재 결과에서 찾지 못했습니다. 기존 이미지로 돌아갑니다. 어느 문구·이미지인지 더 구체적으로 적어 다시 시도해 주세요.',
+  rate_limited: '요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요.',
   aspect_out_of_range: '현재 페이지는 1장 생성이 가능한 최대 세로 비율을 넘었습니다. 페이지를 나누어 다시 시도해 주세요.',
   unknown: '이미지를 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.',
 }

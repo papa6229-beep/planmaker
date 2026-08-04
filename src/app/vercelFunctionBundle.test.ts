@@ -20,7 +20,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import ts from 'typescript'
@@ -62,13 +62,32 @@ describe('배포된 함수는 실제로 켜져야 한다', () => {
   })
 
   it('has no relative import the ESM runtime cannot resolve', () => {
-    const { diagnostics } = buildFunction()
-    // TS2835 = "Relative import paths need explicit file extensions".
-    // 배포 로그에서 경고로 지나갔던 바로 그 진단이다.
-    const missingExtension = diagnostics
-      .filter((d) => d.code === 2835)
-      .map((d) => `${d.file?.fileName ?? '?'}: ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`)
-    expect(missingExtension).toEqual([])
+    const { entryJs } = buildFunction()
+    const outDir = resolve(entryJs, '../..')
+
+    /**
+     * **나온 JS를** 본다. 컴파일러 진단(TS2835)이 아니라 emit 결과인 이유는,
+     * 타입만 가져오는 import는 JS에 남지 않아 런타임 규칙과 무관하기 때문이다.
+     * Node가 실제로 읽는 것은 여기 남은 문장들뿐이다.
+     */
+    const offenders: string[] = []
+    const seen = new Set<string>()
+    /** 진입 파일에서 실제로 닿는 것만 따라간다 — Node가 여는 것이 딱 그것이다. */
+    const follow = (file: string) => {
+      if (seen.has(file)) return
+      seen.add(file)
+      const source = readFileSync(file, 'utf8')
+      for (const match of source.matchAll(/\bfrom\s+['"](\.[^'"]*)['"]/g)) {
+        const specifier = match[1]!
+        if (!specifier.endsWith('.js')) {
+          offenders.push(`${file.replace(outDir, '')}: ${specifier}`)
+          continue
+        }
+        follow(resolve(file, '..', specifier))
+      }
+    }
+    follow(entryJs)
+    expect(offenders).toEqual([])
   })
 
   /**

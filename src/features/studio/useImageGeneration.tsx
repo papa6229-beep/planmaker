@@ -28,8 +28,11 @@ import {
 } from 'react'
 import { useBriefDocument } from '../document/useBriefDocument'
 import { useStudioJob } from './useStudioJob'
+import { pageResultOf } from '../../domain/studioJob'
 import { clearApiKey, readApiKey, saveApiKey } from './apiKeySession'
 import { buildGenerationRequest } from '../../domain/generationRequest'
+import { buildEditTargets, selectedProductAssetIds, selectedTargets, type EditTarget } from '../../domain/editTargets'
+import { buildEditPrompt } from '../../domain/editPrompt'
 import { planGenerationInputs, MAX_INPUT_IMAGES, type GenerationInputImage } from '../../domain/imageGenerationInputs'
 import { buildOpenAIImagePrompt } from '../../domain/imagePrompt'
 import { resolveGptImageSize } from '../../domain/gptImageSize'
@@ -47,7 +50,7 @@ import {
   IMAGE_QUALITY,
   type GeneratedPageResult,
 } from '../../domain/imageGeneration'
-import { getAllAssets, putAsset } from '../../services/assetStore'
+import { getAllAssets, getAsset, putAsset } from '../../services/assetStore'
 import { sizeLabel, toWorkingImage, workingImageTarget, type WorkingImageTarget } from '../../services/workingImage'
 import { renderPreviewPng } from '../../services/previewRenderer'
 import { createId } from '../../domain/factory'
@@ -56,6 +59,8 @@ import { createId } from '../../domain/factory'
 export type StudioCenterView = 'brief' | 'compare'
 
 interface GenerationPlan {
+  /** 처음부터 만드는 것인가, 이미 있는 결과를 고치는 것인가. */
+  kind: 'generate' | 'edit'
   pageId: string
   prompt: string
   /** 모델에게 요청하는 크기 (16의 배수). */
@@ -70,6 +75,8 @@ export type GenerationState =
   | { kind: 'idle' }
   /** 사람이 무엇에 얼마를 쓰는지 보고 누르는 자리. */
   | { kind: 'confirm'; plan: GenerationPlan; needsKey: boolean }
+  /** 부분수정 확인창 — 대상과 지시를 사람이 한 번 더 읽는 자리. */
+  | { kind: 'edit-confirm'; plan: GenerationPlan; targets: EditTarget[]; instruction: string }
   | { kind: 'running' }
   | { kind: 'failed'; message: string }
   /** 호출하기 전에 멈춘 것 — 아직 아무것도 쓰지 않았다. */
@@ -105,6 +112,23 @@ export interface ImageGenerationApi {
   /** 이미 받아 둔 원본으로 작업본만 다시 만든다. 외부 호출 0건. */
   retryConversion: () => void
   dismiss: () => void
+
+  // ── 부분수정 (부분수정 1단계) ──────────────────────────────────────────────
+  /** 이 결과를 만들 때 얼려 둔 대상 목록. 결과가 없으면 빈 배열. */
+  editTargets: EditTarget[]
+  selectedTargetIds: string[]
+  toggleTarget: (targetId: string) => void
+  instruction: string
+  setInstruction: (text: string) => void
+  /** 대상·지시·키·현재 결과가 모두 있어야 참. */
+  canEdit: boolean
+  beginEdit: () => void
+  confirmEdit: () => void
+  /** 되돌리기 — 둘 다 외부 호출 0건. */
+  canRevertPrevious: boolean
+  canRevertOriginal: boolean
+  revertToPrevious: () => void
+  revertToOriginal: () => void
 }
 
 const ImageGenerationContext = createContext<ImageGenerationApi | null>(null)
@@ -124,6 +148,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
   const [view, setView] = useState<StudioCenterView>('brief')
   /** 키가 있느냐만 담는다. 값 자체는 이 state에 들어오지 않는다. */
   const [hasKey, setHasKey] = useState(() => readApiKey() !== null)
+  const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>([])
+  const [instruction, setInstruction] = useState('')
   /** 요청이 나가 있는 동안은 한 번도 더 나가지 않는다. */
   const runningRef = useRef(false)
 
@@ -153,6 +179,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
 
     return {
       plan: {
+        kind: 'generate',
         pageId: page.id,
         prompt: buildOpenAIImagePrompt(request, inputs),
         size: size.size,
@@ -182,6 +209,18 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       const byId = new Map(stored.map((a) => [a.id, a]))
 
       const files: { fileName: string; blob: Blob }[] = []
+      if (plan.kind === 'edit') {
+        // 편집은 지금 이미지를 다시 보내는 일이다. 모델은 지난 호출을 기억하지
+        // 않으므로, 고칠 대상과 지켜야 할 것을 매번 이 그림과 함께 보낸다.
+        for (const input of plan.inputs) {
+          const asset = input.assetId === undefined ? undefined : await getAsset(input.assetId)
+          if (asset === undefined) continue
+          // 이름이 곧 역할이다 — 서버 로그와 검사에서 무엇을 보냈는지 읽힌다.
+          const name = input.fileName ?? `${input.role}-${input.assetId ?? ''}.png`
+          files.push({ fileName: `${String(input.index)}-${name}`, blob: asset.blob })
+        }
+        return files
+      }
       for (const input of plan.inputs) {
         if (input.role === 'page_layout') {
           // 편집 핸들도 선택 테두리도 없는, 파일 저장에 쓰는 바로 그 그림이다.
@@ -233,6 +272,9 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     }
 
     const assetId = createId('asset')
+    const current = pageResultOf(studio?.job ?? null, paid.plan.pageId)
+    const editing = paid.plan.kind === 'edit' && current !== undefined
+
     const result: GeneratedPageResult = {
       pageId: paid.plan.pageId,
       assetId,
@@ -240,9 +282,25 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       quality: IMAGE_QUALITY,
       requestedSize: paid.requestedSize,
       workingSize: sizeLabel({ width: working.width, height: working.height }),
-      sourceFingerprint: paid.plan.fingerprint,
+      // 부분수정은 기획서를 고친 것이 아니다. 그래서 "이 결과가 어느 기획서에서
+      // 나왔는가"와 얼려 둔 대상 목록은 그대로 이어받는다.
+      sourceFingerprint: editing ? current.sourceFingerprint : paid.plan.fingerprint,
       createdAt: Date.now(),
       ...(paid.requestId === undefined ? {} : { requestId: paid.requestId }),
+      ...(editing
+        ? {
+            // 지금 것이 직전이 되고, 최초는 처음 것 그대로 남는다.
+            previousAssetId: current.assetId,
+            originalAssetId: current.originalAssetId ?? current.assetId,
+            ...(current.targets === undefined ? {} : { targets: current.targets }),
+            editCount: (current.editCount ?? 0) + 1,
+          }
+        : {
+            // 첫 생성: 이 순간의 대상 목록을 얼려 둔다. 최초 생성본은 자기 자신.
+            originalAssetId: assetId,
+            targets: buildEditTargets(getDocument(), studio!.job, paid.plan.pageId),
+            editCount: 0,
+          }),
     }
     try {
       await putAsset({
@@ -259,9 +317,11 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     }
 
     paidRef.current = null
+    setSelectedTargetIds([])
+    setInstruction('')
     setState({ kind: 'idle' })
     setView('compare')
-  }, [studio])
+  }, [studio, getDocument])
 
   /** 같은 원본으로 작업본만 다시 만든다. 외부 호출 0건. */
   const retryConversion = useCallback(() => {
@@ -347,6 +407,125 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     [state, run],
   )
 
+  // ── 부분수정 ───────────────────────────────────────────────────────────────
+
+  const currentResult = studio === null ? undefined : pageResultOf(studio.job, activePageId)
+  // 결과 안에 얼려 둔 목록 그대로. 매 렌더 새 배열을 만들면 아래 훅들이 계속
+  // 다시 만들어지므로, 결과가 바뀔 때만 새로 잡는다.
+  const editTargets = useMemo<EditTarget[]>(() => currentResult?.targets ?? [], [currentResult])
+
+  const toggleTarget = useCallback((targetId: string) => {
+    setSelectedTargetIds((ids) => (ids.includes(targetId) ? ids.filter((id) => id !== targetId) : [...ids, targetId]))
+  }, [])
+
+  const canEdit =
+    currentResult !== undefined &&
+    selectedTargetIds.length > 0 &&
+    instruction.trim().length > 0 &&
+    editTargets.length > 0
+
+  /**
+   * 편집 한 번의 계획.
+   *
+   * 보내는 이미지는 ①지금 결과 ②고른 자리에 연결된 실제 제품·로고 원본이다.
+   * 고르지 않은 자리의 원본은 보내지 않는다 — 보내면 모델이 그것도 손대도 된다고
+   * 읽을 수 있다.
+   */
+  const planEdit = useCallback((): { plan: GenerationPlan; targets: EditTarget[] } | { blocked: string } => {
+    if (studio === null || currentResult === undefined) return { blocked: errorTextFor('unknown') }
+    const chosen = selectedTargets(editTargets, selectedTargetIds)
+    if (chosen.length === 0) return { blocked: errorTextFor('target_not_found') }
+
+    const current = getDocument()
+    const page = current.pages.find((p) => p.id === currentResult.pageId) ?? current.pages[0]!
+    const size = resolveGptImageSize(page.canvasWidth, page.canvasHeight)
+    if (!size.ok) return { blocked: size.message }
+    const working = workingImageTarget(page.canvasHeight)
+
+    const inputs: GenerationInputImage[] = [
+      {
+        index: 1,
+        role: 'page_layout',
+        assetId: currentResult.assetId,
+        label: '현재 결과 이미지 — 이 그림을 고칩니다.',
+        fileName: 'current-result.png',
+      },
+    ]
+    for (const assetId of selectedProductAssetIds(chosen)) {
+      const target = chosen.find((t) => t.productAssetId === assetId)
+      inputs.push({
+        index: inputs.length + 1,
+        role: 'product_image',
+        assetId,
+        fileName: `${assetId}.png`,
+        ...(target?.blockId === undefined ? {} : { blockId: target.blockId }),
+        label: `${target?.label ?? '선택한 자리'}의 실제 제품·로고 원본`,
+      })
+    }
+    if (inputs.length > MAX_INPUT_IMAGES) return { blocked: errorTextFor('too_many_inputs') }
+
+    return {
+      plan: {
+        kind: 'edit',
+        pageId: currentResult.pageId,
+        prompt: buildEditPrompt(editTargets, chosen, instruction, {
+          currentImage: working,
+          page: { width: page.canvasWidth, height: page.canvasHeight },
+          inputs: inputs.map((i) => ({ index: i.index, what: i.label })),
+        }),
+        size: size.size,
+        working,
+        inputs,
+        fingerprint: currentResult.sourceFingerprint,
+      },
+      targets: chosen,
+    }
+  }, [studio, currentResult, editTargets, selectedTargetIds, instruction, getDocument])
+
+  const beginEdit = useCallback(() => {
+    if (runningRef.current || !canEdit) return
+    const planned = planEdit()
+    if ('blocked' in planned) {
+      setState({ kind: 'blocked', message: planned.blocked })
+      return
+    }
+    setState({ kind: 'edit-confirm', plan: planned.plan, targets: planned.targets, instruction })
+  }, [canEdit, planEdit, instruction])
+
+  const confirmEdit = useCallback(() => {
+    if (state.kind !== 'edit-confirm' || runningRef.current) return
+    const key = readApiKey()
+    if (key === null) {
+      setState({ kind: 'blocked', message: errorTextFor('missing_api_key') })
+      return
+    }
+    void run(state.plan, key)
+  }, [state, run])
+
+  /**
+   * 되돌리기. 가리키는 번호만 바꾼다 — 그림을 다시 만들지도, 지우지도 않는다.
+   * 그래서 외부 호출이 0건이고, 되돌린 뒤에도 방금 만든 그림은 그대로 남는다.
+   */
+  const revertTo = useCallback(
+    (which: 'previous' | 'original') => {
+      if (studio === null || currentResult === undefined) return
+      const target = which === 'previous' ? currentResult.previousAssetId : currentResult.originalAssetId
+      if (target === undefined || target === currentResult.assetId) return
+      void studio.recordResult({
+        ...currentResult,
+        assetId: target,
+        // 되돌린 자리에서 또 되돌릴 곳은 없다. 최초 생성본은 그대로 남는다.
+        ...(currentResult.previousAssetId === undefined ? {} : { previousAssetId: undefined }),
+      } as GeneratedPageResult)
+    },
+    [studio, currentResult],
+  )
+
+  const canRevertPrevious =
+    currentResult?.previousAssetId !== undefined && currentResult.previousAssetId !== currentResult.assetId
+  const canRevertOriginal =
+    currentResult?.originalAssetId !== undefined && currentResult.originalAssetId !== currentResult.assetId
+
   /**
    * 생성은 Studio 작업에 딸린 일이다. 작업이 없는 화면 — 작성기, 그리고 요청
    * 작업 화면 — 에서는 아예 없는 기능이어야 하므로 `null`을 내려보낸다. 값을
@@ -374,9 +553,25 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             begin,
             confirm,
             retryConversion,
+            editTargets,
+            selectedTargetIds,
+            toggleTarget,
+            instruction,
+            setInstruction,
+            canEdit,
+            beginEdit,
+            confirmEdit,
+            canRevertPrevious,
+            canRevertOriginal,
+            revertToPrevious: () => revertTo('previous'),
+            revertToOriginal: () => revertTo('original'),
             dismiss: () => setState({ kind: 'idle' }),
           },
-    [studio, state, hasResult, hasKey, view, begin, confirm, retryConversion],
+    [
+      studio, state, hasResult, hasKey, view, begin, confirm, retryConversion,
+      editTargets, selectedTargetIds, toggleTarget, instruction, canEdit, beginEdit, confirmEdit,
+      canRevertPrevious, canRevertOriginal, revertTo,
+    ],
   )
 
   return <ImageGenerationContext.Provider value={api}>{children}</ImageGenerationContext.Provider>

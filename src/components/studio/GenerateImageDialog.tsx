@@ -51,6 +51,43 @@ export function GenerateImageDialog() {
     )
   }
 
+  // 부분수정 확인. 무엇을 고치라고 말했는지 사람이 자기 문장으로 한 번 더 읽는다.
+  if (state.kind === 'edit-confirm') {
+    return (
+      <div className="confirm-backdrop" role="presentation" onClick={generation.dismiss}>
+        <div
+          className="confirm gen-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-label="AI 부분수정"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h2 className="confirm__title">이 부분을 수정합니다</h2>
+          <ul className="gen-dialog__targets">
+            {state.targets.map((t) => (
+              <li key={t.targetId}>{t.label}</li>
+            ))}
+          </ul>
+          <p className="gen-dialog__instruction">“{state.instruction}”</p>
+          <dl className="gen-dialog__facts">
+            <div><dt>모델</dt><dd>{CALL_SUMMARY.model}</dd></div>
+            <div><dt>품질</dt><dd>{CALL_SUMMARY.quality}</dd></div>
+            <div><dt>AI 편집 규격</dt><dd>{state.plan.size}</dd></div>
+            <div><dt>최종 작업 이미지</dt><dd>{sizeLabel(state.plan.working)}</dd></div>
+            <div><dt>호출 횟수</dt><dd>{CALL_SUMMARY.calls}회 (자동 재시도 없음)</dd></div>
+          </dl>
+          <p className="gen-dialog__hint">
+            한 장짜리 이미지를 AI가 다시 그리는 방식이라, 고르지 않은 주변 요소도 조금 달라질 수 있습니다.
+          </p>
+          <div className="confirm__actions">
+            <button type="button" className="btn" onClick={generation.dismiss}>취소</button>
+            <button type="button" className="btn btn--primary" onClick={generation.confirmEdit}>수정 시작</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (state.kind === 'blocked' || state.kind === 'failed') {
     return (
       <div className="confirm-backdrop" role="presentation" onClick={generation.dismiss}>

@@ -34,6 +34,7 @@ import { AiNoteField, DesignerNoteField } from '../components/concept/HandoffNot
 import { GenerationRequestPreview } from '../components/studio/GenerationRequestPreview'
 import { GenerateImageDialog } from '../components/studio/GenerateImageDialog'
 import { ResultCompare } from '../components/studio/ResultCompare'
+import { EditPanel } from '../components/studio/EditPanel'
 import { ImageGenerationProvider, useImageGeneration } from '../features/studio/useImageGeneration'
 
 /** 기획서 작성 · 요청 작업 · 이미지 생성기 작업판. */
@@ -235,7 +236,15 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
         {/* 기획서 모드의 우측은 보관함; 작업판과 이미지 요청 화면은 공통 편집기의
             기본 패널을 그대로 쓴다. 제품 이미지는 이미지 블록에서 직접 넣으므로
             같은 정보를 받는 패널을 따로 두지 않는다 (첫 사용 흐름 §8). */}
-        {mode === 'brief' ? <BriefLibrary /> : <PropertiesPanel />}
+        {mode === 'brief' ? (
+          <BriefLibrary />
+        ) : (
+          <div className="side-right">
+            {/* 결과가 있을 때만 나타난다 — 없으면 컴포넌트가 스스로 비운다. */}
+            <EditPanel />
+            <PropertiesPanel />
+          </div>
+        )}
       </main>
       <KeyboardShortcuts />
       <GlobalPaste />
