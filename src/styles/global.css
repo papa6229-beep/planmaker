@@ -803,6 +803,11 @@ button { font-family: inherit; }
   border-radius: var(--radius);
   background: var(--color-panel);
   box-shadow: var(--shadow-pop);
+  /* 내용이 아무리 길어도 창은 화면 안에 머문다 (손검수 Patch 1-B §7). */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: calc(100dvh - 48px);
 }
 .confirm__text { margin: 0 0 16px; font-size: 14px; line-height: 1.6; }
 .confirm__actions { display: flex; justify-content: flex-end; gap: 8px; }
@@ -2098,3 +2103,17 @@ button { font-family: inherit; }
 .refine__warnings { margin: 0 0 8px; padding-left: 16px; font-size: 11px; color: #b45309; }
 .refine__warn { margin: 0 0 8px; font-size: 11px; color: #b45309; }
 .edit-card__label--sub { display: block; margin: 6px 0 2px; font-weight: 700; color: var(--color-muted); }
+
+/* 긴 확인창: 머리·바닥은 붙어 있고 가운데만 흐른다 (손검수 Patch 1-B §7). */
+.confirm--scrollable { max-width: 560px; padding: 16px 20px; }
+.confirm__head { flex-shrink: 0; }
+.confirm__subtitle { margin: 2px 0 0; font-size: 12px; color: var(--color-muted); }
+.confirm__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 8px 0; }
+.confirm__actions { flex-shrink: 0; }
+.gen-dialog__target { font-weight: 400; }
+.gen-dialog__target > summary { cursor: pointer; font-weight: 700; list-style: revert; }
+.gen-dialog__target-brief { display: block; margin-left: 2px; font-size: 12px; font-weight: 400; color: var(--color-muted); }
+.gen-dialog__target[open] .gen-dialog__target-brief { display: none; }
+
+/* 전체 지시 제안: 읽는 부분만 흐르고 두 버튼은 제자리. */
+.refine__scroll { max-height: 40vh; overflow-y: auto; overscroll-behavior: contain; }

@@ -108,17 +108,21 @@ function RefineNoteAction() {
 
       {refine.noteProposal !== null && (
         <section className="refine__proposal" aria-label="다듬은 지시 제안">
-          <p className="refine__label">기존 지시</p>
-          <p className="refine__text refine__text--old">{refine.noteProposal.original}</p>
-          <p className="refine__label">AI가 다듬은 지시</p>
-          <p className="refine__text">{refine.noteProposal.revised}</p>
-          {refine.noteProposal.warnings.length > 0 && (
-            <ul className="refine__warnings">
-              {refine.noteProposal.warnings.map((warning) => (
-                <li key={warning}>{warning}</li>
-              ))}
-            </ul>
-          )}
+          {/* 제안이 길어도 두 버튼은 제자리에 남는다 — 읽는 부분만 흐른다
+              (손검수 Patch 1-B §7). */}
+          <div className="refine__scroll">
+            <p className="refine__label">기존 지시</p>
+            <p className="refine__text refine__text--old">{refine.noteProposal.original}</p>
+            <p className="refine__label">AI가 다듬은 지시</p>
+            <p className="refine__text">{refine.noteProposal.revised}</p>
+            {refine.noteProposal.warnings.length > 0 && (
+              <ul className="refine__warnings">
+                {refine.noteProposal.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            )}
+          </div>
           <div className="refine__actions">
             <button type="button" className="btn" onClick={refine.dismissNote}>취소</button>
             <button type="button" className="btn btn--primary" onClick={refine.applyNote}>이 지시 적용</button>

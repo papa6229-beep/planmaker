@@ -27,6 +27,13 @@ export interface ResponsesRequest {
   /** 구조화 응답의 이름과 모양. */
   schemaName: string
   schema: unknown
+  /**
+   * 공급자가 쓸 수 있는 최대 토큰 (손검수 Patch 1 §6).
+   *
+   * 길이 계약을 프롬프트로만 부탁하면 값은 이미 치른 뒤에 길다는 것을 알게 된다.
+   * 추론 토큰까지 함께 세므로 넉넉히 두되, 상한 자체는 있어야 한다.
+   */
+  maxOutputTokens?: number
 }
 
 export interface ResponsesResult {
@@ -111,6 +118,7 @@ export async function requestOpenAiRefine(
   const payload = {
     model: request.model,
     reasoning: { effort: request.reasoningEffort },
+    ...(request.maxOutputTokens === undefined ? {} : { max_output_tokens: request.maxOutputTokens }),
     input: [
       { role: 'system', content: [{ type: 'input_text', text: request.systemText }] },
       { role: 'user', content: userContent },

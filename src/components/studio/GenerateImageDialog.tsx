@@ -16,6 +16,12 @@ import { useImageGeneration } from '../../features/studio/useImageGeneration'
 import { CALL_SUMMARY } from '../../features/studio/useImageGeneration'
 import { sizeLabel } from '../../services/workingImage'
 
+/** 목록에서 한눈에 알아볼 만큼만. 전체 문장은 펼치면 그대로 있다. */
+function summarize(instruction: string): string {
+  const flat = instruction.trim().replace(/\s+/g, ' ')
+  return flat.length > 32 ? `${flat.slice(0, 32)}…` : flat
+}
+
 export function GenerateImageDialog() {
   const generation = useImageGeneration()
   const [key, setKey] = useState('')
@@ -25,6 +31,21 @@ export function GenerateImageDialog() {
   useEffect(() => {
     if (state?.kind !== 'confirm') setKey('')
   }, [state?.kind])
+
+  /**
+   * Esc로 닫는다 (손검수 Patch 1-B §13). 내용이 길어 아래 버튼이 화면 밖으로
+   * 밀렸을 때도 사람이 빠져나올 길은 있어야 한다 — 스크롤은 그 다음 문제다.
+   */
+  const open = state !== undefined && state.kind !== 'idle' && state.kind !== 'running'
+  const dismiss = generation?.dismiss
+  useEffect(() => {
+    if (!open || dismiss === undefined) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') dismiss()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, dismiss])
 
   if (generation === null || state === undefined) return null
   if (state.kind === 'idle' || state.kind === 'running') return null
@@ -56,33 +77,47 @@ export function GenerateImageDialog() {
     return (
       <div className="confirm-backdrop" role="presentation" onClick={generation.dismiss}>
         <div
-          className="confirm gen-dialog"
+          className="confirm confirm--scrollable gen-dialog"
           role="dialog"
           aria-modal="true"
           aria-label="AI 부분수정"
           onClick={(e) => e.stopPropagation()}
         >
-          <h2 className="confirm__title">이 부분을 수정합니다</h2>
-          {/* 대상과 그 대상의 지시를 한 덩어리로 합치지 않는다 — 합치면 어느 말이
-              어느 대상에게 간 것인지 사람이 확인할 수 없다. */}
-          <ul className="gen-dialog__targets">
-            {state.items.map((item) => (
-              <li key={item.target.targetId}>
-                <span className="gen-dialog__target-label">{item.target.label}</span>
-                <span className="gen-dialog__target-instruction">수정 지시: {item.instruction}</span>
-              </li>
-            ))}
-          </ul>
-          <dl className="gen-dialog__facts">
-            <div><dt>모델</dt><dd>{CALL_SUMMARY.model}</dd></div>
-            <div><dt>품질</dt><dd>{CALL_SUMMARY.quality}</dd></div>
-            <div><dt>AI 편집 규격</dt><dd>{state.plan.size}</dd></div>
-            <div><dt>최종 작업 이미지</dt><dd>{sizeLabel(state.plan.working)}</dd></div>
-            <div><dt>호출 횟수</dt><dd>{CALL_SUMMARY.calls}회 (자동 재시도 없음)</dd></div>
-          </dl>
-          <p className="gen-dialog__hint">
-            한 장짜리 이미지를 AI가 다시 그리는 방식이라, 고르지 않은 주변 요소도 조금 달라질 수 있습니다.
-          </p>
+          {/* 머리와 바닥은 제자리에 붙어 있고 가운데만 흐른다. 대상이 여섯이면
+              내용은 화면 높이를 쉽게 넘는데, 그때 아래 버튼이 함께 밀려 내려가면
+              사람은 시작할 수도 취소할 수도 없다 (손검수 Patch 1-B §7). */}
+          <div className="confirm__head">
+            <h2 className="confirm__title">이 부분을 수정합니다</h2>
+            <p className="confirm__subtitle">대상 {state.items.length}개</p>
+          </div>
+          <div className="confirm__body">
+            {/* 대상과 그 대상의 지시를 한 덩어리로 합치지 않는다 — 합치면 어느 말이
+                어느 대상에게 간 것인지 사람이 확인할 수 없다. 기본은 한 줄 요약이고,
+                긴 문장은 펼쳐서 읽는다 (§8). */}
+            <ul className="gen-dialog__targets">
+              {state.items.map((item) => (
+                <li key={item.target.targetId}>
+                  <details className="gen-dialog__target">
+                    <summary className="gen-dialog__target-label">
+                      {item.target.label}
+                      <span className="gen-dialog__target-brief">{summarize(item.instruction)}</span>
+                    </summary>
+                    <span className="gen-dialog__target-instruction">수정 지시: {item.instruction}</span>
+                  </details>
+                </li>
+              ))}
+            </ul>
+            <dl className="gen-dialog__facts">
+              <div><dt>모델</dt><dd>{CALL_SUMMARY.model}</dd></div>
+              <div><dt>품질</dt><dd>{CALL_SUMMARY.quality}</dd></div>
+              <div><dt>AI 편집 규격</dt><dd>{state.plan.size}</dd></div>
+              <div><dt>최종 작업 이미지</dt><dd>{sizeLabel(state.plan.working)}</dd></div>
+              <div><dt>호출 횟수</dt><dd>{CALL_SUMMARY.calls}회 (자동 재시도 없음)</dd></div>
+            </dl>
+            <p className="gen-dialog__hint">
+              한 장짜리 이미지를 AI가 다시 그리는 방식이라, 고르지 않은 주변 요소도 조금 달라질 수 있습니다.
+            </p>
+          </div>
           <div className="confirm__actions">
             <button type="button" className="btn" onClick={generation.dismiss}>취소</button>
             <button type="button" className="btn btn--primary" onClick={generation.confirmEdit}>수정 시작</button>

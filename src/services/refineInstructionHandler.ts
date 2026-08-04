@@ -14,8 +14,10 @@ import {
   REFINE_REASONING_EFFORT,
   REFINE_SYSTEM_INSTRUCTION,
   REFINE_TARGETS_SCHEMA,
+  REFINE_OVERALL_MAX_TOKENS,
+  refineTargetsMaxTokens,
   buildRefineUserText,
-  parseRefineOutput,
+  readRefineOutput,
   type RefineErrorCode,
   type RefineFailure,
   type RefineRequestBody,
@@ -102,17 +104,22 @@ export async function handleRefineInstruction(request: Request, deps: RefineHand
         ...(body.previewImage === undefined ? {} : { imageDataUrl: body.previewImage }),
         schemaName: overall ? 'refined_overall_instruction' : 'refined_target_instructions',
         schema: overall ? REFINE_OVERALL_SCHEMA : REFINE_TARGETS_SCHEMA,
+        maxOutputTokens: overall ? REFINE_OVERALL_MAX_TOKENS : refineTargetsMaxTokens((body.targets ?? []).length),
       },
       deps.fetch === undefined ? {} : { fetch: deps.fetch },
     )
 
-    const parsed = parseRefineOutput(body.scope, result.output)
-    if (parsed === null) {
-      deps.log?.({ code: 'bad_output', status: 502, ...(result.requestId === undefined ? {} : { requestId: result.requestId }) })
-      return fail('bad_output', 502, '다듬은 지시를 약속된 형식으로 받지 못했습니다.', result.requestId)
+    // 응답 경계에서 길이와 대상을 다시 확인한다 — 프롬프트로 부탁한 것만 믿지
+    // 않는다. 넘으면 잘라 붙이지 않고 그대로 되돌린다 (손검수 Patch 1 §6).
+    const read = readRefineOutput(body.scope, result.output, {
+      allowedBlockIds: (body.targets ?? []).map((t) => t.blockId),
+    })
+    if (!read.ok) {
+      deps.log?.({ code: read.code, status: 502, ...(result.requestId === undefined ? {} : { requestId: result.requestId }) })
+      return fail(read.code, 502, '다듬은 지시를 그대로 쓸 수 없습니다.', result.requestId)
     }
 
-    return new Response(JSON.stringify(parsed), {
+    return new Response(JSON.stringify(read.value), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     })

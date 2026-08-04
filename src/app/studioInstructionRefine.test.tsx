@@ -407,7 +407,9 @@ describe('§10 대상별 지시 다듬기', () => {
 describe('§7·§8 무엇을 쓰고 무엇을 흘리지 않는가', () => {
   it('names the model and the reasoning effort the order requires', () => {
     expect(REFINE_MODEL).toBe('gpt-5.6-sol')
-    expect(REFINE_REASONING_EFFORT).toBe('xhigh')
+    // 손검수 Patch 1 §5에서 `xhigh` → `high`. 단순 지시 정리에 설계 수준의 추론은
+    // 과했고, 그 과함이 곧 장문이었다.
+    expect(REFINE_REASONING_EFFORT).toBe('high')
   })
 
   it('carries the whole constitution in the system instruction', () => {

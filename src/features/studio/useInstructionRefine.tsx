@@ -24,6 +24,7 @@ import { pageResultOf } from '../../domain/studioJob'
 import { API_KEY_HEADER } from '../../domain/imageGeneration'
 import {
   REFINE_INSTRUCTION_PATH,
+  readRefineOutput,
   refineErrorTextFor,
   type RefineImageSlotInfo,
   type RefineRequestBody,
@@ -146,32 +147,47 @@ export function InstructionRefineProvider({ children }: { children: ReactNode })
     }
   }, [getDocument, studio, concept, designerNote])
 
-  /** 한 번 부른다. 실패는 사람이 읽는 한 문장으로만 나온다. */
-  const send = useCallback(async (body: RefineRequestBody): Promise<RefineSuccess | { error: string }> => {
-    const key = readApiKey()
-    if (key === null) return { error: refineErrorTextFor('missing_api_key') }
-    try {
-      const response = await fetch(REFINE_INSTRUCTION_PATH, {
-        method: 'POST',
-        // 키는 이 요청의 헤더에만 실린다 — 주소에도, 본문에도 없다.
-        headers: { [API_KEY_HEADER]: key, 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      const payload: unknown = await response.json().catch(() => null)
-      if (!response.ok) {
-        const code = (payload as { error?: { code?: string } } | null)?.error?.code
-        return { error: refineErrorTextFor(code) }
+  /**
+   * 한 번 부른다. 실패는 사람이 읽는 한 문장으로만 나온다.
+   *
+   * 서버가 이미 길이와 대상을 확인하지만 여기서 한 번 더 본다. 화면에 붙는 것은
+   * 이 값이고, 길거나 어긋난 문장은 **적용하지 않는 것**이 자르는 것보다 낫다
+   * (손검수 Patch 1 §6).
+   */
+  const send = useCallback(
+    async (body: RefineRequestBody, allowedBlockIds?: readonly string[]): Promise<RefineSuccess | { error: string }> => {
+      const key = readApiKey()
+      if (key === null) return { error: refineErrorTextFor('missing_api_key') }
+      try {
+        const response = await fetch(REFINE_INSTRUCTION_PATH, {
+          method: 'POST',
+          // 키는 이 요청의 헤더에만 실린다 — 주소에도, 본문에도 없다.
+          headers: { [API_KEY_HEADER]: key, 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        const payload: unknown = await response.json().catch(() => null)
+        if (!response.ok) {
+          const code = (payload as { error?: { code?: string } } | null)?.error?.code
+          return { error: refineErrorTextFor(code) }
+        }
+        const parsed = payload as { scope?: string; result?: unknown } | null
+        if (parsed === null || (parsed.scope !== 'overall' && parsed.scope !== 'targets')) {
+          return { error: refineErrorTextFor('bad_output') }
+        }
+        const read = readRefineOutput(
+          parsed.scope,
+          parsed.result,
+          allowedBlockIds === undefined ? {} : { allowedBlockIds },
+        )
+        if (!read.ok) return { error: refineErrorTextFor(read.code) }
+        return read.value
+      } catch {
+        // 스스로 다시 부르지 않는다. 다음 호출은 사람의 클릭이다.
+        return { error: refineErrorTextFor('network_error') }
       }
-      const parsed = payload as RefineSuccess | null
-      if (parsed === null || (parsed.scope !== 'overall' && parsed.scope !== 'targets')) {
-        return { error: refineErrorTextFor('bad_output') }
-      }
-      return parsed
-    } catch {
-      // 스스로 다시 부르지 않는다. 다음 호출은 사람의 클릭이다.
-      return { error: refineErrorTextFor('network_error') }
-    }
-  }, [])
+    },
+    [],
+  )
 
   // ── 전체 지시 ──────────────────────────────────────────────────────────────
 
@@ -257,13 +273,17 @@ export function InstructionRefineProvider({ children }: { children: ReactNode })
           if (asset !== undefined) previewImage = await toAnalysisDataUrl(asset.blob)
         }
 
-        const result = await send({
-          scope: 'targets',
-          targets: chosen.map((c) => targetInput(c.target, c.instruction)),
-          untouched,
-          ...base,
-          ...(previewImage === null ? {} : { previewImage }),
-        })
+        const inputs = chosen.map((c) => targetInput(c.target, c.instruction))
+        const result = await send(
+          {
+            scope: 'targets',
+            targets: inputs,
+            untouched,
+            ...base,
+            ...(previewImage === null ? {} : { previewImage }),
+          },
+          inputs.map((t) => t.blockId),
+        )
         if ('error' in result) {
           setTargetsError(result.error)
           return
