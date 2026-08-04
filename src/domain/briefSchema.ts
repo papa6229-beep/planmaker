@@ -61,6 +61,19 @@ export interface Project {
    * the design team and is never printed into the generated image.
    */
   concept?: string
+  /**
+   * 디자인팀에게 전달할 말 — what the planner wants to say to the person who
+   * makes the image ("이 문구는 반드시 강조해 주세요"). Part of the brief, so it
+   * rides the `.eventbrief` file to the studio; never printed into the image,
+   * and never listed as wording to render (첫 사용 흐름 §6-1).
+   */
+  designerNote?: string
+  /**
+   * AI에게 추가로 전달할 말 — what the *design team* adds in the image studio
+   * ("하단에는 그라데이션을 꼭 넣어 주세요"). Written on the studio's working
+   * copy, kept apart from the planner's note, and never printed (§6-2).
+   */
+  aiNote?: string
 }
 
 // ── Layout hints & position ──────────────────────────────────────────────────

@@ -181,8 +181,19 @@ export function buildDesignSummary(brief: EventBrief, context: SummaryContext = 
     })
 
   // 전체 컨셉 applies to the whole brief, so it leads the instructions with no
-  // position of its own — direction for the AI, never copy to print.
+  // position of its own — direction for the AI, never copy to print. What the
+  // planner asked the design team for follows it, under its own name so the two
+  // are never read as one (첫 사용 흐름 §6-1).
   const requestTeam = project.requestTeam?.trim()
+  const designerNote = project.designerNote?.trim()
+  if (designerNote !== undefined && designerNote.length > 0) {
+    instructions.unshift({
+      scope: 'document',
+      label: '디자인팀에게 전달할 말',
+      content: designerNote,
+      renderAsText: false,
+    })
+  }
   const concept = project.concept?.trim()
   if (concept !== undefined && concept.length > 0) {
     instructions.unshift({

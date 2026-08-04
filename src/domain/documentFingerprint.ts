@@ -107,6 +107,10 @@ export function documentFingerprint(doc: BriefDocument): string {
         title: project.title,
         concept: project.concept,
         conceptNote: project.conceptNote,
+        // 작성자가 디자인팀에게 남긴 말은 기획서의 내용이다. 반면 작업판에서
+        // 작업자가 적는 AI 지시(`aiNote`)는 기획서가 달라진 것이 아니므로
+        // 여기 없다 — 그것까지 세면 메모 한 줄에 "원본이 바뀌었다"가 된다.
+        designerNote: project.designerNote,
         outputType: project.outputType,
         canvasWidth: project.canvasWidth,
         canvasHeight: project.canvasHeight,
@@ -123,4 +127,24 @@ export function documentFingerprint(doc: BriefDocument): string {
 /** True when two briefs hold the same work. */
 export function sameDocumentContent(a: BriefDocument, b: BriefDocument): boolean {
   return documentFingerprint(a) === documentFingerprint(b)
+}
+
+/**
+ * The same judgement as a short opaque string.
+ *
+ * `documentFingerprint` is the brief's whole content, so it is a perfect
+ * comparison key and a terrible thing to hand to anyone: it carries every
+ * wording — including the publishing URLs the image AI must never see. Where
+ * the identity of a document has to travel (the GPT 제작 요청 §5.1), this digest
+ * goes instead. FNV-1a over the canonical string: no dependency, stable across
+ * runs, and it says nothing about what the brief contains.
+ */
+export function documentDigest(doc: BriefDocument): string {
+  const text = documentFingerprint(doc)
+  let hash = 0x811c9dc5
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return `d${hash.toString(16).padStart(8, '0')}${text.length.toString(16)}`
 }

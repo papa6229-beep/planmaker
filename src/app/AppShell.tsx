@@ -31,6 +31,7 @@ import { ReferenceViewControls } from '../components/reference/ReferenceViewCont
 import { ReferenceSideView } from '../components/reference/ReferenceSideView'
 import { StartChoice } from '../components/start/StartChoice'
 import { ConceptField } from '../components/concept/ConceptField'
+import { DesignerNoteField } from '../components/concept/HandoffNotes'
 
 /** True when focus is in a text entry, so shortcuts must not fire. */
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -171,6 +172,9 @@ function Workspace({ mode, statusPanel }: { mode: 'brief' | 'image'; statusPanel
           <ReferenceTools />
           <BlockPalette />
           <ConceptField />
+          {/* 작성자가 디자인팀 작업자에게 남기는 부탁. 기획서의 일부라 파일을
+              따라 함께 간다 (첫 사용 흐름 §6-1). */}
+          <DesignerNoteField />
         </div>
         <div className="workspace__center">
           <PageTabs />
