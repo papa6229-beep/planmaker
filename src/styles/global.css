@@ -2084,3 +2084,17 @@ button { font-family: inherit; }
 .ready-panel__facts dt { color: var(--color-muted); }
 .ready-panel__facts dd { margin: 0; font-weight: 600; }
 .ready-panel__warn { margin: 10px 0 0; font-size: 12px; color: #b45309; }
+
+/* AI 지시 다듬기 (실작업 UI 마감 §9, §10). */
+.refine { margin-top: 8px; }
+.refine__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.refine__cost { margin: 6px 0 0; font-size: 11px; color: var(--color-muted); }
+.refine__error { margin: 6px 0 0; font-size: 12px; color: #b45309; }
+.refine__proposal { margin-top: 8px; padding: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+.refine__proposal--card { margin-top: 6px; }
+.refine__label { margin: 0 0 2px; font-size: 11px; font-weight: 700; color: var(--color-muted); }
+.refine__text { margin: 0 0 8px; font-size: 12px; white-space: pre-wrap; }
+.refine__text--old { color: var(--color-muted); }
+.refine__warnings { margin: 0 0 8px; padding-left: 16px; font-size: 11px; color: #b45309; }
+.refine__warn { margin: 0 0 8px; font-size: 11px; color: #b45309; }
+.edit-card__label--sub { display: block; margin: 6px 0 2px; font-weight: 700; color: var(--color-muted); }

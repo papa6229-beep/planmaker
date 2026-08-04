@@ -37,6 +37,7 @@ import { GenerateImageDialog } from '../components/studio/GenerateImageDialog'
 import { ResultCompare } from '../components/studio/ResultCompare'
 import { EditPanel } from '../components/studio/EditPanel'
 import { ImageGenerationProvider, useImageGeneration } from '../features/studio/useImageGeneration'
+import { InstructionRefineProvider } from '../features/studio/useInstructionRefine'
 
 /** 기획서 작성 · 요청 작업 · 이미지 생성기 작업판. */
 export type ShellMode = 'brief' | 'image' | 'studio'
@@ -295,7 +296,11 @@ export function AppShellProviders({ binding, children }: { binding?: DocumentBin
             <CanvasViewProvider>
               {/* 작업판 밖에서는 이 provider 안의 훅이 전부 `null`을 내므로,
                   작성기 화면에는 생성 버튼도 결과 비교도 나타나지 않는다. */}
-              <ImageGenerationProvider>{children}</ImageGenerationProvider>
+              <ImageGenerationProvider>
+                {/* 다듬기는 생성 위에 얹힌다 — 지금 고른 대상과 그 결과를 알아야
+                    하기 때문이다. 작업이 없으면 이 훅도 `null`을 낸다. */}
+                <InstructionRefineProvider>{children}</InstructionRefineProvider>
+              </ImageGenerationProvider>
             </CanvasViewProvider>
           </EventBriefIoProvider>
         </BriefDocumentProvider>

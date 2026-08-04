@@ -27,12 +27,13 @@ import ts from 'typescript'
 
 const REPO_ROOT = resolve(__dirname, '../..')
 const ENTRY = join(REPO_ROOT, 'api/generate-image.ts')
+const REFINE_ENTRY = join(REPO_ROOT, 'api/refine-instruction.ts')
 
 /** 배포가 만드는 것과 같은 산출물을 만든다. 반환값은 진입 파일의 경로. */
-function buildFunction(): { entryJs: string; diagnostics: ts.Diagnostic[] } {
+function buildFunction(entry: string = ENTRY): { entryJs: string; diagnostics: ts.Diagnostic[] } {
   const outDir = mkdtempSync(join(tmpdir(), 'fn-build-'))
   const program = ts.createProgram({
-    rootNames: [ENTRY],
+    rootNames: [entry],
     options: {
       // 배포와 같은 모듈 해석. 여기서 확장자 없는 상대경로는 오류가 된다.
       module: ts.ModuleKind.NodeNext,
@@ -52,7 +53,30 @@ function buildFunction(): { entryJs: string; diagnostics: ts.Diagnostic[] } {
   // 함수 폴더가 ESM으로 돌아간다는 표시. Vercel 산출물도 이 파일을 함께 둔다.
   writeFileSync(join(outDir, 'package.json'), JSON.stringify({ type: 'module' }))
   mkdirSync(join(outDir, 'api'), { recursive: true })
-  return { entryJs: join(outDir, 'api/generate-image.js'), diagnostics }
+  const name = entry.split('/').pop()!.replace(/\.ts$/, '.js')
+  return { entryJs: join(outDir, 'api', name), diagnostics }
+}
+
+/** 진입 파일에서 실제로 닿는 상대 import 가운데 ESM이 못 여는 것. */
+function unresolvableImports(entryJs: string): string[] {
+  const outDir = resolve(entryJs, '../..')
+  const offenders: string[] = []
+  const seen = new Set<string>()
+  const follow = (file: string) => {
+    if (seen.has(file)) return
+    seen.add(file)
+    const source = readFileSync(file, 'utf8')
+    for (const match of source.matchAll(/\bfrom\s+['"](\.[^'"]*)['"]/g)) {
+      const specifier = match[1]!
+      if (!specifier.endsWith('.js')) {
+        offenders.push(`${file.replace(outDir, '')}: ${specifier}`)
+        continue
+      }
+      follow(resolve(file, '..', specifier))
+    }
+  }
+  follow(entryJs)
+  return offenders
 }
 
 describe('배포된 함수는 실제로 켜져야 한다', () => {
@@ -62,32 +86,12 @@ describe('배포된 함수는 실제로 켜져야 한다', () => {
   })
 
   it('has no relative import the ESM runtime cannot resolve', () => {
-    const { entryJs } = buildFunction()
-    const outDir = resolve(entryJs, '../..')
-
     /**
      * **나온 JS를** 본다. 컴파일러 진단(TS2835)이 아니라 emit 결과인 이유는,
      * 타입만 가져오는 import는 JS에 남지 않아 런타임 규칙과 무관하기 때문이다.
      * Node가 실제로 읽는 것은 여기 남은 문장들뿐이다.
      */
-    const offenders: string[] = []
-    const seen = new Set<string>()
-    /** 진입 파일에서 실제로 닿는 것만 따라간다 — Node가 여는 것이 딱 그것이다. */
-    const follow = (file: string) => {
-      if (seen.has(file)) return
-      seen.add(file)
-      const source = readFileSync(file, 'utf8')
-      for (const match of source.matchAll(/\bfrom\s+['"](\.[^'"]*)['"]/g)) {
-        const specifier = match[1]!
-        if (!specifier.endsWith('.js')) {
-          offenders.push(`${file.replace(outDir, '')}: ${specifier}`)
-          continue
-        }
-        follow(resolve(file, '..', specifier))
-      }
-    }
-    follow(entryJs)
-    expect(offenders).toEqual([])
+    expect(unresolvableImports(buildFunction().entryJs)).toEqual([])
   })
 
   /**
@@ -132,6 +136,74 @@ const res = await handleGenerateImage(
     body: form,
   }),
   { requestImage: undefined, fetch: stub },
+)
+const text = await res.text()
+console.log(JSON.stringify({ status: res.status, body: JSON.parse(text), leaked: text.includes(KEY) }))
+`,
+    )
+
+    const out = execFileSync(process.execPath, [child], { encoding: 'utf8', timeout: 60_000 }).trim()
+    const result = JSON.parse(out.split('\n').pop() ?? '{}') as {
+      status: number
+      body: { error?: { code?: string } }
+      leaked: boolean
+    }
+
+    expect(result.status).toBe(401)
+    expect(result.body.error?.code).toBe('invalid_api_key')
+    // 공급자가 되돌려 준 문장에 키가 들어 있어도 우리 응답에는 없다.
+    expect(result.leaked).toBe(false)
+  }, 120_000)
+
+  // ── 지시 다듬기 함수 (실작업 UI 마감 §7) ─────────────────────────────────
+
+  it('emits the refine entry where the deployment expects one', () => {
+    expect(existsSync(buildFunction(REFINE_ENTRY).entryJs)).toBe(true)
+  })
+
+  it('has no unresolvable relative import in the refine function', () => {
+    expect(unresolvableImports(buildFunction(REFINE_ENTRY).entryJs)).toEqual([])
+  })
+
+  it('answers a fake key with a structured 401 from the refine function, in real Node', () => {
+    const { entryJs } = buildFunction(REFINE_ENTRY)
+    const outDir = resolve(entryJs, '../..')
+    const child = join(outDir, 'run-refine.mjs')
+
+    writeFileSync(
+      child,
+      `
+import { pathToFileURL } from 'node:url'
+const entry = await import(pathToFileURL(${JSON.stringify(entryJs)}).href)
+if (typeof entry.default !== 'function') throw new Error('entry has no handler')
+
+const { handleRefineInstruction } = await import(
+  pathToFileURL(${JSON.stringify(join(outDir, 'src/services/refineInstructionHandler.js'))}).href
+)
+
+const KEY = 'sk-fake-not-a-real-key'
+// 공급자는 호출하지 않는다. 잘못된 키에 OpenAI가 주는 모양만 흉내 낸다.
+const stub = async () =>
+  new Response(JSON.stringify({ error: { code: 'invalid_api_key', message: 'Incorrect API key: ' + KEY } }), {
+    status: 401,
+    headers: { 'content-type': 'application/json', 'x-request-id': 'req_stub_2' },
+  })
+
+const res = await handleRefineInstruction(
+  new Request('https://planmaker.local/api/refine-instruction', {
+    method: 'POST',
+    headers: { 'X-OpenAI-API-Key': KEY, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      scope: 'overall',
+      userText: '좀 더 예쁘게',
+      page: { title: '1페이지', number: 1, total: 1, width: 840, height: 1488 },
+      texts: [{ blockId: 'b1', content: '여름 감사제', box: { x: 0, y: 0, width: 400, height: 90 } }],
+      imageSlots: [],
+      buttons: [],
+      hasReference: false,
+    }),
+  }),
+  { fetch: stub },
 )
 const text = await res.text()
 console.log(JSON.stringify({ status: res.status, body: JSON.parse(text), leaked: text.includes(KEY) }))

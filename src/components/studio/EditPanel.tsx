@@ -10,9 +10,12 @@
  */
 
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
+import { useInstructionRefine } from '../../features/studio/useInstructionRefine'
+import { REFINE_COST_NOTE } from '../../domain/instructionRefine'
 
 export function EditPanel() {
   const generation = useImageGeneration()
+  const refine = useInstructionRefine()
   if (generation === null || !generation.hasResult || generation.editTargets.length === 0) return null
 
   const busy = generation.state.kind === 'running'
@@ -62,6 +65,7 @@ export function EditPanel() {
             </button>
           </div>
           {t.content !== undefined && <p className="edit-card__content">“{t.content}”</p>}
+          <p className="edit-card__label edit-card__label--sub">내가 쓴 지시</p>
           <textarea
             className="field__input edit-panel__input"
             aria-label={`${t.label} 수정 지시`}
@@ -71,8 +75,55 @@ export function EditPanel() {
             disabled={busy}
             onChange={(e) => generation.setInstructionFor(t.targetId, e.target.value)}
           />
+          {/* 다듬은 문장은 내 문장을 덮지 않고 그 아래에 놓인다. 어느 대상의
+              제안인지 카드가 이미 말하므로 여기서 이름을 다시 붙이지 않는다. */}
+          {refine?.proposalFor(t.targetId) != null && (
+            <div className="refine__proposal refine__proposal--card">
+              <p className="refine__label">AI가 다듬은 지시</p>
+              <p className="refine__text">{refine.proposalFor(t.targetId)!.revised}</p>
+              {refine.proposalFor(t.targetId)!.warning !== undefined && (
+                <p className="refine__warn">{refine.proposalFor(t.targetId)!.warning}</p>
+              )}
+              <button
+                type="button"
+                className="btn"
+                aria-label={`${t.label} 다듬은 지시 적용`}
+                disabled={busy}
+                onClick={() => refine.applyTarget(t.targetId)}
+              >
+                개별 적용
+              </button>
+            </div>
+          )}
         </div>
       ))}
+
+      {/* 고른 대상이 여럿이어도 요청은 한 번이다. 다듬은 뒤에 아무것도 스스로
+          시작하지 않는다 — 실행은 아래 버튼을 사람이 누를 때다 (§10). */}
+      {refine !== null && chosen.length > 0 && (
+        <div className="refine">
+          <div className="refine__actions">
+            <button
+              type="button"
+              className="btn"
+              disabled={!refine.canRefineTargets || busy}
+              onClick={refine.refineTargets}
+              title="고른 대상의 지시를 실행 가능한 문장으로 다듬습니다"
+            >
+              {refine.targetsBusy ? '다듬는 중…' : '선택 지시 AI로 다듬기'}
+            </button>
+            {refine.hasTargetProposals && (
+              <button type="button" className="btn" disabled={busy} onClick={refine.applyAllTargets}>
+                모두 적용
+              </button>
+            )}
+          </div>
+          <p className="refine__cost">{REFINE_COST_NOTE}</p>
+          {refine.targetsError !== null && (
+            <p className="refine__error" role="status">{refine.targetsError}</p>
+          )}
+        </div>
+      )}
 
       {generation.editBlockedReason !== null && (
         <p className="edit-panel__warn" role="status">{generation.editBlockedReason}</p>
