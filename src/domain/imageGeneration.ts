@@ -70,8 +70,22 @@ export interface GeneratedPageResult extends ImageGenerationMetadata {
    * 달라진다.
    */
   targets?: EditTarget[]
-  /** 이 결과가 몇 번의 부분수정을 거쳤는가. 이력을 담지는 않는다. */
+  /** 이 결과가 몇 번의 부분수정을 거쳤는가. */
   editCount?: number
+  /**
+   * 결과의 줄 (정밀도 교정 §6). 최초 생성본이 맨 앞이고 수정본이 뒤로 붙는다.
+   * `cursor`가 지금 보고 있는 자리다 — 앞뒤로 오가는 것은 이 숫자만 움직인다.
+   *
+   * 예전 판에는 없다. 그때는 `originalAssetId`·`previousAssetId`·`assetId`
+   * 셋뿐이었고, 그 셋에서 줄을 만들어 낼 수 있으므로 옮겨 쓰지 않아도 열린다.
+   */
+  revisions?: ImageRevision[]
+  cursor?: number
+}
+
+export interface ImageRevision {
+  assetId: string
+  kind: 'initial' | 'edit'
 }
 
 /** 서버 함수가 성공했을 때 돌려주는 것. */

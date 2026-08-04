@@ -63,12 +63,16 @@ export function GenerateImageDialog() {
           onClick={(e) => e.stopPropagation()}
         >
           <h2 className="confirm__title">이 부분을 수정합니다</h2>
+          {/* 대상과 그 대상의 지시를 한 덩어리로 합치지 않는다 — 합치면 어느 말이
+              어느 대상에게 간 것인지 사람이 확인할 수 없다. */}
           <ul className="gen-dialog__targets">
-            {state.targets.map((t) => (
-              <li key={t.targetId}>{t.label}</li>
+            {state.items.map((item) => (
+              <li key={item.target.targetId}>
+                <span className="gen-dialog__target-label">{item.target.label}</span>
+                <span className="gen-dialog__target-instruction">수정 지시: {item.instruction}</span>
+              </li>
             ))}
           </ul>
-          <p className="gen-dialog__instruction">“{state.instruction}”</p>
           <dl className="gen-dialog__facts">
             <div><dt>모델</dt><dd>{CALL_SUMMARY.model}</dd></div>
             <div><dt>품질</dt><dd>{CALL_SUMMARY.quality}</dd></div>

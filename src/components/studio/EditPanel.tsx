@@ -16,6 +16,7 @@ export function EditPanel() {
   if (generation === null || !generation.hasResult || generation.editTargets.length === 0) return null
 
   const busy = generation.state.kind === 'running'
+  const chosen = generation.editTargets.filter((t) => generation.selectedTargetIds.includes(t.targetId))
 
   return (
     <section className="edit-panel" role="region" aria-label="AI 부분수정">
@@ -44,28 +45,38 @@ export function EditPanel() {
         ))}
       </ul>
 
-      {generation.selectedTargetIds.length > 0 && (
-        <p className="edit-panel__chips">
-          {generation.editTargets
-            .filter((t) => generation.selectedTargetIds.includes(t.targetId))
-            .map((t) => (
-              <span className="edit-panel__chip" key={t.targetId}>{t.label}</span>
-            ))}
-        </p>
-      )}
+      {/* 고른 대상마다 자기 지시 칸을 갖는다. 하나의 문장을 여럿에게 나눠 쓰면
+          "이 문구만"이라는 말이 어느 문구를 가리키는지 알 수 없어진다. */}
+      {chosen.map((t) => (
+        <div className="edit-card" key={t.targetId}>
+          <div className="edit-card__head">
+            <span className="edit-card__label">{t.label}</span>
+            <button
+              type="button"
+              className="edit-card__remove"
+              aria-label={`${t.label} 선택 해제`}
+              disabled={busy}
+              onClick={() => generation.toggleTarget(t.targetId)}
+            >
+              선택 해제
+            </button>
+          </div>
+          {t.content !== undefined && <p className="edit-card__content">“{t.content}”</p>}
+          <textarea
+            className="field__input edit-panel__input"
+            aria-label={`${t.label} 수정 지시`}
+            rows={3}
+            placeholder="예: 숫자가 잘 읽히는 간결한 폰트로 바꿔 주세요. 위치와 크기는 유지합니다."
+            value={generation.instructionFor(t.targetId)}
+            disabled={busy}
+            onChange={(e) => generation.setInstructionFor(t.targetId, e.target.value)}
+          />
+        </div>
+      ))}
 
-      <label className="edit-panel__field">
-        <span className="edit-panel__label">수정 지시</span>
-        <textarea
-          className="field__input edit-panel__input"
-          aria-label="수정 지시"
-          rows={3}
-          placeholder="예: 위의 20% OFF와 간격이 좁아지도록 조금 위로 이동해 주세요. 글자 내용과 기존 효과는 유지하세요."
-          value={generation.instruction}
-          disabled={busy}
-          onChange={(e) => generation.setInstruction(e.target.value)}
-        />
-      </label>
+      {generation.editBlockedReason !== null && (
+        <p className="edit-panel__warn" role="status">{generation.editBlockedReason}</p>
+      )}
 
       <div className="edit-panel__actions">
         <button

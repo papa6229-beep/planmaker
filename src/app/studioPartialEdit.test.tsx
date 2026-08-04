@@ -170,8 +170,11 @@ async function selectTargets(...labels: RegExp[]): Promise<void> {
   for (const label of labels) fireEvent.click(within(editPanel()).getByRole('checkbox', { name: label }))
 }
 
+/** 고른 대상 전부에 같은 문장을 적어 준다 — 이 검사들은 대상 구성만 본다. */
 async function runEdit(instruction: string): Promise<void> {
-  fireEvent.change(within(editPanel()).getByLabelText('수정 지시'), { target: { value: instruction } })
+  for (const box of within(editPanel()).getAllByRole('textbox')) {
+    fireEvent.change(box, { target: { value: instruction } })
+  }
   fireEvent.click(within(editPanel()).getByRole('button', { name: 'AI 부분수정 실행' }))
 }
 
@@ -257,7 +260,7 @@ describe('§6 편집 요청에 무엇이 실리는가', () => {
     await waitFor(() => expect(calls).toHaveLength(2), { timeout: 8000 })
 
     const prompt = lastPrompt()
-    expect(prompt).toContain('## 이번에 바꿀 대상')
+    expect(prompt).toContain('## 이번 수정의 절대 범위')
     expect(prompt).toContain('문구 3 — 출시기념')
     expect(prompt).toContain('위의 20% OFF와 간격이 좁아지도록 조금 위로 이동해 주세요.')
     // 고르지 않은 것은 "그대로 두어야 할 것"에 있다.
@@ -308,15 +311,16 @@ describe('§6 편집 요청에 무엇이 실리는가', () => {
   it('builds the same rules for any selection, without mixing them into the user sentence', () => {
     const doc = sampleDoc()
     const targets = buildEditTargets(doc, readyJob(doc), doc.pages[0]!.id)
-    const prompt = buildEditPrompt(targets, [targets[2]!], '조금 위로', {
+    const prompt = buildEditPrompt(targets, [{ target: targets[2]!, instruction: '조금 위로' }], {
       currentImage: { width: 840, height: 1488 },
       page: { width: 840, height: 1488 },
       inputs: [{ index: 1, what: '현재 결과 이미지' }],
     })
-    // 사용자의 말은 자기 구역에만 있다.
-    const userSection = prompt.slice(prompt.indexOf('## 사용자의 수정 지시'))
-    expect(userSection).toContain('조금 위로')
-    expect(prompt.indexOf('## 반드시 지킬 것')).toBeLessThan(prompt.indexOf('## 사용자의 수정 지시'))
+    // 사용자의 말은 그 대상의 구역 안에만 있다.
+    const section = prompt.slice(prompt.indexOf('### 대상 1'))
+    expect(section).toContain('이 대상에만 적용할 지시:')
+    expect(section).toContain('조금 위로')
+    expect(prompt.indexOf('## 반드시 지킬 것')).toBeLessThan(prompt.indexOf('### 대상 1'))
   })
 })
 
@@ -332,7 +336,9 @@ describe('§6 실행은 사람이 확인한 뒤 정확히 한 번', () => {
     await selectTargets(/문구 3/)
     expect(run().disabled).toBe(true) // 지시가 아직 없다
 
-    fireEvent.change(within(editPanel()).getByLabelText('수정 지시'), { target: { value: '조금 위로' } })
+    for (const box of within(editPanel()).getAllByRole('textbox')) {
+      fireEvent.change(box, { target: { value: '조금 위로' } })
+    }
     expect(run().disabled).toBe(false)
     expect(calls).toHaveLength(1) // 최초 생성 한 번뿐
   }, 25000)
@@ -346,6 +352,7 @@ describe('§6 실행은 사람이 확인한 뒤 정확히 한 번', () => {
     const dialog = screen.getByRole('dialog', { name: 'AI 부분수정' })
     expect(dialog.textContent).toContain('문구 3 — 출시기념')
     expect(dialog.textContent).toContain('조금 위로 올려 주세요.')
+    expect(dialog.textContent).toContain('수정 지시:')
     expect(dialog.textContent).toContain('gpt-image-2')
     expect(dialog.textContent).toContain('medium')
     expect(dialog.textContent).toContain('AI 편집 규격')

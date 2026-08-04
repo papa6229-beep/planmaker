@@ -76,7 +76,7 @@ export type GenerationState =
   /** 사람이 무엇에 얼마를 쓰는지 보고 누르는 자리. */
   | { kind: 'confirm'; plan: GenerationPlan; needsKey: boolean }
   /** 부분수정 확인창 — 대상과 지시를 사람이 한 번 더 읽는 자리. */
-  | { kind: 'edit-confirm'; plan: GenerationPlan; targets: EditTarget[]; instruction: string }
+  | { kind: 'edit-confirm'; plan: GenerationPlan; items: { target: EditTarget; instruction: string }[] }
   | { kind: 'running' }
   | { kind: 'failed'; message: string }
   /** 호출하기 전에 멈춘 것 — 아직 아무것도 쓰지 않았다. */
@@ -118,13 +118,17 @@ export interface ImageGenerationApi {
   editTargets: EditTarget[]
   selectedTargetIds: string[]
   toggleTarget: (targetId: string) => void
-  instruction: string
-  setInstruction: (text: string) => void
-  /** 대상·지시·키·현재 결과가 모두 있어야 참. */
+  /** 대상마다 따로 적는다. 하나의 문장을 여럿에게 나눠 쓰지 않는다. */
+  instructionFor: (targetId: string) => string
+  setInstructionFor: (targetId: string, text: string) => void
+  /** 대상·지시(전부)·키·현재 결과가 모두 있어야 참. */
   canEdit: boolean
+  /** 실행할 수 없는 이유 — 없으면 `null`. */
+  editBlockedReason: string | null
   beginEdit: () => void
   confirmEdit: () => void
-  /** 되돌리기 — 둘 다 외부 호출 0건. */
+
+  /** 되돌리기 — 외부 호출 0건. */
   canRevertPrevious: boolean
   canRevertOriginal: boolean
   revertToPrevious: () => void
@@ -149,7 +153,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
   /** 키가 있느냐만 담는다. 값 자체는 이 state에 들어오지 않는다. */
   const [hasKey, setHasKey] = useState(() => readApiKey() !== null)
   const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>([])
-  const [instruction, setInstruction] = useState('')
+  /** 대상 키 → 그 대상에만 적용할 지시. 표시 번호가 아니라 키로 담는다. */
+  const [instructions, setInstructions] = useState<Record<string, string>>({})
   /** 요청이 나가 있는 동안은 한 번도 더 나가지 않는다. */
   const runningRef = useRef(false)
 
@@ -289,7 +294,6 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       ...(paid.requestId === undefined ? {} : { requestId: paid.requestId }),
       ...(editing
         ? {
-            // 지금 것이 직전이 되고, 최초는 처음 것 그대로 남는다.
             previousAssetId: current.assetId,
             originalAssetId: current.originalAssetId ?? current.assetId,
             ...(current.targets === undefined ? {} : { targets: current.targets }),
@@ -318,7 +322,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
 
     paidRef.current = null
     setSelectedTargetIds([])
-    setInstruction('')
+    setInstructions({})
     setState({ kind: 'idle' })
     setView('compare')
   }, [studio, getDocument])
@@ -418,23 +422,40 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     setSelectedTargetIds((ids) => (ids.includes(targetId) ? ids.filter((id) => id !== targetId) : [...ids, targetId]))
   }, [])
 
+  const instructionFor = useCallback((targetId: string) => instructions[targetId] ?? '', [instructions])
+  const setInstructionFor = useCallback((targetId: string, text: string) => {
+    setInstructions((all) => ({ ...all, [targetId]: text }))
+  }, [])
+
+  /**
+   * 고른 대상과 그 대상에 적을 지시. 선택을 풀면 요청에서 빠지지만, 쓰던 초안은
+   * `instructions`에 남아 있어 다시 고르면 그대로 돌아온다.
+   */
+  const editItems = useMemo(
+    () =>
+      selectedTargets(editTargets, selectedTargetIds).map((target) => ({
+        target,
+        instruction: (instructions[target.targetId] ?? '').trim(),
+      })),
+    [editTargets, selectedTargetIds, instructions],
+  )
+
+  const missingInstruction = editItems.some((i) => i.instruction.length === 0)
   const canEdit =
-    currentResult !== undefined &&
-    selectedTargetIds.length > 0 &&
-    instruction.trim().length > 0 &&
-    editTargets.length > 0
+    currentResult !== undefined && editItems.length > 0 && !missingInstruction && editTargets.length > 0
+  const editBlockedReason =
+    editItems.length > 0 && missingInstruction ? '선택한 모든 대상에 수정 지시를 적어 주세요.' : null
 
   /**
    * 편집 한 번의 계획.
    *
-   * 보내는 이미지는 ①지금 결과 ②고른 자리에 연결된 실제 제품·로고 원본이다.
-   * 고르지 않은 자리의 원본은 보내지 않는다 — 보내면 모델이 그것도 손대도 된다고
-   * 읽을 수 있다.
+   * 보내는 이미지는 ①지금 커서가 가리키는 결과 ②고른 자리에 연결된 실제 제품·로고
+   * 원본이다. 고르지 않은 자리의 원본은 보내지 않는다 — 보내면 모델이 그것도
+   * 손대도 된다고 읽을 수 있다.
    */
-  const planEdit = useCallback((): { plan: GenerationPlan; targets: EditTarget[] } | { blocked: string } => {
+  const planEdit = useCallback((): { plan: GenerationPlan } | { blocked: string } => {
     if (studio === null || currentResult === undefined) return { blocked: errorTextFor('unknown') }
-    const chosen = selectedTargets(editTargets, selectedTargetIds)
-    if (chosen.length === 0) return { blocked: errorTextFor('target_not_found') }
+    if (editItems.length === 0) return { blocked: errorTextFor('target_not_found') }
 
     const current = getDocument()
     const page = current.pages.find((p) => p.id === currentResult.pageId) ?? current.pages[0]!
@@ -451,15 +472,15 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         fileName: 'current-result.png',
       },
     ]
-    for (const assetId of selectedProductAssetIds(chosen)) {
-      const target = chosen.find((t) => t.productAssetId === assetId)
+    for (const assetId of selectedProductAssetIds(editItems.map((i) => i.target))) {
+      const owner = editItems.find((i) => i.target.productAssetId === assetId)?.target
       inputs.push({
         index: inputs.length + 1,
         role: 'product_image',
         assetId,
         fileName: `${assetId}.png`,
-        ...(target?.blockId === undefined ? {} : { blockId: target.blockId }),
-        label: `${target?.label ?? '선택한 자리'}의 실제 제품·로고 원본`,
+        ...(owner?.blockId === undefined ? {} : { blockId: owner.blockId }),
+        label: `${owner?.label ?? '선택한 자리'}의 실제 제품·로고 원본`,
       })
     }
     if (inputs.length > MAX_INPUT_IMAGES) return { blocked: errorTextFor('too_many_inputs') }
@@ -468,7 +489,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       plan: {
         kind: 'edit',
         pageId: currentResult.pageId,
-        prompt: buildEditPrompt(editTargets, chosen, instruction, {
+        prompt: buildEditPrompt(editTargets, editItems, {
           currentImage: working,
           page: { width: page.canvasWidth, height: page.canvasHeight },
           inputs: inputs.map((i) => ({ index: i.index, what: i.label })),
@@ -478,9 +499,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         inputs,
         fingerprint: currentResult.sourceFingerprint,
       },
-      targets: chosen,
     }
-  }, [studio, currentResult, editTargets, selectedTargetIds, instruction, getDocument])
+  }, [studio, currentResult, editTargets, editItems, getDocument])
 
   const beginEdit = useCallback(() => {
     if (runningRef.current || !canEdit) return
@@ -489,8 +509,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       setState({ kind: 'blocked', message: planned.blocked })
       return
     }
-    setState({ kind: 'edit-confirm', plan: planned.plan, targets: planned.targets, instruction })
-  }, [canEdit, planEdit, instruction])
+    setState({ kind: 'edit-confirm', plan: planned.plan, items: editItems })
+  }, [canEdit, planEdit, editItems])
 
   const confirmEdit = useCallback(() => {
     if (state.kind !== 'edit-confirm' || runningRef.current) return
@@ -556,9 +576,10 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             editTargets,
             selectedTargetIds,
             toggleTarget,
-            instruction,
-            setInstruction,
+            instructionFor,
+            setInstructionFor,
             canEdit,
+            editBlockedReason,
             beginEdit,
             confirmEdit,
             canRevertPrevious,
@@ -569,7 +590,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           },
     [
       studio, state, hasResult, hasKey, view, begin, confirm, retryConversion,
-      editTargets, selectedTargetIds, toggleTarget, instruction, canEdit, beginEdit, confirmEdit,
+      editTargets, selectedTargetIds, toggleTarget, instructionFor, setInstructionFor,
+      canEdit, editBlockedReason, beginEdit, confirmEdit,
       canRevertPrevious, canRevertOriginal, revertTo,
     ],
   )

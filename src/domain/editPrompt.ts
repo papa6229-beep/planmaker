@@ -36,7 +36,7 @@ export interface EditPromptContext {
 
 function boxText(t: EditTarget): string {
   if (!t.box) return ''
-  return ` · 원래 위치: x ${Math.round(t.box.x)}, y ${Math.round(t.box.y)}, 가로 ${Math.round(t.box.width)}, 세로 ${Math.round(t.box.height)}`
+  return `x ${Math.round(t.box.x)}, y ${Math.round(t.box.y)}, 가로 ${Math.round(t.box.width)}, 세로 ${Math.round(t.box.height)}`
 }
 
 /**
@@ -45,10 +45,15 @@ function boxText(t: EditTarget): string {
  * `all`은 생성 당시 얼려 둔 목록 전체다. 고르지 않은 것까지 함께 적는 이유는,
  * 모델이 "무엇을 건드리면 안 되는지" 알아야 건드리지 않기 때문이다.
  */
+export interface EditItem {
+  target: EditTarget
+  /** 이 대상 **하나에만** 적용할 지시. 다른 대상의 지시와 섞이지 않는다. */
+  instruction: string
+}
+
 export function buildEditPrompt(
   all: readonly EditTarget[],
-  selected: readonly EditTarget[],
-  instruction: string,
+  items: readonly EditItem[],
   context: EditPromptContext,
 ): string {
   const lines: string[] = []
@@ -70,29 +75,56 @@ export function buildEditPrompt(
   )
   lines.push('')
 
-  lines.push('## 이번에 바꿀 대상')
-  if (selected.length === 0) {
-    lines.push('- (선택된 대상 없음)')
-  }
-  for (const t of selected) {
-    if (t.targetId === BACKGROUND_TARGET_ID) {
-      lines.push('- 전체 배경 — 문구와 제품은 그대로 두고 배경만 다룹니다.')
-      continue
-    }
-    const what = t.kind === 'image' ? '이미지 자리' : '문구'
-    const quoted = t.content === undefined ? '' : ` "${t.content}"`
-    lines.push(`- ${t.label} (${what}${quoted})${boxText(t)}`)
-    if (t.productAssetId !== undefined) {
-      lines.push('  · 이 자리의 실제 제품·로고 원본을 함께 보냅니다. 형태·상표·색상을 바꾸지 마세요.')
-    }
-  }
+  lines.push('## 이번 수정의 절대 범위')
+  lines.push('아래에 나열된 대상만 수정합니다.')
+  lines.push('선택되지 않은 문구·로고·제품·배경은 그대로 유지합니다.')
+  lines.push('비슷한 글꼴이나 색상을 가진 다른 요소까지 일괄 변경하지 않습니다.')
   lines.push('')
 
+  if (items.length === 0) lines.push('### (선택된 대상 없음)')
+  items.forEach((item, index) => {
+    const t = item.target
+    lines.push(`### 대상 ${String(index + 1)}`)
+    lines.push(`대상: ${t.label}`)
+
+    if (t.targetId === BACKGROUND_TARGET_ID) {
+      lines.push('종류: 페이지 전체 배경')
+      lines.push('이 대상에만 적용할 지시:')
+      lines.push(item.instruction)
+      lines.push('')
+      lines.push('대상 범위 제한:')
+      lines.push('배경만 다룹니다. 문구·제품·로고는 위치도 모양도 그대로 둡니다.')
+      lines.push('')
+      return
+    }
+
+    const kind = t.kind === 'image' ? '이미지 자리' : '문구'
+    lines.push(`종류: ${kind}`)
+    if (t.content !== undefined) lines.push(`원문: ${t.content}`)
+    if (t.box) lines.push(`원래 위치와 크기: ${boxText(t)}`)
+    if (t.productAssetId !== undefined) {
+      lines.push('이 자리의 실제 제품·로고 원본을 함께 보냅니다.')
+    }
+    lines.push('이 대상에만 적용할 지시:')
+    lines.push(item.instruction)
+    lines.push('')
+    lines.push('대상 범위 제한:')
+    lines.push(`위 좌표의 이 ${kind} 한 개에만 적용합니다.`)
+    lines.push(
+      t.kind === 'image'
+        ? '비슷한 제품·로고가 다른 자리에 있어도 함께 바꾸지 않습니다. 원본의 형태·상표·색상은 유지합니다.'
+        : '비슷한 숫자·글꼴·색상의 다른 문구는 변경하지 않습니다. 비슷하게 보이는 다른 문구의 글꼴도 그대로 둡니다.',
+    )
+    if (t.content !== undefined) {
+      lines.push('사용자가 내용 변경을 명시하지 않았다면 이 문구의 글자는 한 글자도 바꾸지 않습니다.')
+    }
+    lines.push('')
+  })
+
   lines.push('## 그대로 두어야 할 것')
-  const untouched = all.filter((t) => !selected.some((s) => s.targetId === t.targetId))
-  if (untouched.length === 0) {
-    lines.push('- (없음)')
-  }
+  const chosenIds = new Set(items.map((i) => i.target.targetId))
+  const untouched = all.filter((t) => !chosenIds.has(t.targetId))
+  if (untouched.length === 0) lines.push('- (없음)')
   for (const t of untouched) {
     if (t.targetId === BACKGROUND_TARGET_ID) {
       lines.push('- 전체 배경')
@@ -102,9 +134,7 @@ export function buildEditPrompt(
     lines.push(`- ${t.label}${quoted}`)
   }
   lines.push('')
-
-  lines.push('## 사용자의 수정 지시')
-  lines.push(instruction.trim())
+  lines.push('위 항목에는 새 문구·로고·제품·장식을 더하지 않고, 기존 상태를 유지합니다.')
 
   return lines.join('\n')
 }

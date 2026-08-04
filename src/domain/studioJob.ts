@@ -19,7 +19,7 @@
 import { createId } from './factory'
 import { documentFingerprint } from './documentFingerprint'
 import { referencedAssetIds } from './pageOps'
-import type { GeneratedPageResult } from './imageGeneration'
+import type { GeneratedPageResult, ImageRevision } from './imageGeneration'
 import type { BriefDocument } from './pageSchema'
 
 export const STUDIO_JOB_VERSION = '0.1.0'
@@ -77,6 +77,38 @@ export function jobResults(job: StudioJob | null): Record<string, GeneratedPageR
 /** 이 페이지의 최신 결과. */
 export function pageResultOf(job: StudioJob | null, pageId: string): GeneratedPageResult | undefined {
   return jobResults(job)[pageId]
+}
+
+/**
+ * 이 결과의 줄 — 최초 생성본부터 지금까지.
+ *
+ * 저장된 줄이 있으면 그대로 쓰고, 없으면 예전 판의 세 값에서 만들어 낸다. 그래서
+ * 이미 저장된 작업도 옮겨 쓰는 절차 없이 그대로 열리고, 현재 결과를 잃지 않는다.
+ * 같은 자산이 두 번 들어가지 않고, 없는 자산을 지어내지도 않는다.
+ */
+export function revisionsOf(result: GeneratedPageResult): ImageRevision[] {
+  if (result.revisions !== undefined && result.revisions.length > 0) return result.revisions
+
+  const ordered = [result.originalAssetId, result.previousAssetId, result.assetId]
+  const seen = new Set<string>()
+  const revisions: ImageRevision[] = []
+  for (const assetId of ordered) {
+    if (assetId === undefined || seen.has(assetId)) continue
+    seen.add(assetId)
+    revisions.push({ assetId, kind: revisions.length === 0 ? 'initial' : 'edit' })
+  }
+  // 아무것도 만들 수 없으면 지금 보고 있는 것 한 장이 줄의 시작이다.
+  return revisions.length > 0 ? revisions : [{ assetId: result.assetId, kind: 'initial' }]
+}
+
+/** 지금 보고 있는 자리. 저장된 값이 줄 밖을 가리키면 현재 자산의 자리로 본다. */
+export function cursorOf(result: GeneratedPageResult): number {
+  const revisions = revisionsOf(result)
+  if (result.cursor !== undefined && result.cursor >= 0 && result.cursor < revisions.length) {
+    return result.cursor
+  }
+  const found = revisions.findIndex((r) => r.assetId === result.assetId)
+  return found >= 0 ? found : 0
 }
 
 /** 결과 한 건을 남긴다. 다른 페이지의 결과는 건드리지 않는다. */
@@ -157,9 +189,11 @@ export function studioLiveAssetIds(job: StudioJob): string[] {
       ...Object.values(job.productImages),
       // 지금 것만이 아니라 최초 생성본과 직전 결과까지 — 되돌리기가 가리키는
       // 그림을 정리가 고아로 오판해 지우면 되돌릴 곳이 사라진다 (부분수정 §4).
-      ...Object.values(jobResults(job)).flatMap((r) =>
-        [r.assetId, r.originalAssetId, r.previousAssetId].filter((id): id is string => id !== undefined),
-      ),
+      // 줄에 있는 모든 결과 — 앞뒤로 오갈 수 있으므로 어느 하나도 고아가 아니다.
+      ...Object.values(jobResults(job)).flatMap((r) => [
+        r.assetId,
+        ...revisionsOf(r).map((rev) => rev.assetId),
+      ]),
     ]),
   ]
 }
