@@ -2017,3 +2017,12 @@ button { font-family: inherit; }
 .gen-dialog__field { display: block; margin-bottom: 12px; }
 .gen-dialog__label { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 600; }
 .gen-dialog__hint { display: block; margin-top: 4px; font-size: 11px; color: var(--color-muted); }
+
+/* 키가 이 탭에 들어 있다는 표시 (마감 교정 §2). 문구만으로는 스치듯 지나가므로
+   색으로도 구분한다 — 키 자체는 어디에도 다시 나타나지 않는다. */
+.btn--key-saved {
+  border-color: #16a34a;
+  background: #f0fdf4;
+  color: #15803d;
+  font-weight: 600;
+}

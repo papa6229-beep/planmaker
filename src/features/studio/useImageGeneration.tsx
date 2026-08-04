@@ -28,7 +28,7 @@ import {
 } from 'react'
 import { useBriefDocument } from '../document/useBriefDocument'
 import { useStudioJob } from './useStudioJob'
-import { readApiKey, saveApiKey } from './apiKeySession'
+import { clearApiKey, readApiKey, saveApiKey } from './apiKeySession'
 import { buildGenerationRequest } from '../../domain/generationRequest'
 import { planGenerationInputs, MAX_INPUT_IMAGES, type GenerationInputImage } from '../../domain/imageGenerationInputs'
 import { buildOpenAIImagePrompt } from '../../domain/imagePrompt'
@@ -75,6 +75,17 @@ export interface ImageGenerationApi {
   state: GenerationState
   /** 이 페이지에 결과가 있는가 — 버튼 문구가 이 값으로 바뀐다. */
   hasResult: boolean
+  /**
+   * 이 탭에 테스트용 키가 들어 있는가 (마감 교정 §2).
+   *
+   * 화면에 나가는 것은 이 **참·거짓 하나뿐**이다. 키 문자열도, 길이도, 끝자리도
+   * 여기서 나가지 않는다. 키를 넣는 곳이 둘(생성 확인창, 키 관리창)이라 상태를
+   * 각자 들고 있으면 한쪽에서 저장한 것을 다른 쪽이 모른다 — 그래서 여기 하나에
+   * 둔다.
+   */
+  hasKey: boolean
+  saveKey: (key: string) => void
+  clearKey: () => void
   view: StudioCenterView
   setView: (view: StudioCenterView) => void
   /** 생성 버튼. 막을 이유가 있으면 호출하지 않고 이유를 말한다. */
@@ -99,6 +110,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
   const studio = useStudioJob()
   const [state, setState] = useState<GenerationState>({ kind: 'idle' })
   const [view, setView] = useState<StudioCenterView>('brief')
+  /** 키가 있느냐만 담는다. 값 자체는 이 state에 들어오지 않는다. */
+  const [hasKey, setHasKey] = useState(() => readApiKey() !== null)
   /** 요청이 나가 있는 동안은 한 번도 더 나가지 않는다. */
   const runningRef = useRef(false)
 
@@ -256,7 +269,10 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       if (state.kind !== 'confirm' || runningRef.current) return
       const plan = state.plan
       const trimmed = key?.trim()
-      if (trimmed !== undefined && trimmed.length > 0) saveApiKey(trimmed)
+      if (trimmed !== undefined && trimmed.length > 0) {
+        saveApiKey(trimmed)
+        setHasKey(true)
+      }
       const usable = trimmed !== undefined && trimmed.length > 0 ? trimmed : readApiKey()
       if (usable === null) {
         setState({ kind: 'blocked', message: errorTextFor('missing_api_key') })
@@ -280,13 +296,22 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         : {
             state,
             hasResult,
+            hasKey,
+            saveKey: (key: string) => {
+              saveApiKey(key)
+              setHasKey(readApiKey() !== null)
+            },
+            clearKey: () => {
+              clearApiKey()
+              setHasKey(false)
+            },
             view,
             setView,
             begin,
             confirm,
             dismiss: () => setState({ kind: 'idle' }),
           },
-    [studio, state, hasResult, view, begin, confirm],
+    [studio, state, hasResult, hasKey, view, begin, confirm],
   )
 
   return <ImageGenerationContext.Provider value={api}>{children}</ImageGenerationContext.Provider>

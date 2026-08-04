@@ -28,7 +28,6 @@ import { useAppSurface } from '../../app/AppSurfaceContext'
 import { clearSelectedTeam, selectedTeam } from '../../features/team/teamSession'
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
-import { clearApiKey, hasApiKey, saveApiKey } from '../../features/studio/apiKeySession'
 import { countStudioStorage, resetStudioStorage, type StorageCount } from '../../services/storageReset'
 
 const TITLE_COALESCE_KEY = 'project-title'
@@ -238,14 +237,20 @@ export function TopToolbar({
                     ? '다시 생성하기'
                     : '이미지 생성하기'}
               </button>
+              {/* 저장 여부를 문구와 생김새로 함께 말한다. 키 자체는 한 글자도
+                  다시 보이지 않는다 (마감 교정 §2). */}
               <button
                 type="button"
-                className="btn"
+                className={`btn${generation.hasKey ? ' btn--key-saved is-saved' : ''}`}
                 onClick={() => setKeyPanel(true)}
                 disabled={busy}
-                title="테스트용 OpenAI API 키를 다시 입력하거나 지웁니다"
+                title={
+                  generation.hasKey
+                    ? '이 탭에 테스트용 키가 저장되어 있습니다. 눌러서 바꾸거나 지울 수 있습니다.'
+                    : '테스트용 OpenAI API 키를 입력합니다'
+                }
               >
-                API 키
+                {generation.hasKey ? '✓ API 키 저장됨' : 'API 키'}
               </button>
             </>
           )}
@@ -347,8 +352,8 @@ export function TopToolbar({
           >
             <h2 className="confirm__title">테스트용 OpenAI API 키</h2>
             <p className="confirm__body">
-              {hasApiKey() ? '이 탭에 키가 저장되어 있습니다.' : '아직 키가 없습니다.'} 키는 이 탭에만 보관되며 탭을
-              닫으면 지워집니다. 파일·저장소·기획서에는 남지 않습니다.
+              {generation?.hasKey === true ? '이 탭에 키가 저장되어 있습니다.' : '아직 키가 없습니다.'} 키는 이 탭에만
+              보관되며 탭을 닫으면 지워집니다. 파일·저장소·기획서에는 남지 않습니다.
             </p>
             <label className="save-dialog__field">
               <span className="save-dialog__label">새 키 입력</span>
@@ -366,7 +371,7 @@ export function TopToolbar({
                 type="button"
                 className="btn btn--danger"
                 onClick={() => {
-                  clearApiKey()
+                  generation?.clearKey()
                   setKeyDraft('')
                   setKeyPanel(false)
                 }}
@@ -379,7 +384,7 @@ export function TopToolbar({
                 className="btn btn--primary"
                 disabled={keyDraft.trim().length === 0}
                 onClick={() => {
-                  saveApiKey(keyDraft)
+                  generation?.saveKey(keyDraft)
                   setKeyDraft('')
                   setKeyPanel(false)
                 }}

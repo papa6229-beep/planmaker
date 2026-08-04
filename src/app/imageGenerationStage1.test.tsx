@@ -676,7 +676,8 @@ describe('테스트용 API 키는 이 탭에만 머문다', () => {
     await generateOnce()
     await waitFor(() => expect(calls).toHaveLength(1))
 
-    fireEvent.click(screen.getByRole('button', { name: 'API 키' }))
+    // 키가 들어간 뒤에는 버튼이 저장됨이라고 말한다 (마감 교정 §2).
+    fireEvent.click(screen.getByRole('button', { name: '✓ API 키 저장됨' }))
     fireEvent.click(screen.getByRole('button', { name: '키 지우기' }))
     const { readApiKey } = await import('../features/studio/apiKeySession')
     expect(readApiKey()).toBeNull()
