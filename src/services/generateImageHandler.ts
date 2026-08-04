@@ -25,8 +25,8 @@ import {
   type GenerateImageFailure,
   type GenerateImageSuccess,
   type ImageGenerationErrorCode,
-} from '../domain/imageGeneration'
-import { ImageProviderError, requestOpenAiImage } from './openAiImageClient'
+} from '../domain/imageGeneration.js'
+import { ImageProviderError, requestOpenAiImage } from './openAiImageClient.js'
 
 export interface HandlerDeps {
   /** 검사에서 공급자 호출을 가로채기 위한 이음매. */

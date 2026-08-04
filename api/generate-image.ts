@@ -15,7 +15,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { handleGenerateImage } from '../src/services/generateImageHandler'
+import { handleGenerateImage } from '../src/services/generateImageHandler.js'
 
 /**
  * 배포 설정.

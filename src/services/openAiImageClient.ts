@@ -23,7 +23,7 @@ import {
   IMAGE_OUTPUT_FORMAT,
   IMAGE_QUALITY,
   type ImageGenerationErrorCode,
-} from '../domain/imageGeneration'
+} from '../domain/imageGeneration.js'
 
 const OPENAI_IMAGE_EDITS_URL = 'https://api.openai.com/v1/images/edits'
 
