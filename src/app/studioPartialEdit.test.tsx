@@ -447,7 +447,7 @@ describe('§6 되돌리기는 공짜다', () => {
     const { pageId, original, edited } = await editOnce()
     const callsBefore = calls.length
 
-    fireEvent.click(within(editPanel()).getByRole('button', { name: '직전 결과로 되돌리기' }))
+    fireEvent.click(within(editPanel()).getByRole('button', { name: '이전 결과' }))
     await waitFor(async () => {
       const job = await loadStudioJob(STUDIO_JOB_ID)
       expect(job!.results[pageId]!.assetId).toBe(original)
@@ -474,7 +474,7 @@ describe('§6 되돌리기는 공짜다', () => {
     const before = (await loadStudioJob(STUDIO_JOB_ID))!
     void pageId
 
-    fireEvent.click(within(editPanel()).getByRole('button', { name: '직전 결과로 되돌리기' }))
+    fireEvent.click(within(editPanel()).getByRole('button', { name: '이전 결과' }))
     await new Promise((r) => setTimeout(r, 300))
     const after = (await loadStudioJob(STUDIO_JOB_ID))!
 

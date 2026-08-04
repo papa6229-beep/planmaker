@@ -28,7 +28,7 @@ import {
 } from 'react'
 import { useBriefDocument } from '../document/useBriefDocument'
 import { useStudioJob } from './useStudioJob'
-import { pageResultOf } from '../../domain/studioJob'
+import { cursorOf, pageResultOf, revisionsOf } from '../../domain/studioJob'
 import { clearApiKey, readApiKey, saveApiKey } from './apiKeySession'
 import { buildGenerationRequest } from '../../domain/generationRequest'
 import { buildEditTargets, selectedProductAssetIds, selectedTargets, type EditTarget } from '../../domain/editTargets'
@@ -49,6 +49,7 @@ import {
   IMAGE_MODEL,
   IMAGE_QUALITY,
   type GeneratedPageResult,
+  type ImageRevision,
 } from '../../domain/imageGeneration'
 import { getAllAssets, getAsset, putAsset } from '../../services/assetStore'
 import { sizeLabel, toWorkingImage, workingImageTarget, type WorkingImageTarget } from '../../services/workingImage'
@@ -128,11 +129,14 @@ export interface ImageGenerationApi {
   beginEdit: () => void
   confirmEdit: () => void
 
-  /** 되돌리기 — 외부 호출 0건. */
-  canRevertPrevious: boolean
-  canRevertOriginal: boolean
-  revertToPrevious: () => void
-  revertToOriginal: () => void
+  /** 결과의 줄 — 앞뒤 이동은 전부 외부 호출 0건. */
+  revisionCount: number
+  revisionPosition: number
+  canGoPrevious: boolean
+  canGoNext: boolean
+  goPrevious: () => void
+  goNext: () => void
+  goOriginal: () => void
 }
 
 const ImageGenerationContext = createContext<ImageGenerationApi | null>(null)
@@ -293,17 +297,27 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       createdAt: Date.now(),
       ...(paid.requestId === undefined ? {} : { requestId: paid.requestId }),
       ...(editing
-        ? {
-            previousAssetId: current.assetId,
-            originalAssetId: current.originalAssetId ?? current.assetId,
-            ...(current.targets === undefined ? {} : { targets: current.targets }),
-            editCount: (current.editCount ?? 0) + 1,
-          }
+        ? (() => {
+            // 지금 커서까지만 남기고 그 뒤의 미래는 버린다 — 되돌아간 자리에서
+            // 새로 고쳤으면 그 뒤의 것들은 더 이상 이어지는 이야기가 아니다.
+            const kept = revisionsOf(current).slice(0, cursorOf(current) + 1)
+            const line: ImageRevision[] = [...kept, { assetId, kind: 'edit' }]
+            return {
+              previousAssetId: current.assetId,
+              originalAssetId: line[0]!.assetId,
+              ...(current.targets === undefined ? {} : { targets: current.targets }),
+              editCount: (current.editCount ?? 0) + 1,
+              revisions: line,
+              cursor: line.length - 1,
+            }
+          })()
         : {
             // 첫 생성: 이 순간의 대상 목록을 얼려 둔다. 최초 생성본은 자기 자신.
             originalAssetId: assetId,
             targets: buildEditTargets(getDocument(), studio!.job, paid.plan.pageId),
             editCount: 0,
+            revisions: [{ assetId, kind: 'initial' } as ImageRevision],
+            cursor: 0,
           }),
     }
     try {
@@ -522,29 +536,27 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     void run(state.plan, key)
   }, [state, run])
 
+  // ── 결과의 줄 ──────────────────────────────────────────────────────────────
+
+  const revisions = currentResult === undefined ? [] : revisionsOf(currentResult)
+  const cursor = currentResult === undefined ? 0 : cursorOf(currentResult)
+  const canGoPrevious = cursor > 0
+  const canGoNext = cursor < revisions.length - 1
+
   /**
-   * 되돌리기. 가리키는 번호만 바꾼다 — 그림을 다시 만들지도, 지우지도 않는다.
-   * 그래서 외부 호출이 0건이고, 되돌린 뒤에도 방금 만든 그림은 그대로 남는다.
+   * 커서만 옮긴다. 그림을 새로 만들지도 지우지도 않으므로 외부 호출이 0건이고,
+   * 옮긴 뒤에도 지나온 결과는 그대로 남는다.
    */
-  const revertTo = useCallback(
-    (which: 'previous' | 'original') => {
+  const goTo = useCallback(
+    (next: number) => {
       if (studio === null || currentResult === undefined) return
-      const target = which === 'previous' ? currentResult.previousAssetId : currentResult.originalAssetId
-      if (target === undefined || target === currentResult.assetId) return
-      void studio.recordResult({
-        ...currentResult,
-        assetId: target,
-        // 되돌린 자리에서 또 되돌릴 곳은 없다. 최초 생성본은 그대로 남는다.
-        ...(currentResult.previousAssetId === undefined ? {} : { previousAssetId: undefined }),
-      } as GeneratedPageResult)
+      const line = revisionsOf(currentResult)
+      const target = line[next]
+      if (target === undefined || next === cursorOf(currentResult)) return
+      void studio.recordResult({ ...currentResult, revisions: line, cursor: next, assetId: target.assetId })
     },
     [studio, currentResult],
   )
-
-  const canRevertPrevious =
-    currentResult?.previousAssetId !== undefined && currentResult.previousAssetId !== currentResult.assetId
-  const canRevertOriginal =
-    currentResult?.originalAssetId !== undefined && currentResult.originalAssetId !== currentResult.assetId
 
   /**
    * 생성은 Studio 작업에 딸린 일이다. 작업이 없는 화면 — 작성기, 그리고 요청
@@ -582,17 +594,20 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             editBlockedReason,
             beginEdit,
             confirmEdit,
-            canRevertPrevious,
-            canRevertOriginal,
-            revertToPrevious: () => revertTo('previous'),
-            revertToOriginal: () => revertTo('original'),
+            revisionCount: revisions.length,
+            revisionPosition: cursor + 1,
+            canGoPrevious,
+            canGoNext,
+            goPrevious: () => goTo(cursor - 1),
+            goNext: () => goTo(cursor + 1),
+            goOriginal: () => goTo(0),
             dismiss: () => setState({ kind: 'idle' }),
           },
     [
       studio, state, hasResult, hasKey, view, begin, confirm, retryConversion,
       editTargets, selectedTargetIds, toggleTarget, instructionFor, setInstructionFor,
       canEdit, editBlockedReason, beginEdit, confirmEdit,
-      canRevertPrevious, canRevertOriginal, revertTo,
+      revisions.length, cursor, canGoPrevious, canGoNext, goTo,
     ],
   )
 

@@ -87,20 +87,36 @@ export function EditPanel() {
         >
           AI 부분수정 실행
         </button>
+      </div>
+
+      {/* 결과의 줄. 앞뒤로 오가도 외부 호출은 없고 그림도 새로 만들지 않는다. */}
+      <div className="edit-panel__history">
+        <span className="edit-panel__position">
+          결과 {generation.revisionPosition} / {generation.revisionCount}
+        </span>
         <button
           type="button"
           className="btn"
-          disabled={!generation.canRevertPrevious || busy}
-          onClick={generation.revertToPrevious}
-          title="외부 호출 없이 직전 이미지로 돌아갑니다"
+          disabled={!generation.canGoPrevious || busy}
+          onClick={generation.goPrevious}
+          title="외부 호출 없이 한 단계 앞의 결과를 봅니다"
         >
-          직전 결과로 되돌리기
+          이전 결과
         </button>
         <button
           type="button"
           className="btn"
-          disabled={!generation.canRevertOriginal || busy}
-          onClick={generation.revertToOriginal}
+          disabled={!generation.canGoNext || busy}
+          onClick={generation.goNext}
+          title="외부 호출 없이 한 단계 뒤의 결과를 봅니다"
+        >
+          다음 결과
+        </button>
+        <button
+          type="button"
+          className="btn"
+          disabled={!generation.canGoPrevious || busy}
+          onClick={generation.goOriginal}
           title="외부 호출 없이 맨 처음 만든 이미지로 돌아갑니다"
         >
           최초 생성본으로 복원

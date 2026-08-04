@@ -1,13 +1,14 @@
 /**
- * 부분수정의 정밀도 (정밀도 교정).
+ * 부분수정의 정밀도와 결과 이력 (정밀도 교정).
  *
- * 손검수에서 둘이 걸렸다.
+ * 손검수에서 셋이 걸렸다.
  *
  *  1. 대상을 여럿 골라도 지시 칸이 하나뿐이라 모두에게 같은 말이 갔다.
  *  2. 한 문구의 글꼴을 바꾸라 했더니 비슷하게 생긴 다른 문구까지 함께 바뀌었다.
+ *  3. 되돌린 뒤 다시 앞으로 갈 수 없었다.
  *
  * 그래서 지시는 대상마다 따로 적고, 프롬프트는 각 지시의 적용 범위를 그 대상 하나로
- * 못 박는다.
+ * 못 박고, 결과는 앞뒤로 오갈 수 있는 줄로 만든다.
  *
  * 다만 이것은 통이미지 AI 편집이다. 범위를 강하게 제한하는 장치일 뿐 픽셀 단위
  * 보장이 아니며, 선택 밖의 미세한 변화 가능성은 남는다.
@@ -23,11 +24,13 @@ import { clearAllDocuments, resetDocumentStoreForTests } from '../services/docum
 import { clearAllRequests, resetRequestStoreForTests } from '../services/requestStore'
 import {
   clearAllStudioJobs,
+  loadStudioJob,
   resetStudioStoreForTests,
   saveStudioJob,
+  allStudioAssetIds,
   STUDIO_JOB_ID,
 } from '../services/studioStore'
-import { createStudioJob, linkProductImage, withSource } from '../domain/studioJob'
+import { createStudioJob, linkProductImage, withSource, revisionsOf, cursorOf } from '../domain/studioJob'
 import { createEmptyDocument } from '../domain/pageSchema'
 import { createBlock, createEmptyProject } from '../domain/factory'
 import type { BriefDocument } from '../domain/pageSchema'
@@ -166,6 +169,12 @@ function lastPrompt(): string {
 function lastImageNames(): string[] {
   const form = calls[calls.length - 1]!.init.body as FormData
   return form.getAll('images[]').map((f) => (f as File).name)
+}
+async function pageId(): Promise<string> {
+  return (await loadStudioJob(STUDIO_JOB_ID))!.doc.pages[0]!.id
+}
+async function result() {
+  return (await loadStudioJob(STUDIO_JOB_ID))!.results[await pageId()]!
 }
 
 // ── 대상별 지시 ──────────────────────────────────────────────────────────────
@@ -337,3 +346,183 @@ describe('§8 프롬프트는 각 지시를 그 대상 하나로 묶는다', () 
   }, 25000)
 })
 
+// ── 결과 이력 ────────────────────────────────────────────────────────────────
+
+describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
+  async function editOnce(label: RegExp, text: string): Promise<void> {
+    const wasShowing = (await result()).assetId
+    pick(label)
+    writeFor(label, text)
+    fireEvent.click(runButton())
+    const before = calls.length
+    fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
+    await waitFor(() => expect(calls.length).toBe(before + 1), { timeout: 8000 })
+    // 새 결과가 자리를 잡을 때까지 — 이력 길이는 잘림 때문에 늘지 않을 수 있다.
+    await waitFor(async () => expect((await result()).assetId).not.toBe(wasShowing), { timeout: 8000 })
+  }
+
+  it('starts with one revision at cursor 0', async () => {
+    await openStudio()
+    await generateFirst()
+    const r = await result()
+    expect(revisionsOf(r)).toHaveLength(1)
+    expect(cursorOf(r)).toBe(0)
+    expect(revisionsOf(r)[0]?.kind).toBe('initial')
+    expect(panel().textContent).toContain('결과 1 / 1')
+  }, 25000)
+
+  it('grows to three revisions after two edits', async () => {
+    await openStudio()
+    await generateFirst()
+    await editOnce(/문구 1/, '간결한 폰트로')
+    await editOnce(/문구 2/, '조금 크게')
+    const r = await result()
+    expect(revisionsOf(r)).toHaveLength(3)
+    expect(cursorOf(r)).toBe(2)
+    expect(panel().textContent).toContain('결과 3 / 3')
+  }, 40000)
+
+  it('walks back and forward without spending anything', async () => {
+    await openStudio()
+    await generateFirst()
+    await editOnce(/문구 1/, '간결한 폰트로')
+    const revisions = revisionsOf(await result())
+    const spent = calls.length
+
+    fireEvent.click(within(panel()).getByRole('button', { name: '이전 결과' }))
+    await waitFor(async () => expect(cursorOf(await result())).toBe(0), { timeout: 8000 })
+    expect((await result()).assetId).toBe(revisions[0]?.assetId)
+
+    fireEvent.click(within(panel()).getByRole('button', { name: '다음 결과' }))
+    await waitFor(async () => expect(cursorOf(await result())).toBe(1), { timeout: 8000 })
+    expect((await result()).assetId).toBe(revisions[1]?.assetId)
+
+    expect(calls).toHaveLength(spent)
+  }, 40000)
+
+  it('can still go forward after restoring the very first result', async () => {
+    await openStudio()
+    await generateFirst()
+    await editOnce(/문구 1/, '간결한 폰트로')
+    const spent = calls.length
+
+    fireEvent.click(within(panel()).getByRole('button', { name: '최초 생성본으로 복원' }))
+    await waitFor(async () => expect(cursorOf(await result())).toBe(0), { timeout: 8000 })
+    fireEvent.click(within(panel()).getByRole('button', { name: '다음 결과' }))
+    await waitFor(async () => expect(cursorOf(await result())).toBe(1), { timeout: 8000 })
+    expect(calls).toHaveLength(spent)
+  }, 40000)
+
+  it('disables the ends and keeps all revisions safe from the sweep', async () => {
+    await openStudio()
+    await generateFirst()
+    const prev = () => within(panel()).getByRole('button', { name: '이전 결과' }) as HTMLButtonElement
+    const next = () => within(panel()).getByRole('button', { name: '다음 결과' }) as HTMLButtonElement
+    expect(prev().disabled).toBe(true)
+    expect(next().disabled).toBe(true)
+
+    await editOnce(/문구 1/, '간결한 폰트로')
+    expect(prev().disabled).toBe(false)
+    expect(next().disabled).toBe(true)
+
+    const ids = revisionsOf(await result()).map((r) => r.assetId)
+    const kept = await allStudioAssetIds()
+    for (const id of ids) expect(kept).toContain(id)
+  }, 40000)
+
+  it('cuts the future when a new edit starts from the middle', async () => {
+    await openStudio()
+    await generateFirst()
+    await editOnce(/문구 1/, '간결한 폰트로')
+    await editOnce(/문구 2/, '조금 크게')
+    expect(revisionsOf(await result())).toHaveLength(3)
+
+    fireEvent.click(within(panel()).getByRole('button', { name: '이전 결과' }))
+    await waitFor(async () => expect(cursorOf(await result())).toBe(1), { timeout: 8000 })
+
+    await editOnce(/문구 3/, '가운데로')
+    const r = await result()
+    // 1(최초) + 1(첫 수정) + 새 수정 = 3. 잘려 나간 미래 하나는 사라졌다.
+    expect(revisionsOf(r)).toHaveLength(3)
+    expect(cursorOf(r)).toBe(2)
+  }, 50000)
+
+  it('uses the image at the cursor as the first input of the next edit', async () => {
+    await openStudio()
+    await generateFirst()
+    await editOnce(/문구 1/, '간결한 폰트로')
+    fireEvent.click(within(panel()).getByRole('button', { name: '이전 결과' }))
+    await waitFor(async () => expect(cursorOf(await result())).toBe(0), { timeout: 8000 })
+    const atCursor = (await result()).assetId
+
+    pick(/문구 2/)
+    writeFor(/문구 2/, '조금 크게')
+    fireEvent.click(runButton())
+    fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
+    await waitFor(() => expect(calls).toHaveLength(3), { timeout: 8000 })
+    // 첫 입력 이미지는 지금 커서가 가리키는 그림이다.
+    expect(lastImageNames()[0]).toContain('current-result')
+    expect(revisionsOf(await result())[0]?.assetId).toBe(atCursor)
+  }, 50000)
+
+  it('leaves the history untouched when an edit fails', async () => {
+    await openStudio()
+    await generateFirst()
+    await editOnce(/문구 1/, '간결한 폰트로')
+    const before = await result()
+
+    failNext = true
+    pick(/문구 2/)
+    writeFor(/문구 2/, '조금 크게')
+    fireEvent.click(runButton())
+    fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
+    await waitFor(() => expect(screen.getByText(/크레딧|결제/)).toBeTruthy(), { timeout: 8000 })
+
+    const after = await result()
+    expect(revisionsOf(after)).toEqual(revisionsOf(before))
+    expect(cursorOf(after)).toBe(cursorOf(before))
+    expect(after.assetId).toBe(before.assetId)
+  }, 40000)
+
+  it('keeps every revision at 840 by the page height', async () => {
+    await openStudio()
+    await generateFirst()
+    await editOnce(/문구 1/, '간결한 폰트로')
+    expect((await result()).workingSize).toBe('840x1488')
+  }, 40000)
+
+  it('normalises an older job that only knew original/previous/current', async () => {
+    // 예전 판에서 저장된 모양 그대로.
+    const job = readyJob()
+    const page = job.doc.pages[0]!.id
+    await putAsset(storedAsset('asset_first', 7))
+    await putAsset(storedAsset('asset_second', 8))
+    await saveStudioJob({
+      ...job,
+      results: {
+        [page]: {
+          pageId: page,
+          assetId: 'asset_second',
+          originalAssetId: 'asset_first',
+          previousAssetId: 'asset_first',
+          model: 'gpt-image-2',
+          quality: 'medium',
+          requestedSize: '832x1472',
+          workingSize: '840x1488',
+          sourceFingerprint: 'x',
+          createdAt: 1,
+          editCount: 1,
+        },
+      },
+    })
+
+    await openStudio()
+    const r = await result()
+    // 현재 결과를 잃지 않고, 같은 자산이 두 번 들어가지 않는다.
+    expect(r.assetId).toBe('asset_second')
+    const ids = revisionsOf(r).map((x) => x.assetId)
+    expect(ids).toContain('asset_second')
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(cursorOf(r)).toBe(ids.indexOf('asset_second'))
+  }, 25000)
+})
