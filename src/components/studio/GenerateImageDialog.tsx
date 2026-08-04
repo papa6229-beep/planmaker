@@ -14,6 +14,7 @@
 import { useEffect, useState } from 'react'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
 import { CALL_SUMMARY } from '../../features/studio/useImageGeneration'
+import { sizeLabel } from '../../services/workingImage'
 
 export function GenerateImageDialog() {
   const generation = useImageGeneration()
@@ -27,6 +28,28 @@ export function GenerateImageDialog() {
 
   if (generation === null || state === undefined) return null
   if (state.kind === 'idle' || state.kind === 'running') return null
+
+  // 생성은 됐고 작업본 변환만 실패한 자리. 이미 결제된 그림이 손에 있으므로
+  // 닫는 것보다 다시 만드는 것이 먼저다 — 다시 만들어도 모델은 부르지 않는다.
+  if (state.kind === 'convert-failed') {
+    return (
+      <div className="confirm-backdrop" role="presentation">
+        <div className="confirm" role="alertdialog" aria-modal="true" aria-label="작업본 변환 실패">
+          <h2 className="confirm__title">{state.message}</h2>
+          <p className="confirm__body">
+            생성된 이미지는 그대로 남아 있습니다. 다시 만들기는 이미 받은 이미지만 사용하므로 추가 요금이 들지
+            않습니다.
+          </p>
+          <div className="confirm__actions">
+            <button type="button" className="btn" onClick={generation.dismiss}>닫기</button>
+            <button type="button" className="btn btn--primary" onClick={generation.retryConversion}>
+              작업본 다시 만들기
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   if (state.kind === 'blocked' || state.kind === 'failed') {
     return (
@@ -62,7 +85,11 @@ export function GenerateImageDialog() {
         <dl className="gen-dialog__facts">
           <div><dt>모델</dt><dd>{CALL_SUMMARY.model}</dd></div>
           <div><dt>품질</dt><dd>{CALL_SUMMARY.quality}</dd></div>
-          <div><dt>요청 크기</dt><dd>{plan.size}</dd></div>
+          {/* 두 크기는 다른 것이고, 하나만 보이면 최종 파일도 그 크기인 줄 안다.
+              모델은 16의 배수만 받으므로 840을 보낼 수 없고, 840은 받은 뒤에
+              이쪽에서 맞춘다 (마감 교정 §3). */}
+          <div><dt>AI 생성 규격</dt><dd>{plan.size}</dd></div>
+          <div><dt>최종 작업 이미지</dt><dd>{sizeLabel(plan.working)}</dd></div>
           <div><dt>보낼 이미지</dt><dd>{plan.inputs.length}장</dd></div>
           <div><dt>호출 횟수</dt><dd>{CALL_SUMMARY.calls}회 (자동 재시도 없음)</dd></div>
         </dl>

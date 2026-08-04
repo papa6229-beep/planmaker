@@ -48,6 +48,7 @@ import {
   type GeneratedPageResult,
 } from '../../domain/imageGeneration'
 import { getAllAssets, putAsset } from '../../services/assetStore'
+import { sizeLabel, toWorkingImage, workingImageTarget, type WorkingImageTarget } from '../../services/workingImage'
 import { renderPreviewPng } from '../../services/previewRenderer'
 import { createId } from '../../domain/factory'
 
@@ -57,7 +58,10 @@ export type StudioCenterView = 'brief' | 'compare'
 interface GenerationPlan {
   pageId: string
   prompt: string
+  /** 모델에게 요청하는 크기 (16의 배수). */
   size: string
+  /** Studio가 쓰는 크기 — `840 × 페이지 세로길이`. 모델에게 보내지 않는다. */
+  working: WorkingImageTarget
   inputs: GenerationInputImage[]
   fingerprint: string
 }
@@ -70,6 +74,12 @@ export type GenerationState =
   | { kind: 'failed'; message: string }
   /** 호출하기 전에 멈춘 것 — 아직 아무것도 쓰지 않았다. */
   | { kind: 'blocked'; message: string }
+  /**
+   * 생성은 됐고 작업본 변환만 실패했다. 이미 결제된 그림은 손에 있으므로 버리지
+   * 않는다 — 여기서는 같은 원본으로 다시 맞추기만 하면 되고, 모델을 다시 부르지
+   * 않는다 (마감 교정 §3).
+   */
+  | { kind: 'convert-failed'; message: string }
 
 export interface ImageGenerationApi {
   state: GenerationState
@@ -92,6 +102,8 @@ export interface ImageGenerationApi {
   begin: () => void
   /** 확인 창의 실행. 키를 이제 입력했다면 함께 넘긴다. */
   confirm: (key?: string) => void
+  /** 이미 받아 둔 원본으로 작업본만 다시 만든다. 외부 호출 0건. */
+  retryConversion: () => void
   dismiss: () => void
 }
 
@@ -144,6 +156,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         pageId: page.id,
         prompt: buildOpenAIImagePrompt(request, inputs),
         size: size.size,
+        working: workingImageTarget(page.canvasHeight),
         inputs,
         fingerprint: documentFingerprint(current),
       },
@@ -188,6 +201,74 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     [getDocument],
   )
 
+  /**
+   * 이미 값을 치른 모델 원본. 작업본 변환이 실패하면 여기 남아 있고, 다시
+   * 만들기는 이것만 다시 쓴다 — 그래서 재시도에 외부 호출이 0건이다.
+   */
+  const paidRef = useRef<{
+    plan: GenerationPlan
+    blob: Blob
+    mimeType: string
+    requestedSize: string
+    requestId?: string
+  } | null>(null)
+
+  /**
+   * 받아 둔 원본을 `840 × 페이지 세로길이` 작업본으로 맞춰 저장한다.
+   *
+   * Studio가 이후에 보고 고치고 저장하는 것은 전부 이 작업본이다. 모델 규격은
+   * 메타데이터로만 남는다 — 파일이 832인데 840인 줄 알고 쓰는 일이 없도록.
+   */
+  const finishFromPaid = useCallback(async () => {
+    const paid = paidRef.current
+    if (paid === null) return
+
+    let working: { blob: Blob; width: number; height: number }
+    try {
+      working = await toWorkingImage(paid.blob, paid.plan.working)
+    } catch {
+      // 원본은 그대로 손에 있다. 다시 만들기만 하면 되고, 모델은 부르지 않는다.
+      setState({ kind: 'convert-failed', message: '이미지는 생성됐지만 840px 작업본 변환에 실패했습니다' })
+      return
+    }
+
+    const assetId = createId('asset')
+    const result: GeneratedPageResult = {
+      pageId: paid.plan.pageId,
+      assetId,
+      model: IMAGE_MODEL,
+      quality: IMAGE_QUALITY,
+      requestedSize: paid.requestedSize,
+      workingSize: sizeLabel({ width: working.width, height: working.height }),
+      sourceFingerprint: paid.plan.fingerprint,
+      createdAt: Date.now(),
+      ...(paid.requestId === undefined ? {} : { requestId: paid.requestId }),
+    }
+    try {
+      await putAsset({
+        id: assetId,
+        blob: working.blob,
+        fileName: `ai-${paid.plan.pageId}.png`,
+        mimeType: paid.mimeType,
+        byteSize: working.blob.size,
+      })
+      await studio?.recordResult(result)
+    } catch {
+      setState({ kind: 'failed', message: errorTextFor('save_failed') })
+      return
+    }
+
+    paidRef.current = null
+    setState({ kind: 'idle' })
+    setView('compare')
+  }, [studio])
+
+  /** 같은 원본으로 작업본만 다시 만든다. 외부 호출 0건. */
+  const retryConversion = useCallback(() => {
+    if (paidRef.current === null) return
+    void finishFromPaid()
+  }, [finishFromPaid])
+
   const run = useCallback(
     async (plan: GenerationPlan, key: string) => {
       runningRef.current = true
@@ -226,34 +307,17 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
 
         // 이미지는 자산 저장소로, 작업 행에는 번호와 메타데이터만.
         const mimeType = body?.image?.mimeType ?? 'image/png'
-        const blob = blobFromBase64(b64, mimeType)
-        const assetId = createId('asset')
-        const result: GeneratedPageResult = {
-          pageId: plan.pageId,
-          assetId,
-          model: IMAGE_MODEL,
-          quality: IMAGE_QUALITY,
+        // 여기서부터는 이미 결제된 그림이다. 이 뒤로 무엇이 실패하든 이 원본을
+        // 버리지 않는다 — 버리면 돈만 쓰고 아무것도 남지 않는다.
+        const original = blobFromBase64(b64, mimeType)
+        paidRef.current = {
+          plan,
+          blob: original,
+          mimeType,
           requestedSize: body?.metadata?.requestedSize ?? plan.size,
-          sourceFingerprint: plan.fingerprint,
-          createdAt: Date.now(),
           ...(body?.metadata?.requestId === undefined ? {} : { requestId: body.metadata.requestId }),
         }
-        try {
-          await putAsset({
-            id: assetId,
-            blob,
-            fileName: `ai-${plan.pageId}.png`,
-            mimeType,
-            byteSize: blob.size,
-          })
-          await studio?.recordResult(result)
-        } catch {
-          setState({ kind: 'failed', message: errorTextFor('save_failed') })
-          return
-        }
-
-        setState({ kind: 'idle' })
-        setView('compare')
+        await finishFromPaid()
       } catch {
         // 스스로 다시 부르지 않는다. 다음 호출은 사람의 클릭이다.
         setState({ kind: 'failed', message: errorTextFor('network_error') })
@@ -261,7 +325,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         runningRef.current = false
       }
     },
-    [collectImages, studio],
+    [collectImages, finishFromPaid],
   )
 
   const confirm = useCallback(
@@ -309,9 +373,10 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             setView,
             begin,
             confirm,
+            retryConversion,
             dismiss: () => setState({ kind: 'idle' }),
           },
-    [studio, state, hasResult, hasKey, view, begin, confirm],
+    [studio, state, hasResult, hasKey, view, begin, confirm, retryConversion],
   )
 
   return <ImageGenerationContext.Provider value={api}>{children}</ImageGenerationContext.Provider>

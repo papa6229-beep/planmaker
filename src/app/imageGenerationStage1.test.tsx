@@ -45,6 +45,16 @@ vi.mock('../features/assets/imageUtils', async () => {
 vi.mock('../services/previewRenderer', () => ({
   renderPreviewPng: async () => new Blob([new Uint8Array([137, 80, 78, 71, 1])], { type: 'image/png' }),
 }))
+/**
+ * 결과는 받은 뒤 `840 × 페이지 세로길이` 작업본으로 맞춰 저장된다 (마감 교정 §3).
+ * jsdom에는 캔버스가 없으므로 재고 그리는 부분만 갈아 끼운다 — 실제 픽셀 확인은
+ * 브라우저 인수검사와 `studioWorkingImage` 검사가 맡는다.
+ */
+vi.mock('../services/canvasImageOps', () => ({
+  measureImage: async () => ({ width: 832, height: 992 }),
+  drawToSize: async (_blob: Blob, width: number, height: number) =>
+    new Blob([`drawn:${String(width)}x${String(height)}`], { type: 'image/png' }),
+}))
 
 const PRODUCT_URL = 'https://shop.example.com/goods/12345'
 const FAKE_KEY = 'sk-test-not-a-real-key-0000'

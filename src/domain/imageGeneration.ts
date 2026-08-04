@@ -31,7 +31,14 @@ export const FIELD_IMAGES = 'images[]'
 export interface ImageGenerationMetadata {
   model: typeof IMAGE_MODEL
   quality: typeof IMAGE_QUALITY
+  /** 모델에게 요청한 크기 — 두 변이 16의 배수라 840이 될 수 없다. */
   requestedSize: string
+  /**
+   * Studio가 실제로 쓰는 크기 — `840 × 페이지 세로길이` (마감 교정 §3).
+   *
+   * 예전 판에서 저장된 결과에는 없다. 그때는 모델이 준 크기를 그대로 썼다.
+   */
+  workingSize?: string
   /** 생성 당시 기획서의 지문 — 뒤에 기획서가 바뀌면 이 값으로 알아본다. */
   sourceFingerprint: string
   createdAt: number

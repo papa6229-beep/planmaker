@@ -71,7 +71,10 @@ export function ResultCompare() {
           <h2 className="compare__label">AI 1차 생성 결과</h2>
           {result !== undefined && (
             <p className="compare__note">
-              {result.model} · {result.quality} · {result.requestedSize} · {formatTime(result.createdAt)}
+              {/* 보이는 그림은 작업본이다. 모델 규격은 참고로만 함께 적는다 —
+                  둘을 한 값처럼 보이면 832짜리를 840인 줄 알고 쓰게 된다. */}
+              작업본 {result.workingSize ?? result.requestedSize} · AI 생성 규격 {result.requestedSize} ·{' '}
+              {result.model} · {result.quality} · {formatTime(result.createdAt)}
             </p>
           )}
         </header>
