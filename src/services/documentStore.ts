@@ -16,6 +16,7 @@
 import Dexie, { type Table } from 'dexie'
 import { createId } from '../domain/factory'
 import { migrateToDocument } from '../domain/briefMigration'
+import { isRequestTeam, type RequestTeam } from '../domain/requestTeam'
 import type { BriefDocument } from '../domain/pageSchema'
 
 /** One stored brief. */
@@ -164,6 +165,36 @@ export async function duplicateDocument(id: string, now: number): Promise<string
   const copy: BriefDocument = JSON.parse(JSON.stringify(source)) as BriefDocument
   copy.project = { ...copy.project, title: `${copy.project.title} 복사본` }
   return createDocument(copy, now)
+}
+
+/**
+ * 이전 자료를 한 팀 소속으로 옮긴다 (첫 사용 흐름 교정 §5).
+ *
+ * 바꾸는 것은 `project.requestTeam` 하나뿐이다. 문서·이미지·페이지·블록은 물론
+ * 작성일과 **수정일도 그대로 둔다** — 소속을 정리한 것은 그 기획서를 고친 것이
+ * 아니므로, 최근 수정 순서가 이 일로 뒤바뀌면 안 된다.
+ *
+ * 팀이 **없는** 문서에만 쓸 수 있다. 이미 어느 팀 것인 기획서를 다른 팀으로
+ * 옮기는 일은 소유를 갈아 끼우는 것이고, 그런 경로는 두지 않기로 했다 (교정2
+ * §4). 저장소에서 막으므로 화면이 무엇을 부르든 결과는 같다.
+ */
+export async function assignDocumentTeam(id: string, team: RequestTeam): Promise<void> {
+  const row = await db().documents.get(id)
+  if (!row) return
+  if (isRequestTeam(row.doc.project.requestTeam)) return
+  await db().documents.put({
+    ...row,
+    doc: { ...row.doc, project: { ...row.doc.project, requestTeam: team } },
+  })
+}
+
+/** 아직 어느 팀 것도 아닌 기획서 — 게이트의 '이전 자료 정리'가 읽는 목록. */
+export async function listTeamlessDocuments(): Promise<DocumentSummary[]> {
+  const rows = await db().documents.toArray()
+  return rows
+    .filter((row) => !isRequestTeam(row.doc.project.requestTeam))
+    .toSorted((a, b) => b.updatedAt - a.updatedAt)
+    .map(summarize)
 }
 
 export async function deleteDocumentById(id: string): Promise<void> {

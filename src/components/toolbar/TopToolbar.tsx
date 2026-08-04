@@ -17,7 +17,7 @@
  */
 
 import { useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { useEventBriefIo } from '../../features/export/useEventBriefIo'
@@ -25,6 +25,7 @@ import { DeliverAction } from './DeliverAction'
 import { isRequestTeam, REQUEST_TEAMS, teamLabel, type RequestTeam } from '../../domain/requestTeam'
 import { EVENTBRIEF_EXTENSION, eventBriefFileName, FALLBACK_FILE_NAME } from '../../features/export/exportFileName'
 import { useAppSurface } from '../../app/AppSurfaceContext'
+import { clearSelectedTeam, selectedTeam } from '../../features/team/teamSession'
 
 const TITLE_COALESCE_KEY = 'project-title'
 
@@ -39,8 +40,24 @@ function BackIcon() {
 export function TopToolbar({ mode = 'brief', onShowSummary }: { mode?: 'brief' | 'image'; onShowSummary: () => void }) {
   const surface = useAppSurface()
   const { state, setProjectTitle, undo, redo, canUndo, canRedo, endInteraction } = useBriefEditor()
-  const { undoPageDelete, requestTeam, setRequestTeam } = useBriefDocument()
+  const { undoPageDelete, requestTeam, setRequestTeam, saveNow } = useBriefDocument()
   const { state: ioState, startExport, startImport, busy } = useEventBriefIo()
+  const navigate = useNavigate()
+  // 게이트에서 고른 팀. 편집 화면에서는 보여만 주고 바꾸지 않는다 — 여기서 팀을
+  // 갈아 끼우면 남의 팀 목록으로 기획서가 넘어가는 우회로가 된다 (§4).
+  const gateTeam = surface === 'brief-writer' ? selectedTeam() : null
+
+  /** 팀 변경: 지금 작업을 저장한 뒤 게이트로 돌아간다. */
+  const changeTeam = async () => {
+    try {
+      await saveNow()
+    } catch {
+      // 저장하지 못했더라도 게이트로는 갈 수 있어야 한다; 자동저장이 마지막
+      // 상태를 이미 갖고 있고, 여기서 막으면 팀을 영영 못 바꾼다.
+    }
+    clearSelectedTeam()
+    navigate('/', { replace: true })
+  }
   /**
    * Page structure is not part of the editor's history, so a just-deleted page
    * is restored from the document's own snapshot; everything else undoes
@@ -75,18 +92,33 @@ export function TopToolbar({ mode = 'brief', onShowSummary }: { mode?: 'brief' |
           </Link>
         )}
         <span className={`editor-topbar__mode${mode === 'image' ? ' editor-topbar__mode--image' : ''}`} aria-label="현재 모드">{mode === 'image' ? '이미지 생성' : '기획서 생성'}</span>
-        <select
-          className="field__input editor-topbar__team"
-          aria-label="작성팀"
-          value={isRequestTeam(requestTeam) ? requestTeam : ''}
-          disabled={busy}
-          onChange={(e) => setRequestTeam(e.target.value === '' ? undefined : (e.target.value as RequestTeam))}
-        >
-          <option value="">{teamLabel(isRequestTeam(requestTeam) ? undefined : requestTeam)}</option>
-          {REQUEST_TEAMS.map((t) => (
-            <option key={t.value} value={t.value}>{t.label}</option>
-          ))}
-        </select>
+        {gateTeam === null ? (
+          <select
+            className="field__input editor-topbar__team"
+            aria-label="작성팀"
+            value={isRequestTeam(requestTeam) ? requestTeam : ''}
+            disabled={busy}
+            onChange={(e) => setRequestTeam(e.target.value === '' ? undefined : (e.target.value as RequestTeam))}
+          >
+            <option value="">{teamLabel(isRequestTeam(requestTeam) ? undefined : requestTeam)}</option>
+            {REQUEST_TEAMS.map((t) => (
+              <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
+          </select>
+        ) : (
+          <>
+            <span className="editor-topbar__team-label" aria-label="작성팀">{teamLabel(requestTeam)}</span>
+            <button
+              type="button"
+              className="btn editor-topbar__team-change"
+              disabled={busy}
+              onClick={() => void changeTeam()}
+              title="지금 작업을 저장하고 팀 선택 화면으로 돌아갑니다"
+            >
+              팀 변경
+            </button>
+          </>
+        )}
         <input
           ref={titleRef}
           className="editor-topbar__title"

@@ -234,17 +234,20 @@ export function remapAssetIds(doc: BriefDocument, mapping: ReadonlyMap<string, s
  *
  * Asked before an import replaces what is on screen. A brief that only *looks*
  * empty because it has no blocks may still hold a title, the direction for the
- * whole page, a team, extra pages, a page dragged longer, or a reference image
- * — losing any of those without being asked is the bug this answers (v1 동결
- * §6). Values nobody typed — the document id, the ids of its pages — are not
- * work, so a brand-new brief answers false.
+ * whole page, extra pages, a page dragged longer, or a reference image — losing
+ * any of those without being asked is the bug this answers (v1 동결 §6). Values
+ * nobody typed — the document id, the ids of its pages — are not work, so a
+ * brand-new brief answers false.
+ *
+ * 작성팀은 더 이상 여기 없다. 팀은 게이트에서 골라 **모든 새 기획서에** 처음부터
+ * 붙는 값이 되었으므로(첫 사용 흐름 §4), 그것을 일로 세면 갓 만든 빈 기획서가
+ * 언제나 "지울 것이 있다"고 답하고 파일을 열 때마다 쓸데없이 물어보게 된다.
  */
 export function hasUserWork(doc: BriefDocument): boolean {
   const { project } = doc
   const title = project.title.trim()
   if (title !== '' && title !== DEFAULT_NEW_BRIEF_TITLE) return true
   if ((project.concept ?? '').trim() !== '') return true
-  if ((project.requestTeam ?? '').trim() !== '') return true
   if ((project.conceptNote ?? '').trim() !== '') return true
   if (doc.pages.length > 1) return true
 

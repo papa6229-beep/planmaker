@@ -237,8 +237,10 @@ describe('§4 원하는 분위기·컨셉', () => {
       .toBeTruthy()
 
     // The old center entry point is gone, so there is only one place to type it.
+    // (디자인팀에게 전달할 말 is a different field with its own id — 전체 컨셉
+    // itself still has exactly one home.)
     expect(screen.queryByRole('button', { name: /전체 컨셉/ })).toBeNull()
-    expect(document.querySelectorAll('.concept__input')).toHaveLength(1)
+    expect(document.querySelectorAll('#concept-input')).toHaveLength(1)
   })
 
   it('autosaves what is typed, and never becomes a block on the canvas', async () => {
@@ -289,8 +291,9 @@ describe('§4 원하는 분위기·컨셉', () => {
 
     const user = userEvent.setup()
     render(
+      // 보관함을 오가는 검사라 게이트가 없는 studio 표면에서 연다 (첫 사용 흐름 §4).
       <MemoryRouter initialEntries={[`/briefs/${a}`]}>
-        <AppRoutes />
+        <AppRoutes surface="studio" />
       </MemoryRouter>,
     )
 
@@ -319,7 +322,7 @@ describe('§4 원하는 분위기·컨셉', () => {
     const user = userEvent.setup()
     render(
       <MemoryRouter initialEntries={[`/briefs/${id}`]}>
-        <AppRoutes />
+        <AppRoutes surface="studio" />
       </MemoryRouter>,
     )
     const library = await screen.findByRole('complementary', { name: '내 기획서' })

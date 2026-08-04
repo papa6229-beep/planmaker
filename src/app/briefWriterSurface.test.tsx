@@ -30,6 +30,7 @@ import { createEmptyDocument, createPage } from '../domain/pageSchema'
 import { createBlock, createEmptyProject } from '../domain/factory'
 import { packageEventDocument } from '../services/eventBriefExport'
 import { readEventDocument } from '../services/eventBriefImport'
+import { clearSelectedTeam, selectTeam } from '../features/team/teamSession'
 import type { BriefDocument } from '../domain/pageSchema'
 
 vi.mock('../services/previewRenderer', () => ({
@@ -44,6 +45,13 @@ function renderSurface(path: string, surface: 'brief-writer' | 'studio') {
   )
 }
 
+/**
+ * 편집 화면을 보는 검사에서는 팀이 이미 골라진 상태로 둔다. 작성기의 첫 화면은
+ * 팀 선택이고, 팀을 고르기 전에는 어떤 기획서도 열리지 않는다 (첫 사용 흐름
+ * 교정2 §1) — 여기서 확인하려는 것은 그다음, 편집 화면의 내용이다.
+ */
+const withTeamChosen = () => selectTeam('marketing')
+
 /** The editor is on screen once its canvas is. */
 const editorShown = async () =>
   waitFor(() => expect(screen.getByRole('region', { name: '기획 캔버스' })).toBeTruthy(), { timeout: 8000 })
@@ -55,6 +63,7 @@ beforeEach(async () => {
   await clearAllRequests()
   resetDocumentStoreForTests()
   await clearAllDocuments()
+  clearSelectedTeam()
 })
 
 describe('§3 표면 결정', () => {
@@ -73,31 +82,41 @@ describe('§3 표면 결정', () => {
   })
 })
 
+/**
+ * 첫 화면은 팀 선택이다 (첫 사용 흐름 §4). 내부 화면에 닿을 수 없다는 계약은
+ * 그대로이고, 닿는 곳이 "바로 기획서"에서 "작성기 자신의 첫 화면"으로 바뀌었다.
+ */
+const gateShown = async () =>
+  waitFor(() => expect(screen.getByRole('heading', { name: '어느 팀으로 기획서를 쓰시나요?' })).toBeTruthy(), {
+    timeout: 5000,
+  })
+
 describe('§4 타 팀 작성기 표면', () => {
-  it('lands in a brief from the root', async () => {
+  it('asks which team is writing from the root', async () => {
     renderSurface('/', 'brief-writer')
-    await editorShown()
+    await gateShown()
   })
 
   it('sends the gate address into the brief writer', async () => {
     renderSurface('/gate', 'brief-writer')
-    await editorShown()
+    await gateShown()
     expect(screen.queryByRole('heading', { name: '어떤 작업을 시작할까요?' })).toBeNull()
   })
 
   it('sends the image-request list into the brief writer', async () => {
     renderSurface('/image-requests', 'brief-writer')
-    await editorShown()
+    await gateShown()
     expect(screen.queryByRole('heading', { name: /이미지 생성 요청/ })).toBeNull()
   })
 
   it('sends a single image request into the brief writer', async () => {
     renderSurface('/image-requests/req_1', 'brief-writer')
-    await editorShown()
+    await gateShown()
     expect(screen.queryByText(/요청을 찾을 수 없습니다/)).toBeNull()
   })
 
   it('shows no way into the internal side of the product', async () => {
+    withTeamChosen()
     renderSurface('/briefs/new', 'brief-writer')
     await editorShown()
 
@@ -110,6 +129,7 @@ describe('§4 타 팀 작성기 표면', () => {
   })
 
   it('keeps every part of writing a brief', async () => {
+    withTeamChosen()
     renderSurface('/briefs/new', 'brief-writer')
     await editorShown()
 
@@ -135,17 +155,24 @@ describe('§4 타 팀 작성기 표면', () => {
     expect(within(library).getByRole('button', { name: '새 기획서' })).toBeTruthy()
     expect(within(library).getByLabelText('기획서 제목 검색')).toBeTruthy()
     expect(within(library).getByLabelText('작성 월')).toBeTruthy()
-    expect(within(library).getByLabelText('작성팀 필터')).toBeTruthy()
+    // 팀은 게이트에서 이미 정해졌으므로 팀 필터 대신 그 범위를 알려 준다
+    // (첫 사용 흐름 §4).
+    expect(within(library).getByText(/마케팅팀 기획서만 보입니다/)).toBeTruthy()
   })
 
   it('says the handoff line once, and only on this surface', async () => {
+    withTeamChosen()
     renderSurface('/briefs/new', 'brief-writer')
     await editorShown()
     expect(screen.getAllByText('작성이 끝나면 파일로 저장해 사내 메신저로 디자인팀에 보내 주세요.')).toHaveLength(1)
   })
 
   it('still opens a stored brief by its own address', async () => {
+    withTeamChosen()
     const doc = createEmptyDocument(createEmptyProject('저장된 기획서'))
+    // 지금 고른 팀의 기획서다. 다른 팀 것과 팀 미지정 자료는 열리지 않는다
+    // (첫 사용 흐름 교정·교정2).
+    doc.project.requestTeam = 'marketing'
     doc.pages[0]!.blocks = [createBlock('free_text', { id: 'blk_1', content: '보관된 문구' })]
     const id = await createDocument(doc, 1000)
 
@@ -248,6 +275,7 @@ describe('§6.3 파일 왕복 불변', () => {
     const file = new File([pkg.blob], 'in.eventbrief', { type: 'application/zip' })
 
     const user = userEvent.setup()
+    selectTeam('cs')
     renderSurface('/briefs/new', 'brief-writer')
     await editorShown()
 
@@ -256,10 +284,10 @@ describe('§6.3 파일 왕복 불변', () => {
       target: { files: [file] },
     })
     await waitFor(() => expect(screen.getByText('받은 문구')).toBeTruthy(), { timeout: 8000 })
+    // 편집 화면에서 팀은 고르는 것이 아니라 보이는 것이다 (첫 사용 흐름 §4).
     expect(
-      (within(document.querySelector('.editor-topbar') as HTMLElement).getByLabelText('작성팀') as HTMLSelectElement)
-        .value,
-    ).toBe('cs')
+      within(document.querySelector('.editor-topbar') as HTMLElement).getByLabelText('작성팀').textContent,
+    ).toBe('CS팀')
 
     // And it is still an ordinary brief: editing it saves into the open row.
     await user.click(within(screen.getByRole('complementary', { name: '블록 팔레트' })).getByRole('button', { name: '글 넣기' }))
@@ -270,5 +298,6 @@ describe('§6.3 파일 왕복 불변', () => {
       const saved = (await loadDocumentById(summary!.id)) as BriefDocument
       expect(saved.pages[0]!.blocks.some((b) => b.content === '이어서 쓴 문구')).toBe(true)
     }, { timeout: 8000 })
-  })
+    // 파일 열기와 3초 자동저장까지 포함된 긴 흐름이라 기본 5초 제한으로는 부족하다.
+  }, 20000)
 })

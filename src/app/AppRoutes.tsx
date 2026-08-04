@@ -22,21 +22,34 @@ import { EntryGate } from '../features/gate/EntryGate'
 import { BriefsPage } from './pages/BriefsPage'
 import { ImageRequestsPage } from './pages/ImageRequestsPage'
 import { ImageRequestWorkPage } from './pages/ImageRequestWorkPage'
+import { TeamGatePage } from './pages/TeamGatePage'
 import { RequestsProvider } from '../features/requests/useRequests'
 import { DocumentsProvider } from '../features/documents/useDocuments'
 import { APP_SURFACE, type AppSurface } from './appSurface'
 import { AppSurfaceProvider } from './AppSurfaceContext'
 
-/** Where a planner lands: straight into a brief (v1 마감 §10.2). */
-const WRITER_HOME = '/briefs/new'
+/**
+ * Where a planner lands: the team gate (첫 사용 흐름 §4). Arriving at the shared
+ * address must not open somebody else's work, so the first question is which
+ * team is writing — and the answer starts an empty brief of its own.
+ */
+const WRITER_HOME = '/'
+
+/**
+ * 내부(디자인팀) 빌드의 첫 자리. 게이트는 타 팀 작성기의 것이므로 여기서는
+ * 예전 그대로 기획서로 들어간다 — 두 표면이 같은 상수를 쓰면 한쪽을 옮길 때
+ * 다른 쪽이 자기 자신으로 되도는 길이 생긴다.
+ */
+const STUDIO_HOME = '/briefs/new'
 
 function WriterRoutes() {
   return (
     <Routes>
+      <Route path="/" element={<TeamGatePage />} />
       <Route path="/briefs/new" element={<NewBriefRoute />} />
       <Route path="/briefs/:id" element={<BriefEditorRoute />} />
-      {/* `/`, `/gate`, `/image-requests`, and anything else all mean "write a
-          brief" here — never a 404, and never an internal screen. */}
+      {/* `/gate`, `/image-requests`, and anything else all mean "start here" —
+          never a 404, and never an internal screen. */}
       <Route path="*" element={<Navigate to={WRITER_HOME} replace />} />
     </Routes>
   )
@@ -45,14 +58,14 @@ function WriterRoutes() {
 function StudioRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to={WRITER_HOME} replace />} />
+      <Route path="/" element={<Navigate to={STUDIO_HOME} replace />} />
       <Route path="/gate" element={<EntryGate />} />
       <Route path="/briefs" element={<BriefsPage />} />
       <Route path="/briefs/new" element={<NewBriefRoute />} />
       <Route path="/briefs/:id" element={<BriefEditorRoute />} />
       <Route path="/image-requests" element={<ImageRequestsPage />} />
       <Route path="/image-requests/:id" element={<ImageRequestWorkPage />} />
-      <Route path="*" element={<Navigate to={WRITER_HOME} replace />} />
+      <Route path="*" element={<Navigate to={STUDIO_HOME} replace />} />
     </Routes>
   )
 }

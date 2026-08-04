@@ -14,6 +14,7 @@ import { render, screen, within, waitFor, fireEvent } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AppRoutes } from './AppRoutes'
+import { AppSurfaceProvider } from './AppSurfaceContext'
 import { AppShell } from './AppShell'
 import { RequestsProvider } from '../features/requests/useRequests'
 import { DocumentsProvider } from '../features/documents/useDocuments'
@@ -43,12 +44,15 @@ vi.mock('../services/previewRenderer', () => ({
 
 function renderEditor() {
   return render(
+    // 보관함을 보는 검사라 게이트가 없는 studio 표면에서 연다 (첫 사용 흐름 §4).
     <MemoryRouter initialEntries={['/briefs/new']}>
-      <RequestsProvider>
-        <DocumentsProvider>
-          <AppShell />
-        </DocumentsProvider>
-      </RequestsProvider>
+      <AppSurfaceProvider surface="studio">
+        <RequestsProvider>
+          <DocumentsProvider>
+            <AppShell />
+          </DocumentsProvider>
+        </RequestsProvider>
+      </AppSurfaceProvider>
     </MemoryRouter>,
   )
 }
@@ -56,7 +60,7 @@ function renderEditor() {
 function renderApp(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <AppRoutes />
+      <AppRoutes surface="studio" />
     </MemoryRouter>,
   )
 }
