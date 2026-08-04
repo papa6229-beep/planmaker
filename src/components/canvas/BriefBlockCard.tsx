@@ -174,6 +174,17 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
     }
   }
   const openFilePicker = () => fileRef.current?.click()
+  /**
+   * 더블클릭이 파일 선택창을 여는가 (손검수 Patch 2 §10).
+   *
+   * 작업판에서 이미지 블록이 하는 일은 하나 — 실제로 쓸 제품 이미지를 여기 거는
+   * 것 — 이므로, 작성자가 참고 캡처를 붙여 뒀는지 여부와 상관없이 같은 자리를
+   * 연다. 정작 채워야 할 빈 자리에서만 그것이 막혀 있던 것이 결함이었다.
+   *
+   * 작성기에서는 그대로다: 그림 없는 이미지 블록은 아직 "무엇이 들어갈지"부터
+   * 적는 자리이고, 붙이는 그림은 참고용이다 (§12).
+   */
+  const dblClickPicksFile = meta.requiresAsset && (studio !== null || thumbUrl !== undefined)
   const closeMenu = () => menuRef.current?.removeAttribute('open')
 
   /**
@@ -399,7 +410,7 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
       // block still says what it is to a screen reader (and to tests) here.
       aria-label={hasContent(block) ? `${block.label}: ${block.content}` : block.label}
       onPointerDown={startDrag}
-      onDoubleClick={() => (meta.requiresAsset && thumbUrl ? openFilePicker() : beginEdit())}
+      onDoubleClick={() => (dblClickPicksFile ? openFilePicker() : beginEdit())}
       onDragOver={(e) => {
         if (!meta.requiresAsset || !hasImageFiles(Array.from(e.dataTransfer.types))) return
         e.preventDefault()
@@ -538,9 +549,15 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
           </span>
         </>
       ) : meta.requiresAsset ? (
+        // 빈 자리는 이 글이 카드의 거의 전부다. 여기서만 다르게 굴면 사람은
+        // "어디를 눌러야 열리는지"를 외워야 한다 — 카드와 같은 곳을 연다.
         <span
           className={`block-card__slot${hasContent(block) ? '' : ' block-card__content--placeholder'}`}
-          onDoubleClick={beginEdit}
+          onDoubleClick={(e) => {
+            if (dblClickPicksFile) return // 카드의 처리기가 파일 선택창을 연다
+            e.stopPropagation()
+            beginEdit()
+          }}
         >
           {hasContent(block) ? block.content : '어떤 이미지가 들어갈지 적어주세요'}
         </span>
