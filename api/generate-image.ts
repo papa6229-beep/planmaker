@@ -17,13 +17,21 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { handleGenerateImage } from '../src/services/generateImageHandler'
 
+/**
+ * 배포 설정.
+ *
+ * `maxDuration`: 이미지 생성은 수십 초가 걸린다. 기본 실행시간이면 성공한 생성이
+ * 시간 초과로 버려질 수 있어 넉넉히 잡는다. 이 값이 현재 요금제에서 실제로
+ * 허용되는 상한인지는 배포 전에 확인하지 못했다.
+ *
+ * 설명이 객체 **바깥**에 있는 것은 취향이 아니라 조건이다. Vercel은 이 객체를
+ * 정적으로 읽는데, 그 파서는 속성 하나를 "이름·콜론·값" 세 조각으로 가정하고
+ * 자른다. 속성 바로 위에 `/** … *\/` 주석이 붙으면 조각이 하나 늘어 값 자리에
+ * 콜론이 들어앉고, 배포가 `Unhandled type: "ColonToken"`으로 죽는다. 객체 위쪽은
+ * 안전하다 (`src/app/vercelFunctionConfig.test.ts`가 실제 파서로 확인한다).
+ */
 export const config = {
   runtime: 'nodejs',
-  /**
-   * 이미지 생성은 수십 초가 걸린다. 기본 실행시간이면 성공한 생성이 시간 초과로
-   * 버려질 수 있어 넉넉히 잡는다. 이 값이 현재 요금제에서 실제로 허용되는
-   * 상한인지는 배포 전에 확인하지 못했다.
-   */
   maxDuration: 300,
 }
 
