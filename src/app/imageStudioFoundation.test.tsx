@@ -16,9 +16,12 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
-import { render, screen, within, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, within, waitFor, fireEvent, cleanup } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { AppRoutes } from './AppRoutes'
+import { AppShellProviders } from './AppShell'
+import { GenerationRequestPreview } from '../components/studio/GenerationRequestPreview'
+import { StudioJobProvider, useStudioJob } from '../features/studio/useStudioJob'
 import { clearAll, putAsset, resetAssetStoreForTests, type StoredAsset } from '../services/assetStore'
 import { clearAllDocuments, resetDocumentStoreForTests } from '../services/documentStore'
 import { clearAllRequests, resetRequestStoreForTests } from '../services/requestStore'
@@ -173,6 +176,20 @@ function slotRow(description: string): HTMLElement {
   return row
 }
 
+/**
+ * 제작 요청 미리보기를 그 자리 그대로 연다 — 상단바 진입점 없이.
+ * 코드를 지우지 않았다는 말은 그 화면이 아직 동작한다는 뜻이어야 한다.
+ */
+function PreviewHarness() {
+  const studio = useStudioJob()
+  if (studio === null) return null
+  return (
+    <AppShellProviders binding={studio.binding}>
+      <GenerationRequestPreview onClose={() => undefined} />
+    </AppShellProviders>
+  )
+}
+
 function pngFile(name: string, seed: number): File {
   return new File([new Uint8Array([137, 80, 78, 71, seed, seed, seed, seed])], name, { type: 'image/png' })
 }
@@ -204,11 +221,14 @@ describe('§9.1-1·2 기획서를 원문 그대로 열고, 원본과 작업자�
     expect(document.body.textContent).toContain('가을 신상 예약판매')
     expect(document.body.textContent).toContain('니트 정면 컷이 들어갑니다')
     expect(screen.getByRole('button', { name: '2페이지' })).toBeTruthy()
-    expect((document.querySelector('#concept-input') as HTMLTextAreaElement).value).toBe('단정하고 신뢰감 있게')
+    // 컨셉은 작업판에서 다시 만지는 입력창이 없다 (실작업 UI 마감 §2.1). 그러나
+    // 값은 파일이 지니고 온 그대로 문서에 남아야 한다 — 없어진 것은 입력구뿐이다.
+    expect(document.querySelector('#concept-input')).toBeNull()
 
     // 원본은 Studio 작업자료에 따로 남는다.
     await waitFor(async () => {
       const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect(job?.doc.project.concept).toBe('단정하고 신뢰감 있게')
       expect(job?.source?.fingerprint).toBe(documentFingerprint(job!.doc))
     }, { timeout: 5000 })
   })
@@ -373,12 +393,18 @@ describe('§9.1-4·10 작업판 화면', () => {
     await openBriefFile(await briefFile(sampleDoc()))
     await waitFor(() => expect(slotRow('니트 정면 컷이 들어갑니다')).toBeTruthy(), { timeout: 5000 })
 
-    // 파일 불러오기가 끝나기 전에는 상단바 버튼이 잠겨 있다. 시간을 늘리는 대신
-    // 실제로 눌릴 수 있는 상태가 될 때까지 기다린다.
-    const preview = screen.getByRole('button', { name: 'AI 제작 요청 미리보기' }) as HTMLButtonElement
-    await waitFor(() => expect(preview.disabled).toBe(false), { timeout: 5000 })
-    fireEvent.click(preview)
+    // 상단바에서 이 진입점은 내려갔다 (실작업 UI 마감 §4.2). 화면과 데이터
+    // 계약은 그대로이므로, 편집기가 서 있는 자리 위에서 같은 화면을 연다.
+    cleanup()
+    render(
+      <MemoryRouter initialEntries={['/studio']}>
+        <StudioJobProvider>
+          <PreviewHarness />
+        </StudioJobProvider>
+      </MemoryRouter>,
+    )
     const dialog = await screen.findByRole('dialog', { name: 'AI 제작 요청 미리보기' })
+    await waitFor(() => expect(dialog.textContent).toContain('가을 신상 예약판매'), { timeout: 6000 })
 
     expect(dialog.textContent).toContain('단정하고 신뢰감 있게')
     expect(dialog.textContent).toContain('가을 신상 예약판매')

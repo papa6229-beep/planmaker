@@ -32,6 +32,7 @@ import { StartChoice } from '../components/start/StartChoice'
 import { ConceptField } from '../components/concept/ConceptField'
 import { AiNoteField, DesignerNoteField } from '../components/concept/HandoffNotes'
 import { GenerationRequestPreview } from '../components/studio/GenerationRequestPreview'
+import { ReadyPanel } from '../components/studio/ReadyPanel'
 import { GenerateImageDialog } from '../components/studio/GenerateImageDialog'
 import { ResultCompare } from '../components/studio/ResultCompare'
 import { EditPanel } from '../components/studio/EditPanel'
@@ -213,7 +214,10 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
         <div className="side-left">
           <ReferenceTools />
           <BlockPalette />
-          <ConceptField />
+          {/* 컨셉은 기획서를 쓰는 사람의 것이다. 작업판에서 그것을 다시 만지는
+              입력창을 두면 작업자가 기획서를 고쳐 쓰게 된다 — 값 자체는 그대로
+              문서에 남아 생성 요청에 실린다 (실작업 UI 마감 §2.1). */}
+          {mode !== 'studio' && <ConceptField />}
           {/* 작성기는 디자인팀에게 남길 말만, 작업판은 그 말을 읽고 AI 지시를
               따로 적는다 (첫 사용 흐름 §6). */}
           {mode === 'studio' ? <AiNoteField /> : <DesignerNoteField />}
@@ -238,9 +242,15 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
             같은 정보를 받는 패널을 따로 두지 않는다 (첫 사용 흐름 §8). */}
         {mode === 'brief' ? (
           <BriefLibrary />
+        ) : mode === 'studio' ? (
+          /* 작업판의 우측은 지금 할 일 하나만 말한다: 만들기 전에는 준비 상태,
+             만든 뒤에는 부분수정. 블록 편집 도움말은 왼쪽 캔버스가 이미 하는
+             말이라 여기서 되풀이하지 않는다 (실작업 UI 마감 §3). */
+          <div className="side-right">
+            {generation !== null && generation.hasResult ? <EditPanel /> : <ReadyPanel />}
+          </div>
         ) : (
           <div className="side-right">
-            {/* 결과가 있을 때만 나타난다 — 없으면 컴포넌트가 스스로 비운다. */}
             <EditPanel />
             <PropertiesPanel />
           </div>
@@ -269,7 +279,14 @@ export interface AppShellProps {
   statusPanel?: ReactNode
 }
 
-export function AppShell({ mode = 'brief', binding, statusPanel }: AppShellProps = {}) {
+/**
+ * 편집기가 서 있는 자리 — 문서·자산·파일 입출력·보기·생성.
+ *
+ * 화면과 따로 떼어 둔 이유는, 상단바에서 진입점을 걷어낸 내부 화면(요약·제작
+ * 요청 미리보기)도 여전히 이 자리 위에서 열리고 검사돼야 하기 때문이다. 코드를
+ * 지우지 않았다는 말은 그 화면이 아직 동작한다는 뜻이어야 한다.
+ */
+export function AppShellProviders({ binding, children }: { binding?: DocumentBinding; children: ReactNode }) {
   return (
     <BriefEditorProvider>
       <AssetsProvider>
@@ -278,13 +295,19 @@ export function AppShell({ mode = 'brief', binding, statusPanel }: AppShellProps
             <CanvasViewProvider>
               {/* 작업판 밖에서는 이 provider 안의 훅이 전부 `null`을 내므로,
                   작성기 화면에는 생성 버튼도 결과 비교도 나타나지 않는다. */}
-              <ImageGenerationProvider>
-                <Workspace mode={mode} statusPanel={statusPanel} />
-              </ImageGenerationProvider>
+              <ImageGenerationProvider>{children}</ImageGenerationProvider>
             </CanvasViewProvider>
           </EventBriefIoProvider>
         </BriefDocumentProvider>
       </AssetsProvider>
     </BriefEditorProvider>
+  )
+}
+
+export function AppShell({ mode = 'brief', binding, statusPanel }: AppShellProps = {}) {
+  return (
+    <AppShellProviders {...(binding ? { binding } : {})}>
+      <Workspace mode={mode} statusPanel={statusPanel} />
+    </AppShellProviders>
   )
 }

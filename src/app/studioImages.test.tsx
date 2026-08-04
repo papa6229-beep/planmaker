@@ -16,10 +16,13 @@ import 'fake-indexeddb/auto'
 import { render, screen, within, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { AppRoutes } from './AppRoutes'
+import { AppShellProviders } from './AppShell'
+import { GenerationRequestPreview } from '../components/studio/GenerationRequestPreview'
+import { StudioJobProvider, useStudioJob } from '../features/studio/useStudioJob'
 import { clearAll, getAllAssets, resetAssetStoreForTests, type StoredAsset } from '../services/assetStore'
 import { clearAllDocuments, resetDocumentStoreForTests } from '../services/documentStore'
 import { clearAllRequests, resetRequestStoreForTests } from '../services/requestStore'
-import { clearAllStudioJobs, loadStudioJob, resetStudioStoreForTests, STUDIO_JOB_ID } from '../services/studioStore'
+import { clearAllStudioJobs, loadStudioJob, resetStudioStoreForTests, saveStudioJob, STUDIO_JOB_ID } from '../services/studioStore'
 import { createStudioJob, withSource } from '../domain/studioJob'
 import { buildGenerationRequest } from '../domain/generationRequest'
 import { createEmptyDocument, createPage } from '../domain/pageSchema'
@@ -100,6 +103,38 @@ async function openStudioWith(doc: BriefDocument) {
   await waitFor(() => {
     expect((document.querySelector('.editor-topbar__title') as HTMLInputElement).value).toBe('작업판 시험')
   }, { timeout: 6000 })
+}
+
+/**
+ * 제작 요청 미리보기를 그 자리 그대로 연다.
+ *
+ * 작업판 상단에서는 이 진입점을 내리고 기본 흐름만 남겼다 (실작업 UI 마감 §4.2).
+ * 화면과 데이터 계약은 지운 것이 아니므로, 검사는 상단바 대신 편집기가 서 있는
+ * 자리 위에서 같은 화면을 그대로 연다.
+ */
+function PreviewHarness() {
+  const studio = useStudioJob()
+  if (studio === null) return null
+  return (
+    <AppShellProviders binding={studio.binding}>
+      <GenerationRequestPreview onClose={() => undefined} />
+    </AppShellProviders>
+  )
+}
+
+async function openPreviewWith(doc: BriefDocument): Promise<HTMLElement> {
+  await saveStudioJob(withSource(createStudioJob(doc, 1, STUDIO_JOB_ID), doc, 1, 'x.eventbrief'))
+  render(
+    <MemoryRouter initialEntries={['/studio']}>
+      <StudioJobProvider>
+        <PreviewHarness />
+      </StudioJobProvider>
+    </MemoryRouter>,
+  )
+  const dialog = await screen.findByRole('dialog', { name: 'AI 제작 요청 미리보기' })
+  // 문서는 바인딩을 통해 뒤늦게 들어온다 — 제목이 보일 때가 준비된 때다.
+  await waitFor(() => expect(dialog.textContent).toContain(doc.project.title), { timeout: 6000 })
+  return dialog
 }
 
 /** 카드의 도구 막대와 메뉴는 선택했을 때만 그려진다. */
@@ -234,8 +269,9 @@ describe('§8 우측 패널', () => {
     expect(document.querySelector('.studio-panel')).toBeNull()
     expect(document.querySelector('.studio-slot')).toBeNull()
     expect(screen.queryByRole('complementary', { name: '제품 이미지 연결' })).toBeNull()
-    // 공통 편집기의 기본 우측 패널로 돌아온다.
-    expect(screen.getByRole('complementary', { name: '선택 블록 설정' })).toBeTruthy()
+    // 작업판 우측은 지금 할 일만 말한다 — 연결하는 자리가 아니다 (실작업 UI §3).
+    expect(screen.getByRole('region', { name: '생성 준비' })).toBeTruthy()
+    expect(document.querySelector('.side-right .inspector')).toBeNull()
   }, 20000)
 })
 
@@ -268,12 +304,7 @@ describe('§9 제작 요청의 정확성', () => {
   })
 
   it('says plainly that nothing is generated or sent, and calls no API', async () => {
-    await openStudioWith(sampleDoc())
-    const preview = screen.getByRole('button', { name: 'AI 제작 요청 미리보기' }) as HTMLButtonElement
-    await waitFor(() => expect(preview.disabled).toBe(false), { timeout: 6000 })
-    fireEvent.click(preview)
-
-    const dialog = await screen.findByRole('dialog', { name: 'AI 제작 요청 미리보기' })
+    const dialog = await openPreviewWith(sampleDoc())
     expect(dialog.textContent).toContain('아직 이미지를 생성하거나 외부로 전송하지 않습니다')
     expect(dialog.textContent).toContain('AI에게 전달될 제작 요청만 미리 확인합니다')
     // 생성 버튼은 없다.
@@ -285,16 +316,8 @@ describe('§9 제작 요청의 정확성', () => {
     const doc = sampleDoc()
     doc.project.concept = '단정하게'
     doc.project.designerNote = '이 문구는 반드시 강조해 주세요.'
-    await openStudioWith(doc)
-
-    const aiField = await screen.findByLabelText('AI에게 추가로 전달할 말')
-    fireEvent.change(aiField, { target: { value: '하단에는 그라데이션을 꼭 넣어 주세요.' } })
-
-    const preview = screen.getByRole('button', { name: 'AI 제작 요청 미리보기' }) as HTMLButtonElement
-    await waitFor(() => expect(preview.disabled).toBe(false), { timeout: 6000 })
-    fireEvent.click(preview)
-
-    const dialog = await screen.findByRole('dialog', { name: 'AI 제작 요청 미리보기' })
+    doc.project.aiNote = '하단에는 그라데이션을 꼭 넣어 주세요.'
+    const dialog = await openPreviewWith(doc)
     expect(dialog.textContent).toContain('단정하게')
     expect(dialog.textContent).toContain('디자인팀에게 전달할 말')
     expect(dialog.textContent).toContain('이 문구는 반드시 강조해 주세요.')

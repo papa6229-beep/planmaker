@@ -18,7 +18,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
-import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, cleanup, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { AppRoutes } from './AppRoutes'
 import { clearAll, getAllAssets, putAsset, resetAssetStoreForTests, type StoredAsset } from '../services/assetStore'
@@ -717,7 +717,12 @@ describe('오류는 사람이 읽을 수 있는 한 문장이 된다', () => {
           headers: { 'content-type': 'application/json' },
         })
       await generateOnce()
-      await waitFor(() => expect(screen.getByText(c.expect)).toBeTruthy(), { timeout: 8000 })
+      // 문장은 실패 창 안에서 찾는다 — 화면의 다른 안내가 우연히 같은 글자를
+      // 담고 있어도 "오류를 제대로 말했는가"의 답이 되지는 않는다.
+      await waitFor(() => {
+        const dialog = screen.getByRole('alertdialog', { name: '이미지 생성 실패' })
+        expect(within(dialog).getByText(c.expect)).toBeTruthy()
+      }, { timeout: 8000 })
       // 공급자 원문을 그대로 보여주지 않는다.
       expect(document.body.textContent).not.toContain('raw provider text')
       expect(document.body.textContent).not.toContain(FAKE_KEY)

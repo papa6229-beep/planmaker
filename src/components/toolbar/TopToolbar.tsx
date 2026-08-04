@@ -16,7 +16,7 @@
  * in 내 기획서, and one way in is enough (v1 마감 §5).
  */
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
@@ -29,6 +29,7 @@ import { clearSelectedTeam, selectedTeam } from '../../features/team/teamSession
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
 import { countStudioStorage, resetStudioStorage, type StorageCount } from '../../services/storageReset'
+import { useImageSave } from '../../features/studio/useImageSave'
 
 const TITLE_COALESCE_KEY = 'project-title'
 
@@ -76,6 +77,21 @@ export function TopToolbar({
   const generation = useImageGeneration()
   const [keyPanel, setKeyPanel] = useState(false)
   const [keyDraft, setKeyDraft] = useState('')
+  // 만든 이미지를 내놓는 일. 작업판 밖에서는 `null`이다.
+  const imageSave = useImageSave()
+  const studioMode = mode === 'studio'
+  const [workMenu, setWorkMenu] = useState(false)
+  const workMenuRef = useRef<HTMLDivElement | null>(null)
+
+  // 메뉴 밖을 누르면 닫힌다. 열어 둔 메뉴가 화면을 가린 채 남지 않도록.
+  useEffect(() => {
+    if (!workMenu) return
+    const onDown = (e: MouseEvent) => {
+      if (!workMenuRef.current?.contains(e.target as Node)) setWorkMenu(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [workMenu])
 
   /** 팀 변경: 지금 작업을 저장한 뒤 게이트로 돌아간다. */
   const changeTeam = async () => {
@@ -197,19 +213,13 @@ export function TopToolbar({
           >
             다시 실행
           </button>
-          <button type="button" className="btn" onClick={onShowSummary} disabled={busy} title="이미지 생성 AI가 읽는 정보 미리보기">AI 요약</button>
-          {mode === 'studio' && (
-            <button
-              type="button"
-              className="btn"
-              disabled={busy}
-              onClick={() => void countStudioStorage().then(setStudioWipe)}
-              title="이 브라우저의 Studio 작업을 지웁니다"
-            >
-              Studio 작업 초기화
-            </button>
+          {/* 요약과 제작 요청 미리보기는 내부 확인용이다. 코드도 화면도 그대로
+              남아 있지만, 작업판의 기본 흐름(불러오기 → 생성 → 수정 → 저장)을
+              가리지 않도록 여기서는 내놓지 않는다 (실작업 UI 마감 §4.2). */}
+          {!studioMode && (
+            <button type="button" className="btn" onClick={onShowSummary} disabled={busy} title="이미지 생성 AI가 읽는 정보 미리보기">AI 요약</button>
           )}
-          {onShowGenerationRequest !== undefined && (
+          {!studioMode && onShowGenerationRequest !== undefined && (
             <button
               type="button"
               className="btn"
@@ -262,20 +272,78 @@ export function TopToolbar({
             disabled={busy}
             title=".eventbrief 파일에서 기획서를 불러옵니다"
           >
-            파일 불러오기
+            {studioMode ? '기획서 불러오기' : '파일 불러오기'}
           </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              setFileName(title.trim() || FALLBACK_FILE_NAME)
-              setNaming(true)
-            }}
-            disabled={busy}
-            title="이름을 정해 .eventbrief 파일로 저장합니다"
-          >
-            파일로 저장
-          </button>
+          {/* 작업판에서 저장한다는 말은 "만든 이미지를 내놓는다"는 뜻이다.
+              기획서 파일 저장은 가끔 하는 일이라 작업 메뉴로 옮겼다 (§4.3, §5). */}
+          {studioMode && imageSave !== null ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={imageSave.save}
+              disabled={busy || imageSave.state.kind === 'saving'}
+              title="생성한 결과 이미지를 PNG로 저장합니다"
+            >
+              {imageSave.state.kind === 'saving' ? '이미지 저장 중…' : '이미지 저장'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setFileName(title.trim() || FALLBACK_FILE_NAME)
+                setNaming(true)
+              }}
+              disabled={busy}
+              title="이름을 정해 .eventbrief 파일로 저장합니다"
+            >
+              파일로 저장
+            </button>
+          )}
+          {studioMode && (
+            <div className="work-menu" ref={workMenuRef}>
+              <button
+                type="button"
+                className="btn work-menu__trigger"
+                aria-haspopup="true"
+                aria-expanded={workMenu}
+                onClick={() => setWorkMenu((open) => !open)}
+              >
+                작업 메뉴
+              </button>
+              {/* 닫혀 있을 때는 아예 없다. 감춰 두기만 하면 화면에서 사라진
+                  버튼이 손가락과 검사에는 여전히 잡힌다. */}
+              {workMenu && (
+                <div className="work-menu__panel" aria-label="작업 메뉴 항목">
+                  <button
+                    type="button"
+                    className="work-menu__item"
+                    disabled={busy}
+                    onClick={() => {
+                      setWorkMenu(false)
+                      setFileName(title.trim() || FALLBACK_FILE_NAME)
+                      setNaming(true)
+                    }}
+                    title="제품 이미지 연결과 작업 상태까지 한 파일로 저장합니다"
+                  >
+                    Studio 작업 파일 저장 (.eventbrief)
+                  </button>
+                  <button
+                    type="button"
+                    className="work-menu__item"
+                    disabled={busy}
+                    onClick={() => {
+                      setWorkMenu(false)
+                      void countStudioStorage().then(setStudioWipe)
+                    }}
+                    title="이 브라우저의 Studio 작업을 지웁니다"
+                  >
+                    Studio 작업 초기화
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           <span className="editor-topbar__io-note" aria-live="polite">
             {ioState.kind === 'exported' ? '기획서 파일을 저장했습니다' : ''}
           </span>
@@ -307,6 +375,70 @@ export function TopToolbar({
           }}
         />
       </div>
+
+      {/* 이미지 저장이 사람에게 물어야 하는 두 자리. 저장 자체는 이미 손에 있는
+          자산을 내놓는 일이라 외부 호출이 없다 (실작업 UI 마감 §5). */}
+      {imageSave !== null && imageSave.state.kind === 'nothing' && (
+        <div className="confirm-backdrop" role="presentation" onClick={imageSave.dismiss}>
+          <div
+            className="confirm"
+            role="alertdialog"
+            aria-modal="true"
+            aria-label="저장할 이미지 없음"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="confirm__title">아직 저장할 이미지가 없습니다</h2>
+            <p className="confirm__body">
+              먼저 <b>이미지 생성하기</b>로 결과를 만들어 주세요. 기획서 캔버스는 이미지로 저장하지 않습니다.
+            </p>
+            <div className="confirm__actions">
+              <button type="button" className="btn btn--primary" onClick={imageSave.dismiss}>확인</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {imageSave !== null && imageSave.state.kind === 'partial' && (
+        <div className="confirm-backdrop" role="presentation" onClick={imageSave.dismiss}>
+          <div
+            className="confirm"
+            role="dialog"
+            aria-modal="true"
+            aria-label="일부 페이지만 저장"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="confirm__title">
+              {imageSave.state.plan.totalPages}페이지 중 생성 결과가 있는 {imageSave.state.plan.files.length}페이지만
+              저장합니다
+            </h2>
+            <p className="confirm__body">
+              아직 만들지 않은 페이지는 빈 이미지로도, 기획서 캔버스로도 저장하지 않습니다.
+            </p>
+            <div className="confirm__actions">
+              <button type="button" className="btn" onClick={imageSave.dismiss}>취소</button>
+              <button type="button" className="btn btn--primary" onClick={imageSave.confirmPartial}>
+                생성된 {imageSave.state.plan.files.length}장 저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {imageSave !== null && imageSave.state.kind === 'failed' && (
+        <div className="confirm-backdrop" role="presentation" onClick={imageSave.dismiss}>
+          <div
+            className="confirm"
+            role="alertdialog"
+            aria-modal="true"
+            aria-label="이미지 저장 실패"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="confirm__title">이미지를 저장하지 못했습니다</h2>
+            <p className="confirm__body">{imageSave.state.message}</p>
+            <div className="confirm__actions">
+              <button type="button" className="btn btn--primary" onClick={imageSave.dismiss}>확인</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {studioWipe !== null && (
         <div className="confirm-backdrop" role="presentation" onClick={() => setStudioWipe(null)}>

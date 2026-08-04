@@ -2067,3 +2067,20 @@ button { font-family: inherit; }
 .gen-dialog__targets li { margin-bottom: 6px; }
 .gen-dialog__target-label { display: block; font-weight: 700; }
 .gen-dialog__target-instruction { display: block; font-weight: 400; color: var(--color-muted); }
+
+/* 작업 메뉴 — 가끔 누르는 것들 (실작업 UI 마감 §4.3). */
+.work-menu { position: relative; }
+.work-menu__trigger { cursor: pointer; }
+.work-menu__panel { position: absolute; right: 0; top: calc(100% + 4px); z-index: 40; display: flex; flex-direction: column; min-width: 240px; padding: 4px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); box-shadow: 0 8px 24px rgb(0 0 0 / 12%); }
+.work-menu__item { border: 0; background: none; padding: 8px 10px; text-align: left; font-size: 13px; color: inherit; cursor: pointer; border-radius: var(--radius-sm); }
+.work-menu__item:hover:not(:disabled) { background: var(--color-surface-2, rgb(0 0 0 / 4%)); }
+.work-menu__item:disabled { opacity: 0.5; cursor: default; }
+
+/* 생성 준비 (실작업 UI 마감 §3.1). */
+.ready-panel { padding: 12px; }
+.ready-panel__title { margin: 0 0 8px; font-size: 13px; font-weight: 700; }
+.ready-panel__facts { margin: 0; font-size: 12px; }
+.ready-panel__facts > div { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
+.ready-panel__facts dt { color: var(--color-muted); }
+.ready-panel__facts dd { margin: 0; font-weight: 600; }
+.ready-panel__warn { margin: 10px 0 0; font-size: 12px; color: #b45309; }
