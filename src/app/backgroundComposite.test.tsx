@@ -41,6 +41,25 @@ vi.mock('../features/assets/imageUtils', async () => {
 vi.mock('../services/previewRenderer', () => ({
   renderPreviewPng: async () => new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }),
 }))
+// jsdom에는 2D 캔버스가 없다. 그리는 일 자체는 브라우저 인수검사에서 보고,
+// 여기서는 **누가 무엇을 부르는가**를 본다 — 특히 외부로 나가는 호출 수를.
+vi.mock('../services/compositeRenderer', () => ({
+  renderComposite: async () => new Blob([new Uint8Array([9, 9, 9])], { type: 'image/png' }),
+}))
+vi.mock('../services/imageAnalysisRunner', () => ({
+  ANALYSIS_MAX_SIDE: 256,
+  analyzeImageBlob: async () => ({
+    palette: [{ hex: '#b47040', share: 1 }],
+    average: { r: 180, g: 112, b: 64 },
+    brightness: 0.5,
+    contrast: 0.4,
+    saturation: 0.6,
+    temperature: 0.3,
+    opaqueRatio: 0.25,
+    bounds: { x: 0, y: 0, width: 10, height: 10 },
+    light: { x: -0.3, y: 0, confidence: 'low' },
+  }),
+}))
 
 const fetchSpy = vi.fn()
 globalThis.fetch = fetchSpy as unknown as typeof fetch
@@ -249,7 +268,7 @@ describe('§13-3 선택·교체와 레이어 순서', () => {
       blockId: 'blk_image',
       asset: { id: 'asset_new', fileName: 'new.png', mimeType: 'image/png' },
     })
-    expect(next.brief.blocks.map((b) => b.id)).toEqual(['blk_image', 'blk_text'])
+    expect(next.brief.blocks.map((b: { id: string }) => b.id)).toEqual(['blk_image', 'blk_text'])
   })
 })
 
@@ -259,18 +278,18 @@ describe('§13-4 수동 레이어 순서', () => {
   it('네 가지 이동이 보이는 블록 사이에서만 자리를 옮긴다', async () => {
     const { reorderBlocks } = await load('domain/layerOrder')
     const blocks = editorStateOf(sampleDoc()).brief.blocks
-    expect(reorderBlocks(blocks, 'blk_image', 'front').map((b) => b.id)).toEqual(['blk_text', 'blk_image'])
-    expect(reorderBlocks(blocks, 'blk_text', 'back').map((b) => b.id)).toEqual(['blk_text', 'blk_image'])
-    expect(reorderBlocks(blocks, 'blk_image', 'forward').map((b) => b.id)).toEqual(['blk_text', 'blk_image'])
-    expect(reorderBlocks(blocks, 'blk_image', 'backward').map((b) => b.id)).toEqual(['blk_image', 'blk_text'])
+    expect(reorderBlocks(blocks, 'blk_image', 'front').map((b: { id: string }) => b.id)).toEqual(['blk_text', 'blk_image'])
+    expect(reorderBlocks(blocks, 'blk_text', 'back').map((b: { id: string }) => b.id)).toEqual(['blk_text', 'blk_image'])
+    expect(reorderBlocks(blocks, 'blk_image', 'forward').map((b: { id: string }) => b.id)).toEqual(['blk_text', 'blk_image'])
+    expect(reorderBlocks(blocks, 'blk_image', 'backward').map((b: { id: string }) => b.id)).toEqual(['blk_image', 'blk_text'])
   })
 
   it('리듀서가 순서를 바꾸고 되돌릴 수 있다', () => {
     const state = editorStateOf(sampleDoc())
     const front = briefReducer(state, { type: 'REORDER_BLOCK', blockId: 'blk_image', move: 'front' })
-    expect(front.brief.blocks.map((b) => b.id)).toEqual(['blk_text', 'blk_image'])
+    expect(front.brief.blocks.map((b: { id: string }) => b.id)).toEqual(['blk_text', 'blk_image'])
     const back = briefReducer(front, { type: 'REORDER_BLOCK', blockId: 'blk_image', move: 'back' })
-    expect(back.brief.blocks.map((b) => b.id)).toEqual(['blk_image', 'blk_text'])
+    expect(back.brief.blocks.map((b: { id: string }) => b.id)).toEqual(['blk_image', 'blk_text'])
   })
 
   it('선택한 블록에 네 버튼이 있다', async () => {
@@ -426,7 +445,7 @@ describe('§13-9 원본 제품 이미지 불변', () => {
       productImages: { blk_image: 'asset_product' },
       effects: { blk_image: { grading: 0.6 } },
     })
-    const layer = plan.layers.find((l) => l.blockId === 'blk_image')!
+    const layer = plan.layers.find((l: { blockId: string }) => l.blockId === 'blk_image')!
     expect(layer.assetId).toBe('asset_product')
     expect(layer.effects.grading).toBeCloseTo(0.6)
   })
@@ -548,5 +567,78 @@ describe('§13-12 기존 전체 AI 생성', () => {
     expect(sent.model).toBe('gpt-image-2')
     expect(sent.image).toBeUndefined()
     expect(String(captured[0]!.body)).not.toContain('base64')
+  })
+})
+
+// ── 두 방식이 실제로 다르게 나간다 (§6, §8, §14) ─────────────────────────────
+
+describe('배경 생성 + 원본 합성 흐름', () => {
+  it('확인창이 §6의 다섯 가지 사실을 말하고, 실행은 정확히 1회 나간다', async () => {
+    await seedJob(sampleDoc())
+    sessionStorage.setItem('planmaker.openai-key', 'sk-test-key')
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ image: { b64: btoa('bg'), mimeType: 'image/png' }, metadata: {} }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+
+    renderStudio()
+    fireEvent.click(await screen.findByRole('radio', { name: /배경 생성 \+ 원본 합성/ }))
+    fireEvent.change(await screen.findByRole('textbox', { name: /어떤 배경/ }), {
+      target: { value: '따뜻한 베이지 스튜디오' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'AI로 배경 생성' }))
+
+    const dialog = await screen.findByRole('dialog', { name: '배경 생성 확인' })
+    expect(dialog.textContent).toContain('빈 배경 1장')
+    expect(dialog.textContent).toContain('1회')
+    expect(dialog.textContent).toContain('0회')
+    expect(dialog.textContent).toContain('840 × 1200')
+
+    fireEvent.click(screen.getByRole('button', { name: '배경 만들기' }))
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1))
+
+    // 보낸 것: 프롬프트와 크기뿐. 이미지 칸은 비어 있다.
+    const body = fetchSpy.mock.calls[0]![1].body as FormData
+    expect(body.getAll('images[]')).toHaveLength(0)
+    const prompt = String(body.get('prompt'))
+    expect(prompt).toContain('따뜻한 베이지 스튜디오')
+    expect(prompt).not.toContain('data:')
+    expect(prompt).not.toContain('base64')
+
+    // 만든 배경은 이 페이지의 배경으로 저장된다.
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      const pageId = Object.keys(job?.backgrounds ?? {})[0]
+      expect(pageId).toBeTruthy()
+      expect(job!.backgrounds![pageId!]!.source).toBe('ai')
+      expect(job!.backgrounds![pageId!]!.wish).toBe('따뜻한 베이지 스튜디오')
+    })
+  })
+
+  it('직접 넣은 배경으로 저장하면 외부 호출이 0건이다', async () => {
+    const doc = sampleDoc()
+    const job = withSource(createStudioJob(doc, 1_000, STUDIO_JOB_ID), doc, 1_000)
+    await saveStudioJob({
+      ...job,
+      productImages: { blk_image: 'asset_product' },
+      backgrounds: { [doc.pages[0]!.id]: { assetId: 'asset_background', source: 'manual' } },
+      method: 'background_composite',
+    })
+
+    const { container } = renderStudio()
+    // 문서가 붙기 전에 누르면 아직 이 페이지가 아니다 — 캔버스에 블록이 선 뒤에.
+    await imageCard(container)
+    fireEvent.click(await screen.findByRole('button', { name: '원본 합성으로 저장' }))
+
+    const dialog = await screen.findByRole('dialog', { name: '배경 생성 상태' })
+    await waitFor(() => expect(dialog.textContent).toContain('외부 호출 0건'))
+    expect(fetchSpy).not.toHaveBeenCalled()
+
+    // 원본 제품 이미지는 그대로다.
+    const product = await getAsset('asset_product')
+    expect(product?.byteSize).toBe(5)
+    expect(product?.fileName).toBe('asset_product.png')
   })
 })

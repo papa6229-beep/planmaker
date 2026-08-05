@@ -72,3 +72,72 @@ export function normalizeEffects(raw: unknown): CompositeEffects {
     rimLight: clamp01(value.rimLight, DEFAULT_COMPOSITE_EFFECTS.rimLight),
   }
 }
+
+// ── 그림자 (§9.2) ──────────────────────────────────────────────────────────
+
+/**
+ * 접지 그림자 — 제품이 바닥에 **닿아 있다**고 말하는 그림자.
+ *
+ * 사방으로 같은 거리를 번지는 드롭섀도우 하나로는 이것을 만들 수 없다. 그것은
+ * 제품을 바닥에 놓는 대신 공중에 띄우고, 오려 붙인 티만 더 낸다. 접지 그림자는
+ * 하단 폭에 맞춘 **짧고 진한 타원**이고, 광원 반대편으로 조금 밀려 있다.
+ */
+export interface ContactShadow {
+  cx: number
+  cy: number
+  rx: number
+  ry: number
+  blur: number
+  opacity: number
+}
+
+/**
+ * 벽 그림자 — 인물이나 세로형 제품 뒤에 지는 넓고 옅은 그림자.
+ *
+ * 접지 그림자보다 언제나 옅다. 둘의 세기가 비슷해지면 제품이 두 번 놓인 것처럼
+ * 보인다.
+ */
+export interface WallShadow {
+  dx: number
+  dy: number
+  blur: number
+  opacity: number
+}
+
+export interface ShadowSubject {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** 광원 방향만 쓰는 최소 계약 — 분석값 전체를 요구하지 않는다. */
+export interface LightDirection {
+  light: { x: number; y: number }
+}
+
+export function contactShadow(rect: ShadowSubject, source: LightDirection, strength: number): ContactShadow {
+  const s = clamp01(strength, 0)
+  return {
+    // 광원 반대편으로 조금. 정면광이면 그대로 발밑이다.
+    cx: rect.x + rect.width / 2 - source.light.x * rect.width * 0.06,
+    // 제품의 발밑. 상자 아래쪽에 붙어 있어야 닿아 보인다.
+    cy: rect.y + rect.height * 0.985,
+    rx: rect.width * 0.42,
+    // 납작해야 바닥에 눕는다. 세로 반지름이 가로의 절반을 넘으면 공처럼 보인다.
+    ry: rect.width * 0.42 * 0.18,
+    blur: rect.width * 0.06,
+    opacity: 0.1 + 0.35 * s,
+  }
+}
+
+export function wallShadow(rect: ShadowSubject, source: LightDirection, strength: number): WallShadow {
+  const s = clamp01(strength, 0)
+  return {
+    dx: -source.light.x * rect.width * 0.1 * (0.4 + 0.6 * s),
+    dy: -source.light.y * rect.height * 0.06 * (0.4 + 0.6 * s) + rect.height * 0.02,
+    blur: rect.width * 0.12,
+    // 접지 그림자보다 반드시 옅다 (위 상한 0.45 대 여기 0.2).
+    opacity: 0.06 + 0.14 * s,
+  }
+}

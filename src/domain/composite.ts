@@ -1,0 +1,136 @@
+/**
+ * 로컬 합성 계획 (배경 합성 1차 §9, §10).
+ *
+ * "이 페이지를 어떻게 그릴 것인가"를 **숫자로만** 적어 둔 것이다. 픽셀은 여기
+ * 없고, 캔버스도 여기 없다. 그리는 일은 이 계획을 받는 렌더러가 한다.
+ *
+ * 그렇게 나눠 두는 이유가 §13-9와 §13-6이다.
+ *
+ *  - 계획을 세우는 것만으로는 어떤 자산도 바뀌지 않는다. 원본 제품 이미지는
+ *    번호로만 등장하고, 효과는 그 번호 옆에 붙는 숫자다. 세기를 0으로 내리면
+ *    원본이 그대로 돌아온다 — 되돌릴 것이 없으므로.
+ *  - `externalCalls`가 `0`인 것은 문서가 아니라 값이다. 직접 넣은 배경으로
+ *    결과를 만드는 길에 모델을 부르는 자리가 아예 없다는 뜻이고, 그 사실을
+ *    검사가 읽을 수 있다.
+ */
+
+import { normalizeEffects, type CompositeEffects } from './compositeEffects'
+import { cropToCanvas, imageFitOf, type CanvasCrop, type ImageFit, type LayoutRect } from './imageLayout'
+import { getBlockTypeMeta } from './blockTypes'
+import { drawsBareText, isPairedLinkUrl, textAlignOf, type TextAlign } from './simpleBlocks'
+import { CARD_CHROME_Y, CARD_PADDING_X, fitTextSize } from './textFit'
+import type { BriefPage } from './pageSchema'
+import type { StudioBackground } from './studioJob'
+
+export interface CompositeLayerPlan {
+  blockId: string
+  /** 원본 자산의 번호. 이 계획은 그 자산을 읽기만 한다. */
+  assetId: string
+  rect: LayoutRect
+  fit: ImageFit
+  /** 캔버스 밖으로 걸친 부분을 뺀 최종 사각형. 전부 밖이면 `null`. */
+  crop: CanvasCrop | null
+  effects: CompositeEffects
+}
+
+export interface CompositeTextPlan {
+  blockId: string
+  content: string
+  rect: LayoutRect
+  align: TextAlign
+  fontSize: number
+  /** 카드 없이 글씨만 그리는 종류인가 (기존 표현 그대로). */
+  bare: boolean
+}
+
+export interface CompositePlan {
+  size: { width: number; height: number }
+  /** 이 페이지의 배경. 없으면 흰 바탕이다. */
+  background?: StudioBackground
+  layers: CompositeLayerPlan[]
+  texts: CompositeTextPlan[]
+  /** 완성 결과 전체에 얹는 그레인 (§9.5). */
+  grain: number
+  /**
+   * 이 계획을 실행하는 데 필요한 외부 이미지 생성 호출 수.
+   *
+   * 언제나 0이다 — 배경은 이미 손에 있고, 나머지는 원본을 그대로 얹는 일뿐이다.
+   */
+  externalCalls: 0
+}
+
+export interface CompositePlanInput {
+  page: BriefPage
+  background?: StudioBackground | undefined
+  /** 블록 id → 실제 사용 제품 이미지의 자산 id. */
+  productImages: Readonly<Record<string, string>>
+  /** 블록 id → 효과 세기. 없는 블록은 기본값. */
+  effects: Readonly<Record<string, Partial<CompositeEffects>>>
+  grain?: number
+}
+
+const DEFAULT_PLAN_GRAIN = 0.08
+
+/**
+ * 한 페이지의 합성 계획.
+ *
+ * 이미지 자리에는 디자인팀이 연결한 실제 사용 제품 이미지가 우선한다. 그것이
+ * 없을 때만 작성자가 붙여 둔 그림을 쓴다 — 참고 캡처밖에 없다면 결과에 참고
+ * 캡처가 나가는 것이 맞다고 판단할 사람은 작업자이지 이 함수가 아니다.
+ */
+export function planLocalComposite(input: CompositePlanInput): CompositePlan {
+  const { page } = input
+  const size = { width: page.canvasWidth, height: page.canvasHeight }
+  const layers: CompositeLayerPlan[] = []
+  const texts: CompositeTextPlan[] = []
+
+  for (const block of page.blocks) {
+    if (isPairedLinkUrl(page.blocks, block)) continue
+    const meta = getBlockTypeMeta(block.type)
+    const rect = { ...block.position }
+
+    if (meta.requiresAsset) {
+      const assetId = input.productImages[block.id] ?? block.assetId
+      if (assetId === undefined) continue
+      layers.push({
+        blockId: block.id,
+        assetId,
+        rect,
+        fit: imageFitOf(block),
+        crop: cropToCanvas(rect, size.width, size.height),
+        effects: normalizeEffects({ ...input.effects[block.id] }),
+      })
+      continue
+    }
+
+    const content = block.content ?? ''
+    if (!meta.hasText || content.trim().length === 0) continue
+    // §10: 새 텍스트 엔진을 만들지 않는다. 화면에서 쓰는 그 계산을 그대로 쓴다.
+    const bare = drawsBareText(block)
+    const area = bare ? {} : { padX: CARD_PADDING_X, padY: CARD_CHROME_Y }
+    texts.push({
+      blockId: block.id,
+      content,
+      rect,
+      align: textAlignOf(block),
+      fontSize: fitTextSize(content, rect.width, rect.height, area).fontSize,
+      bare,
+    })
+  }
+
+  return {
+    size,
+    ...(input.background === undefined ? {} : { background: input.background }),
+    layers,
+    texts,
+    grain: input.grain ?? DEFAULT_PLAN_GRAIN,
+    externalCalls: 0,
+  }
+}
+
+/** 이 계획이 필요로 하는 자산 번호 전부 — 배경까지. */
+export function compositeAssetIds(plan: CompositePlan): string[] {
+  const ids = plan.layers.map((l) => l.assetId)
+  if (plan.background !== undefined) ids.push(plan.background.assetId)
+  return [...new Set(ids)]
+}

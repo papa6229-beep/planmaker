@@ -7,7 +7,8 @@
  *
  * 공식 API 명세(openai-openapi)에서 확인한 것:
  *
- *  - `POST /v1/images/edits`, multipart/form-data
+ *  - `POST /v1/images/edits`, multipart/form-data — 원본을 함께 보내는 편집
+ *  - `POST /v1/images/generations`, JSON — 글만으로 만드는 생성
  *  - `image`는 배열로 최대 16장, png·webp·jpg, 각 50MB 미만
  *  - `size`는 `gpt-image-2`에서 임의의 `가로x세로` 문자열이며 두 변 모두 16의
  *    배수, 비율 1:3~3:1, 최대 3840x2160
@@ -26,6 +27,15 @@ import {
 } from '../domain/imageGeneration.js'
 
 const OPENAI_IMAGE_EDITS_URL = 'https://api.openai.com/v1/images/edits'
+/**
+ * 원본 없이 글만으로 만드는 길 (배경 합성 1차 §8).
+ *
+ * 편집 엔드포인트는 이미지를 **요구한다**. 빈 배경을 만드는 요청에는 보낼
+ * 이미지가 없고, 있어서도 안 된다 — 원본을 보내지 않는 것이 이 방식의 전부다.
+ * 그래서 보낼 이미지가 하나도 없을 때만 이쪽으로 나간다. 어느 쪽이든 모델과
+ * 키를 다루는 방식은 같다.
+ */
+const OPENAI_IMAGE_GENERATIONS_URL = 'https://api.openai.com/v1/images/generations'
 
 export interface OpenAiInputImage {
   fileName: string
@@ -97,6 +107,9 @@ export async function requestOpenAiImage(
 ): Promise<OpenAiImageResult> {
   const doFetch = deps.fetch ?? fetch
 
+  const textOnly = request.images.length === 0
+  const url = textOnly ? OPENAI_IMAGE_GENERATIONS_URL : OPENAI_IMAGE_EDITS_URL
+
   const form = new FormData()
   form.set('model', IMAGE_MODEL)
   form.set('prompt', request.prompt)
@@ -113,10 +126,24 @@ export async function requestOpenAiImage(
 
   let response: Response
   try {
-    response = await doFetch(OPENAI_IMAGE_EDITS_URL, {
+    response = await doFetch(url, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${request.apiKey}` },
-      body: form,
+      headers: {
+        Authorization: `Bearer ${request.apiKey}`,
+        ...(textOnly ? { 'content-type': 'application/json' } : {}),
+      },
+      // 생성은 보낼 파일이 없으므로 JSON 한 덩이다. multipart로 감싸 봐야
+      // 경계 문자열만 늘고, 무엇을 보냈는지 읽기만 어려워진다.
+      body: textOnly
+        ? JSON.stringify({
+            model: IMAGE_MODEL,
+            prompt: request.prompt,
+            size: request.size,
+            quality: IMAGE_QUALITY,
+            n: 1,
+            output_format: IMAGE_OUTPUT_FORMAT,
+          })
+        : form,
     })
   } catch {
     // 재시도하지 않는다. 여기서 한 번 더 부르면 사용자가 모르는 결제가 생긴다.

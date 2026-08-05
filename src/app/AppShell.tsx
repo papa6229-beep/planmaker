@@ -35,6 +35,10 @@ import { GenerationRequestPreview } from '../components/studio/GenerationRequest
 import { ReadyPanel } from '../components/studio/ReadyPanel'
 import { BlockLayerTools } from '../components/studio/BlockLayerTools'
 import { BackgroundTools } from '../components/studio/BackgroundTools'
+import { MethodChoice } from '../components/studio/MethodChoice'
+import { BackgroundDialog } from '../components/studio/BackgroundDialog'
+import { CompositeEffectsPanel } from '../components/studio/CompositeEffectsPanel'
+import { BackgroundCompositeProvider } from '../features/studio/useBackgroundComposite'
 import { GenerateImageDialog } from '../components/studio/GenerateImageDialog'
 import { ResultCompare } from '../components/studio/ResultCompare'
 import { EditPanel } from '../components/studio/EditPanel'
@@ -253,8 +257,12 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
              만든 뒤에는 부분수정. 블록 편집 도움말은 왼쪽 캔버스가 이미 하는
              말이라 여기서 되풀이하지 않는다 (실작업 UI 마감 §3). */
           <div className="side-right">
+            {/* 어떻게 만들 것인가가 먼저다 — 두 방식은 값을 치르는 방식부터
+                다르다 (§6). */}
+            <MethodChoice />
             {/* 고른 블록의 배치 — 맞춤 방식과 레이어 순서 (§3.1, §4). */}
             <BlockLayerTools />
+            <CompositeEffectsPanel />
             {generation !== null && generation.hasResult ? <EditPanel /> : <ReadyPanel />}
           </div>
         ) : (
@@ -271,6 +279,7 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
       {summaryOpen && <SummaryPanel onClose={() => setSummaryOpen(false)} />}
       {requestOpen && <GenerationRequestPreview onClose={() => setRequestOpen(false)} />}
       <GenerateImageDialog />
+      <BackgroundDialog />
     </div>
   )
 }
@@ -315,7 +324,11 @@ export function AppShellProviders({
               <ImageGenerationProvider>
                 {/* 다듬기는 생성 위에 얹힌다 — 지금 고른 대상과 그 결과를 알아야
                     하기 때문이다. 작업이 없으면 이 훅도 `null`을 낸다. */}
-                <InstructionRefineProvider>{children}</InstructionRefineProvider>
+                {/* 배경 합성은 생성 위에 얹힌다 — 같은 페이지와 같은 작업을
+                    보아야 하기 때문이다. 작업이 없으면 이 훅도 `null`을 낸다. */}
+                <InstructionRefineProvider>
+                  <BackgroundCompositeProvider>{children}</BackgroundCompositeProvider>
+                </InstructionRefineProvider>
               </ImageGenerationProvider>
             </CanvasViewProvider>
           </EventBriefIoProvider>
