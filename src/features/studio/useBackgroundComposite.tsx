@@ -17,6 +17,7 @@
  */
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import { useAssets } from '../assets/useAssets'
 import { useBriefDocument } from '../document/useBriefDocument'
 import { useStudioJob } from './useStudioJob'
 import { readApiKey } from './apiKeySession'
@@ -91,6 +92,9 @@ function imageBlocksOf(page: BriefPage, productImages: Readonly<Record<string, s
 export function BackgroundCompositeProvider({ children }: { children: ReactNode }) {
   const studio = useStudioJob()
   const { document: doc, activePageId } = useBriefDocument()
+  // 자산 저장소에 직접 쓴 그림은 화면의 주소 목록에 아직 없다. 새로 만든 배경이
+  // 새로고침 전까지 보이지 않던 것이 그 때문이었다 — 쓴 뒤에 한 번 다시 읽는다.
+  const { loadFromStore } = useAssets()
   const [state, setState] = useState<BackgroundState>({ kind: 'idle' })
   const [wish, setWish] = useState('')
 
@@ -148,6 +152,7 @@ export function BackgroundCompositeProvider({ children }: { children: ReactNode 
           mimeType: 'image/png',
           byteSize: blob.size,
         })
+        await loadFromStore()
         await studio.recordResult({
           pageId: page.id,
           assetId,
@@ -168,7 +173,7 @@ export function BackgroundCompositeProvider({ children }: { children: ReactNode 
         setState({ kind: 'failed', message: '합성 결과를 만들지 못했습니다.' })
       }
     })()
-  }, [studio, plan, page, collect])
+  }, [studio, plan, page, collect, loadFromStore])
 
   const beginGenerate = useCallback(() => {
     if (studio === null || page === null) return
@@ -263,6 +268,7 @@ export function BackgroundCompositeProvider({ children }: { children: ReactNode 
           mimeType: 'image/png',
           byteSize: blob.size,
         })
+        await loadFromStore()
         await studio.setBackground(page.id, {
           assetId,
           source: 'ai',
@@ -275,7 +281,7 @@ export function BackgroundCompositeProvider({ children }: { children: ReactNode 
         setState({ kind: 'failed', message: errorTextFor('network_error') })
       }
     })()
-  }, [studio, page, wish])
+  }, [studio, page, wish, loadFromStore])
 
   const api = useMemo<BackgroundCompositeApi | null>(() => {
     if (studio === null) return null

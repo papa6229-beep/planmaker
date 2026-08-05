@@ -127,7 +127,8 @@ export function contactShadow(rect: ShadowSubject, source: LightDirection, stren
     // 납작해야 바닥에 눕는다. 세로 반지름이 가로의 절반을 넘으면 공처럼 보인다.
     ry: rect.width * 0.42 * 0.18,
     blur: rect.width * 0.06,
-    opacity: 0.1 + 0.35 * s,
+    // 0은 진짜 0이다. 최소 세기에서도 흐릿하게 남는 값을 두면 "껐다"가 거짓이 된다.
+    opacity: s === 0 ? 0 : 0.1 + 0.35 * s,
   }
 }
 
@@ -138,6 +139,6 @@ export function wallShadow(rect: ShadowSubject, source: LightDirection, strength
     dy: -source.light.y * rect.height * 0.06 * (0.4 + 0.6 * s) + rect.height * 0.02,
     blur: rect.width * 0.12,
     // 접지 그림자보다 반드시 옅다 (위 상한 0.45 대 여기 0.2).
-    opacity: 0.06 + 0.14 * s,
+    opacity: s === 0 ? 0 : 0.06 + 0.14 * s,
   }
 }
