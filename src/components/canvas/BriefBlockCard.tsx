@@ -17,6 +17,7 @@
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { getBlockTypeMeta, type BlockCategory } from '../../domain/blockTypes'
+import { imageFitOf } from '../../domain/imageLayout'
 import { canCarryLink, cardKindLabel, drawsBareText, textAlignOf, TEXT_ALIGNS, type TextAlign } from '../../domain/simpleBlocks'
 import { CARD_CHROME_Y, CARD_PADDING_X, PLACEHOLDER_FONT_PX, fitBlockToText, fitTextSize } from '../../domain/textFit'
 import { createLineMeasurer } from '../../features/editor/measureText'
@@ -111,6 +112,7 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   const {
     moveBlock, resizeBlock, selectBlock, endInteraction, commitText,
     deleteBlock, duplicateBlock, removeBlockAsset, setBlockLink, setTextAlign,
+    freePlacement,
   } = useBriefEditor()
   const { getUrl, uploadFiles } = useAssets()
   const meta = getBlockTypeMeta(block.type)
@@ -281,7 +283,7 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
     const onMove = (ev: PointerEvent) => {
       const dx = (ev.clientX - startX) / scale
       const dy = (ev.clientY - startY) / scale
-      resizeBlock(block.id, resizeRect(startRect, handle, dx, dy, canvasWidth, canvasHeight), `resize:${block.id}`)
+      resizeBlock(block.id, resizeRect(startRect, handle, dx, dy, canvasWidth, canvasHeight, freePlacement), `resize:${block.id}`)
     }
     const onUp = (ev: PointerEvent) => {
       window.removeEventListener('pointermove', onMove)
@@ -291,7 +293,7 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
       // box is actually kept (손검수 1 §3). Same coalesce key, so the drag and
       // its settling stay a single undo step.
       if (bare && hasContent(block)) {
-        const dragged = resizeRect(startRect, handle, (ev.clientX - startX) / scale, (ev.clientY - startY) / scale, canvasWidth, canvasHeight)
+        const dragged = resizeRect(startRect, handle, (ev.clientX - startX) / scale, (ev.clientY - startY) / scale, canvasWidth, canvasHeight, freePlacement)
         const settled = fitBlockToText(block.content ?? '', dragged, fitArea)
         resizeBlock(block.id, { ...dragged, width: settled.width, height: settled.height }, `resize:${block.id}`)
       }
@@ -394,9 +396,10 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
         // Printed wording carries no card: the box is the wording area itself.
         bare ? 'block-card--bare' : '',
         selected ? 'is-selected' : '',
-        // A card whose popovers can be open has to paint above later siblings,
-        // otherwise the next card swallows clicks on the link editor / ⋯ menu.
-        selected || editing || linkOpen ? 'is-front' : '',
+        // 열려 있는 팝오버(링크 입력·⋯ 메뉴)만 뒤 카드보다 앞으로 나온다.
+        // **선택만으로는 나오지 않는다** — 고른 것이 앞으로 튀어나오면 작업자가
+        // 정한 레이어 순서가 클릭 한 번에 뒤집혀 보인다 (배경 합성 1차 §4).
+        editing || linkOpen ? 'is-front' : '',
         dropActive ? 'is-drop-target' : '',
         fit.overflow ? 'is-overflowing' : '',
       ]
@@ -528,6 +531,8 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
               src={displayUrl}
               alt={showingProduct ? '실제 사용 제품 이미지' : (block.image?.productName ?? block.label)}
               draggable={false}
+              // 화면에서 보이는 대로가 최종 결과다 (§3.1).
+              style={{ objectFit: imageFitOf(block) }}
             />
             {/* Sits on the picture itself, so what it is for is never in doubt. */}
             {showingProduct ? (

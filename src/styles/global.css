@@ -738,7 +738,11 @@ button { font-family: inherit; }
 /* Meaning card — a semantic card, never a design component (§3, §4). */
 .block-card {
   position: absolute;
-  z-index: 1; /* above the reference overlay (z-index: 0) */
+  /* 겹치는 카드끼리는 **DOM 순서 그대로** 그려진다. z-index를 주면 카드마다
+     쌓임 맥락이 생겨, 선택 표시나 조작점을 앞으로 내보내려면 카드 자체를
+     올려야 하고 그 순간 작업자가 정한 레이어 순서가 뒤집힌다 (§4).
+     참고 이미지 오버레이(z-index: 0)보다는 DOM에서 뒤에 있어 위에 그려진다. */
+  z-index: auto;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -766,9 +770,8 @@ button { font-family: inherit; }
   border-color: var(--color-accent);
   box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
-/* Cards make their own stacking context, so a popover (link editor, ⋯ menu)
-   hanging below its card is covered by the next card unless the card itself
-   comes forward while it is in use. */
+/* 팝오버(링크 입력·⋯ 메뉴)가 열려 있는 동안에만 카드가 앞으로 나온다. 선택
+   만으로는 나오지 않는다 — 그것이 레이어 순서를 눈으로 뒤집던 자리였다. */
 .block-card.is-front { z-index: 2; }
 
 /* 작성 월 filter + day groups in the library (손검수 2 §6.2). */
@@ -935,9 +938,12 @@ button { font-family: inherit; }
   border-radius: 999px;
 }
 
-/* Corner resize handles (WORK_PLAN §10). Shown on the selected card only. */
+/* Corner resize handles (WORK_PLAN §10). Shown on the selected card only.
+   카드가 쌓임 맥락을 만들지 않으므로, 조작점은 자기 z-index로 뒤 카드 위에
+   올라온다 — 카드 자체를 올리지 않고도 잡을 수 있다. */
 .block-card__handle {
   position: absolute;
+  z-index: 3;
   width: 12px;
   height: 12px;
   background: #fff;
@@ -2117,3 +2123,41 @@ button { font-family: inherit; }
 
 /* 전체 지시 제안: 읽는 부분만 흐르고 두 버튼은 제자리. */
 .refine__scroll { max-height: 40vh; overflow-y: auto; overscroll-behavior: contain; }
+
+/* ── 고른 블록의 배치 도구 (배경 합성 1차 §3.1, §4, §11) ─────────────────── */
+.block-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-panel);
+}
+.block-tools__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+.block-tools__group { display: flex; flex-direction: column; gap: 6px; }
+.block-tools__label { font-size: 11px; color: var(--color-muted); }
+.block-tools__row { display: flex; gap: 6px; }
+.block-tools__row--wrap { flex-wrap: wrap; }
+.block-tools__btn {
+  flex: 1 1 auto;
+  min-width: 96px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.block-tools__btn:hover { border-color: var(--color-accent); }
+.block-tools__btn.is-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+.block-tools__note { margin: 0; font-size: 11px; color: var(--color-muted); }

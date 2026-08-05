@@ -35,8 +35,13 @@ export type HistoryAction =
   | { type: 'END_INTERACTION' }
   | { type: 'HYDRATE'; brief: EventBrief }
 
-export function createInitialHistoryState(): HistoryState {
-  return { past: [], present: createInitialEditorState(), future: [], lastCoalesceKey: null }
+export function createInitialHistoryState(freePlacement = false): HistoryState {
+  return {
+    past: [],
+    present: createInitialEditorState(freePlacement),
+    future: [],
+    lastCoalesceKey: null,
+  }
 }
 
 export function canUndo(state: HistoryState): boolean {
@@ -87,9 +92,15 @@ export function historyReducer(state: HistoryState, action: HistoryAction): Hist
       return state.lastCoalesceKey === null ? state : { ...state, lastCoalesceKey: null }
     case 'HYDRATE':
       // Restoring from storage establishes a fresh baseline (no undo across it).
+      // 자유 배치는 이 화면이 어느 표면인지에 대한 사실이지 문서의 내용이 아니다
+      // — 문서를 갈아 끼운다고 표면이 바뀌지는 않으므로 그대로 이어 간다.
       return {
         past: [],
-        present: { brief: action.brief, selectedIds: [] },
+        present: {
+          brief: action.brief,
+          selectedIds: [],
+          ...(state.present.freePlacement === true ? { freePlacement: true } : {}),
+        },
         future: [],
         lastCoalesceKey: null,
       }

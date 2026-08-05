@@ -12,6 +12,7 @@
  */
 
 import type { AiVisibility, BlockType } from './blockTypes'
+import type { ImageFit } from './imageLayout'
 
 export const SCHEMA_VERSION = '1.0.0'
 
@@ -120,6 +121,13 @@ export interface BlockImageMeta {
    * flag is missing is NOT retroactively called a reference.
    */
   referenceOnly?: true
+  /**
+   * 블록 안에서 그림이 놓이는 방식 (배경 합성 1차 §3.1).
+   *
+   * 없으면 `전체 보이기`다. 예전 문서에는 이 값이 아예 없으므로, 없는 것을
+   * 다른 뜻으로 읽으면 이미 완성된 기획서의 그림이 조용히 잘린다.
+   */
+  fit?: ImageFit
 }
 
 /**

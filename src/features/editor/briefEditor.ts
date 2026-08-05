@@ -34,7 +34,8 @@ import {
   withLinkPartners,
 } from '../../domain/simpleBlocks'
 import { CARD_CHROME_Y, CARD_PADDING_X, emphasisForBlockSize, fitBlockToText, fitTextSize } from '../../domain/textFit'
-import { boundedDelta, clampCanvasHeight, clampPosition, type Rect } from './canvasGeometry'
+import { reorderBlocks, type LayerMove } from '../../domain/layerOrder'
+import { boundedDelta, clampCanvasHeight, clampPosition, freeDelta, type Rect } from './canvasGeometry'
 
 /** Default title so a fresh brief still passes validation (needs a title). */
 export const DEFAULT_BRIEF_TITLE = '새 기획서'
@@ -43,6 +44,17 @@ export interface EditorState {
   brief: EventBrief
   /** Selection order; the last id is the "primary" block shown in the inspector. */
   selectedIds: string[]
+  /**
+   * 블록을 캔버스 밖으로 내보낼 수 있는가 (배경 합성 1차 §3.2).
+   *
+   * 작업판에서만 참이다. 작성기의 캔버스는 "이 기획서가 요구하는 자리"를 그리는
+   * 곳이라 밖으로 나간 좌표에 뜻이 없지만, 작업판의 캔버스는 실제로 출력되는
+   * 사각형이라 밖으로 걸치는 배치가 곧 크롭이다.
+   *
+   * 상태에 두는 이유는 리듀서가 표면을 알 필요 없이 한 값만 읽으면 되기
+   * 때문이다. 이 값 자체는 문서가 아니므로 저장되지도, 파일에 실리지도 않는다.
+   */
+  freePlacement?: boolean
 }
 
 /**
@@ -81,11 +93,16 @@ export type EditorAction =
   | { type: 'SET_PROJECT_TITLE'; title: string; coalesceKey?: string }
   | { type: 'SET_CANVAS_HEIGHT'; height: number; coalesceKey?: string }
   | { type: 'SET_TEXT_ALIGN'; blockId: string; align: TextAlign }
+  | { type: 'REORDER_BLOCK'; blockId: string; move: LayerMove }
   | { type: 'NEW_BRIEF' }
 
 /** Builds the initial editor state (also used by "새로 만들기"). */
-export function createInitialEditorState(): EditorState {
-  return { brief: createEmptyBrief(DEFAULT_BRIEF_TITLE), selectedIds: [] }
+export function createInitialEditorState(freePlacement = false): EditorState {
+  return {
+    brief: createEmptyBrief(DEFAULT_BRIEF_TITLE),
+    selectedIds: [],
+    ...(freePlacement ? { freePlacement: true } : {}),
+  }
 }
 
 const NEW_BLOCK_WIDTH = 320
@@ -270,7 +287,8 @@ function moveBlock(state: EditorState, blockId: string, x: number, y: number): E
 
   const desiredDx = x - target.position.x
   const desiredDy = y - target.position.y
-  const { dx, dy } = boundedDelta(
+  const bound = state.freePlacement === true ? freeDelta : boundedDelta
+  const { dx, dy } = bound(
     members.map((b) => b.position),
     desiredDx,
     desiredDy,
@@ -305,7 +323,10 @@ function withDerivedEmphasis(block: BriefBlock): BriefBlock {
 }
 
 function resizeBlock(state: EditorState, blockId: string, rect: Rect): EditorState {
-  const pos = clampPosition(rect, state.brief.project.canvasWidth, state.brief.project.canvasHeight)
+  const pos =
+    state.freePlacement === true
+      ? { x: rect.x, y: rect.y }
+      : clampPosition(rect, state.brief.project.canvasWidth, state.brief.project.canvasHeight)
   return withBlocks(
     state,
     state.brief.blocks.map((b) =>
@@ -608,7 +629,9 @@ function setTextAlign(state: EditorState, blockId: string, align: TextAlign): Ed
  * a margin is the floor, so nothing is left outside the canvas.
  */
 function setCanvasHeight(state: EditorState, height: number): EditorState {
-  const clamped = clampCanvasHeight(height, state.brief.blocks)
+  // 자유 배치에서는 캔버스 아래로 내려 둔 블록이 의도한 크롭이다. 그것을 바닥으로
+  // 삼으면 페이지를 다시 줄일 수 없게 된다.
+  const clamped = clampCanvasHeight(height, state.freePlacement === true ? [] : state.brief.blocks)
   if (clamped === state.brief.project.canvasHeight) return state
   return { ...state, brief: { ...state.brief, project: { ...state.brief.project, canvasHeight: clamped } } }
 }
@@ -621,6 +644,18 @@ function setCanvasHeight(state: EditorState, height: number): EditorState {
 function setProjectTitle(state: EditorState, title: string): EditorState {
   if (state.brief.project.title === title) return state
   return { ...state, brief: { ...state.brief, project: { ...state.brief.project, title } } }
+}
+
+/**
+ * 레이어 순서를 한 걸음 옮긴다 (§4).
+ *
+ * 옮길 것이 없으면 상태를 그대로 돌려주므로, 끝에 닿은 블록에 같은 버튼을 몇 번
+ * 더 눌러도 실행취소 이력에 빈 걸음이 쌓이지 않는다.
+ */
+function reorderBlock(state: EditorState, blockId: string, move: LayerMove): EditorState {
+  const blocks = reorderBlocks(state.brief.blocks, blockId, move)
+  if (blocks === state.brief.blocks) return state
+  return withBlocks(state, blocks as BriefBlock[])
 }
 
 /** Pure reducer for all single-step editor transitions. */
@@ -664,10 +699,12 @@ export function briefReducer(state: EditorState, action: EditorAction): EditorSt
       return setProjectTitle(state, action.title)
     case 'SET_TEXT_ALIGN':
       return setTextAlign(state, action.blockId, action.align)
+    case 'REORDER_BLOCK':
+      return reorderBlock(state, action.blockId, action.move)
     case 'SET_CANVAS_HEIGHT':
       return setCanvasHeight(state, action.height)
     case 'NEW_BRIEF':
-      return createInitialEditorState()
+      return createInitialEditorState(state.freePlacement === true)
     default:
       return state
   }

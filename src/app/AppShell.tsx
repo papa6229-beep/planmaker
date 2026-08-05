@@ -33,6 +33,7 @@ import { ConceptField } from '../components/concept/ConceptField'
 import { AiNoteField, DesignerNoteField } from '../components/concept/HandoffNotes'
 import { GenerationRequestPreview } from '../components/studio/GenerationRequestPreview'
 import { ReadyPanel } from '../components/studio/ReadyPanel'
+import { BlockLayerTools } from '../components/studio/BlockLayerTools'
 import { GenerateImageDialog } from '../components/studio/GenerateImageDialog'
 import { ResultCompare } from '../components/studio/ResultCompare'
 import { EditPanel } from '../components/studio/EditPanel'
@@ -248,6 +249,8 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
              만든 뒤에는 부분수정. 블록 편집 도움말은 왼쪽 캔버스가 이미 하는
              말이라 여기서 되풀이하지 않는다 (실작업 UI 마감 §3). */
           <div className="side-right">
+            {/* 고른 블록의 배치 — 맞춤 방식과 레이어 순서 (§3.1, §4). */}
+            <BlockLayerTools />
             {generation !== null && generation.hasResult ? <EditPanel /> : <ReadyPanel />}
           </div>
         ) : (
@@ -287,9 +290,18 @@ export interface AppShellProps {
  * 요청 미리보기)도 여전히 이 자리 위에서 열리고 검사돼야 하기 때문이다. 코드를
  * 지우지 않았다는 말은 그 화면이 아직 동작한다는 뜻이어야 한다.
  */
-export function AppShellProviders({ binding, children }: { binding?: DocumentBinding; children: ReactNode }) {
+export function AppShellProviders({
+  binding,
+  freePlacement = false,
+  children,
+}: {
+  binding?: DocumentBinding
+  /** 작업판만 참 — 캔버스 밖 배치를 허용한다 (배경 합성 1차 §3.2). */
+  freePlacement?: boolean
+  children: ReactNode
+}) {
   return (
-    <BriefEditorProvider>
+    <BriefEditorProvider freePlacement={freePlacement}>
       <AssetsProvider>
         <BriefDocumentProvider {...(binding ? { binding } : {})}>
           <EventBriefIoProvider>
@@ -311,7 +323,7 @@ export function AppShellProviders({ binding, children }: { binding?: DocumentBin
 
 export function AppShell({ mode = 'brief', binding, statusPanel }: AppShellProps = {}) {
   return (
-    <AppShellProviders {...(binding ? { binding } : {})}>
+    <AppShellProviders {...(binding ? { binding } : {})} freePlacement={mode === 'studio'}>
       <Workspace mode={mode} statusPanel={statusPanel} />
     </AppShellProviders>
   )

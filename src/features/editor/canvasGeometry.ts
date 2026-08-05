@@ -85,8 +85,53 @@ export function boundedDelta(
 }
 
 /**
+ * 캔버스 밖으로 걸쳐도 남겨 두는 최소 겹침 (배경 합성 1차 §3.2).
+ *
+ * 작업판에서는 블록을 일부러 화면 밖으로 내린다 — 인물의 허리 아래를 자르거나,
+ * 제품의 절반만 가장자리에 걸치게 하는 배치다. 다만 완전히 나가 버리면 선택
+ * 테두리도 조작점도 잡을 수 없는 유령이 되므로, 양쪽 축 모두 이만큼은 캔버스와
+ * 겹쳐 있게 둔다.
+ */
+export const MIN_ON_CANVAS = 24
+
+/**
+ * 자유 배치에서의 이동량.
+ *
+ * 캔버스 안으로 되돌리지 않는다. 대신 선택 묶음 전체가 캔버스에서 완전히
+ * 떨어지는 것만 막는다 — 되돌릴 수 없는 배치를 만들지 않기 위해서다.
+ */
+export function freeDelta(
+  members: readonly Rect[],
+  dx: number,
+  dy: number,
+  canvasWidth: number,
+  canvasHeight: number,
+): { dx: number; dy: number } {
+  if (members.length === 0) return { dx: 0, dy: 0 }
+  let minX = Infinity
+  let minY = Infinity
+  let maxRight = -Infinity
+  let maxBottom = -Infinity
+  for (const m of members) {
+    minX = Math.min(minX, m.x)
+    minY = Math.min(minY, m.y)
+    maxRight = Math.max(maxRight, m.x + m.width)
+    maxBottom = Math.max(maxBottom, m.y + m.height)
+  }
+  // 오른쪽 끝이 캔버스 왼쪽 가장자리보다 이만큼은 안쪽에 남아야 하고, 왼쪽 끝은
+  // 캔버스 오른쪽 가장자리보다 그만큼 앞에 있어야 한다. 세로도 같다.
+  return {
+    dx: clamp(dx, MIN_ON_CANVAS - maxRight, canvasWidth - MIN_ON_CANVAS - minX) + 0,
+    dy: clamp(dy, MIN_ON_CANVAS - maxBottom, canvasHeight - MIN_ON_CANVAS - minY) + 0,
+  }
+}
+
+/**
  * Computes a resized rectangle for a corner handle drag, enforcing minimum
  * sizes and keeping the rect within the canvas. The opposite corner stays put.
+ *
+ * `free`면 캔버스 경계로 가두지 않는다 — 이미 밖에 걸쳐 둔 블록의 모서리를 잡는
+ * 순간 안으로 튀어 들어오면, 의도한 크롭이 조용히 사라진다 (§3.2).
  */
 export function resizeRect(
   rect: Rect,
@@ -95,6 +140,7 @@ export function resizeRect(
   dy: number,
   canvasWidth: number,
   canvasHeight: number,
+  free = false,
 ): Rect {
   const right = rect.x + rect.width
   const bottom = rect.y + rect.height
@@ -103,18 +149,22 @@ export function resizeRect(
   const movesLeft = handle === 'nw' || handle === 'sw'
   const movesTop = handle === 'nw' || handle === 'ne'
 
+  const minX = free ? -Infinity : 0
+  const maxWidth = free ? Infinity : canvasWidth - rect.x
+  const maxHeight = free ? Infinity : canvasHeight - rect.y
+
   if (movesLeft) {
-    x = clamp(rect.x + dx, 0, right - MIN_BLOCK_WIDTH)
+    x = clamp(rect.x + dx, minX, right - MIN_BLOCK_WIDTH)
     width = right - x
   } else {
-    width = clamp(rect.width + dx, MIN_BLOCK_WIDTH, canvasWidth - rect.x)
+    width = clamp(rect.width + dx, MIN_BLOCK_WIDTH, maxWidth)
   }
 
   if (movesTop) {
-    y = clamp(rect.y + dy, 0, bottom - MIN_BLOCK_HEIGHT)
+    y = clamp(rect.y + dy, minX, bottom - MIN_BLOCK_HEIGHT)
     height = bottom - y
   } else {
-    height = clamp(rect.height + dy, MIN_BLOCK_HEIGHT, canvasHeight - rect.y)
+    height = clamp(rect.height + dy, MIN_BLOCK_HEIGHT, maxHeight)
   }
 
   return { x, y, width, height }

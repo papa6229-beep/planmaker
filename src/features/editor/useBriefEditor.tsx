@@ -22,6 +22,8 @@ import {
   historyReducer,
 } from './history'
 import type { TextAlign } from '../../domain/simpleBlocks'
+import type { ImageFit } from '../../domain/imageLayout'
+import type { LayerMove } from '../../domain/layerOrder'
 import type { Rect } from './canvasGeometry'
 
 export interface BriefEditorApi {
@@ -59,6 +61,12 @@ export interface BriefEditorApi {
   /** Sets the open page's length; one drag collapses into one undo step. */
   setCanvasHeight: (height: number, coalesceKey?: string) => void
   setTextAlign: (blockId: string, align: TextAlign) => void
+  /** 그림이 블록 안에 놓이는 방식 — 전체 보이기 · 블록 채우기 (§3.1). */
+  setImageFit: (blockId: string, fit: ImageFit) => void
+  /** 레이어 순서를 한 걸음 옮긴다 (§4). */
+  reorderBlock: (blockId: string, move: LayerMove) => void
+  /** 블록이 캔버스 밖으로 나갈 수 있는 표면인가 (§3.2). */
+  freePlacement: boolean
   hydrate: (brief: EventBrief) => void
   newBrief: () => void
   undo: () => void
@@ -68,8 +76,15 @@ export interface BriefEditorApi {
 
 const BriefEditorContext = createContext<BriefEditorApi | null>(null)
 
-export function BriefEditorProvider({ children }: { children: ReactNode }) {
-  const [history, dispatch] = useReducer(historyReducer, undefined, createInitialHistoryState)
+export function BriefEditorProvider({
+  children,
+  freePlacement = false,
+}: {
+  children: ReactNode
+  /** 작업판만 참. 캔버스 밖 배치를 허용한다 (배경 합성 1차 §3.2). */
+  freePlacement?: boolean
+}) {
+  const [history, dispatch] = useReducer(historyReducer, freePlacement, createInitialHistoryState)
   const state = history.present
 
   const api = useMemo<BriefEditorApi>(
@@ -124,6 +139,9 @@ export function BriefEditorProvider({ children }: { children: ReactNode }) {
           ? { type: 'SET_CANVAS_HEIGHT', height }
           : { type: 'SET_CANVAS_HEIGHT', height, coalesceKey }),
       setTextAlign: (blockId, align) => dispatch({ type: 'SET_TEXT_ALIGN', blockId, align }),
+      setImageFit: (blockId, fit) => dispatch({ type: 'UPDATE_BLOCK', blockId, patch: { image: { fit } } }),
+      reorderBlock: (blockId, move) => dispatch({ type: 'REORDER_BLOCK', blockId, move }),
+      freePlacement: state.freePlacement === true,
       hydrate: (brief) => dispatch({ type: 'HYDRATE', brief }),
       newBrief: () => dispatch({ type: 'NEW_BRIEF' }),
       undo: () => dispatch({ type: 'UNDO' }),
