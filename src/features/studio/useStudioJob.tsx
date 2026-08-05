@@ -205,8 +205,8 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
               source: adopted.source === null ? null : { ...adopted.source, fingerprint: state.source?.fingerprint ?? adopted.source.fingerprint },
               productImages: { ...state.productImages },
               // 예전 판 파일에는 이 넷이 없다. 그때는 빈 값이 맞는 복원이다.
-              backgrounds: { ...(state.backgrounds ?? {}) },
-              effects: { ...(state.effects ?? {}) },
+              backgrounds: { ...state.backgrounds },
+              effects: { ...state.effects },
               ...(state.grain === undefined ? {} : { grain: state.grain }),
               ...(state.method === undefined ? {} : { method: state.method }),
             }

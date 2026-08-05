@@ -74,8 +74,8 @@ export function toStudioFileState(job: StudioJob): StudioFileState {
     version: STUDIO_FILE_VERSION,
     source,
     productImages: { ...job.productImages },
-    backgrounds: { ...(job.backgrounds ?? {}) },
-    effects: { ...(job.effects ?? {}) },
+    backgrounds: { ...job.backgrounds },
+    effects: { ...job.effects },
     ...(job.grain === undefined ? {} : { grain: job.grain }),
     ...(job.method === undefined ? {} : { method: job.method }),
   }

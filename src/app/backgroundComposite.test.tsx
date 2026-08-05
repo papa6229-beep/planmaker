@@ -52,8 +52,9 @@ globalThis.fetch = fetchSpy as unknown as typeof fetch
  * 빨간가"를 셀 수 없다. 경로를 실행 시점에 만들어 번들러의 정적 해석을 비켜
  * 가면, 없는 모듈은 그 검사 하나만 무너뜨린다.
  */
+const PARENT = '../'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const load = (name: string): Promise<any> => import(/* @vite-ignore */ `../${name}` + '')
+const load = (name: string): Promise<any> => import(/* @vite-ignore */ `${PARENT}${name}`)
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 

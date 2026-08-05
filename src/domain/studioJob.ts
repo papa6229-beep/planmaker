@@ -149,14 +149,14 @@ export function withPageBackground(
 ): StudioJob {
   return {
     ...job,
-    backgrounds: { ...(job.backgrounds ?? {}), [pageId]: { createdAt: now, ...background } },
+    backgrounds: { ...job.backgrounds, [pageId]: { createdAt: now, ...background } },
     updatedAt: now,
   }
 }
 
 /** 배경을 걷어낸다. 자산 자체는 다른 곳에서 아직 쓸 수 있으므로 지우지 않는다. */
 export function withoutPageBackground(job: StudioJob, pageId: string, now: number): StudioJob {
-  const next = { ...(job.backgrounds ?? {}) }
+  const next = { ...job.backgrounds }
   delete next[pageId]
   return { ...job, backgrounds: next, updatedAt: now }
 }
@@ -174,7 +174,7 @@ export function withBlockEffects(
   now: number,
 ): StudioJob {
   const merged = normalizeEffects({ ...blockEffectsOf(job, blockId), ...patch })
-  return { ...job, effects: { ...(job.effects ?? {}), [blockId]: merged }, updatedAt: now }
+  return { ...job, effects: { ...job.effects, [blockId]: merged }, updatedAt: now }
 }
 
 /** 이 페이지의 최신 결과. */
