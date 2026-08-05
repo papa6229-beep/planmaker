@@ -19,10 +19,44 @@
 import { createId } from './factory'
 import { documentFingerprint } from './documentFingerprint'
 import { referencedAssetIds } from './pageOps'
+import { normalizeEffects, type CompositeEffects } from './compositeEffects'
 import type { GeneratedPageResult, ImageRevision } from './imageGeneration'
 import type { BriefDocument } from './pageSchema'
 
 export const STUDIO_JOB_VERSION = '0.1.0'
+
+/**
+ * 이미지를 만드는 두 가지 방식 (배경 합성 1차 §6).
+ *
+ *  - `full_ai` — 기존 `전체 AI 디자인`. 제품 원본과 기획서를 함께 보내고 모델이
+ *    완성 이미지 한 장을 만든다.
+ *  - `background_composite` — `배경 생성 + 원본 합성`. 모델은 **빈 배경 한 장**만
+ *    만들고, 제품·인물·로고는 브라우저에서 원본 그대로 얹는다.
+ *
+ * 없으면 지금까지의 방식이다 — 예전 작업 행이 조용히 다른 동작으로 바뀌지 않게.
+ */
+export type GenerationMethod = 'full_ai' | 'background_composite'
+export const DEFAULT_GENERATION_METHOD: GenerationMethod = 'full_ai'
+
+/**
+ * 한 페이지의 배경 레이어 (§5).
+ *
+ * 참고 이미지와는 다른 자료다. 참고 이미지는 기획 의도를 확인하려고 잠깐 겹쳐
+ * 보는 것이고, 배경은 **최종 결과에 실제로 출력되는** 레이어다. 그래서 저장하는
+ * 곳도, 지워지지 않게 지키는 방식도 다르다.
+ *
+ * 이미지 자체는 여기 들어오지 않는다 — 자산 저장소의 번호뿐이다.
+ */
+export interface StudioBackground {
+  assetId: string
+  /** 작업자가 직접 넣었는가, AI가 만들었는가. */
+  source: 'manual' | 'ai'
+  createdAt?: number
+  /** AI 생성이면 그때 모델에게 요청한 크기. */
+  requestedSize?: string
+  /** AI 생성이면 그때 작업자가 적은 배경 주문. 모델의 응답이 아니다. */
+  wish?: string
+}
 
 /** 불러온 원본 기획서 — 작업본과 비교할 기준. */
 export interface StudioSource {
@@ -49,6 +83,19 @@ export interface StudioJob {
    * 흉내 내는 구조를 미리 만들면 다음 단계에서 그것부터 걷어내야 한다.
    */
   results: Record<string, GeneratedPageResult>
+  /**
+   * 페이지 id → 그 페이지의 배경 레이어 (§5). 페이지당 최대 한 장이다.
+   *
+   * 예전 판에서 저장된 행에는 없다. 읽는 쪽은 `pageBackgroundOf`를 지나므로
+   * 없는 것을 저마다 다르게 해석할 자리가 생기지 않는다.
+   */
+  backgrounds?: Record<string, StudioBackground>
+  /** 블록 id → 그 이미지의 합성 효과 세기 (§9, §12). */
+  effects?: Record<string, CompositeEffects>
+  /** 완성 결과 전체에 얹는 그레인 (§9.5). */
+  grain?: number
+  /** 이 작업이 고른 생성 방식 (§6). */
+  method?: GenerationMethod
   createdAt: number
   updatedAt: number
 }
@@ -72,6 +119,62 @@ export function createStudioJob(doc: BriefDocument, now: number, id?: string): S
  */
 export function jobResults(job: StudioJob | null): Record<string, GeneratedPageResult> {
   return job?.results ?? {}
+}
+
+/** 이 작업이 고른 생성 방식. 고른 적이 없으면 지금까지의 방식이다. */
+export function methodOf(job: StudioJob | null): GenerationMethod {
+  return job?.method === 'background_composite' ? 'background_composite' : DEFAULT_GENERATION_METHOD
+}
+
+export function withMethod(job: StudioJob, method: GenerationMethod, now: number): StudioJob {
+  return { ...job, method, updatedAt: now }
+}
+
+/** 이 페이지의 배경. 없으면 `undefined` — 배경 없이도 작업은 성립한다. */
+export function pageBackgroundOf(job: StudioJob | null, pageId: string): StudioBackground | undefined {
+  return job?.backgrounds?.[pageId]
+}
+
+/**
+ * 한 페이지의 배경을 넣거나 갈아 끼운다.
+ *
+ * 페이지당 한 장이므로 "추가"가 아니라 언제나 **대체**다. 다른 페이지의 배경은
+ * 건드리지 않는다 (§5 페이지별 독립 보존).
+ */
+export function withPageBackground(
+  job: StudioJob,
+  pageId: string,
+  background: StudioBackground,
+  now: number,
+): StudioJob {
+  return {
+    ...job,
+    backgrounds: { ...(job.backgrounds ?? {}), [pageId]: { createdAt: now, ...background } },
+    updatedAt: now,
+  }
+}
+
+/** 배경을 걷어낸다. 자산 자체는 다른 곳에서 아직 쓸 수 있으므로 지우지 않는다. */
+export function withoutPageBackground(job: StudioJob, pageId: string, now: number): StudioJob {
+  const next = { ...(job.backgrounds ?? {}) }
+  delete next[pageId]
+  return { ...job, backgrounds: next, updatedAt: now }
+}
+
+/** 이 이미지의 합성 효과. 정한 적이 없으면 기본값이다. */
+export function blockEffectsOf(job: StudioJob | null, blockId: string): CompositeEffects {
+  return normalizeEffects(job?.effects?.[blockId])
+}
+
+/** 한 이미지의 효과 세기를 바꾼다. 준 항목만 갈아 끼운다. */
+export function withBlockEffects(
+  job: StudioJob,
+  blockId: string,
+  patch: Partial<CompositeEffects>,
+  now: number,
+): StudioJob {
+  const merged = normalizeEffects({ ...blockEffectsOf(job, blockId), ...patch })
+  return { ...job, effects: { ...(job.effects ?? {}), [blockId]: merged }, updatedAt: now }
 }
 
 /** 이 페이지의 최신 결과. */
@@ -137,6 +240,13 @@ export function pageResultIsStale(job: StudioJob | null, doc: BriefDocument, pag
  * 이후 작업본만 움직인다. 이전에 연결해 둔 제품 이미지는 다른 기획서의 자리를
  * 가리키게 되므로 함께 비운다.
  */
+/**
+ * 파일을 이 작업의 원본으로 채택한다.
+ *
+ * 이전 작업의 배경·효과도 함께 비운다 — 배경은 페이지 id로, 효과는 블록 id로
+ * 매달려 있는데, 새 기획서에는 그 id가 없다. 남겨 두면 어디에도 닿지 않는
+ * 설정이 자산 정리만 붙들고 있게 된다.
+ */
 export function withSource(job: StudioJob, doc: BriefDocument, now: number, fileName?: string): StudioJob {
   const source: StudioSource = {
     doc,
@@ -144,7 +254,7 @@ export function withSource(job: StudioJob, doc: BriefDocument, now: number, file
     importedAt: now,
     ...(fileName === undefined ? {} : { fileName }),
   }
-  return { ...job, source, doc, productImages: {}, updatedAt: now }
+  return { ...job, source, doc, productImages: {}, backgrounds: {}, effects: {}, updatedAt: now }
 }
 
 /** 작업본만 교체한다 (자동저장 경로). 원본과 연결 정보는 그대로. */
@@ -194,6 +304,9 @@ export function studioLiveAssetIds(job: StudioJob): string[] {
         r.assetId,
         ...revisionsOf(r).map((rev) => rev.assetId),
       ]),
+      // 배경은 어떤 기획서도 참조하지 않는다 — 여기서 말하지 않으면 정리가
+      // 작업자가 넣거나 결제해서 만든 배경을 고아로 오판해 지운다 (§5, §12).
+      ...Object.values(job.backgrounds ?? {}).map((b) => b.assetId),
     ]),
   ]
 }

@@ -20,16 +20,26 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
+  blockEffectsOf,
   createStudioJob,
   linkProductImage,
+  methodOf,
+  pageBackgroundOf,
   productImageOf,
   sourceChanged as jobSourceChanged,
   unlinkProductImage,
+  withBlockEffects,
+  withMethod,
+  withPageBackground,
   withPageResult,
   withSource,
   withWorkingDoc,
+  withoutPageBackground,
+  type GenerationMethod,
+  type StudioBackground,
   type StudioJob,
 } from '../../domain/studioJob'
+import { DEFAULT_GRAIN, type CompositeEffects } from '../../domain/compositeEffects'
 import type { GeneratedPageResult } from '../../domain/imageGeneration'
 import { loadStudioJob, saveStudioJob, STUDIO_JOB_ID } from '../../services/studioStore'
 import type { StudioFileState } from '../../domain/studioFile'
@@ -46,6 +56,24 @@ export interface StudioJobApi {
   productImageOf: (blockId: string) => string | undefined
   setProductImage: (blockId: string, assetId: string) => void
   removeProductImage: (blockId: string) => void
+  /**
+   * 페이지별 배경 레이어 (배경 합성 1차 §5).
+   *
+   * 참고 이미지와 달리 최종 결과에 실제로 출력되므로, 기획서 문서가 아니라
+   * Studio 작업에만 적힌다 — 작성기가 만든 기획서는 이 때문에 바뀌지 않는다.
+   */
+  backgroundOf: (pageId: string) => StudioBackground | undefined
+  setBackground: (pageId: string, background: StudioBackground) => Promise<void>
+  removeBackground: (pageId: string) => Promise<void>
+  /** 이미지별 합성 효과 세기 (§9). 원본 자산은 건드리지 않는다. */
+  effectsOf: (blockId: string) => CompositeEffects
+  setEffects: (blockId: string, patch: Partial<CompositeEffects>) => void
+  /** 완성 결과 전체의 그레인 (§9.5). */
+  grain: number
+  setGrain: (value: number) => void
+  /** 이 작업이 고른 생성 방식 (§6). */
+  method: GenerationMethod
+  setMethod: (method: GenerationMethod) => void
   /** 원본 기획서와 작업본이 달라졌는지 (§7). 자동 병합은 하지 않는다. */
   sourceChanged: boolean
   /**
@@ -176,6 +204,11 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
               // 있었다면 그 사실까지 복원되어야 판정이 거짓말을 하지 않는다.
               source: adopted.source === null ? null : { ...adopted.source, fingerprint: state.source?.fingerprint ?? adopted.source.fingerprint },
               productImages: { ...state.productImages },
+              // 예전 판 파일에는 이 넷이 없다. 그때는 빈 값이 맞는 복원이다.
+              backgrounds: { ...(state.backgrounds ?? {}) },
+              effects: { ...(state.effects ?? {}) },
+              ...(state.grain === undefined ? {} : { grain: state.grain }),
+              ...(state.method === undefined ? {} : { method: state.method }),
             }
       await saveStudioJob(next)
       setPast([])
@@ -208,6 +241,19 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       productImageOf: (blockId) => productImageOf(job, blockId),
       setProductImage: (blockId, assetId) => commitLinks(linkProductImage(job, blockId, assetId)),
       removeProductImage: (blockId) => commitLinks(unlinkProductImage(job, blockId)),
+      backgroundOf: (pageId) => pageBackgroundOf(job, pageId),
+      // 배경은 값을 치렀거나 작업자가 고른 그림이다. 저장이 먼저이고, 저장이
+      // 실패하면 화면도 배경을 갖지 않는다 — 새로고침에 사라질 것을 보여 주지
+      // 않기 위해서다.
+      setBackground: (pageId, background) => commit(withPageBackground(job, pageId, background, Date.now())),
+      removeBackground: (pageId) => commit(withoutPageBackground(job, pageId, Date.now())),
+      effectsOf: (blockId) => blockEffectsOf(job, blockId),
+      setEffects: (blockId, patch) => void commit(withBlockEffects(job, blockId, patch, Date.now())),
+      grain: job.grain ?? DEFAULT_GRAIN,
+      setGrain: (value) =>
+        void commit({ ...job, grain: Math.min(1, Math.max(0, value)), updatedAt: Date.now() }),
+      method: methodOf(job),
+      setMethod: (next) => void commit(withMethod(job, next, Date.now())),
       sourceChanged: jobSourceChanged(job),
       adoptFile,
       canUndo: past.length > 0,
@@ -228,7 +274,7 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       },
       lastChangeAt,
     }
-  }, [job, binding, commitLinks, applyLinks, adoptFile, recordResult, past, future, lastChangeAt])
+  }, [job, binding, commit, commitLinks, applyLinks, adoptFile, recordResult, past, future, lastChangeAt])
 
   // 작업을 읽는 동안에는 편집기를 만들지 않는다.
   if (api === null) return null

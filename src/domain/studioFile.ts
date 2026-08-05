@@ -16,9 +16,25 @@
  * 순수 모듈이다. ZIP도 저장소도 화면도 모른다.
  */
 
-import type { StudioJob } from './studioJob'
+import { normalizeEffects, type CompositeEffects } from './compositeEffects'
+import type { GenerationMethod, StudioBackground, StudioJob } from './studioJob'
 
-export const STUDIO_FILE_VERSION = '0.1.0'
+/**
+ * 이 판이 **쓰는** 버전.
+ *
+ * `0.1.0`에는 제품 이미지 연결만 있었다. `0.2.0`부터 배경·합성 효과·그레인·
+ * 생성 방식이 함께 들어간다 (배경 합성 1차 §12).
+ *
+ * 버전을 올리는 대신 같은 `0.1.0`에 새 칸만 얹는 길도 있었지만, 그러면 예전
+ * 빌드가 그 칸을 **말없이 버리고** 저장한다 — 작업자는 배경을 넣어 저장했는데
+ * 다시 열면 없는 상태가 되고, 어디서 사라졌는지 아무도 모른다. 버전을 올리면
+ * 예전 빌드는 "읽을 수 없다"고 분명히 말한다. 잃는 것이 같다면 소리 내는 쪽이
+ * 낫다 (§12 마지막 줄).
+ */
+export const STUDIO_FILE_VERSION = '0.2.0'
+
+/** 이 판이 **읽을 수 있는** 버전. 예전 파일은 그대로 열린다. */
+export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0']
 
 /** 파일이 기억하는 "이 작업이 어느 원본에서 시작했는가". */
 export interface StudioFileSource {
@@ -34,6 +50,14 @@ export interface StudioFileState {
   source: StudioFileSource | null
   /** 블록 id → 실제 사용 제품 이미지의 자산 id. */
   productImages: Record<string, string>
+  /** 페이지 id → 배경 레이어 (0.2.0). 예전 파일에는 없다. */
+  backgrounds?: Record<string, StudioBackground>
+  /** 블록 id → 합성 효과 세기 (0.2.0). */
+  effects?: Record<string, CompositeEffects>
+  /** 완성 결과 전체의 그레인 (0.2.0). */
+  grain?: number
+  /** 이 작업이 고른 생성 방식 (0.2.0). */
+  method?: GenerationMethod
 }
 
 /** 지금 작업에서 파일에 남길 것만 추린다. */
@@ -50,12 +74,26 @@ export function toStudioFileState(job: StudioJob): StudioFileState {
     version: STUDIO_FILE_VERSION,
     source,
     productImages: { ...job.productImages },
+    backgrounds: { ...(job.backgrounds ?? {}) },
+    effects: { ...(job.effects ?? {}) },
+    ...(job.grain === undefined ? {} : { grain: job.grain }),
+    ...(job.method === undefined ? {} : { method: job.method }),
   }
 }
 
-/** 이 상태가 필요로 하는 이미지 자산 id — 같은 이미지는 한 번만. */
+/**
+ * 이 상태가 필요로 하는 이미지 자산 id — 같은 이미지는 한 번만.
+ *
+ * 배경도 여기 든다. 빠뜨리면 파일에 배경 바이트가 담기지 않아, 다른 컴퓨터에서
+ * 열었을 때 배경만 사라진 작업이 열린다.
+ */
 export function studioFileAssetIds(state: StudioFileState): string[] {
-  return [...new Set(Object.values(state.productImages))]
+  return [
+    ...new Set([
+      ...Object.values(state.productImages),
+      ...Object.values(state.backgrounds ?? {}).map((b) => b.assetId),
+    ]),
+  ]
 }
 
 /**
@@ -71,7 +109,40 @@ export function remapStudioFileState(
   for (const [blockId, assetId] of Object.entries(state.productImages)) {
     productImages[blockId] = mapping.get(assetId) ?? assetId
   }
-  return { ...state, productImages }
+  const backgrounds: Record<string, StudioBackground> = {}
+  for (const [pageId, background] of Object.entries(state.backgrounds ?? {})) {
+    backgrounds[pageId] = { ...background, assetId: mapping.get(background.assetId) ?? background.assetId }
+  }
+  return { ...state, productImages, backgrounds }
+}
+
+function readBackgrounds(raw: unknown): Record<string, StudioBackground> | null {
+  if (raw === undefined) return {}
+  if (!isRecord(raw)) return null
+  const backgrounds: Record<string, StudioBackground> = {}
+  for (const [pageId, value] of Object.entries(raw)) {
+    if (!isRecord(value)) return null
+    const assetId = value.assetId
+    // 가리키는 곳이 없는 배경은 배경이 아니다 — 조용히 버리지 않고 실패로 본다.
+    if (typeof assetId !== 'string' || assetId.length === 0) return null
+    backgrounds[pageId] = {
+      assetId,
+      source: value.source === 'ai' ? 'ai' : 'manual',
+      ...(typeof value.createdAt === 'number' ? { createdAt: value.createdAt } : {}),
+      ...(typeof value.requestedSize === 'string' ? { requestedSize: value.requestedSize } : {}),
+      ...(typeof value.wish === 'string' ? { wish: value.wish } : {}),
+    }
+  }
+  return backgrounds
+}
+
+function readEffects(raw: unknown): Record<string, CompositeEffects> {
+  if (!isRecord(raw)) return {}
+  const effects: Record<string, CompositeEffects> = {}
+  // 세기 하나가 이상하다고 작업자가 맞춰 둔 나머지를 잃게 하지 않는다 — 여기서는
+  // 좁히고 채운다. 가리키는 자산이 없는 값이 아니므로 잃을 그림도 없다.
+  for (const [blockId, value] of Object.entries(raw)) effects[blockId] = normalizeEffects(value)
+  return effects
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -87,7 +158,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 export function parseStudioFileState(raw: unknown): StudioFileState | null {
   if (!isRecord(raw)) return null
-  if (raw.version !== STUDIO_FILE_VERSION) return null
+  if (typeof raw.version !== 'string' || !READABLE_STUDIO_FILE_VERSIONS.includes(raw.version)) return null
 
   const links = raw.productImages
   if (!isRecord(links)) return null
@@ -108,5 +179,16 @@ export function parseStudioFileState(raw: unknown): StudioFileState | null {
     }
   }
 
-  return { version: STUDIO_FILE_VERSION, source, productImages }
+  const backgrounds = readBackgrounds(raw.backgrounds)
+  if (backgrounds === null) return null
+
+  return {
+    version: STUDIO_FILE_VERSION,
+    source,
+    productImages,
+    backgrounds,
+    effects: readEffects(raw.effects),
+    ...(typeof raw.grain === 'number' ? { grain: Math.min(1, Math.max(0, raw.grain)) } : {}),
+    ...(raw.method === 'background_composite' || raw.method === 'full_ai' ? { method: raw.method } : {}),
+  }
 }

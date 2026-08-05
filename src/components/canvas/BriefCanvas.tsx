@@ -13,6 +13,7 @@ import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useAssets } from '../../features/assets/useAssets'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
+import { useStudioJob } from '../../features/studio/useStudioJob'
 import { useCanvasView } from '../../features/editor/useCanvasView'
 import { findLinkPartner, isPairedLinkUrl, linkUrlOf } from '../../domain/simpleBlocks'
 import { autoScrollStep, heightForPointer } from '../../features/editor/heightDrag'
@@ -40,7 +41,10 @@ function overlayStyle(ref: ReferenceLayer, canvasWidth: number): CSSProperties {
 export function BriefCanvas() {
   const { state, selectBlock, setCanvasHeight, endInteraction } = useBriefEditor()
   const { uploadFiles, getUrl } = useAssets()
-  const { activeReference } = useBriefDocument()
+  const { activeReference, activePageId } = useBriefDocument()
+  // 작업판에서만 배경이 있다. 작성기에는 provider 자체가 없어 언제나 `null`이므로
+  // 같은 캔버스가 두 표면에서 그대로 쓰인다 (배경 합성 1차 §5).
+  const studio = useStudioJob()
   const { zoom, reportViewport } = useCanvasView()
   const { project, blocks } = state.brief
   const { canvasWidth, canvasHeight } = project
@@ -49,6 +53,7 @@ export function BriefCanvas() {
   // (and in exports) but is not drawn. Legacy standalone URL blocks still show.
   const visibleBlocks = blocks.filter((b) => !isPairedLinkUrl(blocks, b))
 
+  const backgroundUrl = getUrl(studio?.backgroundOf(activePageId)?.assetId)
   const overlayUrl = getUrl(activeReference.assetId)
   const showOverlay =
     activeReference.viewMode === 'overlay' && activeReference.visible && overlayUrl !== undefined
@@ -117,6 +122,17 @@ export function BriefCanvas() {
           }}
           onDrop={onDrop}
         >
+          {/* 언제나 맨 뒤다. 블록 순서 도구는 이 레이어에 닿지 않는다 (§4). */}
+          {backgroundUrl !== undefined && (
+            <img
+              className="canvas__background"
+              src={backgroundUrl}
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              style={{ width: canvasWidth, height: canvasHeight }}
+            />
+          )}
           {showOverlay && (
             <img
               className="canvas__overlay"

@@ -34,6 +34,7 @@ import { AiNoteField, DesignerNoteField } from '../components/concept/HandoffNot
 import { GenerationRequestPreview } from '../components/studio/GenerationRequestPreview'
 import { ReadyPanel } from '../components/studio/ReadyPanel'
 import { BlockLayerTools } from '../components/studio/BlockLayerTools'
+import { BackgroundTools } from '../components/studio/BackgroundTools'
 import { GenerateImageDialog } from '../components/studio/GenerateImageDialog'
 import { ResultCompare } from '../components/studio/ResultCompare'
 import { EditPanel } from '../components/studio/EditPanel'
@@ -215,6 +216,9 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
       <main className="workspace">
         <div className="side-left">
           <ReferenceTools />
+          {/* 배경은 결과에 남고 참고 이미지는 남지 않는다. 두 자료를 한 칸에
+              나란히 두면 그 차이가 흐려지므로 따로 세운다 (§5). */}
+          {mode === 'studio' && <BackgroundTools />}
           <BlockPalette />
           {/* 컨셉은 기획서를 쓰는 사람의 것이다. 작업판에서 그것을 다시 만지는
               입력창을 두면 작업자가 기획서를 고쳐 쓰게 된다 — 값 자체는 그대로

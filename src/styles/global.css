@@ -2161,3 +2161,48 @@ button { font-family: inherit; }
   font-weight: 600;
 }
 .block-tools__note { margin: 0; font-size: 11px; color: var(--color-muted); }
+
+/* ── 페이지 배경 레이어 (배경 합성 1차 §5) ──────────────────────────────── */
+.canvas__background {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* 참고 이미지 오버레이(0)보다 뒤, 블록(DOM 순서)보다도 뒤. */
+  z-index: -1;
+  object-fit: cover;
+  pointer-events: none;
+  user-select: none;
+}
+.bg-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-panel);
+}
+.bg-tools__title { margin: 0; font-size: 13px; font-weight: 700; }
+.bg-tools__note { margin: 0; font-size: 11px; color: var(--color-muted); }
+.bg-tools__preview { position: relative; }
+.bg-tools__preview img {
+  display: block;
+  width: 100%;
+  max-height: 120px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+.bg-tools__badge {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(20, 23, 33, 0.72);
+  color: #fff;
+  font-size: 10px;
+}
+.bg-tools__row { display: flex; gap: 6px; }
+.bg-tools__row .btn { flex: 1 1 auto; }
+.bg-tools__file { display: none; }
