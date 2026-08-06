@@ -29,6 +29,8 @@ import {
   sourceChanged as jobSourceChanged,
   unlinkProductImage,
   withBlockEffects,
+  withClonedEffects,
+  withOnlyBlocks,
   withMethod,
   withPageBackground,
   withPageResult,
@@ -68,6 +70,10 @@ export interface StudioJobApi {
   /** 이미지별 합성 효과 세기 (§9). 원본 자산은 건드리지 않는다. */
   effectsOf: (blockId: string) => CompositeEffects
   setEffects: (blockId: string, patch: Partial<CompositeEffects>) => void
+  /** 복제한 블록에 원본의 설정을 옮긴다 (§4). */
+  copyEffects: (from: string, to: string) => void
+  /** 문서에 없는 블록의 설정을 치운다 (§4). */
+  pruneEffects: (liveBlockIds: ReadonlySet<string>) => void
   /** 완성 결과 전체의 그레인 (§9.5). */
   grain: number
   setGrain: (value: number) => void
@@ -249,6 +255,14 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       removeBackground: (pageId) => commit(withoutPageBackground(job, pageId, Date.now())),
       effectsOf: (blockId) => blockEffectsOf(job, blockId),
       setEffects: (blockId, patch) => void commit(withBlockEffects(job, blockId, patch, Date.now())),
+      copyEffects: (from, to) => {
+        const next = withClonedEffects(job, from, to, Date.now())
+        if (next !== job) void commit(next)
+      },
+      pruneEffects: (liveBlockIds) => {
+        const next = withOnlyBlocks(job, liveBlockIds, Date.now())
+        if (next !== job) void commit(next)
+      },
       grain: job.grain ?? DEFAULT_GRAIN,
       setGrain: (value) =>
         void commit({ ...job, grain: Math.min(1, Math.max(0, value)), updatedAt: Date.now() }),

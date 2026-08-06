@@ -67,6 +67,8 @@ export interface BriefEditorApi {
   reorderBlock: (blockId: string, move: LayerMove) => void
   /** 블록이 캔버스 밖으로 나갈 수 있는 표면인가 (§3.2). */
   freePlacement: boolean
+  /** 가장 최근 복제의 새 id → 원본 id. 블록 밖 설정을 함께 옮길 때 쓴다. */
+  cloneOf: Record<string, string>
   hydrate: (brief: EventBrief) => void
   newBrief: () => void
   undo: () => void
@@ -142,6 +144,7 @@ export function BriefEditorProvider({
       setImageFit: (blockId, fit) => dispatch({ type: 'UPDATE_BLOCK', blockId, patch: { image: { fit } } }),
       reorderBlock: (blockId, move) => dispatch({ type: 'REORDER_BLOCK', blockId, move }),
       freePlacement: state.freePlacement === true,
+      cloneOf: state.cloneOf ?? {},
       hydrate: (brief) => dispatch({ type: 'HYDRATE', brief }),
       newBrief: () => dispatch({ type: 'NEW_BRIEF' }),
       undo: () => dispatch({ type: 'UNDO' }),

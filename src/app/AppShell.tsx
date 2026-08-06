@@ -39,6 +39,7 @@ import { MethodChoice } from '../components/studio/MethodChoice'
 import { BackgroundDialog } from '../components/studio/BackgroundDialog'
 import { CompositeEffectsPanel } from '../components/studio/CompositeEffectsPanel'
 import { BackgroundCompositeProvider } from '../features/studio/useBackgroundComposite'
+import { StudioEffectsSync } from '../features/studio/StudioEffectsSync'
 import { GenerateImageDialog } from '../components/studio/GenerateImageDialog'
 import { ResultCompare } from '../components/studio/ResultCompare'
 import { EditPanel } from '../components/studio/EditPanel'
@@ -327,7 +328,11 @@ export function AppShellProviders({
                 {/* 배경 합성은 생성 위에 얹힌다 — 같은 페이지와 같은 작업을
                     보아야 하기 때문이다. 작업이 없으면 이 훅도 `null`을 낸다. */}
                 <InstructionRefineProvider>
-                  <BackgroundCompositeProvider>{children}</BackgroundCompositeProvider>
+                  <BackgroundCompositeProvider>
+                    {/* 블록에 매달린 작업판 설정을 복제·삭제와 맞춘다 (§4). */}
+                    <StudioEffectsSync />
+                    {children}
+                  </BackgroundCompositeProvider>
                 </InstructionRefineProvider>
               </ImageGenerationProvider>
             </CanvasViewProvider>

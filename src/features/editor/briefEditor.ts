@@ -55,6 +55,16 @@ export interface EditorState {
    * 때문이다. 이 값 자체는 문서가 아니므로 저장되지도, 파일에 실리지도 않는다.
    */
   freePlacement?: boolean
+  /**
+   * 방금 복제한 블록이 어디서 왔는가 (새 id → 원본 id).
+   *
+   * 블록에 매달린 **문서 밖 설정**(작업판의 합성 효과 같은)을 복제가 함께
+   * 옮길 수 있게 하려고 둔다. 리듀서는 그 설정이 무엇인지 모르고, 알 필요도
+   * 없다 — "이것이 저것의 복사본"이라는 사실만 남긴다.
+   *
+   * 가장 최근 복제 한 번만 담는다. 문서의 내용이 아니므로 저장되지 않는다.
+   */
+  cloneOf?: Record<string, string>
 }
 
 /**
@@ -413,7 +423,12 @@ function duplicateBlock(state: EditorState, blockId: string): EditorState {
   // A duplicate starts ungrouped so it doesn't silently join the source's group.
   delete clone.groupId
 
-  return { brief: { ...state.brief, blocks: [...state.brief.blocks, clone] }, selectedIds: [clone.id] }
+  return {
+    ...state,
+    brief: { ...state.brief, blocks: [...state.brief.blocks, clone] },
+    selectedIds: [clone.id],
+    cloneOf: { [clone.id]: src.id },
+  }
 }
 
 /**
@@ -428,6 +443,7 @@ function duplicateSelected(state: EditorState): EditorState {
   const canvasW = state.brief.project.canvasWidth
   const canvasH = state.brief.project.canvasHeight
   const groupMap = new Map<string, string>()
+  const cloneOf: Record<string, string> = {}
   const clones: BriefBlock[] = []
 
   for (const src of state.brief.blocks) {
@@ -454,6 +470,7 @@ function duplicateSelected(state: EditorState): EditorState {
     } else {
       delete clone.groupId
     }
+    cloneOf[clone.id] = src.id
     clones.push(clone)
   }
 
@@ -463,8 +480,10 @@ function duplicateSelected(state: EditorState): EditorState {
   // selecting it would make one 버튼·링크 look like a multi-selection.
   const selectable = clones.filter((c) => !isPairedLinkUrl(blocks, c))
   return {
+    ...state,
     brief: { ...state.brief, blocks },
     selectedIds: (selectable.length > 0 ? selectable : clones).map((c) => c.id),
+    cloneOf,
   }
 }
 

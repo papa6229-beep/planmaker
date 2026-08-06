@@ -21,6 +21,8 @@ import { imageFitOf } from '../../domain/imageLayout'
 import { LAYER_MOVES, visibleLayerPosition } from '../../domain/layerOrder'
 import { contentAspect, keepAspect, photoImageStyle, photoRect } from '../../domain/photoBox'
 import { measurePhoto, type PhotoContent } from '../../services/photoContent'
+import { buildPaperShape, type PaperShape } from '../../services/paperCutoutShape'
+import { paperOutset, PAPER_SHADOW } from '../../domain/paperCutout'
 import { getAsset } from '../../services/assetStore'
 import { canCarryLink, cardKindLabel, drawsBareText, textAlignOf, TEXT_ALIGNS, type TextAlign } from '../../domain/simpleBlocks'
 import { CARD_CHROME_Y, CARD_PADDING_X, PLACEHOLDER_FONT_PX, fitBlockToText, fitTextSize } from '../../domain/textFit'
@@ -147,6 +149,9 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
    */
   const photo = studio !== null && productUrl !== undefined && !showingReference
   const [content, setContent] = useState<PhotoContent | null>(null)
+  /** 이 이미지에 종이 컷아웃이 걸려 있는가 (Studio Patch §2). */
+  const paperOn = photo && studio !== null && studio.effectsOf(block.id).paperCutout
+  const [paper, setPaper] = useState<PaperShape | null>(null)
   const [layerOpen, setLayerOpen] = useState(false)
   const drag = useRef<DragState | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
@@ -296,6 +301,30 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   }, [photo, productAssetId])
 
   /**
+   * 종이 모양을 만든다.
+   *
+   * 껐을 때는 아예 만들지 않는다 — 꺼 둔 효과를 위해 계산을 돌리면, 쓰지도 않을
+   * 그림 때문에 체크되지 않은 블록까지 느려진다. 씨앗은 자산 번호라, 같은 그림은
+   * 언제나 같은 결로 잘린다.
+   */
+  useEffect(() => {
+    if (!paperOn || productAssetId === undefined || content === null) {
+      setPaper(null)
+      return
+    }
+    let alive = true
+    void (async () => {
+      const asset = await getAsset(productAssetId)
+      if (!alive || asset === undefined) return
+      const shape = await buildPaperShape(asset.blob, content.box, productAssetId)
+      if (alive) setPaper(shape)
+    })()
+    return () => {
+      alive = false
+    }
+  }, [paperOn, productAssetId, content])
+
+  /**
    * 연결하는 순간 블록을 그림 비율로 정리한다 (§1 이미지 경계).
    *
    * **연결·교체 때만**이다. 처음 마운트할 때의 자산은 이미 맞춰 둔 것으로 보므로,
@@ -409,6 +438,18 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
 
   const tools = (
     <span className="block-card__tools" onPointerDown={(e) => e.stopPropagation()}>
+      {/* 종이 컷아웃 — 이 블록 하나에만 걸리는 디자인 효과다 (Studio Patch §2).
+          AI 전송에서 빼거나 안전 모드를 뜻하지 않는다. */}
+      {photo && studio !== null && (
+        <label className="block-toolbar__check">
+          <input
+            type="checkbox"
+            checked={paperOn}
+            onChange={() => studio.setEffects(block.id, { paperCutout: !paperOn })}
+          />
+          종이 컷아웃
+        </label>
+      )}
       {/* 레이어 순서는 블록 바로 옆에서 바꾼다 — 우측 패널까지 갔다 오는 동안
           "무엇을 고르고 있었는지"를 놓치기 때문이다 (긴급 Patch §2). */}
       <span className="block-card__layer" ref={layerRef}>
@@ -529,6 +570,7 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
         bare ? 'block-card--bare' : '',
         // 연결된 제품 이미지는 그림 그 자체다 — CSS가 이 하나로 껍데기를 걷는다.
         photo ? 'block-card--photo' : '',
+        paperOn ? 'block-card--paper' : '',
         selected ? 'is-selected' : '',
         // 열려 있는 팝오버(링크 입력·⋯ 메뉴)만 뒤 카드보다 앞으로 나온다.
         // **선택만으로는 나오지 않는다** — 고른 것이 앞으로 튀어나오면 작업자가
@@ -668,6 +710,32 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
         // 채운다** — 선택 테두리와 조작점이 보이는 그림과 같은 자리에 선다.
         // 아직 재기 전이거나 `블록 채우기`를 고른 자리에서는 지금까지처럼 블록을
         // 틀로 삼는다.
+        <>
+          {paper !== null && (
+            <img
+              className="block-card__paper"
+              src={paper.url}
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              // 종이는 그림보다 크므로 블록 밖으로 나간다. 잘라내는 것은 최종
+              // 캔버스 경계뿐이다 (§3).
+              style={(() => {
+                const out = paperOutset(paper.content, paper.pad)
+                // `drop-shadow()`는 백분율 길이를 받지 않는다 — 넣으면 필터 전체가
+                // 조용히 버려진다. 블록의 짧은 변에서 픽셀 값을 만든다.
+                const short = Math.min(block.position.width, block.position.height)
+                const px = (ratio: number) => `${(short * ratio).toFixed(2)}px`
+                return {
+                  left: `${-out.x * 100}%`,
+                  top: `${-out.y * 100}%`,
+                  width: `${(1 + out.x * 2) * 100}%`,
+                  height: `${(1 + out.y * 2) * 100}%`,
+                  filter: `drop-shadow(${px(PAPER_SHADOW.dx)} ${px(PAPER_SHADOW.dy)} ${px(PAPER_SHADOW.blur)} rgba(24, 26, 34, ${PAPER_SHADOW.opacity}))`,
+                }
+              })()}
+            />
+          )}
         <span className="block-card__photo-clip">
           <img
             className="block-card__thumb"
@@ -681,6 +749,7 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
             }
           />
         </span>
+        </>
       ) : displayUrl ? (
         // The capture, what it is a stand-in for, and — plainly — that it is
         // only a stand-in (1-B §2.3).

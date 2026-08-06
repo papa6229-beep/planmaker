@@ -23,6 +23,8 @@ import { useStudioJob } from './useStudioJob'
 import { readApiKey } from './apiKeySession'
 import { getAsset, putAsset } from '../../services/assetStore'
 import { analyzeImageBlob } from '../../services/imageAnalysisRunner'
+import { measurePhoto } from '../../services/photoContent'
+import { buildPaperCanvas, type PaperCanvas } from '../../services/paperCutoutShape'
 import { renderComposite } from '../../services/compositeRenderer'
 import { buildBackgroundRequest } from '../../domain/backgroundRequest'
 import { compositeAssetIds, planLocalComposite, type CompositePlan } from '../../domain/composite'
@@ -115,6 +117,7 @@ export function BackgroundCompositeProvider({ children }: { children: ReactNode 
   const collect = useCallback(async (target: CompositePlan) => {
     const blobs = new Map<string, Blob>()
     const analyses = new Map<string, ImageAnalysis>()
+    const papers = new Map<string, PaperCanvas>()
     for (const assetId of compositeAssetIds(target)) {
       const asset = await getAsset(assetId)
       if (asset === undefined) continue
@@ -123,7 +126,21 @@ export function BackgroundCompositeProvider({ children }: { children: ReactNode 
       const analysis = await analyzeImageBlob(asset.blob)
       if (analysis !== null) analyses.set(assetId, analysis)
     }
-    return { blobs, analyses }
+    // 종이 컷아웃을 켠 자리만 모양을 만든다. 씨앗은 미리보기와 같은 자산 번호라
+    // 두 화면의 외곽선이 같다 (Studio Patch §3).
+    for (const layer of target.layers) {
+      if (!layer.effects.paperCutout || papers.has(layer.assetId)) continue
+      const asset = await getAsset(layer.assetId)
+      if (asset === undefined) continue
+      const measured = await measurePhoto(asset.blob)
+      const shape = await buildPaperCanvas(
+        asset.blob,
+        measured?.box ?? { x: 0, y: 0, width: 1, height: 1 },
+        layer.assetId,
+      )
+      if (shape !== null) papers.set(layer.assetId, shape)
+    }
+    return { blobs, analyses, papers }
   }, [])
 
   /**

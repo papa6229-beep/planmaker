@@ -14,7 +14,9 @@
  */
 
 import { contactShadow, wallShadow, type CompositeEffects } from '../domain/compositeEffects'
+import { paperOutset, PAPER_SHADOW } from '../domain/paperCutout'
 import { fitSourceRect } from '../domain/imageLayout'
+import type { PaperCanvas } from './paperCutoutShape'
 import type { CompositeLayerPlan, CompositePlan } from '../domain/composite'
 import type { ImageAnalysis } from '../domain/imageAnalysis'
 
@@ -26,6 +28,13 @@ export interface CompositeSources {
   blobs: ReadonlyMap<string, Blob>
   /** 자산 번호 → 분석값. 없으면 정면광으로 본다. */
   analyses?: ReadonlyMap<string, ImageAnalysis>
+  /**
+   * 자산 번호 → 종이 컷아웃 모양 (Studio Patch §3).
+   *
+   * 미리보기와 **같은 함수**가 만든 것을 그대로 받는다. 여기서 다시 계산하면
+   * 두 화면의 외곽선이 어긋날 길이 생긴다.
+   */
+  papers?: ReadonlyMap<string, PaperCanvas>
 }
 
 async function toSource(blob: Blob): Promise<CanvasImageSource & { width: number; height: number }> {
@@ -98,6 +107,26 @@ async function drawLayer(
   const light = analysis ?? FLAT_LIGHT
   const effects: CompositeEffects = layer.effects
   const shape = silhouette(source, fit)
+
+  // ── 종이 컷아웃: 그림자와 사진보다 먼저, 맨 아래에 깔린다 (§3) ────────────
+  const paper = effects.paperCutout ? sources.papers?.get(layer.assetId) : undefined
+  if (paper !== undefined) {
+    const out = paperOutset(paper.content, paper.pad)
+    const px = fit.dest.x - fit.dest.width * out.x
+    const py = fit.dest.y - fit.dest.height * out.y
+    const pw = fit.dest.width * (1 + out.x * 2)
+    const ph = fit.dest.height * (1 + out.y * 2)
+    const short = Math.min(fit.dest.width, fit.dest.height)
+    ctx.save()
+    // 얕고 부드러운 그림자. 캔버스 그림자는 알파를 따라가므로 종이 모양 그대로
+    // 진다 — 사각형 그림자가 아니다.
+    ctx.shadowColor = `rgba(24, 26, 34, ${PAPER_SHADOW.opacity})`
+    ctx.shadowBlur = short * PAPER_SHADOW.blur
+    ctx.shadowOffsetX = short * PAPER_SHADOW.dx
+    ctx.shadowOffsetY = short * PAPER_SHADOW.dy
+    ctx.drawImage(paper.canvas, px, py, pw, ph)
+    ctx.restore()
+  }
 
   // ── 그림자: 벽이 먼저, 접지가 그 위 (§9.2) ────────────────────────────────
   if (shape !== null && effects.wallShadow > 0) {

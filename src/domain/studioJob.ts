@@ -166,6 +166,41 @@ export function blockEffectsOf(job: StudioJob | null, blockId: string): Composit
   return normalizeEffects(job?.effects?.[blockId])
 }
 
+/**
+ * 이 이미지에 종이 컷아웃이 걸려 있는가 (Studio Patch §2).
+ *
+ * 저장된 적 없는 블록은 꺼짐이다. 작업 전체를 받지 않고 `effects`만 보는 이유는,
+ * 화면과 합성 계획과 파일이 같은 판정을 쓰기 위해서다.
+ */
+export function paperCutoutOf(
+  job: { effects?: Record<string, Partial<CompositeEffects>> | undefined } | null,
+  blockId: string,
+): boolean {
+  return job?.effects?.[blockId]?.paperCutout === true
+}
+
+/** 이 블록의 설정을 그대로 다른 블록으로 (복제, §4). */
+export function withClonedEffects(job: StudioJob, from: string, to: string, now: number): StudioJob {
+  const source = job.effects?.[from]
+  if (source === undefined) return job
+  return { ...job, effects: { ...job.effects, [to]: { ...source } }, updatedAt: now }
+}
+
+/**
+ * 사라진 블록의 설정을 정리한다 (삭제, §4).
+ *
+ * 남겨 두면 어디에도 닿지 않는 값이 파일에 쌓이고, 같은 id가 다시 생기는 날
+ * 켠 적 없는 효과가 켜진 채로 나타난다.
+ */
+export function withOnlyBlocks(job: StudioJob, liveBlockIds: ReadonlySet<string>, now: number): StudioJob {
+  const effects = job.effects ?? {}
+  const kept = Object.keys(effects).filter((id) => liveBlockIds.has(id))
+  if (kept.length === Object.keys(effects).length) return job
+  const next: Record<string, CompositeEffects> = {}
+  for (const id of kept) next[id] = effects[id]!
+  return { ...job, effects: next, updatedAt: now }
+}
+
 /** 한 이미지의 효과 세기를 바꾼다. 준 항목만 갈아 끼운다. */
 export function withBlockEffects(
   job: StudioJob,

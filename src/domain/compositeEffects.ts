@@ -21,7 +21,20 @@ export interface CompositeEffects {
   grading: number
   /** 림라이트 — 외곽에만 얹는 약한 빛 (§9.4). */
   rimLight: number
+  /**
+   * 종이 컷아웃 — 알파 외곽을 따라 흰 종이 테두리와 얕은 그림자 (Studio Patch).
+   *
+   * 다른 다섯과 달리 세기가 아니라 켜고 끄기 하나다. 두께·색을 고르는 화면은
+   * 이번 범위 밖이고, 있지도 않은 조절값을 숫자로 흉내 내면 다음 사람이 그것을
+   * 조절할 수 있는 값으로 읽는다.
+   *
+   * **디자인 효과일 뿐이다.** AI 전송에서 빼거나 안전 모드를 뜻하지 않는다.
+   */
+  paperCutout: boolean
 }
+
+/** 세기로 조절하는 항목만 — 종이 컷아웃은 체크 하나라 여기 끼지 않는다. */
+export type CompositeStrengthKey = Exclude<keyof CompositeEffects, 'paperCutout'>
 
 /**
  * 아무것도 만지지 않았을 때의 값.
@@ -36,10 +49,11 @@ export const DEFAULT_COMPOSITE_EFFECTS: CompositeEffects = {
   wallShadow: 0.35,
   grading: 0.25,
   rimLight: 0.2,
+  paperCutout: false,
 }
 
 /** 화면에 그대로 쓰는 이름 — 순서까지 여기서 정한다 (§11). */
-export const COMPOSITE_EFFECT_FIELDS: readonly { key: keyof CompositeEffects; label: string }[] = [
+export const COMPOSITE_EFFECT_FIELDS: readonly { key: CompositeStrengthKey; label: string }[] = [
   { key: 'edge', label: '가장자리 보정' },
   { key: 'contactShadow', label: '접지 그림자' },
   { key: 'wallShadow', label: '벽 그림자' },
@@ -70,6 +84,9 @@ export function normalizeEffects(raw: unknown): CompositeEffects {
     wallShadow: clamp01(value.wallShadow, DEFAULT_COMPOSITE_EFFECTS.wallShadow),
     grading: clamp01(value.grading, DEFAULT_COMPOSITE_EFFECTS.grading),
     rimLight: clamp01(value.rimLight, DEFAULT_COMPOSITE_EFFECTS.rimLight),
+    // 모르는 값은 꺼짐이다. 예전 작업에 없던 항목을 켜진 것으로 읽으면, 열어
+    // 보기만 해도 결과가 달라진다.
+    paperCutout: value.paperCutout === true,
   }
 }
 
