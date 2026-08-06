@@ -40,6 +40,18 @@ vi.mock('../features/assets/imageUtils', async () => {
 vi.mock('../services/previewRenderer', () => ({
   renderPreviewPng: async () => new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }),
 }))
+// jsdom에는 2D 캔버스가 없어 종이 모양이 만들어지지 않는다. 겹침은 **어느
+// 레이어가 어느 블록 안에 있는가**의 문제이므로, 모양은 가짜로 두고 자리만 본다.
+// 알파 경계도 캔버스가 재는 값이다. 겹침 검사는 그 값이 있을 때의 자리를 보므로
+// 여기서만 정해 둔다 — 파일 전체가 아니라 이 검사의 전제다.
+vi.mock('../services/photoContent', () => ({
+  PHOTO_MEASURE_MAX_SIDE: 256,
+  measurePhoto: async () => ({ natural: { width: 670, height: 670 }, box: { x: 0, y: 0, width: 1, height: 1 } }),
+}))
+vi.mock('../services/paperCutoutShape', () => ({
+  buildPaperShape: async () => ({ url: 'data:image/png;base64,AA', pad: 4, content: { width: 100, height: 100 } }),
+  buildPaperCanvas: async () => null,
+}))
 
 const fetchSpy = vi.fn()
 globalThis.fetch = fetchSpy as unknown as typeof fetch
@@ -434,5 +446,77 @@ describe('§2 우측 패널에는 같은 기능을 두지 않는다', () => {
     const panel = await screen.findByRole('region', { name: '블록 배치' })
     expect(within(panel).queryByRole('checkbox', { name: '종이 컷아웃' })).toBeNull()
     expect(panel.textContent).not.toContain('종이 컷아웃')
+  })
+})
+
+// ── 겹침: 블록 하나가 하나의 합성 단위다 (겹침 교정) ────────────────────────
+
+describe('겹침 교정 사진·종이·그림자가 블록과 함께 움직인다', () => {
+  /** 이 카드의 종이 레이어. */
+  const paperIn = (card: HTMLElement) => card.querySelector('.block-card__paper')
+
+  it('종이를 캔버스 뒤층으로 보내지 않는다', async () => {
+    // 결함의 원인은 이 한 줄이었다: 카드는 쌓임 맥락을 만들지 않으므로 음수
+    // z-index가 카드가 아니라 캔버스 시트의 뒤층으로 간다 — 그러면 `맨 앞으로`를
+    // 눌러도 종이만 모든 블록 뒤에 남는다. 규칙 자체를 검사가 붙든다.
+    const fs = await import('node:fs/promises')
+    const css = await fs.readFile('src/styles/global.css', 'utf8')
+    const rule = css.slice(css.indexOf('.block-card__paper {'))
+    expect(rule.slice(0, rule.indexOf('}'))).not.toContain('z-index')
+  })
+
+  it('맨 앞으로 보내면 종이도 함께 맨 앞으로 간다', async () => {
+    await seedJob({ effects: { blk_a: { paperCutout: true }, blk_b: { paperCutout: true } } })
+    const { container } = renderStudio()
+    const a = await cardOf(container, '이미지 가')
+    await waitFor(() => expect(paperIn(a)).toBeTruthy())
+
+    const order = () =>
+      Array.from(container.querySelectorAll('.canvas__sheet .block-card')).map((el) =>
+        el.getAttribute('aria-label'),
+      )
+    expect(order()[0]).toContain('이미지 가')
+
+    fireEvent.pointerDown(a, { button: 0 })
+    await waitFor(() => expect(a.getAttribute('aria-pressed')).toBe('true'))
+    fireEvent.click(within(a).getByRole('button', { name: '레이어 순서' }))
+    fireEvent.click(within(a).getByRole('button', { name: '맨 앞으로' }))
+
+    await waitFor(() => expect(order().at(-1)).toContain('이미지 가'))
+    // 종이는 그 블록의 자식이므로 블록과 같이 옮겨진다 — 따로 남지 않는다.
+    const moved = await cardOf(container, '이미지 가')
+    expect(paperIn(moved)).toBeTruthy()
+    expect(Array.from(container.querySelectorAll('.canvas__sheet .block-card')).at(-1)).toBe(moved)
+    // 종이는 그 안에서 사진보다 먼저 온다 — 블록 안에서는 사진 뒤다.
+    const kids = Array.from(moved.children)
+    expect(kids.indexOf(paperIn(moved) as Element)).toBeLessThan(
+      kids.indexOf(moved.querySelector('.block-card__photo-clip') as Element),
+    )
+  })
+
+  it('맨 뒤로 보내면 종이도 함께 맨 뒤로 가고, 효과를 꺼도 순서는 그대로다', async () => {
+    await seedJob({ effects: { blk_a: { paperCutout: true }, blk_b: { paperCutout: true } } })
+    const { container } = renderStudio()
+    const order = () =>
+      Array.from(container.querySelectorAll('.canvas__sheet .block-card')).map((el) =>
+        el.getAttribute('aria-label'),
+      )
+    const b = await cardOf(container, '이미지 나')
+    await waitFor(() => expect(paperIn(b)).toBeTruthy())
+
+    fireEvent.pointerDown(b, { button: 0 })
+    await waitFor(() => expect(b.getAttribute('aria-pressed')).toBe('true'))
+    fireEvent.click(within(b).getByRole('button', { name: '레이어 순서' }))
+    fireEvent.click(within(b).getByRole('button', { name: '맨 뒤로' }))
+
+    await waitFor(() => expect(order()[0]).toContain('이미지 나'))
+    const moved = await cardOf(container, '이미지 나')
+    expect(paperIn(moved)).toBeTruthy()
+    expect(container.querySelector('.canvas__sheet .block-card')).toBe(moved)
+
+    // 효과를 끄면 종이만 사라진다. 순서는 건드리지 않는다.
+    fireEvent.click(within(moved).getByRole('checkbox', { name: '종이 컷아웃' }))
+    await waitFor(async () => expect(paperIn(await cardOf(container, '이미지 나'))).toBeNull())
+    expect(order()[0]).toContain('이미지 나')
   })
 })
