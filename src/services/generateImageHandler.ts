@@ -41,6 +41,10 @@ export interface HandlerDeps {
     /** 공급자가 붙인 분류 이름. 문장이 아니라 짧은 이름표다. */
     providerCode?: string
     providerType?: string
+    /** 어느 요청 항목이 문제였는가 — 항목의 **이름**이다. */
+    providerParam?: string
+    /** 손질을 거친 짧은 설명. 키·프롬프트·이미지는 지워진 뒤의 문자열이다. */
+    providerDetail?: string
   }) => void
 }
 
@@ -136,6 +140,10 @@ export async function handleGenerateImage(request: Request, deps: HandlerDeps = 
       ...(requestId === undefined ? {} : { requestId }),
       ...(known && err.providerCode !== undefined ? { providerCode: err.providerCode } : {}),
       ...(known && err.providerType !== undefined ? { providerType: err.providerType } : {}),
+      // `invalid_value`만으로는 어느 값인지 알 수 없다. 항목 이름과 손질한 설명이
+      // 그 자리를 가리킨다.
+      ...(known && err.providerParam !== undefined ? { providerParam: err.providerParam } : {}),
+      ...(known && err.providerDetail !== undefined ? { providerDetail: err.providerDetail } : {}),
     })
     return fail(code, status, '이미지를 생성하지 못했습니다.', requestId)
   }

@@ -83,12 +83,16 @@ export class ImageProviderError extends Error {
    */
   readonly providerCode?: string
   readonly providerType?: string
+  /** 어느 요청 항목이 문제였는가 (`error.param`). 값이 아니라 **이름**이다. */
+  readonly providerParam?: string
+  /** 남겨도 되는 만큼만 손질한 설명 — `safeProviderDetail`을 지난 문자열. */
+  readonly providerDetail?: string
 
   constructor(
     code: ImageGenerationErrorCode,
     status: number,
     requestId?: string,
-    provider?: { code?: string; type?: string },
+    provider?: { code?: string; type?: string; param?: string; detail?: string },
   ) {
     super(`image provider failed: ${code}`)
     this.name = 'ImageProviderError'
@@ -97,7 +101,37 @@ export class ImageProviderError extends Error {
     if (requestId !== undefined) this.requestId = requestId
     if (provider?.code !== undefined) this.providerCode = provider.code
     if (provider?.type !== undefined) this.providerType = provider.type
+    if (provider?.param !== undefined) this.providerParam = provider.param
+    if (provider?.detail !== undefined) this.providerDetail = provider.detail
   }
+}
+
+/**
+ * 공급자 설명 중 **남겨도 되는 만큼**.
+ *
+ * 원문을 그대로 담지 않는 규칙은 그대로다 — 그 안에 키가 실려 온 적이 있기
+ * 때문이다. 그렇다고 통째로 버리면 `invalid_value`가 어느 값을 가리키는지 알
+ * 길이 없어, 다음 실제 생성에서도 같은 자리에 서게 된다.
+ *
+ * 그래서 지우고 남긴다.
+ *
+ *  - 키 모양(`sk-…`, `Bearer …`)은 통째로
+ *  - 40자 넘게 이어지는 토큰은 무엇이든 (키든 base64든)
+ *  - 따옴표 안이 40자 넘으면 — 우리가 보낸 글이 되돌아온 것이다
+ *  - 첫 줄만, 200자까지
+ *
+ * 남는 것은 `Invalid value: 'transparent'. Supported values are: …` 같은 짧은
+ * 문장이다. 키도, 프롬프트도, 이미지도 여기 남지 않는다.
+ */
+export function safeProviderDetail(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const redacted = (value.split('\n')[0] ?? '')
+    .replace(/\b(?:sk|rk|org|proj)[-_][A-Za-z0-9_-]{6,}/gi, '[redacted]')
+    .replace(/\bBearer\s+\S+/gi, '[redacted]')
+    .replace(/[A-Za-z0-9+/=_-]{40,}/g, '[redacted]')
+    .replace(/(['"])[^'"]{40,}?\1/g, '$1[redacted]$1')
+    .trim()
+  return redacted.length === 0 ? undefined : redacted.slice(0, 200)
 }
 
 /** 공급자의 상태 코드와 오류 코드를 우리 분류로 옮긴다. */
@@ -184,6 +218,8 @@ export async function requestOpenAiImage(
     const fields = typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : {}
     const providerCode = fields.code
     const providerType = fields.type
+    const providerParam = fields.param
+    const detail = safeProviderDetail(fields.message)
     throw new ImageProviderError(
       classifyProviderError(response.status, providerCode),
       response.status,
@@ -191,6 +227,8 @@ export async function requestOpenAiImage(
       {
         ...(typeof providerCode === 'string' ? { code: providerCode } : {}),
         ...(typeof providerType === 'string' ? { type: providerType } : {}),
+        ...(typeof providerParam === 'string' ? { param: providerParam } : {}),
+        ...(detail === undefined ? {} : { detail }),
       },
     )
   }

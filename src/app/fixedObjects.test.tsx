@@ -377,6 +377,38 @@ describe('§2 문구는 전면 레이어다', () => {
     expect(promptOf(foreground!)).toContain('여름 감사제 40% + 사은품')
   })
 
+  it('실패 기록은 항목 이름과 손질한 설명만 남긴다', async () => {
+    const { safeProviderDetail } = await load('services/openAiImageClient')
+
+    // 어느 값이 문제였는지는 남는다.
+    expect(safeProviderDetail("Invalid value: 'transparent'. Supported values are: 'opaque'."))
+      .toBe("Invalid value: 'transparent'. Supported values are: 'opaque'.")
+
+    // 키는 어떤 모양이든 남지 않는다.
+    for (const secret of [
+      'Incorrect API key provided: sk-proj-AbCdEfGhIjKlMnOpQrStUv.',
+      'Authorization: Bearer sk-live-1234567890abcdefghij failed.',
+    ]) {
+      const out = safeProviderDetail(secret) ?? ''
+      expect(out).toContain('[redacted]')
+      expect(out).not.toContain('sk-')
+    }
+
+    // 우리가 보낸 글이 되돌아와도 남지 않는다.
+    const echoed = safeProviderDetail(
+      `Your prompt was rejected: "${'이벤트 페이지의 전경 문구 레이어 한 장을 만들어 주세요 여름 감사제 40퍼센트'}"`,
+    )
+    expect(echoed).not.toContain('여름 감사제')
+    expect(echoed).toContain('[redacted]')
+
+    // base64 덩어리도 남지 않는다.
+    expect(safeProviderDetail(`image data ${'A'.repeat(120)} rejected`)).not.toContain('AAAA')
+
+    // 길어도 200자를 넘기지 않고, 문자열이 아니면 아무것도 남기지 않는다.
+    expect((safeProviderDetail('가'.repeat(400)) ?? '').length).toBe(200)
+    expect(safeProviderDetail(undefined)).toBeUndefined()
+  })
+
   it('서버 경계가 투명 배경을 그대로 공급자에게 넘긴다', async () => {
     const { handleGenerateImage } = await load('services/generateImageHandler')
     const seen: Record<string, unknown>[] = []
