@@ -43,6 +43,13 @@ export interface BackgroundPromptInput {
   reserved: readonly LayoutRect[]
   /** 제품이 바닥에 닿는 높이 (캔버스 y). 없으면 접지선을 지정하지 않는다. */
   groundY?: number
+  /**
+   * 디자인 스타일 레퍼런스를 함께 보내는가.
+   *
+   * 참일 때만 아래 `## 함께 보낸 스타일 레퍼런스` 문단이 붙는다. 레퍼런스가
+   * 없는데 그 말을 하면 모델이 있지도 않은 그림을 찾는다.
+   */
+  styleReference?: boolean
 }
 
 function percent(value: number): string {
@@ -83,6 +90,18 @@ export function buildBackgroundPrompt(input: BackgroundPromptInput): string {
   const trimmed = wish.trim()
   if (trimmed.length > 0) lines.push('', '## 원하는 분위기', trimmed)
 
+  if (input.styleReference === true) {
+    // **참고**라고만 말한다. 베끼라는 말은 쓰지 않는다 — 레퍼런스는 남의 디자인
+    // 이고, 우리가 원하는 것도 그 분위기이지 그 그림이 아니다.
+    lines.push(
+      '',
+      '## 함께 보낸 스타일 레퍼런스',
+      '첨부한 그림의 색감·질감·그래픽 밀도, 그리고 콜라주와 매거진 편집의 결을 참고해 주세요.',
+      '참고만 하는 것입니다. 같은 그림을 만들어 달라는 뜻이 아니고, 거기 있는 물건·글자·구성을 옮겨 오지 말아 주세요.',
+      '만드는 것은 배경과 추상적인 장식, 프레임, 질감, 여백입니다.',
+    )
+  }
+
   if (analysis !== null) {
     const colours = analysis.palette.map((p) => `${p.hex} (${percent(p.share)})`).join(', ')
     lines.push(
@@ -103,7 +122,10 @@ export function buildBackgroundPrompt(input: BackgroundPromptInput): string {
   if (reserved.length > 0) {
     lines.push('', '## 비워 두어야 하는 자리')
     for (const rect of reserved) lines.push(`- ${region(rect, size)} 자리는 단순하게 비워 주세요.`)
-    lines.push('이 자리에는 나중에 제품과 문구가 놓입니다. 무늬나 밝은 대비를 넣지 말아 주세요.')
+    lines.push(
+      '이 자리에는 나중에 제품과 문구가 놓입니다. 무늬나 밝은 대비를 넣지 말아 주세요.',
+      '그 위에 글이 올라가므로 가독성을 방해하지 않아야 합니다.',
+    )
   }
 
   if (groundY !== undefined) {

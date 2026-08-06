@@ -23,7 +23,8 @@ import type { GenerationMethod, StudioBackground, StudioJob } from './studioJob'
  * 이 판이 **쓰는** 버전.
  *
  * `0.1.0`에는 제품 이미지 연결만 있었다. `0.2.0`부터 배경·합성 효과·그레인·
- * 생성 방식이 함께 들어가고, `0.3.0`부터 이미지별 종이 컷아웃이 함께 들어간다.
+ * 생성 방식이 함께 들어가고, `0.3.0`부터 이미지별 종이 컷아웃이, `0.4.0`부터
+ * 페이지별 디자인 스타일 레퍼런스가 함께 들어간다.
  *
  * 버전을 올리는 대신 같은 `0.1.0`에 새 칸만 얹는 길도 있었지만, 그러면 예전
  * 빌드가 그 칸을 **말없이 버리고** 저장한다 — 작업자는 배경을 넣어 저장했는데
@@ -31,10 +32,10 @@ import type { GenerationMethod, StudioBackground, StudioJob } from './studioJob'
  * 예전 빌드는 "읽을 수 없다"고 분명히 말한다. 잃는 것이 같다면 소리 내는 쪽이
  * 낫다 (§12 마지막 줄).
  */
-export const STUDIO_FILE_VERSION = '0.3.0'
+export const STUDIO_FILE_VERSION = '0.4.0'
 
 /** 이 판이 **읽을 수 있는** 버전. 예전 파일은 그대로 열린다. */
-export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0']
+export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0', '0.4.0']
 
 /** 파일이 기억하는 "이 작업이 어느 원본에서 시작했는가". */
 export interface StudioFileSource {
@@ -58,6 +59,8 @@ export interface StudioFileState {
   grain?: number
   /** 이 작업이 고른 생성 방식 (0.2.0). */
   method?: GenerationMethod
+  /** 페이지 id → 디자인 스타일 레퍼런스의 자산 id (0.4.0). */
+  styleRefs?: Record<string, string>
 }
 
 /** 지금 작업에서 파일에 남길 것만 추린다. */
@@ -76,6 +79,7 @@ export function toStudioFileState(job: StudioJob): StudioFileState {
     productImages: { ...job.productImages },
     backgrounds: { ...job.backgrounds },
     effects: { ...job.effects },
+    styleRefs: { ...job.styleRefs },
     ...(job.grain === undefined ? {} : { grain: job.grain }),
     ...(job.method === undefined ? {} : { method: job.method }),
   }
@@ -92,6 +96,7 @@ export function studioFileAssetIds(state: StudioFileState): string[] {
     ...new Set([
       ...Object.values(state.productImages),
       ...Object.values(state.backgrounds ?? {}).map((b) => b.assetId),
+      ...Object.values(state.styleRefs ?? {}),
     ]),
   ]
 }
@@ -113,7 +118,11 @@ export function remapStudioFileState(
   for (const [pageId, background] of Object.entries(state.backgrounds ?? {})) {
     backgrounds[pageId] = { ...background, assetId: mapping.get(background.assetId) ?? background.assetId }
   }
-  return { ...state, productImages, backgrounds }
+  const styleRefs: Record<string, string> = {}
+  for (const [pageId, assetId] of Object.entries(state.styleRefs ?? {})) {
+    styleRefs[pageId] = mapping.get(assetId) ?? assetId
+  }
+  return { ...state, productImages, backgrounds, styleRefs }
 }
 
 function readBackgrounds(raw: unknown): Record<string, StudioBackground> | null {
@@ -182,11 +191,21 @@ export function parseStudioFileState(raw: unknown): StudioFileState | null {
   const backgrounds = readBackgrounds(raw.backgrounds)
   if (backgrounds === null) return null
 
+  const styleRefs: Record<string, string> = {}
+  if (isRecord(raw.styleRefs)) {
+    for (const [pageId, assetId] of Object.entries(raw.styleRefs)) {
+      // 가리키는 곳이 없는 레퍼런스는 레퍼런스가 아니다.
+      if (typeof assetId !== 'string' || assetId.length === 0) return null
+      styleRefs[pageId] = assetId
+    }
+  }
+
   return {
     version: STUDIO_FILE_VERSION,
     source,
     productImages,
     backgrounds,
+    styleRefs,
     effects: readEffects(raw.effects),
     ...(typeof raw.grain === 'number' ? { grain: Math.min(1, Math.max(0, raw.grain)) } : {}),
     ...(raw.method === 'background_composite' || raw.method === 'full_ai' ? { method: raw.method } : {}),

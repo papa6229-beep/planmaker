@@ -35,6 +35,7 @@ import { GenerationRequestPreview } from '../components/studio/GenerationRequest
 import { ReadyPanel } from '../components/studio/ReadyPanel'
 import { BlockLayerTools } from '../components/studio/BlockLayerTools'
 import { BackgroundTools } from '../components/studio/BackgroundTools'
+import { StyleReferenceTools } from '../components/studio/StyleReferenceTools'
 import { MethodChoice } from '../components/studio/MethodChoice'
 import { BackgroundDialog } from '../components/studio/BackgroundDialog'
 import { CompositeEffectsPanel } from '../components/studio/CompositeEffectsPanel'
@@ -220,9 +221,11 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
       />
       <main className="workspace">
         <div className="side-left">
-          <ReferenceTools />
-          {/* 배경은 결과에 남고 참고 이미지는 남지 않는다. 두 자료를 한 칸에
-              나란히 두면 그 차이가 흐려지므로 따로 세운다 (§5). */}
+          {/* 작업판의 왼쪽 첫 칸은 AI가 실제로 참고할 스타일 한 장이다. 배치를
+              맞추려고 겹쳐 보던 레이아웃 참고 도구는 작업판에서 걷어냈다 —
+              두 자료가 나란히 서 있으면 어느 쪽이 AI에게 가는지 흐려진다. */}
+          {mode === 'studio' ? <StyleReferenceTools /> : <ReferenceTools />}
+          {/* 배경은 결과에 남고 스타일 레퍼런스는 참고로만 간다. */}
           {mode === 'studio' && <BackgroundTools />}
           <BlockPalette />
           {/* 컨셉은 기획서를 쓰는 사람의 것이다. 작업판에서 그것을 다시 만지는
@@ -240,7 +243,9 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
               결과가 없을 때는 고를 것이 없으므로 나타나지도 않는다. */}
           {generation !== null && generation.hasResult && <StudioViewTabs />}
           <div className="canvas-controls">
-            <ReferenceViewControls />
+            {/* 오버레이는 참고 이미지를 겹쳐 보는 조작이다. 작업판에는 그 자료가
+                없으므로 조작도 두지 않는다. */}
+            {mode !== 'studio' && <ReferenceViewControls />}
             <CanvasZoomControls />
           </div>
           {showStart && !compare && <StartChoice onDismiss={() => setStartDismissed(true)} />}

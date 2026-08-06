@@ -92,6 +92,15 @@ export interface StudioJob {
   backgrounds?: Record<string, StudioBackground>
   /** 블록 id → 그 이미지의 합성 효과 세기 (§9, §12). */
   effects?: Record<string, CompositeEffects>
+  /**
+   * 페이지 id → 디자인 스타일 레퍼런스의 자산 id (스타일 레퍼런스 Patch).
+   *
+   * 작성기의 `참고 이미지`와는 다른 자료다. 그쪽은 **배치를 눈으로 맞추려고**
+   * 잠깐 겹쳐 보는 것이고 결과에 남지 않는다. 이쪽은 AI에게 **색감·질감·그래픽
+   * 분위기**를 보여 주려고 실제로 보내는 한 장이다. 그래서 저장하는 곳도 다르고,
+   * 페이지마다 한 장뿐이다.
+   */
+  styleRefs?: Record<string, string>
   /** 완성 결과 전체에 얹는 그레인 (§9.5). */
   grain?: number
   /** 이 작업이 고른 생성 방식 (§6). */
@@ -128,6 +137,29 @@ export function methodOf(job: StudioJob | null): GenerationMethod {
 
 export function withMethod(job: StudioJob, method: GenerationMethod, now: number): StudioJob {
   return { ...job, method, updatedAt: now }
+}
+
+/** 이 페이지의 스타일 레퍼런스. 없으면 `undefined`. */
+export function styleReferenceOf(job: StudioJob | null, pageId: string): string | undefined {
+  return job?.styleRefs?.[pageId]
+}
+
+/**
+ * 스타일 레퍼런스를 넣거나 갈아 끼운다.
+ *
+ * 페이지당 한 장이므로 "추가"가 아니라 언제나 **대체**다. 여러 장을 참고하게
+ * 하는 것은 이번 범위가 아니고, 자리를 미리 늘려 두면 다음 사람이 그것을 이미
+ * 지원되는 기능으로 읽는다.
+ */
+export function withStyleReference(job: StudioJob, pageId: string, assetId: string, now: number): StudioJob {
+  return { ...job, styleRefs: { ...job.styleRefs, [pageId]: assetId }, updatedAt: now }
+}
+
+/** 레퍼런스를 걷어낸다. 자산 자체는 다른 곳에서 아직 쓸 수 있으므로 지우지 않는다. */
+export function withoutStyleReference(job: StudioJob, pageId: string, now: number): StudioJob {
+  const next = { ...job.styleRefs }
+  delete next[pageId]
+  return { ...job, styleRefs: next, updatedAt: now }
 }
 
 /** 이 페이지의 배경. 없으면 `undefined` — 배경 없이도 작업은 성립한다. */
@@ -289,7 +321,7 @@ export function withSource(job: StudioJob, doc: BriefDocument, now: number, file
     importedAt: now,
     ...(fileName === undefined ? {} : { fileName }),
   }
-  return { ...job, source, doc, productImages: {}, backgrounds: {}, effects: {}, updatedAt: now }
+  return { ...job, source, doc, productImages: {}, backgrounds: {}, effects: {}, styleRefs: {}, updatedAt: now }
 }
 
 /** 작업본만 교체한다 (자동저장 경로). 원본과 연결 정보는 그대로. */
@@ -342,6 +374,8 @@ export function studioLiveAssetIds(job: StudioJob): string[] {
       // 배경은 어떤 기획서도 참조하지 않는다 — 여기서 말하지 않으면 정리가
       // 작업자가 넣거나 결제해서 만든 배경을 고아로 오판해 지운다 (§5, §12).
       ...Object.values(job.backgrounds ?? {}).map((b) => b.assetId),
+      // 스타일 레퍼런스도 같다. 기획서 문서는 이 그림을 모른다.
+      ...Object.values(job.styleRefs ?? {}),
     ]),
   ]
 }

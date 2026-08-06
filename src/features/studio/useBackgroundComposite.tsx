@@ -26,7 +26,7 @@ import { analyzeImageBlob } from '../../services/imageAnalysisRunner'
 import { measurePhoto } from '../../services/photoContent'
 import { buildPaperCanvas, type PaperCanvas } from '../../services/paperCutoutShape'
 import { renderComposite } from '../../services/compositeRenderer'
-import { buildBackgroundRequest } from '../../domain/backgroundRequest'
+import { backgroundAttachmentIds, buildBackgroundRequest } from '../../domain/backgroundRequest'
 import { compositeAssetIds, planLocalComposite, type CompositePlan } from '../../domain/composite'
 import { resolveGptImageSize } from '../../domain/gptImageSize'
 import { createId } from '../../domain/factory'
@@ -34,6 +34,7 @@ import { getBlockTypeMeta } from '../../domain/blockTypes'
 import {
   API_KEY_HEADER,
   errorTextFor,
+  FIELD_IMAGES,
   FIELD_PROMPT,
   FIELD_SIZE,
   GENERATE_IMAGE_PATH,
@@ -80,6 +81,18 @@ export interface BackgroundCompositeApi {
 }
 
 const BackgroundCompositeContext = createContext<BackgroundCompositeApi | null>(null)
+
+/**
+ * 문구가 놓일 자리 — **좌표만**.
+ *
+ * 원문은 보내지 않는다. AI가 글을 다시 그리는 것이 아니라 그 자리를 비워 두게
+ * 하려는 것이고, 문구를 보내면 모델은 그것을 그려 넣으려 한다.
+ */
+function textRectsOf(page: BriefPage) {
+  return page.blocks
+    .filter((b) => !getBlockTypeMeta(b.type).requiresAsset && (b.content ?? '').trim().length > 0)
+    .map((b) => ({ ...b.position }))
+}
 
 /** 이 페이지에서 실제로 얹힐 그림들. */
 function imageBlocksOf(page: BriefPage, productImages: Readonly<Record<string, string>>) {
@@ -199,10 +212,11 @@ export function BackgroundCompositeProvider({ children }: { children: ReactNode 
       return
     }
     const images = imageBlocksOf(page, studio.job.productImages)
+    const styleRef = studio.styleReferenceOf(page.id)
     setState({
       kind: 'confirm',
       facts: {
-        generates: '빈 배경 1장',
+        generates: styleRef === undefined ? '빈 배경 1장' : '스타일 레퍼런스를 참고한 배경 플레이트 1장',
         keeps: images.length > 0 ? `제품·인물·로고 ${images.length}장을 원본 그대로` : '원본 그대로 (연결된 이미지 없음)',
         externalCalls: IMAGE_CALLS_PER_CLICK,
         autoRetries: 0,
@@ -240,19 +254,31 @@ export function BackgroundCompositeProvider({ children }: { children: ReactNode 
         }
 
         // ── §8: 숫자와 주문만 실은 요청 하나. 원본은 실리지 않는다 ───────────
+        const styleRefId = studio.styleReferenceOf(page.id)
         const body = buildBackgroundRequest({
           wish,
           size: { width: page.canvasWidth, height: page.canvasHeight },
           page: null,
           images: analysed,
+          // 문구가 놓일 자리도 비워 달라고 말한다. 원문은 가지 않는다.
+          reserved: textRectsOf(page),
           requestedSize: resolved.size,
+          ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
         })
 
         setState({ kind: 'running' })
         const form = new FormData()
         form.set(FIELD_PROMPT, body.prompt)
         form.set(FIELD_SIZE, resolved.size)
-        // 이미지 칸은 비운다 — 비어 있기 때문에 서버 함수가 생성 경로로 나간다.
+        // 붙일 수 있는 그림은 스타일 레퍼런스 하나뿐이다. 제품·인물·로고·종이
+        // 컷아웃 원본이 여기 실릴 길은 없다 — 목록을 만드는 함수의 인자가 그것
+        // 하나다. 레퍼런스가 없으면 칸이 비고, 서버 함수는 생성 경로로 나간다.
+        for (const assetId of backgroundAttachmentIds(styleRefId)) {
+          const asset = await getAsset(assetId)
+          if (asset === undefined) continue
+          // 파일명도 우리가 정한다. 작업자가 올린 원본 파일명은 나가지 않는다.
+          form.append(FIELD_IMAGES, new File([asset.blob], 'style-reference.png', { type: 'image/png' }))
+        }
 
         const response = await fetch(GENERATE_IMAGE_PATH, {
           method: 'POST',

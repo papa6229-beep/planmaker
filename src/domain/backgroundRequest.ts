@@ -40,6 +40,19 @@ export interface BackgroundRequestInput {
   reserved?: readonly LayoutRect[]
   /** 모델에게 요청할 크기 문자열. 없으면 본문에 크기를 싣지 않는다. */
   requestedSize?: string
+  /** 함께 보낼 디자인 스타일 레퍼런스의 자산 id. 없으면 글만 나간다. */
+  styleReferenceAssetId?: string
+}
+
+/**
+ * 요청에 붙일 수 있는 그림 (스타일 레퍼런스 Patch).
+ *
+ * 인자가 **스타일 레퍼런스 하나뿐**이다. 제품·인물·로고·종이 컷아웃 자산이
+ * 여기 끼어들 자리가 아예 없고, 그것이 이 함수가 존재하는 이유다 — 붙일 목록을
+ * 부르는 쪽에서 조립하게 두면 언젠가 하나가 더 얹힌다.
+ */
+export function backgroundAttachmentIds(styleReferenceAssetId?: string): string[] {
+  return styleReferenceAssetId === undefined ? [] : [styleReferenceAssetId]
 }
 
 /**
@@ -88,6 +101,7 @@ export function buildBackgroundRequest(input: BackgroundRequestInput): Backgroun
     analysis: mergePageAnalysis(analyses),
     reserved: [...input.images.map((i) => i.rect), ...(input.reserved ?? [])],
     ...(groundLineOf(input.images) === undefined ? {} : { groundY: groundLineOf(input.images)! }),
+    ...(input.styleReferenceAssetId === undefined ? {} : { styleReference: true }),
   }
 
   const body: BackgroundRequestBody = {

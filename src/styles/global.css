@@ -2374,3 +2374,28 @@ button { font-family: inherit; }
 }
 .block-toolbar__check input { margin: 0; cursor: pointer; }
 .block-card--paper .block-toolbar__check { color: var(--color-accent); font-weight: 600; }
+
+/* ── 디자인 스타일 레퍼런스 (스타일 레퍼런스 Patch) ─────────────────────── */
+.style-ref {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-panel);
+}
+.style-ref__title { margin: 0; font-size: 13px; font-weight: 700; }
+.style-ref__hint,
+.style-ref__empty { margin: 0; font-size: 11px; color: var(--color-muted); }
+.style-ref__preview img {
+  display: block;
+  width: 100%;
+  max-height: 140px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+.style-ref__actions { display: flex; gap: 6px; }
+.style-ref__actions .btn { flex: 1 1 auto; }
+.style-ref__file { display: none; }

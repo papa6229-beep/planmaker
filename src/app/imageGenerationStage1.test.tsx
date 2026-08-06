@@ -744,12 +744,15 @@ describe('오류는 사람이 읽을 수 있는 한 문장이 된다', () => {
 // ── 참고 이미지 나란히 보기 제거 ─────────────────────────────────────────────
 
 describe('§13-2 참고 이미지의 나란히 보기는 사라지고 오버레이는 남는다', () => {
-  it('offers only 캔버스만 and 오버레이', async () => {
+  it('작업판에는 참고 이미지 보기 조작이 아예 없다', async () => {
     await seedReady()
     await openStudio()
+    // 없어진 보기 방식은 물론이고, 남은 두 가지도 작업판에는 없다 — 작업판이
+    // 참고하는 것은 `디자인 스타일 레퍼런스` 한 장이기 때문이다 (스타일
+    // 레퍼런스 Patch). 작성기 쪽 두 가지는 `styleReference.test.tsx`가 지킨다.
     expect(screen.queryByRole('radio', { name: '나란히 보기' })).toBeNull()
-    expect(screen.getByRole('radio', { name: '캔버스만' })).toBeTruthy()
-    expect(screen.getByRole('radio', { name: '오버레이' })).toBeTruthy()
+    expect(screen.queryByRole('radio', { name: '캔버스만' })).toBeNull()
+    expect(screen.queryByRole('radio', { name: '오버레이' })).toBeNull()
   })
 
   it('opens an old file that was saved in side-by-side, showing the canvas', async () => {
@@ -764,8 +767,7 @@ describe('§13-2 참고 이미지의 나란히 보기는 사라지고 오버레�
     }
     await seedReady(doc)
     await openStudio()
-    // 파일은 열리고, 화면 상태만 캔버스만으로 정규화된다.
-    expect(screen.getByRole('radio', { name: '캔버스만', checked: true })).toBeTruthy()
+    // 파일은 열리고, 없어진 보기 방식은 화면 상태에서만 접힌다.
     expect(document.querySelector('.ref-side')).toBeNull()
     // 참고 이미지 자체는 그대로다.
     const job = (await loadStudioJob(STUDIO_JOB_ID))!

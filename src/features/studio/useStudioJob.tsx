@@ -33,6 +33,9 @@ import {
   withOnlyBlocks,
   withMethod,
   withPageBackground,
+  withStyleReference,
+  withoutStyleReference,
+  styleReferenceOf,
   withPageResult,
   withSource,
   withWorkingDoc,
@@ -67,6 +70,15 @@ export interface StudioJobApi {
   backgroundOf: (pageId: string) => StudioBackground | undefined
   setBackground: (pageId: string, background: StudioBackground) => Promise<void>
   removeBackground: (pageId: string) => Promise<void>
+  /**
+   * 페이지별 디자인 스타일 레퍼런스 (스타일 레퍼런스 Patch).
+   *
+   * 작성기의 참고 이미지와 다른 자료다 — 그쪽은 배치를 눈으로 맞추는 용도이고
+   * 결과에 남지 않지만, 이쪽은 AI에게 실제로 보내는 한 장이다.
+   */
+  styleReferenceOf: (pageId: string) => string | undefined
+  setStyleReference: (pageId: string, assetId: string) => Promise<void>
+  removeStyleReference: (pageId: string) => Promise<void>
   /** 이미지별 합성 효과 세기 (§9). 원본 자산은 건드리지 않는다. */
   effectsOf: (blockId: string) => CompositeEffects
   setEffects: (blockId: string, patch: Partial<CompositeEffects>) => void
@@ -213,6 +225,7 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
               // 예전 판 파일에는 이 넷이 없다. 그때는 빈 값이 맞는 복원이다.
               backgrounds: { ...state.backgrounds },
               effects: { ...state.effects },
+              styleRefs: { ...state.styleRefs },
               ...(state.grain === undefined ? {} : { grain: state.grain }),
               ...(state.method === undefined ? {} : { method: state.method }),
             }
@@ -253,6 +266,9 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       // 않기 위해서다.
       setBackground: (pageId, background) => commit(withPageBackground(job, pageId, background, Date.now())),
       removeBackground: (pageId) => commit(withoutPageBackground(job, pageId, Date.now())),
+      styleReferenceOf: (pageId) => styleReferenceOf(job, pageId),
+      setStyleReference: (pageId, assetId) => commit(withStyleReference(job, pageId, assetId, Date.now())),
+      removeStyleReference: (pageId) => commit(withoutStyleReference(job, pageId, Date.now())),
       effectsOf: (blockId) => blockEffectsOf(job, blockId),
       setEffects: (blockId, patch) => void commit(withBlockEffects(job, blockId, patch, Date.now())),
       copyEffects: (from, to) => {
