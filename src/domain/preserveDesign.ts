@@ -22,6 +22,7 @@
  */
 
 import { TEXT_KEY_HEX } from './chromaKey'
+import { areaShare, importanceRanks, type StickerBlock, type StickerCell } from './stickerSheet'
 import type { GenerationInputImage } from './imageGenerationInputs'
 import type { TextAlign } from './simpleBlocks'
 import type { LayoutRect } from './imageLayout'
@@ -34,6 +35,10 @@ export interface PreserveTextEntry {
   align: TextAlign
   /** 뒤에서부터 몇 번째인가 — 클수록 앞이다. */
   layer: number
+  /** 문구인가 버튼인가 (스티커판 Patch §3). */
+  kind: 'text' | 'button'
+  /** 이미지·컷아웃과 겹치는가 (스티커판 Patch §3). */
+  overlapsImage: boolean
 }
 
 /**
@@ -67,14 +72,21 @@ export interface PlateInput {
   note?: string
 }
 
-export interface ForegroundInput {
+/**
+ * 문구·버튼 스티커판 주문의 재료 (스티커판 Patch §4).
+ *
+ * `cells`가 이 주문의 계약이다. 칸 하나에 블록 하나이고, 돌아온 그림은 그
+ * 좌표로만 잘린다 — 픽셀을 보고 나누는 자리가 없다.
+ */
+export interface StickerSheetInput {
   size: { width: number; height: number }
   styleReferenceAssetId?: string | undefined
-  texts: readonly PreserveTextEntry[]
-  /** 사진이 이미 놓인 자리 — 그 위로 글씨가 지나가도 좋다. */
+  /** 1단계에서 **실제로 생성된** 배경. 사용자 이미지가 아니다. */
+  backgroundAssetId?: string | undefined
+  blocks: readonly StickerBlock[]
+  cells: readonly StickerCell[]
+  /** 사진이 이미 놓인 자리 — 좌표뿐이다. */
   fixed: readonly FixedObject[]
-  /** 배경 플레이트의 색. 없으면 레퍼런스만 보고 정하게 둔다. */
-  tone?: PlateTone | null
   note?: string
 }
 
@@ -97,11 +109,30 @@ export function planPlateInputs(input: PlateInput): GenerationInputImage[] {
   return styleInput(input.styleReferenceAssetId, '디자인 스타일 레퍼런스 — 색감·질감·그래픽 언어 참고용입니다.')
 }
 
-export function planForegroundInputs(input: ForegroundInput): GenerationInputImage[] {
-  return styleInput(
+/**
+ * 스티커판 요청에 붙는 그림 — 스타일 레퍼런스와 **AI가 만든 배경**뿐이다.
+ *
+ * 배경은 1단계에서 이 도구가 받아 온 그림이라 사용자의 사진이 아니다. 고정
+ * 이미지가 얹힌 합성 페이지는 여기 낄 자리가 없다 — 인자에 아예 없다.
+ */
+export function planStickerInputs(input: {
+  styleReferenceAssetId?: string | undefined
+  backgroundAssetId?: string | undefined
+}): GenerationInputImage[] {
+  const images = styleInput(
     input.styleReferenceAssetId,
     '디자인 스타일 레퍼런스 — 타이포그래피 위계와 글자 효과 참고용입니다.',
   )
+  if (input.backgroundAssetId !== undefined) {
+    images.push({
+      index: images.length + 1,
+      role: 'page_reference',
+      assetId: input.backgroundAssetId,
+      fileName: 'background-plate.png',
+      label: '1단계에서 생성된 배경 — 이 배경 위에서 글씨가 읽히도록 색과 대비를 정하기 위한 자료입니다.',
+    })
+  }
+  return images
 }
 
 function percent(value: number): string {
@@ -117,10 +148,12 @@ function region(rect: LayoutRect, size: { width: number; height: number }): stri
 
 const ALIGN_WORD: Record<TextAlign, string> = { left: '왼쪽', center: '가운데', right: '오른쪽' }
 
-/** 이 문구 상자가 지면에서 차지하는 넓이 — 위계를 읽는 근거. */
-function areaShare(rect: LayoutRect, size: { width: number; height: number }): number {
-  const total = size.width * size.height
-  return total <= 0 ? 0 : (rect.width * rect.height) / total
+/** 판 전체에 대한 비율 사각형을 사람이 읽는 말로. */
+function unitRegion(rect: LayoutRect): string {
+  return [
+    `가로 ${percent(rect.x)} 지점부터 ${percent(rect.width)}`,
+    `세로 ${percent(rect.y)} 지점부터 ${percent(rect.height)}`,
+  ].join(', ')
 }
 
 /**
@@ -180,83 +213,107 @@ export function buildPlatePrompt(input: PlateInput): string {
 }
 
 /**
- * 2) 전경 문구 레이어 주문.
+ * 2) 문구·버튼 스티커판 주문 (스티커판 Patch §4).
  *
- * 단색 마젠타 위에 글자만 그린 한 장이다. 투명 배경은 이 모델이 만들어 주지
- * 않으므로(공급자 답: `Transparent background is not supported for this model.`),
- * 브라우저가 그 단색을 걷어 내 투명하게 만든다 (`chromaKey.ts`).
+ * 단색 마젠타 위에 **칸을 나눠** 글자만 그린 한 장이다. 투명 배경은 이 모델이
+ * 만들어 주지 않으므로(공급자 답: `Transparent background is not supported for
+ * this model.`), 브라우저가 그 단색을 걷어 낸다 (`chromaKey.ts`).
  *
- * 이 겹이 맨 앞이므로 문구는 언제나 사진보다 앞에 오고, 사진 위를 가로질러도 된다.
+ * 앞선 판과 다른 것은 하나다. 문구를 **지면 배치대로** 그리게 한 뒤 픽셀을 보고
+ * 나누는 것이 아니라, 칸을 미리 정해 주고 **그 칸 좌표로만** 자른다. 그래서 어느
+ * 조각이 어느 블록의 것인지 추측할 일이 없다.
  *
- * 좌표는 고정값이 아니라 힌트로 넘긴다 — 큰 상자는 핵심, 작은 상자는 보조라는
- * 뜻이고, 그 위계를 어떤 활자로 풀지는 레퍼런스를 보고 모델이 정한다.
+ * 자리·크기·중요도·겹침·주변 색은 여전히 전부 전달한다 — 다만 그것은 "이 칸 안에
+ * 어떤 디자인을 그릴지"의 근거이지, 판 위의 배치 지시가 아니다.
  */
-export function buildForegroundPrompt(input: ForegroundInput): string {
-  const { size, texts, fixed, tone, note } = input
+export function buildStickerPrompt(input: StickerSheetInput): string {
+  const { size, blocks, cells, fixed, backgroundAssetId, note } = input
+  const ranks = importanceRanks(blocks, size)
+  const byId = new Map(cells.map((cell) => [cell.blockId, cell]))
   const lines: string[] = []
 
   lines.push(
-    '이벤트 페이지의 **전경 문구 레이어** 한 장을 만들어 주세요.',
-    `배경은 **단색 마젠타(${TEXT_KEY_HEX})** 한 가지로 화면 전체를 빈틈없이 채우고, 그 위에 문구 디자인만 올려 주세요.`,
+    '이벤트 페이지에 쓸 **문구·버튼 스티커판** 한 장을 만들어 주세요.',
+    '완성 디자인이 아닙니다. 칸으로 나뉜 판이고, 각 칸을 잘라 내 실제 페이지의 제자리에 붙입니다.',
+    `배경은 **단색 마젠타(${TEXT_KEY_HEX})** 한 가지로 화면 전체를 빈틈없이 채우고, 그 위에 문구·버튼 디자인만 올려 주세요.`,
     '마젠타는 나중에 지워집니다. 남은 글자만 이미 만들어진 배경과 사진 위에 그대로 얹힙니다.',
     `크기는 가로 ${size.width}, 세로 ${size.height} 비율입니다.`,
-    '',
-    '## 만들 것',
-    '- 아래 문구를 원문 그대로',
-    '- 스타일 레퍼런스를 반영한 글꼴 표현',
-    '- 글자색·외곽선·그림자',
-    '- 문구에 붙는 라벨·배지 같은 텍스트 디자인',
   )
 
-  if (tone != null) {
-    lines.push(
-      '',
-      '## 아래에 깔릴 배경의 색',
-      `평균색 R${Math.round(tone.average.r)} G${Math.round(tone.average.g)} B${Math.round(tone.average.b)}, 밝기 ${tone.brightness.toFixed(2)} (0=어두움, 1=밝음)`,
-      '이 배경 위에서 글씨가 또렷하게 읽히도록 색과 대비를 정해 주세요.',
-    )
-  }
+  lines.push(
+    '',
+    '## 칸 나누기 — 이 주문에서 가장 중요한 규칙',
+    `판을 아래 ${cells.length}개의 칸으로 나눠 주세요. **칸 하나에는 지정된 블록 하나만** 디자인합니다.`,
+    '- 한 칸에 두 문구를 함께 넣지 않습니다.',
+    '- 한 문구를 두 칸에 나눠 넣지 않습니다.',
+    '- 글자·외곽선·그림자·라벨·배지·버튼 배경판이 **지정된 사각형 밖으로 한 획도 넘어가지 않게** 해 주세요.',
+    '- 칸과 칸 사이의 여백은 비워 둡니다. 거기에 무엇이 묻으면 그 칸은 쓸 수 없습니다.',
+    '- 칸 안에서는 여백을 넉넉히 쓰지 말고, 지정된 사각형을 **가득 채우도록** 크게 디자인해 주세요.',
+  )
 
-  if (texts.length > 0) {
-    lines.push('', '## 넣을 문구 (원문 그대로)')
-    // 넓은 상자가 먼저 오게 늘어놓는다 — 목록의 차례가 곧 위계의 첫 신호다.
-    const ordered = texts.toSorted((a, b) => areaShare(b.rect, size) - areaShare(a.rect, size))
-    for (const text of ordered) {
+  lines.push('', '## 칸별 주문')
+  for (const block of blocks) {
+    const cell = byId.get(block.blockId)
+    if (cell === undefined) continue
+    const rank = ranks.get(block.blockId) ?? 0
+    lines.push(
+      `### cell ${String(cell.index)}`,
+      `- 그릴 것: ${block.kind === 'button' ? '버튼' : '문구'} — "${block.content}"`,
+      `- 그릴 자리(판 전체 기준): ${unitRegion(cell.crop)}`,
+      `- 실제 페이지에서의 자리: ${region(block.rect, size)} · 정렬 ${ALIGN_WORD[block.align]}`,
+      `- 지면에서 차지하는 넓이: ${percent(areaShare(block.rect, size))} · 중요도 ${String(rank)}위 / ${String(blocks.length)}개`,
+      `- 사진·컷아웃과 겹치는가: ${block.overlapsImage ? '겹칩니다 — 사진 위에서도 또렷하게 읽히도록 대비·외곽선·그림자를 충분히 쓰세요.' : '겹치지 않습니다.'}`,
+    )
+    if (block.tone != null) {
+      const tone = block.tone
       lines.push(
-        `- "${text.content}"`,
-        `  구성 힌트: ${region(text.rect, size)} · 정렬 ${ALIGN_WORD[text.align]} · 지면의 ${percent(areaShare(text.rect, size))}`,
+        `- 그 자리 주변의 색: 평균색 R${String(Math.round(tone.average.r))} G${String(Math.round(tone.average.g))} B${String(Math.round(tone.average.b))}, 밝기 ${tone.brightness.toFixed(2)} (0=어두움, 1=밝음), 대비 ${tone.contrast.toFixed(2)}`,
       )
     }
-    lines.push(
-      '문구의 **문자·숫자·띄어쓰기·기호·줄바꿈을 절대 바꾸지 않습니다.** 맞춤법을 고치거나 줄여 쓰거나 번역하지 말아 주세요.',
-      '지시에 없는 문구를 새로 만들지 않습니다.',
-    )
   }
 
   lines.push(
     '',
-    '## 자리와 크기는 배치와 중요도의 기준입니다',
-    '- 위에 적은 자리에 그 문구를 놓아 주세요. **빈 공간을 찾아 다른 데로 옮기지 않습니다.**',
+    '## 문구는 원문 그대로입니다',
+    '문구의 **문자·숫자·띄어쓰기·기호·줄바꿈을 절대 바꾸지 않습니다.** 맞춤법을 고치거나 줄여 쓰거나 번역하지 말아 주세요.',
+    '지시에 없는 문구를 새로 만들지 않습니다.',
+  )
+
+  lines.push(
+    '',
+    '## 크기와 중요도',
     '- 큰 상자는 주요 문구로, 작은 상자는 보조 문구로 다뤄 주세요.',
-    '- 그 자리 안에서 글자 크기·행간·정렬·효과는 디자인을 위해 조절해도 좋습니다.',
+    '- 중요도가 앞선 문구일수록 굵고 강한 활자로, 뒤일수록 차분하게 풀어 주세요.',
+    '- 칸 안에서 글자 크기·행간·정렬·효과는 디자인을 위해 조절해도 좋습니다.',
     '- 스타일 레퍼런스의 글꼴 분위기와 디자인 표현을 참고해 주세요.',
   )
 
+  lines.push(
+    '',
+    '## 버튼을 그릴 때',
+    '- 버튼은 **배경판·테두리·글자를 한 덩어리로** 그 칸 안에 함께 그려 주세요.',
+    '- 버튼 배경판도 지정된 사각형 밖으로 넘기지 않습니다.',
+  )
+
   if (fixed.length > 0) {
-    lines.push('', '## 사진이 이미 놓여 있는 자리')
+    lines.push('', '## 실제 페이지에서 사진이 이미 놓여 있는 자리')
     for (const item of fixed) lines.push(`- ${region(item.rect, size)}`)
     lines.push(
-      '이 자리에는 실제 사진이 이미 놓여 있습니다. **문구가 그 위에 겹쳐도 그대로 겹쳐 주세요.**',
-      '겹침을 피해 빈 자리로 옮기지 않습니다. 대신 사진 위에서도 읽히도록 **글자색 대비·외곽선·그림자·라벨을 자유롭게** 써 주세요.',
-      '다만 이 자리에 **사람·제품·로고를 새로 그리지 않습니다.** 사진을 통째로 가리는 큰 색면도 만들지 않습니다.',
+      '문구가 그 위에 겹치는 것은 그대로 둡니다. 겹침을 피해 옮기지 않습니다.',
+      '다만 이 자리에 **사람·제품·로고를 새로 그리지 않습니다.**',
     )
   }
 
   lines.push(
     '',
-    '## 스타일 레퍼런스에 대하여',
-    '타이포그래피 위계와 글자 효과를 참고하기 위한 자료입니다. 같은 이미지를 복제하지 않습니다.',
+    '## 함께 보낸 이미지에 대하여',
+    '- 디자인 스타일 레퍼런스: 타이포그래피 위계와 글자 효과를 참고하기 위한 자료입니다. 같은 이미지를 복제하지 않습니다.',
   )
+  if (backgroundAssetId !== undefined) {
+    lines.push(
+      '- 1단계에서 생성된 배경: 이 글자들이 실제로 놓일 바탕입니다. 그 위에서 읽히도록 색과 대비를 정해 주세요. **배경을 다시 그리지 않습니다.**',
+    )
+  }
 
   const trimmed = (note ?? '').trim()
   if (trimmed.length > 0) lines.push('', '## 작업자의 추가 지시', trimmed)
@@ -265,6 +322,8 @@ export function buildForegroundPrompt(input: ForegroundInput): string {
     '',
     '## 넣지 말 것',
     `- 배경 사진·그러데이션·무늬 (배경은 단색 마젠타 ${TEXT_KEY_HEX} 한 가지입니다)`,
+    '- 별·꽃·테이프·하프톤처럼 문구에 속하지 않는 배경 장식',
+    '- 칸 구분선, 칸 번호, 안내 글자',
     '- 글자·외곽선·그림자·라벨·배지에 마젠타나 그와 비슷한 분홍·자주 계열 색',
     '- 사람, 제품, 로고',
     '- 워터마크',

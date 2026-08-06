@@ -69,6 +69,26 @@ vi.mock('../services/workingImage', async () => {
   }
 })
 
+vi.mock('../services/textLayerKey', () => ({
+  removeKeyBackground: async (blob: Blob) => ({ blob, opaqueRatio: 0.2 }),
+}))
+// 칸대로 자르는 일은 캔버스의 몫이다. 자르는 좌표의 규칙은 순수 검사에서 숫자로
+// 재고, 여기서는 흐름만 본다.
+vi.mock('../services/stickerSheetSlice', () => ({
+  sliceStickerSheet: async (_blob: Blob, cells: { blockId: string; index: number }[]) => ({
+    pieces: cells.map((c) => ({
+      blockId: c.blockId,
+      index: c.index,
+      blob: new Blob([new Uint8Array([7, 7])], { type: 'image/png' }),
+    })),
+    inks: cells.map((c) => ({ index: c.index, blockId: c.blockId, guardRatio: 0 })),
+  }),
+}))
+vi.mock('../services/regionTone', () => ({
+  REGION_MAX_SIDE: 512,
+  analyzeRegions: async (_blob: Blob, rects: unknown[]) => rects.map(() => null),
+}))
+
 const fetchSpy = vi.fn()
 globalThis.fetch = fetchSpy as unknown as typeof fetch
 
@@ -240,20 +260,23 @@ describe('§2 컷아웃이 있으면 원본 보존 완성 디자인', () => {
 // ── 3. 프롬프트가 말하는 것 ──────────────────────────────────────────────────
 
 describe('§3 두 겹의 주문', () => {
-  it('배경 주문에는 문구가 없고, 전경 주문에는 원문이 그대로 있다', async () => {
-    const { buildPlatePrompt, buildForegroundPrompt } = await load('domain/preserveDesign')
+  it('배경 주문에는 문구가 없고, 스티커판 주문에는 원문이 그대로 있다', async () => {
+    const { buildPlatePrompt, buildStickerPrompt } = await load('domain/preserveDesign')
+    const { planStickerCells } = await load('domain/stickerSheet')
     const size = { width: 840, height: 1000 }
     const fixed = [
       { blockId: 'blk_cut', assetId: 'asset_cut', rect: { x: 100, y: 500, width: 400, height: 400 }, layer: 0, cutout: true },
       { blockId: 'blk_plain', assetId: 'asset_plain', rect: { x: 540, y: 500, width: 240, height: 240 }, layer: 1, cutout: false },
     ]
-    const texts = [
+    const blocks = [
       {
         blockId: 'blk_text',
         content: '여름 감사제 40% + 사은품',
+        kind: 'text' as const,
         rect: { x: 120, y: 180, width: 500, height: 140 },
         align: 'center' as const,
         layer: 2,
+        overlapsImage: false,
       },
     ]
 
@@ -263,15 +286,26 @@ describe('§3 두 겹의 주문', () => {
     expect(plate).toContain('복제하지 않습니다')
     expect(plate).toContain('가을 느낌으로')
 
-    const fore = buildForegroundPrompt({ size, styleReferenceAssetId: 'asset_style', fixed, texts })
-    expect(fore).toContain('여름 감사제 40% + 사은품')
-    expect(fore).toContain('문자·숫자·띄어쓰기·기호·줄바꿈')
-    expect(fore).toContain('복제하지 않습니다')
-    expect(fore).toContain('사람, 제품, 로고')
+    const sheet = buildStickerPrompt({
+      size,
+      styleReferenceAssetId: 'asset_style',
+      backgroundAssetId: 'asset_plate',
+      fixed,
+      blocks,
+      cells: planStickerCells(blocks, size),
+    })
+    expect(sheet).toContain('여름 감사제 40% + 사은품')
+    expect(sheet).toContain('문자·숫자·띄어쓰기·기호·줄바꿈')
+    expect(sheet).toContain('복제하지 않습니다')
+    expect(sheet).toContain('사람, 제품, 로고')
+    // 칸 하나에 블록 하나 — 이 주문의 계약이다.
+    expect(sheet).toContain('cell 1')
+    expect(sheet).toContain('칸 하나에는 지정된 블록 하나만')
 
     // 어느 쪽도 자산 번호나 파일명을 싣지 않는다.
-    for (const prompt of [plate, fore]) {
+    for (const prompt of [plate, sheet]) {
       expect(prompt).not.toContain('asset_cut')
+      expect(prompt).not.toContain('asset_plate')
       expect(prompt).not.toContain('.png')
     }
   })

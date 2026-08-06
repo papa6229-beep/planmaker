@@ -9,10 +9,11 @@
  * 해석은 `buildGenerationRequest` 하나에서만 나온다. 사람이 `AI 제작 요청
  * 미리보기`에서 읽은 것과 모델이 받는 것이 같아야 하기 때문이다.
  *
- * 원본 보존 흐름은 이 길을 두 번 지난다 — 배경 플레이트 한 번, 전경 문구 레이어
- * 한 번. 사이에 사용자가 배치한 이미지와 컷아웃을 브라우저가 원본 그대로 끼워
- * 넣는다 (한방 생성 Patch 2 §4). 버튼은 그대로 하나이고, 나가는 횟수는 확인창이
- * 미리 말한다.
+ * 원본 보존 흐름은 이 길을 두 번 지난다 — 배경 한 번, 문구·버튼 스티커판 한 번.
+ * 사이에 사용자가 배치한 이미지와 컷아웃을 브라우저가 원본 그대로 끼워 넣고, 그
+ * 합쳐진 그림에서 문구 자리마다 색을 재 둔다 (스티커판 Patch §1~§3). 그 합성
+ * 페이지는 요청에 실리지 않는다 — 나가는 것은 거기서 뽑은 숫자뿐이다. 버튼은
+ * 그대로 하나이고, 나가는 횟수는 확인창이 미리 말한다.
  *
  * 돈이 드는 일이라 두 가지를 특히 지킨다.
  *
@@ -41,18 +42,27 @@ import { buildEditPrompt } from '../../domain/editPrompt'
 import { planGenerationInputs, MAX_INPUT_IMAGES, type GenerationInputImage } from '../../domain/imageGenerationInputs'
 import { buildOpenAIImagePrompt } from '../../domain/imagePrompt'
 import {
-  buildForegroundPrompt,
   buildPlatePrompt,
-  planForegroundInputs,
+  buildStickerPrompt,
   planPlateInputs,
+  planStickerInputs,
   type FixedObject,
-  type ForegroundInput,
   type PlateInput,
   type PreserveTextEntry,
+  type StickerSheetInput,
 } from '../../domain/preserveDesign'
-import { analyzeImageBlob } from '../../services/imageAnalysisRunner'
+import {
+  planStickerCells,
+  rectsOverlap,
+  spilledCells,
+  type StickerBlock,
+  type StickerCell,
+  type StickerRegionTone,
+} from '../../domain/stickerSheet'
 import { removeKeyBackground } from '../../services/textLayerKey'
 import { sliceTextLayer } from '../../services/textLayerSplit'
+import { sliceStickerSheet } from '../../services/stickerSheetSlice'
+import { analyzeRegions } from '../../services/regionTone'
 import type { StudioTextObject } from '../../domain/textObjects'
 import { planLocalComposite } from '../../domain/composite'
 import { getBlockTypeMeta } from '../../domain/blockTypes'
@@ -112,13 +122,15 @@ interface GenerationPlan {
   inputs: GenerationInputImage[]
   fingerprint: string
   /**
-   * `preserve`의 두 번째 겹 — 전경 문구 레이어의 **재료**.
+   * `preserve`의 두 번째 겹 — 문구·버튼 스티커판의 **재료** (스티커판 Patch §4).
    *
-   * 프롬프트를 여기서 미리 짓지 않는 이유는, 그 주문이 배경 플레이트의 색을
-   * 인용하기 때문이다. 색은 첫 번째 그림을 받은 뒤에야 손에 들어온다.
+   * 프롬프트를 여기서 미리 짓지 않는 이유는, 그 주문이 실제로 만들어진 배경과
+   * 그 위 자리별 색을 인용하기 때문이다. 둘 다 첫 번째 그림을 받은 뒤에야
+   * 손에 들어온다.
    */
-  foreground?: ForegroundInput
-  foregroundInputs?: GenerationInputImage[]
+  sticker?: StickerSheetInput
+  /** 칸 계획. 자를 좌표는 요청을 보내기 **전에** 이미 정해져 있다. */
+  cells?: StickerCell[]
   /**
    * 문구 오브젝트 하나만 다시 디자인하는 길 (텍스트 오브젝트 Patch §3).
    *
@@ -254,8 +266,23 @@ function preserveParts(
 
     const content = block.content ?? ''
     if (!meta.hasText || content.trim().length === 0) return
-    texts.push({ blockId: block.id, content, rect, align: textAlignOf(block), layer })
+    texts.push({
+      blockId: block.id,
+      content,
+      rect,
+      align: textAlignOf(block),
+      layer,
+      // 버튼은 배경판·테두리까지 한 오브젝트다 — 그리는 주문이 달라진다.
+      kind: block.type === 'cta_button' ? 'button' : 'text',
+      // 겹침은 여기서 정해진다. 뒤에서 채운다 — 이미지 목록이 다 모인 뒤라야
+      // 판정이 참이다.
+      overlapsImage: false,
+    })
   })
+
+  for (const text of texts) {
+    text.overlapsImage = fixed.some((item) => rectsOverlap(text.rect, item.rect))
+  }
 
   return { texts, fixed }
 }
@@ -308,11 +335,29 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         ...(note.length === 0 ? {} : { note }),
       }
       const plate: PlateInput = shared
-      const foreground: ForegroundInput = { ...shared, texts: parts.texts }
-      // 사용자 이미지는 어느 목록에도 들어갈 길이 없다 — 스타일 레퍼런스뿐이다.
+      // 문구·버튼은 칸으로 나눈다. 자를 좌표가 요청보다 **먼저** 정해지는 것이
+      // 이 갈래의 요점이다 (스티커판 Patch §4, §5).
+      const stickerBlocks: StickerBlock[] = parts.texts.map((text) => ({
+        blockId: text.blockId,
+        content: text.content,
+        kind: text.kind,
+        rect: text.rect,
+        align: text.align,
+        layer: text.layer,
+        overlapsImage: text.overlapsImage,
+      }))
+      const cells = planStickerCells(stickerBlocks, pageSize)
+      const sticker: StickerSheetInput | undefined =
+        stickerBlocks.length === 0 ? undefined : { ...shared, blocks: stickerBlocks, cells }
+
+      // 사용자 이미지는 어느 목록에도 들어갈 길이 없다 — 스타일 레퍼런스와, 이
+      // 도구가 다음 단계에서 직접 받아 올 배경뿐이다.
       const plateInputs = planPlateInputs(plate)
-      const foregroundInputs = planForegroundInputs(foreground)
-      if (plateInputs.length > MAX_INPUT_IMAGES || foregroundInputs.length > MAX_INPUT_IMAGES) {
+      const stickerInputs = planStickerInputs({
+        ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
+        backgroundAssetId: 'pending',
+      })
+      if (plateInputs.length > MAX_INPUT_IMAGES || stickerInputs.length > MAX_INPUT_IMAGES) {
         return { blocked: errorTextFor('too_many_inputs') }
       }
       return {
@@ -326,10 +371,9 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           working,
           inputs: plateInputs,
           fingerprint,
-          foreground,
-          foregroundInputs,
-          // 배경 플레이트 한 번, 전경 문구 레이어 한 번.
-          calls: 2,
+          ...(sticker === undefined ? {} : { sticker, cells }),
+          // 배경 한 번, 스티커판 한 번. 문구가 하나도 없으면 배경 한 번뿐이다.
+          calls: sticker === undefined ? 1 : 2,
         },
       }
     }
@@ -441,13 +485,132 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     requestId?: string
     /** `preserve`에서 저장해 둔 배경 플레이트. 다시 만들 때 재사용한다. */
     plateAssetId?: string
-    /** `preserve`의 두 번째 겹 — 투명 배경의 전경 문구 레이어. */
-    foregroundAssetId?: string
-    /** 블록별로 자른 문구 오브젝트 (텍스트 오브젝트 Patch §1). */
+    /** 칸에서 잘라 낸 문구·버튼 오브젝트 (스티커판 Patch §5). */
     textObjects?: StudioTextObject[]
-    /** 전경 레이어를 만들지 못했거나 쓸 수 없었던 이유. 없으면 정상이다. */
+    /** 스티커판을 만들지 못했거나 쓸 수 없었던 이유. 없으면 정상이다. */
     foregroundProblem?: string
   } | null>(null)
+
+  /**
+   * 배경을 자산으로 남기고 이 페이지의 배경으로 삼는다 (스티커판 Patch §1).
+   *
+   * 두 번째 요청에 붙일 그림이 바로 이것이고, 나중에 문구 하나만 갈아 끼우고 다시
+   * 합칠 때도 이 그림이 필요하다 — 결과 안에 섞여 버린 뒤에는 꺼낼 수 없다.
+   *
+   * 실패하면 `undefined`. 배경 없이도 주문은 성립하고, 저장은 `finishFromPaid`가
+   * 다시 시도한다.
+   */
+  const storePlate = useCallback(
+    async (
+      plan: GenerationPlan,
+      first: { blob: Blob; mimeType: string; requestedSize: string },
+    ): Promise<string | undefined> => {
+      if (studio === null) return undefined
+      try {
+        const working = await toWorkingImage(first.blob, plan.working)
+        const plateAssetId = createId('asset')
+        await putAsset({
+          id: plateAssetId,
+          blob: working.blob,
+          fileName: `plate-${plan.pageId}.png`,
+          mimeType: first.mimeType,
+          byteSize: working.blob.size,
+        })
+        await studio.setBackground(plan.pageId, {
+          assetId: plateAssetId,
+          source: 'ai',
+          requestedSize: first.requestedSize,
+        })
+        if (paidRef.current !== null) paidRef.current = { ...paidRef.current, plateAssetId }
+        return plateAssetId
+      } catch {
+        return undefined
+      }
+    },
+    [studio],
+  )
+
+  /**
+   * 배경 위에 고정 오브젝트를 얹어 두고, 문구 자리마다 색을 잰다 (§2, §3).
+   *
+   * 외부 호출은 0건이다. 그리고 여기서 만든 **합성 페이지는 요청에 실리지 않는다** —
+   * 나가는 것은 이 함수가 돌려주는 숫자뿐이다.
+   */
+  const measureRegions = useCallback(
+    async (plan: GenerationPlan, plateAssetId: string | undefined): Promise<(StickerRegionTone | null)[]> => {
+      const blocks = plan.sticker?.blocks ?? []
+      const empty = blocks.map(() => null)
+      if (studio === null || plateAssetId === undefined || blocks.length === 0) return empty
+      try {
+        const brief = getDocument()
+        const page = brief.pages.find((p) => p.id === plan.pageId)
+        if (page === undefined) return empty
+        const composite = planLocalComposite({
+          page,
+          background: { assetId: plateAssetId, source: 'ai' },
+          productImages: studio.job.productImages,
+          effects: studio.job.effects ?? {},
+          grain: studio.grain,
+          onlyBlockIds: plan.fixedBlockIds,
+          includeTexts: false,
+        })
+        const blob = await renderComposite(composite, await collectCompositeSources(composite))
+        return await analyzeRegions(blob, blocks.map((b) => b.rect), composite.size)
+      } catch {
+        return empty
+      }
+    },
+    [studio, getDocument],
+  )
+
+  /**
+   * 스티커판을 **미리 정한 칸 좌표로만** 자른다 (§5, 실패 처리).
+   *
+   * 한 칸이라도 자기 자리를 넘었으면 아무것도 얹지 않고 어느 칸인지만 말한다.
+   * 다시 부르지 않고, 픽셀을 보고 다시 나누지도 않는다 — 그 두 길이 이 Patch가
+   * 없애는 결함이다.
+   */
+  const cutSheet = useCallback(
+    async (
+      blob: Blob,
+      plan: GenerationPlan,
+    ): Promise<{ objects?: StudioTextObject[]; problem?: string }> => {
+      const cells = plan.cells ?? []
+      const blocks = plan.sticker?.blocks ?? []
+      const keyed = await removeKeyBackground(blob)
+      if (keyed === null) return { problem: '스티커판의 임시 배경을 걷어 내지 못했습니다.' }
+      if (keyed.opaqueRatio > FOREGROUND_MAX_OPAQUE) {
+        return { problem: '스티커판이 단색 배경 없이 돌아와 배경과 사진을 덮습니다.' }
+      }
+      const cut = await sliceStickerSheet(keyed.blob, cells)
+      if (cut === null) return { problem: '스티커판을 칸대로 자르지 못했습니다.' }
+
+      const spilled = spilledCells(cut.inks)
+      if (spilled.length > 0) {
+        const names = spilled.map((s) => `cell ${String(s.index)}(${s.blockId})`).join(', ')
+        return { problem: `스티커판의 ${names}이(가) 지정된 칸을 넘었습니다. 문구를 얹지 않았습니다.` }
+      }
+
+      const byId = new Map(blocks.map((b) => [b.blockId, b]))
+      const objects: StudioTextObject[] = []
+      for (const piece of cut.pieces) {
+        const block = byId.get(piece.blockId)
+        if (block === undefined) continue
+        const assetId = createId('asset')
+        await putAsset({
+          id: assetId,
+          blob: piece.blob,
+          fileName: `text-${piece.blockId}.png`,
+          mimeType: 'image/png',
+          byteSize: piece.blob.size,
+        })
+        // 자리와 크기는 기획서의 원래 값 그대로다 (§5 마지막 줄).
+        objects.push({ blockId: piece.blockId, assetId, rect: { ...block.rect }, layer: block.layer })
+      }
+      return { objects }
+    },
+    [],
+  )
 
   /**
    * 받아 둔 원본을 `840 × 페이지 세로길이` 작업본으로 맞춰 저장한다.
@@ -533,13 +696,11 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         const composite = planLocalComposite({
           page,
           background: { assetId: plateAssetId, source: 'ai', requestedSize: paid.requestedSize },
-          // 블록별로 잘렸으면 그것을 쓴다. 자르지 못했을 때만 예전처럼 한 장을
-          // 통째로 얹는다 — 값을 치른 문구를 잃지 않기 위해서다.
-          ...(paid.textObjects !== undefined && paid.textObjects.length > 0
-            ? { textObjects: paid.textObjects.map((t) => ({ assetId: t.assetId, rect: t.rect })) }
-            : paid.foregroundAssetId === undefined
-              ? {}
-              : { foreground: { assetId: paid.foregroundAssetId } }),
+          // 칸에서 잘라 낸 조각들이다. 조각 하나가 블록 하나이고, 자리는 기획서
+          // 원래 자리다 (스티커판 Patch §5).
+          ...(paid.textObjects === undefined || paid.textObjects.length === 0
+            ? {}
+            : { textObjects: paid.textObjects.map((t) => ({ assetId: t.assetId, rect: t.rect })) }),
           productImages: studio.job.productImages,
           effects: studio.job.effects ?? {},
           grain: studio.grain,
@@ -817,76 +978,38 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           ...(first.requestId === undefined ? {} : { requestId: first.requestId }),
         }
 
-        // ── 두 번째 겹: 전경 문구 레이어 (한방 생성 Patch 2 §4) ───────────────
-        if (plan.mode === 'preserve' && plan.foreground !== undefined) {
-          // 플레이트에서 색을 읽는다 — 나가는 것은 숫자뿐이고, 그림은 나가지
-          // 않는다. 이 값으로 글씨가 배경 위에서 읽히는 색을 고르게 한다.
-          const analysis = await analyzeImageBlob(first.blob)
-          const second = await requestLayer(
-            plan,
-            key,
-            plan.foregroundInputs ?? [],
-            buildForegroundPrompt({
-              ...plan.foreground,
-              tone:
-                analysis === null
-                  ? null
-                  : { average: analysis.average, brightness: analysis.brightness },
-            }),
-          )
+        // ── 두 번째 겹: 문구·버튼 스티커판 (스티커판 Patch §2~§5) ─────────────
+        if (plan.mode === 'preserve' && plan.sticker !== undefined && studio !== null) {
+          // ① 배경을 먼저 완성해 둔다 — 자산으로 남기고 이 페이지의 배경으로
+          //    삼는다. 두 번째 요청에 붙일 그림이 바로 이것이다.
+          const plateAssetId = await storePlate(plan, first)
+
+          // ② 고정 오브젝트 로컬 배치 + ③ 자리별 색. 둘 다 브라우저 안에서
+          //    끝난다 — 여기서 나가는 외부 호출은 0건이다. 합성 페이지 자체는
+          //    요청에 실리지 않고, 여기서 뽑은 숫자만 실린다.
+          const tones = await measureRegions(plan, plateAssetId)
+
+          const stickerInputs = planStickerInputs({
+            ...(plan.sticker.styleReferenceAssetId === undefined
+              ? {}
+              : { styleReferenceAssetId: plan.sticker.styleReferenceAssetId }),
+            ...(plateAssetId === undefined ? {} : { backgroundAssetId: plateAssetId }),
+          })
+          const sheet: StickerSheetInput = {
+            ...plan.sticker,
+            ...(plateAssetId === undefined ? {} : { backgroundAssetId: plateAssetId }),
+            blocks: plan.sticker.blocks.map((block, i) => ({ ...block, tone: tones[i] ?? null })),
+          }
+          const second = await requestLayer(plan, key, stickerInputs, buildStickerPrompt(sheet))
 
           if (!('blob' in second)) {
             paidRef.current = { ...paidRef.current, foregroundProblem: errorTextFor(second.code) }
           } else {
-            // 모델이 준 것은 단색 위의 글자다. 바깥에서 이어지는 그 단색만 걷어
-            // 내면 배경 없는 글자 그림이 된다 (꾸며진 텍스트 Patch §3).
-            const keyed = await removeKeyBackground(second.blob)
-            if (keyed === null) {
-              paidRef.current = {
-                ...paidRef.current,
-                foregroundProblem: '문구 레이어의 배경을 걷어 내지 못했습니다.',
-              }
-            } else if (keyed.opaqueRatio > FOREGROUND_MAX_OPAQUE) {
-              // 지운 뒤에도 거의 다 남았다면 단색 배경이 아니었다는 뜻이다.
-              paidRef.current = {
-                ...paidRef.current,
-                foregroundProblem: '문구 레이어가 단색 배경 없이 돌아와 배경과 사진을 덮습니다.',
-              }
-            } else {
-              const foregroundAssetId = createId('asset')
-              await putAsset({
-                id: foregroundAssetId,
-                blob: keyed.blob,
-                fileName: `foreground-${plan.pageId}.png`,
-                mimeType: 'image/png',
-                byteSize: keyed.blob.size,
-              })
-              paidRef.current = { ...paidRef.current, foregroundAssetId }
-
-              // ── 블록별 오브젝트로 자른다 (텍스트 오브젝트 Patch §1) ─────────
-              //
-              // 여기서 자르지 않으면 다음 화면에서 문구 하나만 옮길 방법이 없다.
-              // 자르지 못하면 한 장 그대로 두고 넘어간다 — 값은 이미 치렀다.
-              const sliced = await sliceTextLayer(keyed.blob, plan.foreground.texts.map((t) => ({
-                blockId: t.blockId,
-                rect: t.rect,
-                layer: t.layer,
-              })), plan.foreground.size)
-              if (sliced !== null && sliced.length > 0) {
-                const objects: StudioTextObject[] = []
-                for (const piece of sliced) {
-                  const assetId = createId('asset')
-                  await putAsset({
-                    id: assetId,
-                    blob: piece.blob,
-                    fileName: `text-${piece.blockId}.png`,
-                    mimeType: 'image/png',
-                    byteSize: piece.blob.size,
-                  })
-                  objects.push({ blockId: piece.blockId, assetId, rect: piece.rect, layer: piece.layer })
-                }
-                paidRef.current = { ...paidRef.current, textObjects: objects }
-              }
+            const cut = await cutSheet(second.blob, plan)
+            paidRef.current = {
+              ...paidRef.current,
+              ...(cut.objects === undefined ? {} : { textObjects: cut.objects }),
+              ...(cut.problem === undefined ? {} : { foregroundProblem: cut.problem }),
             }
           }
         }
@@ -899,7 +1022,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         runningRef.current = false
       }
     },
-    [requestLayer, finishFromPaid, studio, getDocument, recomposePage],
+    [requestLayer, finishFromPaid, studio, getDocument, recomposePage, storePlate, measureRegions, cutSheet],
   )
 
   const confirm = useCallback(

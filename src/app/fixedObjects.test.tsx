@@ -88,6 +88,23 @@ vi.mock('../services/workingImage', async () => {
   }
 })
 
+// 칸대로 자르는 일은 캔버스의 몫이다. 자르는 좌표의 규칙은 순수 검사에서 숫자로
+// 재고, 여기서는 흐름만 본다.
+vi.mock('../services/stickerSheetSlice', () => ({
+  sliceStickerSheet: async (_blob: Blob, cells: { blockId: string; index: number }[]) => ({
+    pieces: cells.map((c) => ({
+      blockId: c.blockId,
+      index: c.index,
+      blob: new Blob([new Uint8Array([7, 7])], { type: 'image/png' }),
+    })),
+    inks: cells.map((c) => ({ index: c.index, blockId: c.blockId, guardRatio: 0 })),
+  }),
+}))
+vi.mock('../services/regionTone', () => ({
+  REGION_MAX_SIDE: 512,
+  analyzeRegions: async (_blob: Blob, rects: unknown[]) => rects.map(() => null),
+}))
+
 const fetchSpy = vi.fn()
 globalThis.fetch = fetchSpy as unknown as typeof fetch
 
@@ -252,10 +269,13 @@ describe('§3 어디서 깨졌는가', () => {
     await documentReady(container)
     const [plate, foreground] = await generateOnce()
 
+    // 배경 요청에는 스타일 레퍼런스뿐이고, 스티커판 요청에는 **이 도구가 방금
+    // 받아 온 배경** 한 장이 더 붙는다 — 사용자의 그림이 아니다.
+    expect(fileNames(plate!)).toEqual(['1-style-reference.png'])
+    expect(fileNames(foreground!)).toEqual(['1-style-reference.png', '2-background-plate.png'])
+
     for (const form of [plate!, foreground!]) {
       const names = fileNames(form)
-      // 붙는 것은 스타일 레퍼런스 한 장뿐이다.
-      expect(names).toEqual(['1-style-reference.png'])
       for (const banned of ['big', 'small', 'logo', 'page-layout']) {
         expect(names.some((n) => n.includes(banned))).toBe(false)
       }
@@ -298,16 +318,20 @@ describe('§1 이미지와 컷아웃은 고정이다', () => {
   })
 
   it('붙일 수 있는 것은 스타일 레퍼런스 하나뿐이다', async () => {
-    const { preserveAttachmentIds, planPlateInputs, planForegroundInputs } = await load('domain/preserveDesign')
+    const { preserveAttachmentIds, planPlateInputs, planStickerInputs } = await load('domain/preserveDesign')
     expect(preserveAttachmentIds(undefined)).toEqual([])
     expect(preserveAttachmentIds('asset_style')).toEqual(['asset_style'])
 
     const fixed = [{ blockId: 'b', assetId: 'asset_big', rect: { x: 0, y: 0, width: 1, height: 1 }, layer: 0, cutout: true }]
     const plate = planPlateInputs({ size: { width: 840, height: 1200 }, fixed })
-    const fore = planForegroundInputs({ size: { width: 840, height: 1200 }, fixed, texts: [] })
     // 레퍼런스가 없으면 아무것도 붙지 않는다 — 고정 오브젝트가 목록에 낄 자리가 없다.
     expect(plate).toEqual([])
-    expect(fore).toEqual([])
+    expect(planStickerInputs({})).toEqual([])
+
+    // 스티커판에 붙을 수 있는 것은 레퍼런스와 **AI가 만든 배경**뿐이다. 제품·
+    // 인물·로고가 끼어들 인자가 이 함수에 아예 없다.
+    const sheet = planStickerInputs({ styleReferenceAssetId: 'asset_style', backgroundAssetId: 'asset_plate' })
+    expect(sheet.map((i: { assetId: string }) => i.assetId)).toEqual(['asset_style', 'asset_plate'])
   })
 
   it('최종 합성은 모든 이미지 블록을 문서 순서대로, 생성 전 좌표 그대로 얹는다', async () => {
@@ -340,43 +364,68 @@ describe('§1 이미지와 컷아웃은 고정이다', () => {
 // ── §2 텍스트는 앞이고 자유롭다 ─────────────────────────────────────────────
 
 describe('§2 문구는 전면 레이어다', () => {
-  it('전경 주문은 원문을 그대로 싣고, 자리를 배치 기준으로 말한다', async () => {
-    const { buildForegroundPrompt } = await load('domain/preserveDesign')
+  it('스티커판 주문은 원문을 그대로 싣고, 칸마다 자리·중요도·주변 색을 말한다', async () => {
+    const { buildStickerPrompt } = await load('domain/preserveDesign')
+    const { planStickerCells } = await load('domain/stickerSheet')
     const doc = sampleDoc()
     const blocks = doc.pages[0]!.blocks
-    const prompt = buildForegroundPrompt({
-      size: { width: 840, height: 1200 },
+    const size = { width: 840, height: 1200 }
+    const sheetBlocks = [
+      {
+        blockId: 'blk_note',
+        content: '8/1 ~ 8/14 · 선착순 300명',
+        kind: 'text' as const,
+        rect: blocks[4]!.position,
+        align: 'left' as const,
+        layer: 4,
+        overlapsImage: false,
+      },
+      {
+        blockId: 'blk_title',
+        content: '여름 감사제 40% + 사은품',
+        kind: 'text' as const,
+        rect: blocks[3]!.position,
+        align: 'center' as const,
+        layer: 3,
+        overlapsImage: true,
+        tone: { average: { r: 180, g: 112, b: 64 }, brightness: 0.5, contrast: 0.42 },
+      },
+    ]
+    const prompt = buildStickerPrompt({
+      size,
       styleReferenceAssetId: 'asset_style',
-      texts: [
-        { blockId: 'blk_note', content: '8/1 ~ 8/14 · 선착순 300명', rect: blocks[4]!.position, align: 'left', layer: 4 },
-        { blockId: 'blk_title', content: '여름 감사제 40% + 사은품', rect: blocks[3]!.position, align: 'center', layer: 3 },
-      ],
+      backgroundAssetId: 'asset_plate',
+      blocks: sheetBlocks,
+      cells: planStickerCells(sheetBlocks, size),
       fixed: [
         { blockId: 'blk_big', assetId: 'asset_big', rect: blocks[0]!.position, layer: 0, cutout: true },
       ],
-      tone: { average: { r: 180, g: 112, b: 64 }, brightness: 0.5 },
     })
 
     // 원문 그대로.
     expect(prompt).toContain('여름 감사제 40% + 사은품')
     expect(prompt).toContain('8/1 ~ 8/14 · 선착순 300명')
     expect(prompt).toContain('문자·숫자·띄어쓰기·기호·줄바꿈')
-    // 자리는 배치와 중요도의 기준이고, 빈 자리로 피하지 않는다.
-    expect(prompt).toContain('배치와 중요도의 기준')
-    expect(prompt).toContain('빈 공간을 찾아 다른 데로 옮기지 않습니다')
+    // 칸이 계약이다 — 한 칸에 한 블록, 칸 밖으로 넘기지 않는다.
+    expect(prompt).toContain('cell 1')
+    expect(prompt).toContain('cell 2')
+    expect(prompt).toContain('칸 하나에는 지정된 블록 하나만')
+    expect(prompt).toContain('한 문구를 두 칸에 나눠 넣지 않습니다')
+    expect(prompt).toContain('한 획도 넘어가지 않게')
+    // 크기와 중요도는 여전히 전달한다.
     expect(prompt).toContain('큰 상자는 주요 문구')
+    expect(prompt).toContain('중요도 1위 / 2개')
     expect(prompt).toContain('글꼴 분위기')
-    // 넓은 상자가 먼저 온다 — 목록 차례가 위계의 첫 신호다.
-    expect(prompt.indexOf('여름 감사제')).toBeLessThan(prompt.indexOf('8/1 ~ 8/14'))
-    // 사진 위에 겹치는 배치를 그대로 둔다.
-    expect(prompt).toContain('그대로 겹쳐 주세요')
-    expect(prompt).toContain('겹침을 피해 빈 자리로 옮기지 않습니다')
-    expect(prompt).toContain('외곽선·그림자·라벨을 자유롭게')
+    // 사진과 겹치는 자리는 그 위에서 읽히게 한다.
+    expect(prompt).toContain('겹칩니다')
     // 배경은 걷어 낼 단색이다 (꾸며진 텍스트 Patch §3).
     expect(prompt).toContain('단색 마젠타')
     expect(prompt).toContain('마젠타는 나중에 지워집니다')
-    // 아래 배경의 색은 숫자로만 간다.
+    // 그 자리 주변의 색은 숫자로만 간다.
     expect(prompt).toContain('R180')
+    expect(prompt).toContain('대비 0.42')
+    // 장식은 스티커판에 만들지 않는다.
+    expect(prompt).toContain('별·꽃·테이프·하프톤')
     expect(prompt).not.toContain('asset_')
   })
 
@@ -395,19 +444,31 @@ describe('§2 문구는 전면 레이어다', () => {
     expect(promptOf(foreground!)).toContain('여름 감사제 40% + 사은품')
     expect(fetchSpy).toHaveBeenCalledTimes(2)
     const textCalls = fetchSpy.mock.calls.filter((c) =>
-      String((c[1].body as FormData).get('prompt')).includes('전경 문구 레이어'),
+      String((c[1].body as FormData).get('prompt')).includes('문구·버튼 스티커판'),
     )
     expect(textCalls).toHaveLength(1)
   })
 
-  it('전경 주문은 단색 배경을 시키고, 그 색을 글자에 쓰지 말라고 못 박는다', async () => {
-    const { buildForegroundPrompt } = await load('domain/preserveDesign')
+  it('스티커판 주문은 단색 배경을 시키고, 그 색을 글자에 쓰지 말라고 못 박는다', async () => {
+    const { buildStickerPrompt } = await load('domain/preserveDesign')
+    const { planStickerCells } = await load('domain/stickerSheet')
     const { TEXT_KEY_HEX } = await load('domain/chromaKey')
-    const prompt = buildForegroundPrompt({
-      size: { width: 840, height: 1200 },
-      texts: [
-        { blockId: 't', content: '여름 감사제', rect: { x: 0, y: 0, width: 100, height: 50 }, align: 'center', layer: 0 },
-      ],
+    const size = { width: 840, height: 1200 }
+    const sheetBlocks = [
+      {
+        blockId: 't',
+        content: '여름 감사제',
+        kind: 'text' as const,
+        rect: { x: 0, y: 0, width: 100, height: 50 },
+        align: 'center' as const,
+        layer: 0,
+        overlapsImage: false,
+      },
+    ]
+    const prompt = buildStickerPrompt({
+      size,
+      blocks: sheetBlocks,
+      cells: planStickerCells(sheetBlocks, size),
       fixed: [],
     })
     expect(prompt).toContain(TEXT_KEY_HEX)

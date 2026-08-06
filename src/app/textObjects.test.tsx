@@ -80,6 +80,23 @@ vi.mock('../services/workingImage', async () => {
   }
 })
 
+// 칸대로 자르는 일은 캔버스의 몫이다. 자르는 좌표의 규칙은 순수 검사에서 숫자로
+// 재고, 여기서는 흐름만 본다.
+vi.mock('../services/stickerSheetSlice', () => ({
+  sliceStickerSheet: async (_blob: Blob, cells: { blockId: string; index: number }[]) => ({
+    pieces: cells.map((c) => ({
+      blockId: c.blockId,
+      index: c.index,
+      blob: new Blob([new Uint8Array([7, 7])], { type: 'image/png' }),
+    })),
+    inks: cells.map((c) => ({ index: c.index, blockId: c.blockId, guardRatio: 0 })),
+  }),
+}))
+vi.mock('../services/regionTone', () => ({
+  REGION_MAX_SIDE: 512,
+  analyzeRegions: async (_blob: Blob, rects: unknown[]) => rects.map(() => null),
+}))
+
 const fetchSpy = vi.fn()
 globalThis.fetch = fetchSpy as unknown as typeof fetch
 
