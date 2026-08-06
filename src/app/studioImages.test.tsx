@@ -140,10 +140,16 @@ async function openPreviewWith(doc: BriefDocument): Promise<HTMLElement> {
 /** 카드의 도구 막대와 메뉴는 선택했을 때만 그려진다. */
 const selectImageCard = () => fireEvent.pointerDown(imageCard(), { button: 0 })
 
-/** 이미지 블록 카드. */
+/**
+ * 이미지 블록 카드.
+ *
+ * 설명 글로 찾지 않는다 — 실제 제품 이미지가 걸린 자리는 그림 하나만 그리고
+ * 설명을 두지 않기 때문이다 (긴급 Patch §1). 블록의 이름은 그림이 걸려도 접근
+ * 이름으로 남으므로 그것으로 찾는다.
+ */
 const imageCard = () => {
   const card = [...document.querySelectorAll('.block-card')].find((c) =>
-    c.textContent?.includes('니트 정면 컷이 들어갑니다'),
+    (c.getAttribute('aria-label') ?? '').startsWith('이미지'),
   )
   if (!card) throw new Error('이미지 블록을 찾지 못했습니다')
   return card as HTMLElement
@@ -199,8 +205,11 @@ describe('§7 이미지 블록이 곧 제품 이미지 입력', () => {
     expect(block.assetId).toBe(referenceId)
     expect(block.image?.referenceOnly).toBe(true)
     expect(productId).not.toBe(referenceId)
-    // 캔버스는 실제 제품 이미지를 우선 보여 준다.
-    await waitFor(() => expect(imageCard().textContent).toContain('실제 사용 제품 이미지'))
+    // 캔버스는 실제 제품 이미지를 우선 보여 준다. 그림이 걸린 자리에는 배지도
+    // 설명도 없으므로 (긴급 Patch §1) 그림 자체의 이름으로 확인한다.
+    await waitFor(() =>
+      expect(within(imageCard()).getByAltText('실제 사용 제품 이미지')).toBeTruthy(),
+    )
   }, 20000)
 
   it('replaces and removes the product image while the brief stays whole', async () => {
@@ -236,7 +245,9 @@ describe('§7 이미지 블록이 곧 제품 이미지 입력', () => {
   it('lets the worker look at the reference again', async () => {
     await openStudioWith(sampleDoc())
     attachToCard(pngFile('cutout.png', 9))
-    await waitFor(() => expect(imageCard().textContent).toContain('실제 사용 제품 이미지'), { timeout: 6000 })
+    await waitFor(() => expect(within(imageCard()).getByAltText('실제 사용 제품 이미지')).toBeTruthy(), {
+      timeout: 6000,
+    })
 
     selectImageCard()
     await waitFor(() => expect(within(imageCard()).getByRole('button', { name: '참고 이미지 보기' })).toBeTruthy())

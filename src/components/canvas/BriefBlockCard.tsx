@@ -18,6 +18,10 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { getBlockTypeMeta, type BlockCategory } from '../../domain/blockTypes'
 import { imageFitOf } from '../../domain/imageLayout'
+import { LAYER_MOVES, visibleLayerPosition } from '../../domain/layerOrder'
+import { contentAspect, keepAspect, photoImageStyle, photoRect } from '../../domain/photoBox'
+import { measurePhoto, type PhotoContent } from '../../services/photoContent'
+import { getAsset } from '../../services/assetStore'
 import { canCarryLink, cardKindLabel, drawsBareText, textAlignOf, TEXT_ALIGNS, type TextAlign } from '../../domain/simpleBlocks'
 import { CARD_CHROME_Y, CARD_PADDING_X, PLACEHOLDER_FONT_PX, fitBlockToText, fitTextSize } from '../../domain/textFit'
 import { createLineMeasurer } from '../../features/editor/measureText'
@@ -56,6 +60,8 @@ const IMAGE_ACCEPT = ACCEPTED_MIME_TYPES.join(',')
 /** Built once: measuring asks the browser for the card's own font. */
 const measureLine = createLineMeasurer()
 const DRAG_THRESHOLD_PX = 3
+/** 떠 있는 도구막대가 블록 위에 설 수 있는 최소 여유 (긴급 Patch §2). */
+const TOOLBAR_ROOM = 40
 
 /**
  * Alignment icon: three lines, the middle one short, pushed to the side the
@@ -110,9 +116,9 @@ function LinkIcon() {
 
 export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeight, paired = false, linkUrl }: Props) {
   const {
-    moveBlock, resizeBlock, selectBlock, endInteraction, commitText,
+    state, moveBlock, resizeBlock, selectBlock, endInteraction, commitText,
     deleteBlock, duplicateBlock, removeBlockAsset, setBlockLink, setTextAlign,
-    freePlacement,
+    reorderBlock, freePlacement,
   } = useBriefEditor()
   const { getUrl, uploadFiles } = useAssets()
   const meta = getBlockTypeMeta(block.type)
@@ -129,6 +135,19 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   const [showingReference, setShowingReference] = useState(false)
   const displayUrl = showingReference ? (thumbUrl ?? productUrl) : (productUrl ?? thumbUrl)
   const showingProduct = displayUrl !== undefined && displayUrl === productUrl && !showingReference
+  /**
+   * 사진 표현인가 (긴급 Patch §1).
+   *
+   * 작업판에서 **실제로 쓸 제품 이미지가 걸린** 자리만 참이다. 그 순간 이 블록은
+   * "무엇이 들어갈지 적는 칸"이 아니라 그림 그 자체이므로, 카드도 라벨도 설명도
+   * 남길 이유가 없다. 참고 캡처를 잠깐 되돌려 보는 동안에는 다시 카드로 돌아가
+   * 그것이 참고용이라는 사실이 흐려지지 않는다.
+   *
+   * 작성기에는 `studio`가 없어 언제나 거짓이다 — 표면 하나로 갈린다.
+   */
+  const photo = studio !== null && productUrl !== undefined && !showingReference
+  const [content, setContent] = useState<PhotoContent | null>(null)
+  const [layerOpen, setLayerOpen] = useState(false)
   const drag = useRef<DragState | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
   const menuRef = useRef<HTMLDetailsElement | null>(null)
@@ -176,6 +195,19 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
     }
   }
   const openFilePicker = () => fileRef.current?.click()
+  const layerRef = useRef<HTMLSpanElement | null>(null)
+
+  // 메뉴가 열려 있는 동안만 바깥 클릭을 듣는다. 고른 블록은 그대로 두고 메뉴만
+  // 닫으므로, 순서를 몇 번이든 이어서 바꿀 수 있다.
+  useEffect(() => {
+    if (!layerOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (layerRef.current?.contains(e.target as Node)) return
+      setLayerOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    return () => window.removeEventListener('mousedown', onDown)
+  }, [layerOpen])
   /**
    * 더블클릭이 파일 선택창을 여는가 (손검수 Patch 2 §10).
    *
@@ -239,6 +271,47 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
     return () => window.removeEventListener('paste', onPaste, true)
   }, [selected, meta.requiresAsset, block.id, uploadFiles])
 
+  /**
+   * 이 누끼의 실제 경계를 잰다.
+   *
+   * 파일에는 대개 투명한 띠가 붙어 있고, 그것까지 블록으로 삼으면 선택 테두리가
+   * 보이지 않는 여백을 감싼다. 잰 값은 화면이 잠깐 들고 있을 뿐 저장소에도
+   * 작업 파일에도 들어가지 않는다.
+   */
+  useEffect(() => {
+    if (!photo || productAssetId === undefined) {
+      setContent(null)
+      return
+    }
+    let alive = true
+    void (async () => {
+      const asset = await getAsset(productAssetId)
+      if (!alive || asset === undefined) return
+      const measured = await measurePhoto(asset.blob)
+      if (alive) setContent(measured)
+    })()
+    return () => {
+      alive = false
+    }
+  }, [photo, productAssetId])
+
+  /**
+   * 연결하는 순간 블록을 그림 비율로 정리한다 (§1 이미지 경계).
+   *
+   * **연결·교체 때만**이다. 처음 마운트할 때의 자산은 이미 맞춰 둔 것으로 보므로,
+   * 새로고침이 작업자가 조정해 둔 크기를 되돌리지 않는다.
+   */
+  const fittedFor = useRef<string | undefined>(productAssetId)
+  useEffect(() => {
+    if (content === null || productAssetId === undefined) return
+    if (fittedFor.current === productAssetId) return
+    fittedFor.current = productAssetId
+    resizeBlock(block.id, photoRect(block.position, content.natural, content.box), `photo-fit:${block.id}`)
+    endInteraction()
+    // 잰 값이 도착하는 순간 한 번. 뒤이은 이동·크기 변경은 여기 오지 않는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content, productAssetId])
+
   const startDrag = (e: ReactPointerEvent) => {
     if (editing || linkOpen || e.button !== 0) return
     const additive = e.shiftKey || e.metaKey || e.ctrlKey
@@ -280,10 +353,17 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
     const startY = e.clientY
     const startRect = { ...block.position }
 
+    // 사진은 가로세로를 따로 늘리면 원본에 없던 찌그러짐이 생긴다 (§1).
+    const aspect = photo && content !== null ? contentAspect(content.natural, content.box) : null
+    const sized = (dx: number, dy: number) =>
+      aspect === null
+        ? resizeRect(startRect, handle, dx, dy, canvasWidth, canvasHeight, freePlacement)
+        : keepAspect(startRect, handle, dx, dy, aspect)
+
     const onMove = (ev: PointerEvent) => {
       const dx = (ev.clientX - startX) / scale
       const dy = (ev.clientY - startY) / scale
-      resizeBlock(block.id, resizeRect(startRect, handle, dx, dy, canvasWidth, canvasHeight, freePlacement), `resize:${block.id}`)
+      resizeBlock(block.id, sized(dx, dy), `resize:${block.id}`)
     }
     const onUp = (ev: PointerEvent) => {
       window.removeEventListener('pointermove', onMove)
@@ -293,7 +373,7 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
       // box is actually kept (손검수 1 §3). Same coalesce key, so the drag and
       // its settling stay a single undo step.
       if (bare && hasContent(block)) {
-        const dragged = resizeRect(startRect, handle, (ev.clientX - startX) / scale, (ev.clientY - startY) / scale, canvasWidth, canvasHeight, freePlacement)
+        const dragged = sized((ev.clientX - startX) / scale, (ev.clientY - startY) / scale)
         const settled = fitBlockToText(block.content ?? '', dragged, fitArea)
         resizeBlock(block.id, { ...dragged, width: settled.width, height: settled.height }, `resize:${block.id}`)
       }
@@ -316,8 +396,55 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
    * screen furniture: it is not part of the block's box and never reaches the
    * saved position, the AI placement data, or the content fingerprint.
    */
+  // 이 블록이 보이는 순서에서 어디쯤인가 — 끝에 닿은 방향은 눌리지 않는다 (§2).
+  const layerPos = visibleLayerPosition(state.brief.blocks, block.id)
+  const atFront = layerPos !== null && layerPos.index >= layerPos.count - 1
+  const atBack = layerPos !== null && layerPos.index <= 0
+  const layerDisabled: Record<string, boolean> = {
+    front: atFront,
+    forward: atFront,
+    backward: atBack,
+    back: atBack,
+  }
+
   const tools = (
     <span className="block-card__tools" onPointerDown={(e) => e.stopPropagation()}>
+      {/* 레이어 순서는 블록 바로 옆에서 바꾼다 — 우측 패널까지 갔다 오는 동안
+          "무엇을 고르고 있었는지"를 놓치기 때문이다 (긴급 Patch §2). */}
+      <span className="block-card__layer" ref={layerRef}>
+        <button
+          type="button"
+          className={`block-card__tool block-card__layer-trigger${layerOpen ? ' is-open' : ''}`}
+          // 블록 이름을 붙이지 않는다. 도구막대는 고른 블록의 것이라 이름이
+          // 겹칠 일이 없고, 붙이면 블록 이름으로 무엇을 찾든 이 버튼이 함께
+          // 걸린다 — 정렬 버튼들이 이미 같은 규칙을 쓴다.
+          aria-label="레이어 순서"
+          aria-expanded={layerOpen}
+          title="레이어 순서"
+          onClick={() => setLayerOpen((v) => !v)}
+        >
+          레이어 ▾
+        </button>
+        {layerOpen && (
+          <span className="block-card__layer-panel">
+            {LAYER_MOVES.map((move) => (
+              <button
+                key={move.value}
+                type="button"
+                className="block-card__menu-item"
+                disabled={layerDisabled[move.value] === true}
+                onClick={() => {
+                  reorderBlock(block.id, move.value)
+                  // 고른 블록은 그대로, 메뉴만 닫는다.
+                  setLayerOpen(false)
+                }}
+              >
+                {move.label}
+              </button>
+            ))}
+          </span>
+        )}
+      </span>
       {linkable && (
         <button
           type="button"
@@ -380,6 +507,11 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
       <LinkIcon />
     </span>
   )
+  /** 카드 대신 떠 있는 도구막대를 쓰는가 — 인쇄되는 문구와 사진. */
+  const floating = bare || photo
+  /** 캔버스 위쪽에 도구막대가 설 자리가 없으면 블록 아래로 내린다. */
+  const toolbarBelow = block.position.y < TOOLBAR_ROOM
+
   const overflowBadge = fit.overflow && (
     <span className="block-card__overflow" title="글이 블록보다 깁니다. 블록을 키워 주세요.">
       블록이 작아요
@@ -395,6 +527,8 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
         block.groupId !== undefined && !paired ? 'block-card--grouped' : '',
         // Printed wording carries no card: the box is the wording area itself.
         bare ? 'block-card--bare' : '',
+        // 연결된 제품 이미지는 그림 그 자체다 — CSS가 이 하나로 껍데기를 걷는다.
+        photo ? 'block-card--photo' : '',
         selected ? 'is-selected' : '',
         // 열려 있는 팝오버(링크 입력·⋯ 메뉴)만 뒤 카드보다 앞으로 나온다.
         // **선택만으로는 나오지 않는다** — 고른 것이 앞으로 튀어나오면 작업자가
@@ -442,39 +576,45 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
         }
       }}
     >
-      {bare ? (
+      {floating ? (
         <>
           {/* Whether an address is attached has to be readable without
               selecting the block, so this marker sits on the block's own
               corner, outside its layout (1-C §7.3). */}
           {linkUrl !== undefined && !selected && <span className="block-card__link-mark">{linkBadge}</span>}
-          {/* Floating bar, drawn above the block and outside its box (§3.2). */}
+          {/* Floating bar, drawn above the block and outside its box (§3.2).
+              위쪽에 자리가 없으면 아래로 내려 그림을 가리지 않는다 (긴급 Patch §2). */}
           {selected && (
-            <span className="block-toolbar" onPointerDown={(e) => e.stopPropagation()}>
+            <span
+              className={`block-toolbar${toolbarBelow ? ' block-toolbar--below' : ''}`}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
               {/* The block's own name (문구 · 버튼 · 혜택 …), which is what the
                   label line used to say inside the box. */}
               <span className="block-toolbar__kind">{block.label}</span>
               {/* Where the wording sits inside the box the planner drew. Only
                   wording has a side to sit on, so only 문구 blocks show it. */}
-              <span className="block-toolbar__aligns" role="group" aria-label="문구 정렬">
-                {TEXT_ALIGNS.map(({ value, label }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className={`block-toolbar__align${align === value ? ' is-active' : ''}`}
-                    aria-label={label}
-                    aria-pressed={align === value}
-                    title={label}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setTextAlign(block.id, value)
-                    }}
-                  >
-                    <AlignIcon align={value} />
-                  </button>
-                ))}
-              </span>
+              {bare && (
+                <span className="block-toolbar__aligns" role="group" aria-label="문구 정렬">
+                  {TEXT_ALIGNS.map(({ value, label }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={`block-toolbar__align${align === value ? ' is-active' : ''}`}
+                      aria-label={label}
+                      aria-pressed={align === value}
+                      title={label}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setTextAlign(block.id, value)
+                      }}
+                    >
+                      <AlignIcon align={value} />
+                    </button>
+                  ))}
+                </span>
+              )}
               {block.groupId !== undefined && !paired && <span className="block-card__group" title="그룹">그룹</span>}
               {linkBadge}
               {overflowBadge}
@@ -521,6 +661,26 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
             }
           }}
         />
+      ) : photo && displayUrl ? (
+        // 그림 하나. 라벨도 배지도 설명도 없다 (긴급 Patch §1).
+        //
+        // 경계를 잰 뒤에는 그림을 확대해 밀어 넣어 **내용 상자가 블록을 정확히
+        // 채운다** — 선택 테두리와 조작점이 보이는 그림과 같은 자리에 선다.
+        // 아직 재기 전이거나 `블록 채우기`를 고른 자리에서는 지금까지처럼 블록을
+        // 틀로 삼는다.
+        <span className="block-card__photo-clip">
+          <img
+            className="block-card__thumb"
+            src={displayUrl}
+            alt="실제 사용 제품 이미지"
+            draggable={false}
+            style={
+              content !== null && imageFitOf(block) === 'contain'
+                ? { position: 'absolute', objectFit: 'contain', ...photoImageStyle(block.position, content.box) }
+                : { objectFit: imageFitOf(block) }
+            }
+          />
+        </span>
       ) : displayUrl ? (
         // The capture, what it is a stand-in for, and — plainly — that it is
         // only a stand-in (1-B §2.3).

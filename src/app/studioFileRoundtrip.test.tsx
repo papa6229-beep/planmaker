@@ -13,7 +13,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
-import { render, waitFor, fireEvent } from '@testing-library/react'
+import { render, waitFor, within, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import JSZip from 'jszip'
 import { AppRoutes } from './AppRoutes'
@@ -383,8 +383,11 @@ describe('§1 새 브라우저에서 작업을 이어갈 수 있다', () => {
 
     // 화면에서도 실제 제품 이미지가 우선한다.
     await waitFor(() => {
-      const card = [...document.querySelectorAll('.block-card')].find((c) => c.textContent?.includes('니트 정면 컷'))
-      expect(card?.textContent).toContain('실제 사용 제품 이미지')
+      const card = [...document.querySelectorAll('.block-card')].find((c) =>
+        (c.getAttribute('aria-label') ?? '').includes('니트 정면 컷'),
+      )
+      expect(card).toBeTruthy()
+      expect(within(card as HTMLElement).getByAltText('실제 사용 제품 이미지')).toBeTruthy()
     }, { timeout: 8000 })
 
     expect(fetchSpy).not.toHaveBeenCalled()

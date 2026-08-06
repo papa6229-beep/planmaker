@@ -292,10 +292,13 @@ describe('§13-4 수동 레이어 순서', () => {
     expect(back.brief.blocks.map((b: { id: string }) => b.id)).toEqual(['blk_image', 'blk_text'])
   })
 
-  it('선택한 블록에 네 버튼이 있다', async () => {
+  it('고른 블록의 도구막대에서 네 동작을 부른다', async () => {
     await seedJob(sampleDoc())
     const { container } = renderStudio()
-    fireEvent.pointerDown(await imageCard(container), { button: 0 })
+    const card = await imageCard(container)
+    fireEvent.pointerDown(card, { button: 0 })
+    // 순서는 블록 바로 옆에서 바꾼다 — 우측 패널이 아니다 (긴급 Patch §2).
+    fireEvent.click(await screen.findByRole('button', { name: '레이어 순서' }))
     for (const name of ['맨 앞으로', '한 단계 앞으로', '한 단계 뒤로', '맨 뒤로']) {
       expect(await screen.findByRole('button', { name })).toBeTruthy()
     }

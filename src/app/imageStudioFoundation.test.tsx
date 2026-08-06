@@ -169,9 +169,17 @@ const openBriefFile = async (file: File) => {
 }
 
 /** 이미지 자리 카드(설명으로 찾는다). */
+/**
+ * 그 설명이 적힌 이미지 자리.
+ *
+ * 실제 제품 이미지가 걸리면 카드에서 설명 글이 사라지므로 (긴급 Patch §1)
+ * 접근 이름도 함께 본다 — 거기에는 블록에 적힌 글이 그대로 남는다.
+ */
 function slotRow(description: string): HTMLElement {
   const rows = [...document.querySelectorAll('.block-card')] as HTMLElement[]
-  const row = rows.find((r) => r.textContent?.includes(description))
+  const row = rows.find(
+    (r) => r.textContent?.includes(description) || (r.getAttribute('aria-label') ?? '').includes(description),
+  )
   if (!row) throw new Error(`이미지 자리를 찾지 못했습니다: ${description}`)
   return row
 }
@@ -356,7 +364,7 @@ describe('§9.1-4·10 작업판 화면', () => {
     fireEvent.change(row().querySelector('.block-card__file') as HTMLInputElement, {
       target: { files: [pngFile('cutout.png', 9)] },
     })
-    await waitFor(() => expect(row().textContent).toContain('실제 사용 제품 이미지'), { timeout: 5000 })
+    await waitFor(() => expect(within(row()).getByAltText('실제 사용 제품 이미지')).toBeTruthy(), { timeout: 5000 })
 
     // 세는 것은 디자인팀이 연결한 제품 이미지다. 저장소 쪽 `allStudioAssetIds`는
     // 정리가 지우면 안 되는 것 전부(작업본 문서가 쓰는 이미지까지)를 말하므로,
@@ -438,7 +446,7 @@ describe('§9.1-11·12 복원과 표면 분리', () => {
     await waitFor(() => {
       expect((document.querySelector('.editor-topbar__title') as HTMLInputElement).value).toBe('가을 신상 예약판매')
     }, { timeout: 5000 })
-    await waitFor(() => expect(slotRow('니트 정면 컷이 들어갑니다').textContent).toContain('실제 사용 제품 이미지'), {
+    await waitFor(() => expect(within(slotRow('니트 정면 컷이 들어갑니다')).getByAltText('실제 사용 제품 이미지')).toBeTruthy(), {
       timeout: 5000,
     })
   })

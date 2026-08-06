@@ -27,6 +27,21 @@ export const LAYER_MOVES: readonly { value: LayerMove; label: string }[] = [
   { value: 'back', label: '맨 뒤로' },
 ]
 
+/**
+ * 이 블록이 보이는 순서에서 몇 번째인가 (긴급 Patch §2).
+ *
+ * 화면이 `맨 앞으로`를 흐리게 할지 정하는 데 쓴다. 끝에 닿은 버튼을 눌러도
+ * 아무 일이 없는 것보다, 누를 수 없다고 미리 말하는 편이 정직하다.
+ */
+export function visibleLayerPosition(
+  blocks: readonly BriefBlock[],
+  blockId: string,
+): { index: number; count: number } | null {
+  const visible = blocks.filter((b) => !isPairedLinkUrl(blocks, b))
+  const index = visible.findIndex((b) => b.id === blockId)
+  return index < 0 ? null : { index, count: visible.length }
+}
+
 function targetIndex(move: LayerMove, from: number, count: number): number {
   switch (move) {
     case 'front':

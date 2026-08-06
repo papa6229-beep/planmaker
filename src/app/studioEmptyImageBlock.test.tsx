@@ -136,9 +136,16 @@ async function openWriter(): Promise<void> {
   await waitFor(() => expect(document.querySelector('.canvas__sheet')).toBeTruthy(), { timeout: 8000 })
 }
 
-/** 화면 위의 그 카드. 설명 글로 찾는다 — id는 화면에 없다. */
+/**
+ * 화면 위의 그 카드. id는 화면에 없으므로 사람이 읽는 글로 찾는다.
+ *
+ * 실제 제품 이미지가 걸린 자리는 설명을 그리지 않으므로 (긴급 Patch §1) 접근
+ * 이름도 함께 본다 — 그 이름에는 블록에 적힌 글이 그대로 남는다.
+ */
 function card(text: string): HTMLElement {
-  const found = [...document.querySelectorAll('.block-card')].find((c) => c.textContent?.includes(text))
+  const found = [...document.querySelectorAll('.block-card')].find(
+    (c) => c.textContent?.includes(text) || (c.getAttribute('aria-label') ?? '').includes(text),
+  )
   expect(found, `"${text}" 카드를 찾지 못함`).toBeTruthy()
   return found as HTMLElement
 }

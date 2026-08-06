@@ -151,7 +151,11 @@ async function importFile(file: File): Promise<void> {
 /** 불러오기 직전과 한 글자도 다르지 않다 — 화면도, 저장된 작업도. */
 async function expectUntouched(): Promise<void> {
   expect((document.querySelector('.editor-topbar__title') as HTMLInputElement).value).toBe('먼저 하던 작업')
-  expect(document.body.textContent).toContain('먼저 하던 문구')
+  // 제품 이미지가 걸린 자리는 설명 글을 그리지 않으므로 (긴급 Patch §1) 블록의
+  // 접근 이름을 본다 — 화면에 그 블록이 그대로 서 있다는 뜻은 같다.
+  const labels = [...document.querySelectorAll('.block-card')].map((c) => c.getAttribute('aria-label') ?? '')
+  expect(labels.join(' ')).toContain('먼저 하던 문구')
+  expect(labels.join(' ')).not.toContain('새 문구')
   expect(document.body.textContent).not.toContain('새 문구')
 
   const after = (await loadStudioJob(STUDIO_JOB_ID))!
