@@ -505,6 +505,131 @@ describe('§4 배경 → 사진 → 문구', () => {
     }
   })
 
+  /**
+   * 그린 자리를 받아 적는 가짜 캔버스 (진단 Patch B).
+   *
+   * jsdom에는 2D 캔버스가 없다. 무엇을 그렸는지가 아니라 **어디에** 그렸는지가
+   * 이 검사들의 전부이므로, 좌표만 받아 적는다.
+   */
+  async function recordDraws(plan: unknown, sources: unknown) {
+    const draws: { id: string; args: number[] }[] = []
+    const clips: number[][] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(globalThis as any).createImageBitmap = async (blob: Blob) => ({
+      width: 400,
+      height: 400,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      id: (blob as any).tag ?? '?',
+    })
+    let first = true
+    const makeCtx = (record: boolean) => ({
+      save() {}, restore() {}, beginPath() {}, closePath() {}, clip() {}, ellipse() {}, fill() {},
+      fillRect() {},
+      rect(...args: number[]) { if (record) clips.push(args) },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      drawImage(src: any, ...args: number[]) {
+        if (record) draws.push({ id: String(src?.id ?? 'canvas'), args })
+      },
+      fillText() {},
+      createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
+      putImageData() {},
+      getImageData: (_x: number, _y: number, w: number, h: number) => ({
+        data: new Uint8ClampedArray(w * h * 4), width: w, height: h,
+      }),
+    })
+    const original = document.createElement.bind(document)
+    const spy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      if (tag !== 'canvas') return original(tag) as HTMLElement
+      const record = first
+      first = false
+      const ctx = makeCtx(record)
+      return {
+        width: 0, height: 0, style: {},
+        getContext: () => ctx,
+        toBlob: (cb: (b: Blob) => void) => cb(new Blob([new Uint8Array([1])], { type: 'image/png' })),
+        toDataURL: () => 'data:image/png;base64,AA',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any
+    })
+    try {
+      const { renderComposite } = await vi.importActual<typeof import('../services/compositeRenderer')>(
+        '../services/compositeRenderer',
+      )
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await renderComposite(plan as any, sources as any)
+      return { draws, clips }
+    } finally {
+      spy.mockRestore()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (globalThis as any).createImageBitmap
+    }
+  }
+
+  /** 이 계획의 뼈대 — 검사마다 블록 하나만 바꾼다. */
+  const onePhotoPlan = (rect: { x: number; y: number; width: number; height: number }, crop: unknown) => ({
+    size: { width: 840, height: 1000 },
+    layers: [
+      {
+        blockId: 'blk',
+        assetId: 'a_photo',
+        rect,
+        fit: 'contain' as const,
+        crop,
+        effects: {
+          edge: 0, contactShadow: 0, wallShadow: 0, grading: 0, rimLight: 0,
+          paperCutout: true, paperWeight: 'normal' as const,
+        },
+      },
+    ],
+    texts: [],
+    grain: 0,
+    externalCalls: 0 as const,
+  })
+
+  it('내용 상자가 블록을 채우도록 앉히고, 종이는 블록에 붙는다', async () => {
+    const photo = Object.assign(new Blob(['photo']), { tag: 'photo' })
+    const rect = { x: 100, y: 200, width: 200, height: 200 }
+    const { draws } = await recordDraws(
+      onePhotoPlan(rect, { sx: 0, sy: 0, sWidth: 400, sHeight: 400, dx: 100, dy: 200, dWidth: 200, dHeight: 200 }),
+      {
+        blobs: new Map([['a_photo', photo]]),
+        // 그림의 가운데 절반만 불투명한 진짜 누끼.
+        boxes: new Map([['blk', { x: 0.25, y: 0.25, width: 0.5, height: 0.5 }]]),
+        papers: new Map([['blk', { canvas: { id: 'paper' }, pad: 6, content: { width: 100, height: 100 } }]]),
+      },
+    )
+
+    // 사진: 내용 상자가 블록을 정확히 채우도록 그림 전체가 두 배로 앉는다.
+    const image = draws.find((d) => d.id === 'photo' && d.args.length === 8)!
+    expect(image.args.slice(4)).toEqual([0, 100, 400, 400])
+    // → 가운데 절반은 (100, 200, 200, 200) = 블록 그대로.
+
+    // 종이: 블록에서 pad 비율(6/100)만큼 사방으로 나간다 — 사진이 앉은 자리가
+    // 아니라 **블록**이 기준이다.
+    const paper = draws.find((d) => d.id === 'paper')!
+    expect(paper.args).toEqual([100 - 200 * 0.06, 200 - 200 * 0.06, 200 * 1.12, 200 * 1.12])
+  })
+
+  it('캔버스 밖은 경계에서 잘리기만 하고, 그림은 줄지도 옮겨지지도 않는다', async () => {
+    const { cropToCanvas } = await load('domain/imageLayout')
+    const photo = Object.assign(new Blob(['photo']), { tag: 'photo' })
+    // 왼쪽으로 50 걸친 블록.
+    const rect = { x: -50, y: 0, width: 200, height: 200 }
+    const crop = cropToCanvas(rect, 840, 1000)
+    expect(crop).toMatchObject({ dx: 0, dy: 0, dWidth: 150, dHeight: 200 })
+
+    const { draws, clips } = await recordDraws(onePhotoPlan(rect, crop), {
+      blobs: new Map([['a_photo', photo]]),
+      boxes: new Map([['blk', { x: 0, y: 0, width: 1, height: 1 }]]),
+    })
+
+    // 자르는 것은 캔버스 경계뿐이다.
+    expect(clips).toContainEqual([0, 0, 150, 200])
+    // 그림이 앉은 자리는 블록 그대로 — 잘린 만큼 줄어들지 않는다.
+    const image = draws.find((d) => d.id === 'photo' && d.args.length === 8)!
+    expect(image.args.slice(4)).toEqual([-50, 0, 200, 200])
+  })
+
   it('한 번 눌러 두 번 나가고, 확인창이 그 수를 그대로 말한다', async () => {
     await seedJob({ effects: CUTOUTS })
     const { container } = renderStudio()

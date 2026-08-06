@@ -74,13 +74,29 @@ export class ImageProviderError extends Error {
   readonly code: ImageGenerationErrorCode
   readonly status: number
   readonly requestId?: string
+  /**
+   * 공급자가 붙인 분류값 (`error.code` / `error.type`) 그대로 — **짧은 이름뿐**.
+   *
+   * 문장은 여전히 담지 않는다. 담지 않는 이유는 그 안에 키가 섞여 나온 적이
+   * 있어서이고, 그 위험은 이름표에는 없다. 이것이 없으면 400을 받았을 때
+   * 무엇이 잘못됐는지 알 길이 아예 없다 — 우리 분류는 모든 400을 한 칸에 넣는다.
+   */
+  readonly providerCode?: string
+  readonly providerType?: string
 
-  constructor(code: ImageGenerationErrorCode, status: number, requestId?: string) {
+  constructor(
+    code: ImageGenerationErrorCode,
+    status: number,
+    requestId?: string,
+    provider?: { code?: string; type?: string },
+  ) {
     super(`image provider failed: ${code}`)
     this.name = 'ImageProviderError'
     this.code = code
     this.status = status
     if (requestId !== undefined) this.requestId = requestId
+    if (provider?.code !== undefined) this.providerCode = provider.code
+    if (provider?.type !== undefined) this.providerType = provider.type
   }
 }
 
@@ -165,9 +181,18 @@ export async function requestOpenAiImage(
 
   if (!response.ok) {
     const error = body?.error
-    const providerCode =
-      typeof error === 'object' && error !== null ? (error as Record<string, unknown>).code : undefined
-    throw new ImageProviderError(classifyProviderError(response.status, providerCode), response.status, requestId)
+    const fields = typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : {}
+    const providerCode = fields.code
+    const providerType = fields.type
+    throw new ImageProviderError(
+      classifyProviderError(response.status, providerCode),
+      response.status,
+      requestId,
+      {
+        ...(typeof providerCode === 'string' ? { code: providerCode } : {}),
+        ...(typeof providerType === 'string' ? { type: providerType } : {}),
+      },
+    )
   }
 
   const data = body?.data

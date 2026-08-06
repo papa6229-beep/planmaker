@@ -34,7 +34,14 @@ export interface HandlerDeps {
   requestImage?: typeof requestOpenAiImage
   fetch?: typeof fetch
   /** 개발자 확인용 기록. 키는 절대 넘기지 않는다. */
-  log?: (entry: { code: string; status: number; requestId?: string }) => void
+  log?: (entry: {
+    code: string
+    status: number
+    requestId?: string
+    /** 공급자가 붙인 분류 이름. 문장이 아니라 짧은 이름표다. */
+    providerCode?: string
+    providerType?: string
+  }) => void
 }
 
 function fail(code: ImageGenerationErrorCode, status: number, message: string, requestId?: string): Response {
@@ -117,8 +124,19 @@ export async function handleGenerateImage(request: Request, deps: HandlerDeps = 
     const code: ImageGenerationErrorCode = known ? err.code : 'unknown'
     const status = known && err.status >= 400 ? err.status : 502
     const requestId = known ? err.requestId : undefined
-    // 조사에 필요한 것만 남긴다 — 코드, 상태, 요청 id. 키도 공급자 원문도 아니다.
-    deps.log?.({ code, status, ...(requestId === undefined ? {} : { requestId }) })
+    // 조사에 필요한 것만 남긴다 — 우리 분류, 상태, 요청 id, 그리고 공급자가 붙인
+    // 분류 이름. 키도 공급자의 **문장**도 아니다.
+    //
+    // 공급자 이름표를 남기는 이유가 있다: 우리 분류는 400을 전부 `invalid_size`
+    // 한 칸에 넣으므로, 이것이 없으면 "크기 문제"라는 화면 문구만 남고 실제
+    // 원인은 어디에도 남지 않는다.
+    deps.log?.({
+      code,
+      status,
+      ...(requestId === undefined ? {} : { requestId }),
+      ...(known && err.providerCode !== undefined ? { providerCode: err.providerCode } : {}),
+      ...(known && err.providerType !== undefined ? { providerType: err.providerType } : {}),
+    })
     return fail(code, status, '이미지를 생성하지 못했습니다.', requestId)
   }
 }

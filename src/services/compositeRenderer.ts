@@ -15,6 +15,7 @@
 
 import { contactShadow, wallShadow, type CompositeEffects } from '../domain/compositeEffects'
 import { paperOutset, PAPER_SHADOW } from '../domain/paperCutout'
+import { photoImageStyle, type ContentBox } from '../domain/photoBox'
 import { fitSourceRect } from '../domain/imageLayout'
 import type { PaperCanvas } from './paperCutoutShape'
 import type { CompositeLayerPlan, CompositePlan } from '../domain/composite'
@@ -37,6 +38,39 @@ export interface CompositeSources {
    * 할 수 있다 (한방 생성 Patch §3).
    */
   papers?: ReadonlyMap<string, PaperCanvas>
+  /**
+   * 블록 번호 → 그 그림의 알파 내용 상자 (진단 Patch B).
+   *
+   * 화면은 **내용 상자가 블록을 채우도록** 그림을 앉힌다 (`photoImageStyle`).
+   * 여기서 파일 전체를 블록에 맞추면 투명한 띠까지 블록에 들어가므로, 같은 그림이
+   * 화면에서는 블록을 채우고 결과에서는 작게 가운데 놓인다. 그 어긋남이 큰
+   * 컷아웃의 흰 판이었다 — 종이는 블록 크기인데 사진만 줄어들었기 때문이다.
+   *
+   * 값이 없으면 지금까지처럼 파일 전체를 맞춘다.
+   */
+  boxes?: ReadonlyMap<string, ContentBox>
+}
+
+/**
+ * 이 그림을 어디에 앉힐 것인가 — **화면과 같은 규칙으로**.
+ *
+ * `전체 보이기`이고 내용 상자를 알고 있으면, 내용 상자가 블록을 채우도록 그림을
+ * 키워 앉힌다. 밖으로 나간 부분은 캔버스 경계와 크롭이 잘라 낸다 — 잘리는 것이지
+ * 줄어드는 것이 아니다.
+ */
+function frameOf(
+  layer: CompositeLayerPlan,
+  source: { width: number; height: number },
+  box: ContentBox | undefined,
+): { source: { x: number; y: number; width: number; height: number }; dest: { x: number; y: number; width: number; height: number } } | null {
+  if (box === undefined || layer.fit !== 'contain') return fitSourceRect(layer.fit, source, layer.rect)
+  const placed = photoImageStyle(layer.rect, box)
+  return fitSourceRect('contain', source, {
+    x: layer.rect.x + placed.left,
+    y: layer.rect.y + placed.top,
+    width: placed.width,
+    height: placed.height,
+  })
 }
 
 async function toSource(blob: Blob): Promise<CanvasImageSource & { width: number; height: number }> {
@@ -102,7 +136,7 @@ async function drawLayer(
   if (blob === undefined || layer.crop === null) return
 
   const source = await toSource(blob)
-  const fit = fitSourceRect(layer.fit, { width: source.width, height: source.height }, layer.rect)
+  const fit = frameOf(layer, { width: source.width, height: source.height }, sources.boxes?.get(layer.blockId))
   if (fit === null) return
 
   const analysis = sources.analyses?.get(layer.assetId)
@@ -113,12 +147,15 @@ async function drawLayer(
   // ── 종이 컷아웃: 그림자와 사진보다 먼저, 맨 아래에 깔린다 (§3) ────────────
   const paper = effects.paperCutout ? sources.papers?.get(layer.blockId) : undefined
   if (paper !== undefined) {
+    // 종이는 **블록**을 기준으로 삼는다 — 화면이 쓰는 그 기준이다. 그림이 앉은
+    // 자리(`fit.dest`)를 기준으로 잡으면, 투명한 띠가 있는 그림에서 종이만
+    // 블록만큼 커지고 사진은 그 안에 작게 남아 흰 판으로 보인다.
     const out = paperOutset(paper.content, paper.pad)
-    const px = fit.dest.x - fit.dest.width * out.x
-    const py = fit.dest.y - fit.dest.height * out.y
-    const pw = fit.dest.width * (1 + out.x * 2)
-    const ph = fit.dest.height * (1 + out.y * 2)
-    const short = Math.min(fit.dest.width, fit.dest.height)
+    const px = layer.rect.x - layer.rect.width * out.x
+    const py = layer.rect.y - layer.rect.height * out.y
+    const pw = layer.rect.width * (1 + out.x * 2)
+    const ph = layer.rect.height * (1 + out.y * 2)
+    const short = Math.min(layer.rect.width, layer.rect.height)
     ctx.save()
     // 얕고 부드러운 그림자. 캔버스 그림자는 알파를 따라가므로 종이 모양 그대로
     // 진다 — 사각형 그림자가 아니다.

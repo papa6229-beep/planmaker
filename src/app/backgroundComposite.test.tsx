@@ -49,6 +49,12 @@ vi.mock('../services/previewRenderer', () => ({
 vi.mock('../services/compositeRenderer', () => ({
   renderComposite: async () => new Blob([new Uint8Array([9, 9, 9])], { type: 'image/png' }),
 }))
+// 알파 경계 재기도 캔버스 일이다. jsdom은 그림을 디코딩하지 않아 `Image`가
+// load도 error도 내지 않으므로, 진짜 함수를 부르면 영영 기다린다.
+vi.mock('../services/photoContent', () => ({
+  PHOTO_MEASURE_MAX_SIDE: 256,
+  measurePhoto: async () => null,
+}))
 vi.mock('../services/imageAnalysisRunner', () => ({
   ANALYSIS_MAX_SIDE: 256,
   analyzeImageBlob: async () => ({
