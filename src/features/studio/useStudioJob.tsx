@@ -36,6 +36,9 @@ import {
   withStyleReference,
   withoutStyleReference,
   styleReferenceOf,
+  textObjectsOf,
+  withTextObject,
+  withTextObjects,
   withPageResult,
   withSource,
   withWorkingDoc,
@@ -46,6 +49,8 @@ import {
 } from '../../domain/studioJob'
 import { DEFAULT_GRAIN, type CompositeEffects } from '../../domain/compositeEffects'
 import type { GeneratedPageResult } from '../../domain/imageGeneration'
+import type { StudioTextObject } from '../../domain/textObjects'
+import type { LayoutRect } from '../../domain/imageLayout'
 import { loadStudioJob, saveStudioJob, STUDIO_JOB_ID } from '../../services/studioStore'
 import type { StudioFileState } from '../../domain/studioFile'
 import { createEmptyDocument } from '../../domain/pageSchema'
@@ -55,6 +60,13 @@ import type { DocumentBinding } from '../document/useBriefDocument'
 
 export interface StudioJobApi {
   job: StudioJob
+  /**
+   * 지금 저장된 작업 — 렌더에 얼린 값이 아니라 **가장 최근 값**이다.
+   *
+   * 끌어 옮기는 동안처럼 한 렌더의 값이 손에 남아 있는 자리에서, 그 값으로 다시
+   * 합치면 방금 옮긴 자리가 아니라 옮기기 전 자리가 실린다.
+   */
+  currentJob: () => StudioJob
   /** 편집기가 읽고 쓰는 곳 — Studio 작업 행. */
   binding: DocumentBinding
   /** 이미지 자리에 연결된 실제 사용 제품 이미지의 자산 id. */
@@ -92,6 +104,19 @@ export interface StudioJobApi {
   /** 이 작업이 고른 생성 방식 (§6). */
   method: GenerationMethod
   setMethod: (method: GenerationMethod) => void
+  /**
+   * 이 페이지의 꾸며진 문구 오브젝트 (텍스트 오브젝트 Patch §1, §2).
+   *
+   * 생성 결과 안에 합쳐지지 않고 따로 남아 있다. 옮기기·크기 변경은 이 값만
+   * 바꾸고 외부를 부르지 않는다.
+   */
+  textObjectsOf: (pageId: string) => StudioTextObject[]
+  setTextObjects: (pageId: string, objects: readonly StudioTextObject[]) => Promise<void>
+  moveTextObject: (pageId: string, blockId: string, rect: LayoutRect) => void
+  replaceTextObjectAsset: (pageId: string, blockId: string, assetId: string) => Promise<void>
+  /** 결과 화면에서 고른 문구 오브젝트. 화면에만 있는 값이라 저장되지 않는다. */
+  selectedTextBlockId: string | null
+  selectTextObject: (blockId: string | null) => void
   /** 원본 기획서와 작업본이 달라졌는지 (§7). 자동 병합은 하지 않는다. */
   sourceChanged: boolean
   /**
@@ -137,6 +162,8 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
   const [past, setPast] = useState<Links[]>([])
   const [future, setFuture] = useState<Links[]>([])
   const [lastChangeAt, setLastChangeAt] = useState(0)
+  /** 고른 문구 오브젝트 — 새로고침에 남을 이유가 없는 화면 상태다. */
+  const [selectedTextBlockId, setSelectedTextBlockId] = useState<string | null>(null)
 
   // 작업을 먼저 읽고 나서 편집기를 마운트한다. 편집기는 마운트 순간 한 번
   // `binding.load()`를 호출하므로, 그 전에 작업이 손에 있어야 새로고침 복원이
@@ -163,6 +190,22 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
     setJob(next)
     await saveStudioJob(next)
   }, [])
+
+  /**
+   * 지금 저장된 작업을 읽어 고친다.
+   *
+   * `job`이 아니라 `jobRef`를 읽는 것이 요점이다. 한 흐름에서 여러 번 고치는
+   * 자리(생성 뒤 배경·문구 오브젝트·결과를 잇달아 쓰는 길)에서 메모된 `job`을
+   * 쓰면 뒤의 쓰기가 앞의 쓰기를 지운다 — 결과가 저장됐다가 사라진다.
+   */
+  const mutate = useCallback(
+    (fn: (current: StudioJob) => StudioJob): Promise<void> => {
+      const current = jobRef.current
+      if (current === null) return Promise.resolve()
+      return commit(fn(current))
+    },
+    [commit],
+  )
 
   /** 연결을 바꾸면서 되돌릴 자리를 남긴다. */
   const commitLinks = useCallback(
@@ -255,6 +298,7 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
     if (!job) return null
     return {
       job,
+      currentJob: () => jobRef.current ?? job,
       binding,
       recordResult,
       productImageOf: (blockId) => productImageOf(job, blockId),
@@ -264,13 +308,13 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       // 배경은 값을 치렀거나 작업자가 고른 그림이다. 저장이 먼저이고, 저장이
       // 실패하면 화면도 배경을 갖지 않는다 — 새로고침에 사라질 것을 보여 주지
       // 않기 위해서다.
-      setBackground: (pageId, background) => commit(withPageBackground(job, pageId, background, Date.now())),
-      removeBackground: (pageId) => commit(withoutPageBackground(job, pageId, Date.now())),
+      setBackground: (pageId, background) => mutate((j) => withPageBackground(j, pageId, background, Date.now())),
+      removeBackground: (pageId) => mutate((j) => withoutPageBackground(j, pageId, Date.now())),
       styleReferenceOf: (pageId) => styleReferenceOf(job, pageId),
-      setStyleReference: (pageId, assetId) => commit(withStyleReference(job, pageId, assetId, Date.now())),
-      removeStyleReference: (pageId) => commit(withoutStyleReference(job, pageId, Date.now())),
+      setStyleReference: (pageId, assetId) => mutate((j) => withStyleReference(j, pageId, assetId, Date.now())),
+      removeStyleReference: (pageId) => mutate((j) => withoutStyleReference(j, pageId, Date.now())),
       effectsOf: (blockId) => blockEffectsOf(job, blockId),
-      setEffects: (blockId, patch) => void commit(withBlockEffects(job, blockId, patch, Date.now())),
+      setEffects: (blockId, patch) => void mutate((j) => withBlockEffects(j, blockId, patch, Date.now())),
       copyEffects: (from, to) => {
         const next = withClonedEffects(job, from, to, Date.now())
         if (next !== job) void commit(next)
@@ -284,6 +328,16 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
         void commit({ ...job, grain: Math.min(1, Math.max(0, value)), updatedAt: Date.now() }),
       method: methodOf(job),
       setMethod: (next) => void commit(withMethod(job, next, Date.now())),
+      textObjectsOf: (pageId) => textObjectsOf(job, pageId),
+      setTextObjects: (pageId, objects) => mutate((j) => withTextObjects(j, pageId, objects, Date.now())),
+      // 옮기기는 손가락을 따라 수십 번 일어난다. 화면이 먼저 따라가고 저장이
+      // 뒤따르며, 외부를 부르는 자리는 없다 (§2 마지막 줄).
+      moveTextObject: (pageId, blockId, rect) =>
+        void mutate((j) => withTextObject(j, pageId, blockId, { rect }, Date.now())),
+      replaceTextObjectAsset: (pageId, blockId, assetId) =>
+        mutate((j) => withTextObject(j, pageId, blockId, { assetId }, Date.now())),
+      selectedTextBlockId,
+      selectTextObject: setSelectedTextBlockId,
       sourceChanged: jobSourceChanged(job),
       adoptFile,
       canUndo: past.length > 0,
@@ -304,7 +358,10 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       },
       lastChangeAt,
     }
-  }, [job, binding, commit, commitLinks, applyLinks, adoptFile, recordResult, past, future, lastChangeAt])
+  }, [
+    job, binding, commit, mutate, commitLinks, applyLinks, adoptFile, recordResult,
+    past, future, lastChangeAt, selectedTextBlockId,
+  ])
 
   // 작업을 읽는 동안에는 편집기를 만들지 않는다.
   if (api === null) return null

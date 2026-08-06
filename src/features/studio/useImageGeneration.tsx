@@ -52,6 +52,8 @@ import {
 } from '../../domain/preserveDesign'
 import { analyzeImageBlob } from '../../services/imageAnalysisRunner'
 import { removeKeyBackground } from '../../services/textLayerKey'
+import { sliceTextLayer } from '../../services/textLayerSplit'
+import type { StudioTextObject } from '../../domain/textObjects'
 import { planLocalComposite } from '../../domain/composite'
 import { getBlockTypeMeta } from '../../domain/blockTypes'
 import { isPairedLinkUrl, textAlignOf } from '../../domain/simpleBlocks'
@@ -78,6 +80,8 @@ import { renderComposite } from '../../services/compositeRenderer'
 import { collectCompositeSources } from '../../services/compositeSources'
 import { createId } from '../../domain/factory'
 import type { BriefPage } from '../../domain/pageSchema'
+import type { LayoutRect } from '../../domain/imageLayout'
+import { buildTextEditPrompt } from '../../domain/preserveDesign'
 
 /** 중앙 패널이 무엇을 보여 주는가. 참고 이미지 보기와는 아무 관계가 없다. */
 export type StudioCenterView = 'brief' | 'compare'
@@ -115,6 +119,13 @@ interface GenerationPlan {
    */
   foreground?: ForegroundInput
   foregroundInputs?: GenerationInputImage[]
+  /**
+   * 문구 오브젝트 하나만 다시 디자인하는 길 (텍스트 오브젝트 Patch §3).
+   *
+   * 이 값이 있으면 통이미지를 다시 그리지 않는다. 나가는 것은 그 문구의 지금
+   * 디자인 한 장이고, 돌아온 그림은 같은 자리에 갈아 끼워진다.
+   */
+  textEdit?: { blockId: string; assetId: string; rect: LayoutRect; content: string }
   /** 이 계획이 외부로 나가는 횟수. 확인창이 이 값을 그대로 말한다. */
   calls: number
 }
@@ -159,6 +170,8 @@ export interface ImageGenerationApi {
   confirm: (key?: string) => void
   /** 이미 받아 둔 원본으로 작업본만 다시 만든다. 외부 호출 0건. */
   retryConversion: () => void
+  /** 문구를 옮기거나 크기를 바꾼 뒤 결과를 다시 합친다. 외부 호출 0건. */
+  recomposePage: (pageId: string) => Promise<void>
   dismiss: () => void
 
   // ── 부분수정 (부분수정 1단계) ──────────────────────────────────────────────
@@ -430,6 +443,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     plateAssetId?: string
     /** `preserve`의 두 번째 겹 — 투명 배경의 전경 문구 레이어. */
     foregroundAssetId?: string
+    /** 블록별로 자른 문구 오브젝트 (텍스트 오브젝트 Patch §1). */
+    textObjects?: StudioTextObject[]
     /** 전경 레이어를 만들지 못했거나 쓸 수 없었던 이유. 없으면 정상이다. */
     foregroundProblem?: string
   } | null>(null)
@@ -486,6 +501,13 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             byteSize: working.blob.size,
           })
           paidRef.current = { ...paid, plateAssetId }
+          // 배경으로도 남긴다. 나중에 문구 하나만 갈아 끼우고 다시 합칠 때
+          // 이 그림이 필요한데, 결과 안에 이미 섞여 버린 뒤에는 꺼낼 수 없다.
+          await studio.setBackground(paid.plan.pageId, {
+            assetId: plateAssetId,
+            source: 'ai',
+            requestedSize: paid.requestedSize,
+          })
         }
 
         const brief = getDocument()
@@ -495,9 +517,13 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         const composite = planLocalComposite({
           page,
           background: { assetId: plateAssetId, source: 'ai', requestedSize: paid.requestedSize },
-          ...(paid.foregroundAssetId === undefined
-            ? {}
-            : { foreground: { assetId: paid.foregroundAssetId } }),
+          // 블록별로 잘렸으면 그것을 쓴다. 자르지 못했을 때만 예전처럼 한 장을
+          // 통째로 얹는다 — 값을 치른 문구를 잃지 않기 위해서다.
+          ...(paid.textObjects !== undefined && paid.textObjects.length > 0
+            ? { textObjects: paid.textObjects.map((t) => ({ assetId: t.assetId, rect: t.rect })) }
+            : paid.foregroundAssetId === undefined
+              ? {}
+              : { foreground: { assetId: paid.foregroundAssetId } }),
           productImages: studio.job.productImages,
           effects: studio.job.effects ?? {},
           grain: studio.grain,
@@ -568,6 +594,13 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    // 문구 오브젝트는 결과와 함께 남는다 — 합쳐진 그림 말고 이것이 나중에
+    // 옮기고 다시 디자인할 대상이다 (§1).
+    if (paid.plan.mode === 'preserve' && studio !== null) {
+      await studio.setTextObjects(paid.plan.pageId, paid.textObjects ?? [])
+      studio.selectTextObject(null)
+    }
+
     const problem = paid.foregroundProblem
     paidRef.current = null
     setSelectedTargetIds([])
@@ -581,6 +614,65 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         : { kind: 'failed', message: `${problem} 배경과 이미지까지만 저장했습니다.` },
     )
   }, [studio, getDocument])
+
+  /**
+   * 지금 상태로 결과를 다시 합친다 — 배경, 사진, 그리고 **지금 자리의** 문구
+   * 오브젝트 (텍스트 오브젝트 Patch §4).
+   *
+   * 문구를 옮기거나 크기를 바꾸거나 하나만 다시 디자인한 뒤에 부른다. 그림은
+   * 전부 손에 있으므로 **외부 호출은 0건**이다.
+   */
+  const recomposePage = useCallback(
+    async (pageId: string) => {
+      if (studio === null) return
+      const brief = getDocument()
+      const page = brief.pages.find((p) => p.id === pageId)
+      // 끌어 옮기는 동안의 값이 아니라 방금 저장된 값을 읽는다.
+      const job = studio.currentJob()
+      const background = job.backgrounds?.[pageId]
+      const objects = job.textObjects?.[pageId] ?? []
+      const previous = pageResultOf(job, pageId)
+      if (page === undefined || background === undefined || previous === undefined) return
+
+      const fixed = page.blocks
+        .filter((b) => getBlockTypeMeta(b.type).requiresAsset)
+        .filter((b) => (job.productImages[b.id] ?? b.assetId) !== undefined)
+        .map((b) => b.id)
+
+      const composite = planLocalComposite({
+        page,
+        background,
+        textObjects: objects.map((t) => ({ assetId: t.assetId, rect: t.rect })),
+        productImages: job.productImages,
+        effects: job.effects ?? {},
+        grain: studio.grain,
+        onlyBlockIds: fixed,
+        includeTexts: false,
+      })
+      const blob = await renderComposite(composite, await collectCompositeSources(composite))
+      const assetId = createId('asset')
+      await putAsset({
+        id: assetId,
+        blob,
+        fileName: `design-${pageId}.png`,
+        mimeType: 'image/png',
+        byteSize: blob.size,
+      })
+      // 지나온 결과는 지우지 않는다 — 줄에 한 칸을 더할 뿐이다 (§3 마지막 줄).
+      const kept = revisionsOf(previous).slice(0, cursorOf(previous) + 1)
+      const line: ImageRevision[] = [...kept, { assetId, kind: 'edit' }]
+      await studio.recordResult({
+        ...previous,
+        assetId,
+        previousAssetId: previous.assetId,
+        editCount: (previous.editCount ?? 0) + 1,
+        revisions: line,
+        cursor: line.length - 1,
+        createdAt: Date.now(),
+      })
+    },
+    [studio, getDocument],
+  )
 
   /** 같은 원본으로 작업본만 다시 만든다. 외부 호출 0건. */
   const retryConversion = useCallback(() => {
@@ -651,6 +743,43 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           return
         }
 
+        // ── 문구 하나만 갈아 끼우는 길 (텍스트 오브젝트 Patch §3) ─────────────
+        if (plan.textEdit !== undefined && studio !== null) {
+          const keyed = await removeKeyBackground(first.blob)
+          if (keyed === null || keyed.opaqueRatio > FOREGROUND_MAX_OPAQUE) {
+            setState({ kind: 'failed', message: '문구 레이어의 임시 배경을 걷어 내지 못했습니다.' })
+            return
+          }
+          const brief = getDocument()
+          const page = brief.pages.find((p) => p.id === plan.pageId) ?? brief.pages[0]!
+          const sliced = await sliceTextLayer(
+            keyed.blob,
+            [{ blockId: plan.textEdit.blockId, rect: plan.textEdit.rect, layer: 0 }],
+            { width: page.canvasWidth, height: page.canvasHeight },
+          )
+          const piece = sliced?.[0]
+          if (piece === undefined) {
+            setState({ kind: 'failed', message: '새 문구 디자인에서 글자를 찾지 못했습니다.' })
+            return
+          }
+          const assetId = createId('asset')
+          await putAsset({
+            id: assetId,
+            blob: piece.blob,
+            fileName: `text-${plan.textEdit.blockId}.png`,
+            mimeType: 'image/png',
+            byteSize: piece.blob.size,
+          })
+          // 자리와 크기는 그대로. 바뀌는 것은 그림 하나뿐이다.
+          await studio.replaceTextObjectAsset(plan.pageId, plan.textEdit.blockId, assetId)
+          await recomposePage(plan.pageId)
+          setSelectedTargetIds([])
+          setInstructions({})
+          setState({ kind: 'idle' })
+          setView('compare')
+          return
+        }
+
         // 여기서부터는 이미 결제된 그림이다. 이 뒤로 무엇이 실패하든 이 원본을
         // 버리지 않는다 — 버리면 돈만 쓰고 아무것도 남지 않는다.
         paidRef.current = {
@@ -706,6 +835,31 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
                 byteSize: keyed.blob.size,
               })
               paidRef.current = { ...paidRef.current, foregroundAssetId }
+
+              // ── 블록별 오브젝트로 자른다 (텍스트 오브젝트 Patch §1) ─────────
+              //
+              // 여기서 자르지 않으면 다음 화면에서 문구 하나만 옮길 방법이 없다.
+              // 자르지 못하면 한 장 그대로 두고 넘어간다 — 값은 이미 치렀다.
+              const sliced = await sliceTextLayer(keyed.blob, plan.foreground.texts.map((t) => ({
+                blockId: t.blockId,
+                rect: t.rect,
+                layer: t.layer,
+              })), plan.foreground.size)
+              if (sliced !== null && sliced.length > 0) {
+                const objects: StudioTextObject[] = []
+                for (const piece of sliced) {
+                  const assetId = createId('asset')
+                  await putAsset({
+                    id: assetId,
+                    blob: piece.blob,
+                    fileName: `text-${piece.blockId}.png`,
+                    mimeType: 'image/png',
+                    byteSize: piece.blob.size,
+                  })
+                  objects.push({ blockId: piece.blockId, assetId, rect: piece.rect, layer: piece.layer })
+                }
+                paidRef.current = { ...paidRef.current, textObjects: objects }
+              }
             }
           }
         }
@@ -718,7 +872,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         runningRef.current = false
       }
     },
-    [requestLayer, finishFromPaid],
+    [requestLayer, finishFromPaid, studio, getDocument, recomposePage],
   )
 
   const confirm = useCallback(
@@ -791,6 +945,49 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     const size = resolveGptImageSize(page.canvasWidth, page.canvasHeight)
     if (!size.ok) return { blocked: size.message }
     const working = workingImageTarget(page.canvasHeight)
+
+    // ── 문구 오브젝트 하나만 고른 자리 (텍스트 오브젝트 Patch §3) ─────────────
+    //
+    // 통이미지를 다시 그리지 않는다. 배경도 사진도 옆 문구도 그대로 두고, 고른
+    // 문구의 그림만 새로 받아 갈아 끼운다.
+    const objects = studio.textObjectsOf(currentResult.pageId)
+    const only = editItems.length === 1 ? editItems[0]! : null
+    const object = only === null ? undefined : objects.find((o) => o.blockId === only.target.blockId)
+    if (only !== null && object !== undefined) {
+      return {
+        plan: {
+          kind: 'edit',
+          mode: 'preserve',
+          fixedBlockIds: [],
+          calls: 1,
+          pageId: currentResult.pageId,
+          prompt: buildTextEditPrompt({
+            size: { width: page.canvasWidth, height: page.canvasHeight },
+            content: only.target.content ?? '',
+            instruction: only.instruction,
+            rect: object.rect,
+          }),
+          size: size.size,
+          working,
+          inputs: [
+            {
+              index: 1,
+              role: 'page_layout',
+              assetId: object.assetId,
+              fileName: 'current-text.png',
+              label: '지금의 문구 디자인 — 이것을 고칩니다.',
+            },
+          ],
+          fingerprint: currentResult.sourceFingerprint,
+          textEdit: {
+            blockId: object.blockId,
+            assetId: object.assetId,
+            rect: object.rect,
+            content: only.target.content ?? '',
+          },
+        },
+      }
+    }
 
     const inputs: GenerationInputImage[] = [
       {
@@ -904,6 +1101,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             begin,
             confirm,
             retryConversion,
+            recomposePage,
             editTargets,
             selectedTargetIds,
             toggleTarget,
@@ -923,7 +1121,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             dismiss: () => setState({ kind: 'idle' }),
           },
     [
-      studio, state, hasResult, hasKey, view, begin, confirm, retryConversion,
+      studio, state, hasResult, hasKey, view, begin, confirm, retryConversion, recomposePage,
       editTargets, selectedTargetIds, toggleTarget, instructionFor, setInstructionFor,
       canEdit, editBlockedReason, beginEdit, confirmEdit,
       revisions.length, cursor, canGoPrevious, canGoNext, goTo,

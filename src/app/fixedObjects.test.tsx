@@ -67,6 +67,11 @@ vi.mock('../services/imageAnalysisRunner', () => ({
 vi.mock('../services/textLayerKey', () => ({
   removeKeyBackground: async (blob: Blob) => ({ blob, opaqueRatio: 0.2 }),
 }))
+// 블록별로 자르는 일도 캔버스가 필요하다. 규칙은 `textObjects` 순수 검사에서
+// 재고, 여기서는 흐름만 지나가게 둔다.
+vi.mock('../services/textLayerSplit', () => ({
+  sliceTextLayer: async () => [],
+}))
 vi.mock('../services/compositeRenderer', () => ({
   renderComposite: async () => new Blob([new Uint8Array([5, 5, 5, 5, 5])], { type: 'image/png' }),
 }))

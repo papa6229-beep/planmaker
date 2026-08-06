@@ -272,3 +272,53 @@ export function buildForegroundPrompt(input: ForegroundInput): string {
 
   return lines.join('\n')
 }
+
+/**
+ * 3) 문구 하나만 다시 디자인하는 주문 (텍스트 오브젝트 Patch §3).
+ *
+ * 배경도, 사진도, 옆 문구도 손대지 않는다. 이 요청이 만드는 것은 **그 문구 한
+ * 장**뿐이고, 브라우저가 임시 단색을 걷어 내 같은 자리에 갈아 끼운다.
+ */
+export function buildTextEditPrompt(input: {
+  size: { width: number; height: number }
+  content: string
+  instruction: string
+  rect: LayoutRect
+  tone?: PlateTone | null
+}): string {
+  const { size, content, instruction, rect, tone } = input
+  const lines: string[] = [
+    '문구 **한 개**만 새로 디자인해 주세요.',
+    `배경은 **단색 마젠타(${TEXT_KEY_HEX})** 한 가지로 화면 전체를 빈틈없이 채우고, 그 위에 이 문구 하나만 올립니다.`,
+    '마젠타는 나중에 지워집니다. 남은 글자만 원래 자리에 그대로 갈아 끼워집니다.',
+    `크기는 가로 ${size.width}, 세로 ${size.height} 비율입니다.`,
+    '',
+    '## 문구 (원문 그대로)',
+    `- "${content}"`,
+    `  자리: ${region(rect, size)}`,
+    '문구의 **문자·숫자·띄어쓰기·기호·줄바꿈을 절대 바꾸지 않습니다.**',
+    '',
+    '## 작업자의 수정 지시',
+    instruction.trim(),
+    '',
+    '## 함께 보낸 이미지',
+    '- 입력 이미지 1: 지금의 문구 디자인 — 이것을 고칩니다.',
+  ]
+  if (tone != null) {
+    lines.push(
+      '',
+      '## 아래에 깔릴 배경의 색',
+      `평균색 R${Math.round(tone.average.r)} G${Math.round(tone.average.g)} B${Math.round(tone.average.b)}, 밝기 ${tone.brightness.toFixed(2)}`,
+      '이 배경 위에서 글씨가 또렷하게 읽히도록 색과 대비를 정해 주세요.',
+    )
+  }
+  lines.push(
+    '',
+    '## 넣지 말 것',
+    '- 다른 문구, 사람, 제품, 로고',
+    `- 배경 사진·그러데이션·무늬 (배경은 단색 마젠타 ${TEXT_KEY_HEX} 한 가지입니다)`,
+    '- 글자·외곽선·그림자·라벨에 마젠타나 그와 비슷한 분홍·자주 계열 색',
+    '- 워터마크',
+  )
+  return lines.join('\n')
+}

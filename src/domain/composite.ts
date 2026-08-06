@@ -54,6 +54,13 @@ export interface CompositePlan {
    * 비치고, 이 겹이 맨 앞이라 **문구는 언제나 이미지보다 앞**에 온다.
    */
   foreground?: { assetId: string }
+  /**
+   * 맨 앞에 얹는 문구 오브젝트들 (텍스트 오브젝트 Patch §4).
+   *
+   * 블록마다 한 장이고, 작업자가 옮기거나 늘린 **지금의 자리**를 그대로 쓴다.
+   * 이 겹이 마지막이라 문구는 언제나 이미지·컷아웃보다 앞이다.
+   */
+  textObjects?: readonly { assetId: string; rect: LayoutRect }[]
   layers: CompositeLayerPlan[]
   texts: CompositeTextPlan[]
   /** 완성 결과 전체에 얹는 그레인 (§9.5). */
@@ -71,6 +78,8 @@ export interface CompositePlanInput {
   background?: StudioBackground | undefined
   /** 맨 앞에 얹을 전경 레이어 (한방 생성 Patch 2 §4). */
   foreground?: { assetId: string } | undefined
+  /** 맨 앞에 얹을 문구 오브젝트들 (텍스트 오브젝트 Patch §4). */
+  textObjects?: readonly { assetId: string; rect: LayoutRect }[] | undefined
   /** 블록 id → 실제 사용 제품 이미지의 자산 id. */
   productImages: Readonly<Record<string, string>>
   /** 블록 id → 효과 세기. 없는 블록은 기본값. */
@@ -144,6 +153,7 @@ export function planLocalComposite(input: CompositePlanInput): CompositePlan {
     size,
     ...(input.background === undefined ? {} : { background: input.background }),
     ...(input.foreground === undefined ? {} : { foreground: input.foreground }),
+    ...(input.textObjects === undefined ? {} : { textObjects: input.textObjects }),
     layers,
     texts,
     grain: input.grain ?? DEFAULT_PLAN_GRAIN,
@@ -156,5 +166,6 @@ export function compositeAssetIds(plan: CompositePlan): string[] {
   const ids = plan.layers.map((l) => l.assetId)
   if (plan.background !== undefined) ids.push(plan.background.assetId)
   if (plan.foreground !== undefined) ids.push(plan.foreground.assetId)
+  for (const text of plan.textObjects ?? []) ids.push(text.assetId)
   return [...new Set(ids)]
 }

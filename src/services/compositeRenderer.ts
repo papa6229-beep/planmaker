@@ -326,6 +326,17 @@ export async function renderComposite(plan: CompositePlan, sources: CompositeSou
     }
   }
 
+  // ── 꾸며진 문구 오브젝트 (텍스트 오브젝트 Patch §4) ───────────────────────
+  //
+  // 사진을 전부 그린 **뒤**, 저마다의 자리에 한 장씩. 작업자가 옮기거나 늘린
+  // 값이 그대로 여기로 온다 — 화면에서 본 자리가 저장한 파일의 자리다.
+  for (const text of plan.textObjects ?? []) {
+    const blob = sources.blobs.get(text.assetId)
+    if (blob === undefined) continue
+    const source = await toSource(blob)
+    ctx.drawImage(source, 0, 0, source.width, source.height, text.rect.x, text.rect.y, text.rect.width, text.rect.height)
+  }
+
   // 문구는 기존 표현 그대로 (§10). 새 텍스트 엔진을 만들지 않는다.
   for (const text of plan.texts) {
     ctx.save()

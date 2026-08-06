@@ -18,6 +18,7 @@
 
 import { normalizeEffects, type CompositeEffects } from './compositeEffects'
 import type { GenerationMethod, StudioBackground, StudioJob } from './studioJob'
+import type { StudioTextObject } from './textObjects'
 
 /**
  * 이 판이 **쓰는** 버전.
@@ -32,10 +33,10 @@ import type { GenerationMethod, StudioBackground, StudioJob } from './studioJob'
  * 예전 빌드는 "읽을 수 없다"고 분명히 말한다. 잃는 것이 같다면 소리 내는 쪽이
  * 낫다 (§12 마지막 줄).
  */
-export const STUDIO_FILE_VERSION = '0.5.0'
+export const STUDIO_FILE_VERSION = '0.6.0'
 
 /** 이 판이 **읽을 수 있는** 버전. 예전 파일은 그대로 열린다. */
-export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0', '0.4.0', '0.5.0']
+export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0', '0.4.0', '0.5.0', '0.6.0']
 
 /** 파일이 기억하는 "이 작업이 어느 원본에서 시작했는가". */
 export interface StudioFileSource {
@@ -61,6 +62,8 @@ export interface StudioFileState {
   method?: GenerationMethod
   /** 페이지 id → 디자인 스타일 레퍼런스의 자산 id (0.4.0). */
   styleRefs?: Record<string, string>
+  /** 페이지 id → 꾸며진 문구 오브젝트들 (0.6.0). */
+  textObjects?: Record<string, StudioTextObject[]>
 }
 
 /** 지금 작업에서 파일에 남길 것만 추린다. */
@@ -80,6 +83,7 @@ export function toStudioFileState(job: StudioJob): StudioFileState {
     backgrounds: { ...job.backgrounds },
     effects: { ...job.effects },
     styleRefs: { ...job.styleRefs },
+    textObjects: { ...job.textObjects },
     ...(job.grain === undefined ? {} : { grain: job.grain }),
     ...(job.method === undefined ? {} : { method: job.method }),
   }
@@ -97,6 +101,9 @@ export function studioFileAssetIds(state: StudioFileState): string[] {
       ...Object.values(state.productImages),
       ...Object.values(state.backgrounds ?? {}).map((b) => b.assetId),
       ...Object.values(state.styleRefs ?? {}),
+      // 문구 오브젝트의 그림도 파일에 담긴다 — 빼면 다른 컴퓨터에서 열었을 때
+      // 문구만 사라진 결과가 열린다.
+      ...Object.values(state.textObjects ?? {}).flatMap((list) => list.map((t) => t.assetId)),
     ]),
   ]
 }
@@ -122,7 +129,38 @@ export function remapStudioFileState(
   for (const [pageId, assetId] of Object.entries(state.styleRefs ?? {})) {
     styleRefs[pageId] = mapping.get(assetId) ?? assetId
   }
-  return { ...state, productImages, backgrounds, styleRefs }
+  const textObjects: Record<string, StudioTextObject[]> = {}
+  for (const [pageId, list] of Object.entries(state.textObjects ?? {})) {
+    textObjects[pageId] = list.map((t) => ({ ...t, assetId: mapping.get(t.assetId) ?? t.assetId }))
+  }
+  return { ...state, productImages, backgrounds, styleRefs, textObjects }
+}
+
+/** 예전 판 파일에는 없다. 모양이 어긋난 항목은 조용히 버린다 — 자리를 모르는
+ *  오브젝트를 살려 두면 화면 어딘가에 0×0으로 붙는다. */
+function readTextObjects(raw: unknown): Record<string, StudioTextObject[]> {
+  if (!isRecord(raw)) return {}
+  const out: Record<string, StudioTextObject[]> = {}
+  for (const [pageId, list] of Object.entries(raw)) {
+    if (!Array.isArray(list)) continue
+    const kept: StudioTextObject[] = []
+    for (const item of list) {
+      if (!isRecord(item)) continue
+      const { blockId, assetId, rect, layer } = item
+      if (typeof blockId !== 'string' || typeof assetId !== 'string' || assetId.length === 0) continue
+      if (!isRecord(rect)) continue
+      const nums = ['x', 'y', 'width', 'height'].map((k) => rect[k])
+      if (nums.some((n) => typeof n !== 'number' || !Number.isFinite(n))) continue
+      kept.push({
+        blockId,
+        assetId,
+        rect: { x: nums[0] as number, y: nums[1] as number, width: nums[2] as number, height: nums[3] as number },
+        layer: typeof layer === 'number' ? layer : 0,
+      })
+    }
+    out[pageId] = kept
+  }
+  return out
 }
 
 function readBackgrounds(raw: unknown): Record<string, StudioBackground> | null {
@@ -206,6 +244,7 @@ export function parseStudioFileState(raw: unknown): StudioFileState | null {
     productImages,
     backgrounds,
     styleRefs,
+    textObjects: readTextObjects(raw.textObjects),
     effects: readEffects(raw.effects),
     ...(typeof raw.grain === 'number' ? { grain: Math.min(1, Math.max(0, raw.grain)) } : {}),
     ...(raw.method === 'background_composite' || raw.method === 'full_ai' ? { method: raw.method } : {}),

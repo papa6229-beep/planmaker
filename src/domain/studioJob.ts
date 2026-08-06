@@ -21,6 +21,7 @@ import { documentFingerprint } from './documentFingerprint'
 import { referencedAssetIds } from './pageOps'
 import { normalizeEffects, type CompositeEffects } from './compositeEffects'
 import type { GeneratedPageResult, ImageRevision } from './imageGeneration'
+import type { StudioTextObject } from './textObjects'
 import type { BriefDocument } from './pageSchema'
 
 export const STUDIO_JOB_VERSION = '0.1.0'
@@ -101,6 +102,14 @@ export interface StudioJob {
    * 페이지마다 한 장뿐이다.
    */
   styleRefs?: Record<string, string>
+  /**
+   * 페이지 id → 그 페이지의 꾸며진 문구 오브젝트들 (텍스트 오브젝트 Patch §1).
+   *
+   * 생성이 끝난 뒤에도 문구를 블록별로 남겨 둔다. 그래야 하나만 옮기거나 하나만
+   * 다시 디자인할 수 있다 — 한 장에 합쳐 버리면 픽셀이 배경과 섞여 되돌릴 수
+   * 없다. 그림 자체는 자산 저장소에 있고 여기에는 번호와 자리만 있다.
+   */
+  textObjects?: Record<string, StudioTextObject[]>
   /** 완성 결과 전체에 얹는 그레인 (§9.5). */
   grain?: number
   /** 이 작업이 고른 생성 방식 (§6). */
@@ -321,7 +330,17 @@ export function withSource(job: StudioJob, doc: BriefDocument, now: number, file
     importedAt: now,
     ...(fileName === undefined ? {} : { fileName }),
   }
-  return { ...job, source, doc, productImages: {}, backgrounds: {}, effects: {}, styleRefs: {}, updatedAt: now }
+  return {
+    ...job,
+    source,
+    doc,
+    productImages: {},
+    backgrounds: {},
+    effects: {},
+    styleRefs: {},
+    textObjects: {},
+    updatedAt: now,
+  }
 }
 
 /** 작업본만 교체한다 (자동저장 경로). 원본과 연결 정보는 그대로. */
@@ -376,6 +395,9 @@ export function studioLiveAssetIds(job: StudioJob): string[] {
       ...Object.values(job.backgrounds ?? {}).map((b) => b.assetId),
       // 스타일 레퍼런스도 같다. 기획서 문서는 이 그림을 모른다.
       ...Object.values(job.styleRefs ?? {}),
+      // 꾸며진 문구 오브젝트도 같다. 합쳐진 결과 안에만 있는 것이 아니라 따로
+      // 남아 있고, 옮기거나 다시 디자인할 때마다 이 그림을 다시 그린다.
+      ...Object.values(job.textObjects ?? {}).flatMap((list) => list.map((t) => t.assetId)),
     ]),
   ]
 }
@@ -389,4 +411,46 @@ export function studioLiveAssetIds(job: StudioJob): string[] {
 export function sourceChanged(job: StudioJob): boolean {
   if (job.source === null) return false
   return documentFingerprint(job.doc) !== job.source.fingerprint
+}
+
+// ── 꾸며진 문구 오브젝트 (텍스트 오브젝트 Patch §1) ──────────────────────────
+
+/** 이 페이지의 문구 오브젝트. 없으면 빈 배열 — 예전 판 작업이 그렇다. */
+export function textObjectsOf(job: StudioJob | null, pageId: string): StudioTextObject[] {
+  return job?.textObjects?.[pageId] ?? []
+}
+
+/** 생성이 끝난 뒤 한 번에 갈아 끼운다. */
+export function withTextObjects(
+  job: StudioJob,
+  pageId: string,
+  objects: readonly StudioTextObject[],
+  now: number,
+): StudioJob {
+  return {
+    ...job,
+    textObjects: { ...job.textObjects, [pageId]: [...objects] },
+    updatedAt: now,
+  }
+}
+
+/**
+ * 한 오브젝트만 바꾼다 — 옮기기·크기 변경·다시 디자인이 모두 이 길을 지난다.
+ *
+ * 나머지 오브젝트는 **같은 객체 그대로** 남는다. 하나를 손대는 일이 옆의 값을
+ * 건드릴 자리를 만들지 않는다.
+ */
+export function withTextObject(
+  job: StudioJob,
+  pageId: string,
+  blockId: string,
+  patch: Partial<Omit<StudioTextObject, 'blockId'>>,
+  now: number,
+): StudioJob {
+  const list = textObjectsOf(job, pageId)
+  const index = list.findIndex((t) => t.blockId === blockId)
+  if (index < 0) return job
+  const next = [...list]
+  next[index] = { ...list[index]!, ...patch }
+  return { ...job, textObjects: { ...job.textObjects, [pageId]: next }, updatedAt: now }
 }
