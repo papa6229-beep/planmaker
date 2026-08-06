@@ -6,9 +6,10 @@
  * model.`). 그래서 투명을 **요청하지 않고**, 글자와 확실히 구분되는 단색 위에
  * 글자만 그리게 한 뒤 그 단색을 여기서 지운다.
  *
- * 지우는 규칙은 하나뿐이다: **바깥 테두리에서 이어지는 키 색만.** 색이 같다고
- * 전부 지우면 디자인 안쪽의 같은 색까지 구멍이 나므로, 가장자리에서 물을 붓듯
- * 번져 들어가며 닿는 곳만 지운다. 닿지 않는 안쪽은 그대로 남는다.
+ * 지우는 규칙은 하나뿐이다: **허용치 안에 드는 키 색은 전부.** 바깥에서 이어지는
+ * 것만 지우면 `0`·`6`·`ㅇ`처럼 글자 안쪽에 갇힌 임시 바탕이 남는다. 프롬프트가
+ * 글자·외곽선·그림자·라벨에 이 색을 쓰지 못하게 막아 두었으므로, 이 색인 픽셀은
+ * 어디에 있든 임시 바탕이다.
  *
  * 순수 모듈이다. 캔버스도 DOM도 모른다.
  */
@@ -53,7 +54,7 @@ function distance(data: Uint8ClampedArray, at: number, key: KeyColor): number {
 }
 
 /**
- * 바깥에서 이어지는 키 색을 지운다. 지운 뒤 남은 불투명 비율을 돌려준다.
+ * 키 색인 픽셀을 전부 지운다. 지운 뒤 남은 불투명 비율을 돌려준다.
  *
  * 픽셀을 **제자리에서** 고친다 — 페이지 한 장 크기의 버퍼를 한 벌 더 만들 이유가
  * 없다. 돌려주는 비율은 부르는 쪽이 "정말 지워졌는가"를 판정하는 데 쓴다:
@@ -68,39 +69,14 @@ export function keyOutBackground(
   if (width <= 0 || height <= 0) return 0
 
   const total = width * height
-  const seen = new Uint8Array(total)
-  const stack: number[] = []
-
-  const push = (index: number) => {
-    if (index < 0 || index >= total || seen[index] === 1) return
-    seen[index] = 1
-    if (distance(data, index * 4, key) > tolerance) return
-    stack.push(index)
-  }
-
-  // 가장자리 한 줄이 물이 스며드는 자리다.
-  for (let x = 0; x < width; x += 1) {
-    push(x)
-    push((height - 1) * width + x)
-  }
-  for (let y = 0; y < height; y += 1) {
-    push(y * width)
-    push(y * width + width - 1)
-  }
-
-  while (stack.length > 0) {
-    const index = stack.pop()!
-    data[index * 4 + 3] = 0
-    const x = index % width
-    if (x > 0) push(index - 1)
-    if (x < width - 1) push(index + 1)
-    push(index - width)
-    push(index + width)
-  }
-
   let opaque = 0
   for (let i = 0; i < total; i += 1) {
-    if ((data[i * 4 + 3] ?? 0) > ALPHA_FLOOR) opaque += 1
+    const at = i * 4
+    if (distance(data, at, key) <= tolerance) {
+      data[at + 3] = 0
+      continue
+    }
+    if ((data[at + 3] ?? 0) > ALPHA_FLOOR) opaque += 1
   }
   return opaque / total
 }

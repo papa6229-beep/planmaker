@@ -335,7 +335,7 @@ describe('§1 이미지와 컷아웃은 고정이다', () => {
 // ── §2 텍스트는 앞이고 자유롭다 ─────────────────────────────────────────────
 
 describe('§2 문구는 전면 레이어다', () => {
-  it('전경 주문은 원문을 그대로 싣고, 자리는 힌트라고 말한다', async () => {
+  it('전경 주문은 원문을 그대로 싣고, 자리를 배치 기준으로 말한다', async () => {
     const { buildForegroundPrompt } = await load('domain/preserveDesign')
     const doc = sampleDoc()
     const blocks = doc.pages[0]!.blocks
@@ -356,14 +356,17 @@ describe('§2 문구는 전면 레이어다', () => {
     expect(prompt).toContain('여름 감사제 40% + 사은품')
     expect(prompt).toContain('8/1 ~ 8/14 · 선착순 300명')
     expect(prompt).toContain('문자·숫자·띄어쓰기·기호·줄바꿈')
-    // 자리는 힌트다.
-    expect(prompt).toContain('고정값이 아니라 힌트')
-    expect(prompt).toContain('큰 상자는 핵심 타이틀')
-    expect(prompt).toContain('자유롭게 디자인')
+    // 자리는 배치와 중요도의 기준이고, 빈 자리로 피하지 않는다.
+    expect(prompt).toContain('배치와 중요도의 기준')
+    expect(prompt).toContain('빈 공간을 찾아 다른 데로 옮기지 않습니다')
+    expect(prompt).toContain('큰 상자는 주요 문구')
+    expect(prompt).toContain('글꼴 분위기')
     // 넓은 상자가 먼저 온다 — 목록 차례가 위계의 첫 신호다.
     expect(prompt.indexOf('여름 감사제')).toBeLessThan(prompt.indexOf('8/1 ~ 8/14'))
-    // 사진 위를 가로질러도 된다.
-    expect(prompt).toContain('그 위로 글씨가 지나가도 좋습니다')
+    // 사진 위에 겹치는 배치를 그대로 둔다.
+    expect(prompt).toContain('그대로 겹쳐 주세요')
+    expect(prompt).toContain('겹침을 피해 빈 자리로 옮기지 않습니다')
+    expect(prompt).toContain('외곽선·그림자·라벨을 자유롭게')
     // 배경은 걷어 낼 단색이다 (꾸며진 텍스트 Patch §3).
     expect(prompt).toContain('단색 마젠타')
     expect(prompt).toContain('마젠타는 나중에 지워집니다')
@@ -411,10 +414,10 @@ describe('§2 문구는 전면 레이어다', () => {
     expect(prompt).not.toContain('완전히 투명')
   })
 
-  it('바깥에서 이어지는 단색만 지우고 글자·라벨·그림자는 남긴다', async () => {
+  it('`0` 모양의 바깥과 안쪽 임시 바탕을 모두 지우고 글자·라벨·그림자는 남긴다', async () => {
     const { keyOutBackground, TEXT_KEY_COLOR } = await load('domain/chromaKey')
 
-    // 20×20 마젠타 바탕에, 글자 대역(흰색)·라벨(파랑)·그림자(회색)를 심는다.
+    // 20×20 마젠타 바탕 위에 `0` 한 글자 — 흰 고리와 그 안에 갇힌 임시 바탕.
     const width = 20
     const height = 20
     const data = new Uint8ClampedArray(width * height * 4)
@@ -425,30 +428,33 @@ describe('§2 문구는 전면 레이어다', () => {
     for (let y = 0; y < height; y += 1) {
       for (let x = 0; x < width; x += 1) put(x, y, [255, 0, 255])
     }
-    // 글자: 가운데 6×6 흰 사각형, 그 안에 마젠타 구멍 하나 (글자 속 빈 자리).
+    // 글자 `0`: 6..11 흰 고리, 가운데 2×2는 임시 바탕 그대로 (글자 속 빈 자리).
     for (let y = 6; y < 12; y += 1) for (let x = 6; x < 12; x += 1) put(x, y, [255, 255, 255])
-    put(8, 8, [255, 0, 255])
-    put(9, 8, [255, 0, 255])
-    // 라벨: 파란 사각형. 그림자: 회색 한 줄.
+    for (let y = 8; y < 10; y += 1) for (let x = 8; x < 10; x += 1) put(x, y, [255, 0, 255])
+    // 외곽선(검정 한 줄) · 라벨(파랑) · 그림자(회색 한 줄).
+    for (let x = 3; x < 9; x += 1) put(x, 13, [10, 10, 10])
     for (let y = 14; y < 17; y += 1) for (let x = 3; x < 9; x += 1) put(x, y, [30, 80, 200])
     for (let x = 3; x < 9; x += 1) put(x, 17, [120, 120, 120])
 
     const opaqueRatio = keyOutBackground({ data, width, height }, TEXT_KEY_COLOR)
 
     const alphaAt = (x: number, y: number) => data[(y * width + x) * 4 + 3]
-    // 바깥 배경은 지워졌다.
+    // 바깥 임시 바탕은 지워졌다.
     expect(alphaAt(0, 0)).toBe(0)
     expect(alphaAt(19, 19)).toBe(0)
     expect(alphaAt(10, 2)).toBe(0)
-    // 글자·라벨·그림자는 남았다.
+    // `0` 안쪽에 갇힌 임시 바탕도 함께 지워졌다 — 이번 Patch가 바꾼 자리다.
+    expect(alphaAt(8, 8)).toBe(0)
+    expect(alphaAt(9, 9)).toBe(0)
+    // 글자·외곽선·라벨·그림자는 남았다.
     expect(alphaAt(7, 7)).toBe(255)
+    expect(alphaAt(5, 13)).toBe(255)
     expect(alphaAt(5, 15)).toBe(255)
     expect(alphaAt(5, 17)).toBe(255)
-    // 글자 안쪽에 갇힌 같은 색은 바깥과 이어지지 않으므로 남는다 (§3 규칙 그대로).
-    expect(alphaAt(8, 8)).toBe(255)
-    // 남은 비율은 심어 둔 만큼이다 — 배경이 지워졌다는 것을 수치로도 말한다.
-    expect(opaqueRatio).toBeCloseTo((36 + 18 + 6) / 400, 5)
+    // 남은 비율은 심어 둔 만큼이다 — 고리 32 + 외곽선 6 + 라벨 18 + 그림자 6.
+    expect(opaqueRatio).toBeCloseTo((32 + 6 + 18 + 6) / 400, 5)
   })
+
 
   it('서버 경계가 투명 배경을 그대로 공급자에게 넘긴다', async () => {
     const { handleGenerateImage } = await load('services/generateImageHandler')
