@@ -437,7 +437,7 @@ describe('§4 배경 → 사진 → 문구', () => {
       fillText(text: string) { if (record) drawn.push(`text:${text}`) },
       createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
       putImageData() {},
-      getImageData: (x: number, y: number, w: number, h: number) => ({
+      getImageData: (_x: number, _y: number, w: number, h: number) => ({
         data: new Uint8ClampedArray(w * h * 4), width: w, height: h,
       }),
     })
@@ -480,7 +480,7 @@ describe('§4 배경 → 사진 → 문구', () => {
               assetId: 'a_photo',
               rect: { x: 60, y: 520, width: 520, height: 520 },
               fit: 'contain',
-              crop: { dx: 60, dy: 520, dWidth: 520, dHeight: 520 },
+              crop: { sx: 0, sy: 0, sWidth: 100, sHeight: 100, dx: 60, dy: 520, dWidth: 520, dHeight: 520 },
               effects: {
                 edge: 0, contactShadow: 0, wallShadow: 0, grading: 0, rimLight: 0,
                 paperCutout: false, paperWeight: 'normal',
