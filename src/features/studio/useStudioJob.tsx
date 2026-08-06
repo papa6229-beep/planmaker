@@ -36,6 +36,9 @@ import {
   withStyleReference,
   withoutStyleReference,
   styleReferenceOf,
+  imageObjectsOf,
+  withImageObject,
+  withImageObjects,
   textObjectsOf,
   withTextObject,
   withTextObjects,
@@ -114,9 +117,24 @@ export interface StudioJobApi {
   setTextObjects: (pageId: string, objects: readonly StudioTextObject[]) => Promise<void>
   moveTextObject: (pageId: string, blockId: string, rect: LayoutRect) => void
   replaceTextObjectAsset: (pageId: string, blockId: string, assetId: string) => Promise<void>
-  /** 결과 화면에서 고른 문구 오브젝트. 화면에만 있는 값이라 저장되지 않는다. */
-  selectedTextBlockId: string | null
-  selectTextObject: (blockId: string | null) => void
+  /**
+   * 이 페이지의 이미지 편집 오브젝트 (블록 연결 Patch).
+   *
+   * 기획서의 이미지·컷아웃 블록 하나당 하나다. 문구 오브젝트와 같은 모양을 쓰고
+   * 같은 제스처로 움직이지만, 옮긴 자리는 다시 합칠 때 그 블록의 자리로 쓰인다 —
+   * 종이 테두리와 그림자도 그 자리에서 다시 그려지므로 함께 따라온다.
+   */
+  imageObjectsOf: (pageId: string) => StudioTextObject[]
+  setImageObjects: (pageId: string, objects: readonly StudioTextObject[]) => Promise<void>
+  moveImageObject: (pageId: string, blockId: string, rect: LayoutRect) => void
+  /**
+   * 결과 화면에서 고른 오브젝트 — 문구든 이미지든 하나뿐이다.
+   *
+   * 화면에만 있는 값이라 저장되지 않는다. 두 갈래를 따로 두지 않는 것은, 둘 다
+   * 골라 둔 상태가 화면에 동시에 나타나면 무엇을 옮기는지 알 수 없기 때문이다.
+   */
+  selectedObjectBlockId: string | null
+  selectObject: (blockId: string | null) => void
   /** 원본 기획서와 작업본이 달라졌는지 (§7). 자동 병합은 하지 않는다. */
   sourceChanged: boolean
   /**
@@ -162,8 +180,8 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
   const [past, setPast] = useState<Links[]>([])
   const [future, setFuture] = useState<Links[]>([])
   const [lastChangeAt, setLastChangeAt] = useState(0)
-  /** 고른 문구 오브젝트 — 새로고침에 남을 이유가 없는 화면 상태다. */
-  const [selectedTextBlockId, setSelectedTextBlockId] = useState<string | null>(null)
+  /** 고른 편집 오브젝트 — 새로고침에 남을 이유가 없는 화면 상태다. */
+  const [selectedObjectBlockId, setSelectedObjectBlockId] = useState<string | null>(null)
 
   // 작업을 먼저 읽고 나서 편집기를 마운트한다. 편집기는 마운트 순간 한 번
   // `binding.load()`를 호출하므로, 그 전에 작업이 손에 있어야 새로고침 복원이
@@ -269,6 +287,10 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
               backgrounds: { ...state.backgrounds },
               effects: { ...state.effects },
               styleRefs: { ...state.styleRefs },
+              // 편집 오브젝트의 자리와 크기도 파일이 기억한 그대로 돌아온다 —
+              // 빼면 파일을 다시 연 순간 옮겨 둔 문구와 이미지가 제자리로 튄다.
+              textObjects: { ...state.textObjects },
+              imageObjects: { ...state.imageObjects },
               ...(state.grain === undefined ? {} : { grain: state.grain }),
               ...(state.method === undefined ? {} : { method: state.method }),
             }
@@ -336,8 +358,12 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
         void mutate((j) => withTextObject(j, pageId, blockId, { rect }, Date.now())),
       replaceTextObjectAsset: (pageId, blockId, assetId) =>
         mutate((j) => withTextObject(j, pageId, blockId, { assetId }, Date.now())),
-      selectedTextBlockId,
-      selectTextObject: setSelectedTextBlockId,
+      imageObjectsOf: (pageId) => imageObjectsOf(job, pageId),
+      setImageObjects: (pageId, objects) => mutate((j) => withImageObjects(j, pageId, objects, Date.now())),
+      moveImageObject: (pageId, blockId, rect) =>
+        void mutate((j) => withImageObject(j, pageId, blockId, { rect }, Date.now())),
+      selectedObjectBlockId,
+      selectObject: setSelectedObjectBlockId,
       sourceChanged: jobSourceChanged(job),
       adoptFile,
       canUndo: past.length > 0,
@@ -360,7 +386,7 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
     }
   }, [
     job, binding, commit, mutate, commitLinks, applyLinks, adoptFile, recordResult,
-    past, future, lastChangeAt, selectedTextBlockId,
+    past, future, lastChangeAt, selectedObjectBlockId,
   ])
 
   // 작업을 읽는 동안에는 편집기를 만들지 않는다.

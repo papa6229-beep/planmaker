@@ -95,6 +95,13 @@ export interface CompositePlanInput {
   onlyBlockIds?: readonly string[]
   /** 문구를 그릴 것인가. 완성 디자인 위에서는 AI가 이미 그렸으므로 거짓이다. */
   includeTexts?: boolean
+  /**
+   * 블록 id → 그 이미지를 얹을 자리 (블록 연결 Patch).
+   *
+   * 결과 화면에서 옮기거나 늘린 값이다. 없으면 기획서 블록의 자리를 그대로 쓴다 —
+   * 기획서를 고치지 않고도 결과의 자리를 옮기기 위한 갈래다.
+   */
+  rectOverrides?: Readonly<Record<string, LayoutRect>>
 }
 
 const DEFAULT_PLAN_GRAIN = 0.08
@@ -118,7 +125,7 @@ export function planLocalComposite(input: CompositePlanInput): CompositePlan {
     if (isPairedLinkUrl(page.blocks, block)) continue
     if (only !== null && !only.has(block.id)) continue
     const meta = getBlockTypeMeta(block.type)
-    const rect = { ...block.position }
+    const rect = { ...(input.rectOverrides?.[block.id] ?? block.position) }
 
     if (meta.requiresAsset) {
       const assetId = input.productImages[block.id] ?? block.assetId

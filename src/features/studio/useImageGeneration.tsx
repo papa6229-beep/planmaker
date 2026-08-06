@@ -482,6 +482,14 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     let finalBlob = working.blob
     let finalSize = { width: working.width, height: working.height }
     let fileName = `ai-${paid.plan.pageId}.png`
+    /**
+     * 이 결과의 이미지 편집 오브젝트 (블록 연결 Patch §3).
+     *
+     * 합친 그림에서 이미지를 다시 찾아내지 않는다 — 찾아낸 덩어리는 블록이 아니다.
+     * 무엇을 얹었는지는 방금 얹은 이 자리가 알고 있고, 그 목록을 그대로 남긴다.
+     * 그래서 오브젝트 수는 언제나 얹은 이미지 블록 수와 같다.
+     */
+    const imageObjects: StudioTextObject[] = []
 
     if (paid.plan.mode === 'preserve') {
       if (studio === null) {
@@ -512,6 +520,14 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
 
         const brief = getDocument()
         const page = brief.pages.find((p) => p.id === paid.plan.pageId) ?? brief.pages[0]!
+        // 얹는 목록 그대로가 편집 오브젝트 목록이다 — 블록 하나에 오브젝트 하나.
+        const fixed = new Set(paid.plan.fixedBlockIds)
+        page.blocks.forEach((block, layer) => {
+          if (!fixed.has(block.id)) return
+          const assetId = studio.job.productImages[block.id] ?? block.assetId
+          if (assetId === undefined) return
+          imageObjects.push({ blockId: block.id, assetId, rect: { ...block.position }, layer })
+        })
         // 이미지 블록은 **하나도 빠짐없이** 여기서 얹는다. 문구는 그리지 않는다 —
         // 문구는 전경 레이어가 이미 디자인해 왔다.
         const composite = planLocalComposite({
@@ -598,7 +614,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     // 옮기고 다시 디자인할 대상이다 (§1).
     if (paid.plan.mode === 'preserve' && studio !== null) {
       await studio.setTextObjects(paid.plan.pageId, paid.textObjects ?? [])
-      studio.selectTextObject(null)
+      await studio.setImageObjects(paid.plan.pageId, imageObjects)
+      studio.selectObject(null)
     }
 
     const problem = paid.foregroundProblem
@@ -631,13 +648,22 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       const job = studio.currentJob()
       const background = job.backgrounds?.[pageId]
       const objects = job.textObjects?.[pageId] ?? []
+      const images = job.imageObjects?.[pageId] ?? []
       const previous = pageResultOf(job, pageId)
       if (page === undefined || background === undefined || previous === undefined) return
 
-      const fixed = page.blocks
-        .filter((b) => getBlockTypeMeta(b.type).requiresAsset)
-        .filter((b) => (job.productImages[b.id] ?? b.assetId) !== undefined)
-        .map((b) => b.id)
+      // 이미지 오브젝트가 있으면 그 목록이 곧 얹을 목록이고, 그 자리가 곧 얹을
+      // 자리다. 없는 것은 이 Patch 이전에 만든 결과뿐이라, 그때는 지금까지처럼
+      // 기획서 블록에서 다시 센다.
+      const fixed =
+        images.length > 0
+          ? images.map((o) => o.blockId)
+          : page.blocks
+              .filter((b) => getBlockTypeMeta(b.type).requiresAsset)
+              .filter((b) => (job.productImages[b.id] ?? b.assetId) !== undefined)
+              .map((b) => b.id)
+      const rectOverrides: Record<string, LayoutRect> = {}
+      for (const object of images) rectOverrides[object.blockId] = object.rect
 
       const composite = planLocalComposite({
         page,
@@ -647,6 +673,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         effects: job.effects ?? {},
         grain: studio.grain,
         onlyBlockIds: fixed,
+        rectOverrides,
         includeTexts: false,
       })
       const blob = await renderComposite(composite, await collectCompositeSources(composite))

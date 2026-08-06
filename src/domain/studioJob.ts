@@ -110,6 +110,14 @@ export interface StudioJob {
    * 없다. 그림 자체는 자산 저장소에 있고 여기에는 번호와 자리만 있다.
    */
   textObjects?: Record<string, StudioTextObject[]>
+  /**
+   * 페이지 id → 그 페이지의 이미지 편집 오브젝트 (블록 연결 Patch).
+   *
+   * 기획서의 이미지·컷아웃 블록 하나당 하나다. 결과 화면에서 옮기고 크기를
+   * 바꾸는 것은 이 값이고, 기획서 블록의 좌표는 건드리지 않는다 — 결과를 손본
+   * 일이 기획서를 고친 일이 되면 안 된다.
+   */
+  imageObjects?: Record<string, StudioTextObject[]>
   /** 완성 결과 전체에 얹는 그레인 (§9.5). */
   grain?: number
   /** 이 작업이 고른 생성 방식 (§6). */
@@ -339,6 +347,7 @@ export function withSource(job: StudioJob, doc: BriefDocument, now: number, file
     effects: {},
     styleRefs: {},
     textObjects: {},
+    imageObjects: {},
     updatedAt: now,
   }
 }
@@ -398,6 +407,7 @@ export function studioLiveAssetIds(job: StudioJob): string[] {
       // 꾸며진 문구 오브젝트도 같다. 합쳐진 결과 안에만 있는 것이 아니라 따로
       // 남아 있고, 옮기거나 다시 디자인할 때마다 이 그림을 다시 그린다.
       ...Object.values(job.textObjects ?? {}).flatMap((list) => list.map((t) => t.assetId)),
+      ...Object.values(job.imageObjects ?? {}).flatMap((list) => list.map((t) => t.assetId)),
     ]),
   ]
 }
@@ -414,6 +424,35 @@ export function sourceChanged(job: StudioJob): boolean {
 }
 
 // ── 꾸며진 문구 오브젝트 (텍스트 오브젝트 Patch §1) ──────────────────────────
+
+/** 이 페이지의 이미지 오브젝트. 없으면 빈 배열 — 예전 판 작업이 그렇다. */
+export function imageObjectsOf(job: StudioJob | null, pageId: string): StudioTextObject[] {
+  return job?.imageObjects?.[pageId] ?? []
+}
+
+export function withImageObjects(
+  job: StudioJob,
+  pageId: string,
+  objects: readonly StudioTextObject[],
+  now: number,
+): StudioJob {
+  return { ...job, imageObjects: { ...job.imageObjects, [pageId]: [...objects] }, updatedAt: now }
+}
+
+export function withImageObject(
+  job: StudioJob,
+  pageId: string,
+  blockId: string,
+  patch: Partial<Omit<StudioTextObject, 'blockId'>>,
+  now: number,
+): StudioJob {
+  const list = imageObjectsOf(job, pageId)
+  const index = list.findIndex((t) => t.blockId === blockId)
+  if (index < 0) return job
+  const next = [...list]
+  next[index] = { ...list[index]!, ...patch }
+  return { ...job, imageObjects: { ...job.imageObjects, [pageId]: next }, updatedAt: now }
+}
 
 /** 이 페이지의 문구 오브젝트. 없으면 빈 배열 — 예전 판 작업이 그렇다. */
 export function textObjectsOf(job: StudioJob | null, pageId: string): StudioTextObject[] {

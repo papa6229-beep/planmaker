@@ -19,7 +19,7 @@ import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { pageResultIsStale, pageResultOf } from '../../domain/studioJob'
 import { getAsset } from '../../services/assetStore'
-import { TextObjectLayer } from './TextObjectLayer'
+import { ResultObjectLayer } from './ResultObjectLayer'
 
 function formatTime(ms: number): string {
   const d = new Date(ms)
@@ -89,11 +89,11 @@ export function ResultCompare() {
         ) : url === null ? (
           <p className="compare__empty">결과 이미지를 불러오는 중…</p>
         ) : (
-          /* 원본 비율 그대로. 폭만 기획서와 맞춘다. 꾸며진 문구는 그림 위에
-             겹쳐 두어, 결과를 보면서 바로 옮기고 크기를 바꿀 수 있다 (§2). */
+          /* 원본 비율 그대로. 폭만 기획서와 맞춘다. 이미지와 꾸며진 문구는 그림
+             위에 겹쳐 두어, 결과를 보면서 바로 옮기고 크기를 바꿀 수 있다 (§2). */
           <div className="compare__stage">
             <img className="compare__image" src={url} alt="AI가 생성한 결과 이미지" />
-            <TextObjectLayer
+            <ResultObjectLayer
               pageId={pageId}
               page={{
                 width: doc.pages.find((p) => p.id === pageId)?.canvasWidth ?? 840,

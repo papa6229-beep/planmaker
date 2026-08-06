@@ -33,10 +33,10 @@ import type { StudioTextObject } from './textObjects'
  * 예전 빌드는 "읽을 수 없다"고 분명히 말한다. 잃는 것이 같다면 소리 내는 쪽이
  * 낫다 (§12 마지막 줄).
  */
-export const STUDIO_FILE_VERSION = '0.6.0'
+export const STUDIO_FILE_VERSION = '0.7.0'
 
 /** 이 판이 **읽을 수 있는** 버전. 예전 파일은 그대로 열린다. */
-export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0', '0.4.0', '0.5.0', '0.6.0']
+export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0', '0.4.0', '0.5.0', '0.6.0', '0.7.0']
 
 /** 파일이 기억하는 "이 작업이 어느 원본에서 시작했는가". */
 export interface StudioFileSource {
@@ -64,6 +64,8 @@ export interface StudioFileState {
   styleRefs?: Record<string, string>
   /** 페이지 id → 꾸며진 문구 오브젝트들 (0.6.0). */
   textObjects?: Record<string, StudioTextObject[]>
+  /** 페이지 id → 이미지 편집 오브젝트 (0.7.0). */
+  imageObjects?: Record<string, StudioTextObject[]>
 }
 
 /** 지금 작업에서 파일에 남길 것만 추린다. */
@@ -84,6 +86,7 @@ export function toStudioFileState(job: StudioJob): StudioFileState {
     effects: { ...job.effects },
     styleRefs: { ...job.styleRefs },
     textObjects: { ...job.textObjects },
+    imageObjects: { ...job.imageObjects },
     ...(job.grain === undefined ? {} : { grain: job.grain }),
     ...(job.method === undefined ? {} : { method: job.method }),
   }
@@ -104,6 +107,7 @@ export function studioFileAssetIds(state: StudioFileState): string[] {
       // 문구 오브젝트의 그림도 파일에 담긴다 — 빼면 다른 컴퓨터에서 열었을 때
       // 문구만 사라진 결과가 열린다.
       ...Object.values(state.textObjects ?? {}).flatMap((list) => list.map((t) => t.assetId)),
+      ...Object.values(state.imageObjects ?? {}).flatMap((list) => list.map((t) => t.assetId)),
     ]),
   ]
 }
@@ -133,7 +137,11 @@ export function remapStudioFileState(
   for (const [pageId, list] of Object.entries(state.textObjects ?? {})) {
     textObjects[pageId] = list.map((t) => ({ ...t, assetId: mapping.get(t.assetId) ?? t.assetId }))
   }
-  return { ...state, productImages, backgrounds, styleRefs, textObjects }
+  const imageObjects: Record<string, StudioTextObject[]> = {}
+  for (const [pageId, list] of Object.entries(state.imageObjects ?? {})) {
+    imageObjects[pageId] = list.map((t) => ({ ...t, assetId: mapping.get(t.assetId) ?? t.assetId }))
+  }
+  return { ...state, productImages, backgrounds, styleRefs, textObjects, imageObjects }
 }
 
 /** 예전 판 파일에는 없다. 모양이 어긋난 항목은 조용히 버린다 — 자리를 모르는
@@ -245,6 +253,7 @@ export function parseStudioFileState(raw: unknown): StudioFileState | null {
     backgrounds,
     styleRefs,
     textObjects: readTextObjects(raw.textObjects),
+    imageObjects: readTextObjects(raw.imageObjects),
     effects: readEffects(raw.effects),
     ...(typeof raw.grain === 'number' ? { grain: Math.min(1, Math.max(0, raw.grain)) } : {}),
     ...(raw.method === 'background_composite' || raw.method === 'full_ai' ? { method: raw.method } : {}),
