@@ -24,7 +24,7 @@ import type { GenerationMethod, StudioBackground, StudioJob } from './studioJob'
  *
  * `0.1.0`에는 제품 이미지 연결만 있었다. `0.2.0`부터 배경·합성 효과·그레인·
  * 생성 방식이 함께 들어가고, `0.3.0`부터 이미지별 종이 컷아웃이, `0.4.0`부터
- * 페이지별 디자인 스타일 레퍼런스가 함께 들어간다.
+ * 페이지별 디자인 스타일 레퍼런스가, `0.5.0`부터 종이 테두리 두께가 함께 들어간다.
  *
  * 버전을 올리는 대신 같은 `0.1.0`에 새 칸만 얹는 길도 있었지만, 그러면 예전
  * 빌드가 그 칸을 **말없이 버리고** 저장한다 — 작업자는 배경을 넣어 저장했는데
@@ -32,10 +32,10 @@ import type { GenerationMethod, StudioBackground, StudioJob } from './studioJob'
  * 예전 빌드는 "읽을 수 없다"고 분명히 말한다. 잃는 것이 같다면 소리 내는 쪽이
  * 낫다 (§12 마지막 줄).
  */
-export const STUDIO_FILE_VERSION = '0.4.0'
+export const STUDIO_FILE_VERSION = '0.5.0'
 
 /** 이 판이 **읽을 수 있는** 버전. 예전 파일은 그대로 열린다. */
-export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0', '0.4.0']
+export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0', '0.4.0', '0.5.0']
 
 /** 파일이 기억하는 "이 작업이 어느 원본에서 시작했는가". */
 export interface StudioFileSource {

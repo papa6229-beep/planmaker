@@ -1,0 +1,389 @@
+/**
+ * 한방 완성 이미지 생성 + 종이 테두리 두께 집중검사.
+ *
+ * 구현 **전에** 실패로 고정한다. 새 모듈은 검사 안에서 부르므로, 없는 모듈이
+ * 파일 전체를 무너뜨리지 않고 몇 항목이 빨간지 세어진다.
+ *
+ * 실물 이미지는 fixture로 넣지 않는다. 자산은 손으로 만든 바이트다.
+ */
+
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import 'fake-indexeddb/auto'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
+import { AppShell } from './AppShell'
+import { StudioJobProvider, useStudioJob } from '../features/studio/useStudioJob'
+import { createBlock, createEmptyProject } from '../domain/factory'
+import { createEmptyDocument } from '../domain/pageSchema'
+import { clearAll, getAsset, putAsset, resetAssetStoreForTests, type StoredAsset } from '../services/assetStore'
+import { clearAllDocuments, resetDocumentStoreForTests } from '../services/documentStore'
+import { clearAllRequests, resetRequestStoreForTests } from '../services/requestStore'
+import {
+  clearAllStudioJobs,
+  loadStudioJob,
+  resetStudioStoreForTests,
+  saveStudioJob,
+  STUDIO_JOB_ID,
+} from '../services/studioStore'
+import { createStudioJob, withSource } from '../domain/studioJob'
+import type { BriefDocument } from '../domain/pageSchema'
+
+vi.mock('../features/assets/imageUtils', async () => {
+  const actual = await vi.importActual<typeof import('../features/assets/imageUtils')>(
+    '../features/assets/imageUtils',
+  )
+  return { ...actual, readImageSize: async () => ({ width: 800, height: 800 }) }
+})
+vi.mock('../services/previewRenderer', () => ({
+  renderPreviewPng: async () => new Blob([new Uint8Array([9, 9, 9, 9])], { type: 'image/png' }),
+}))
+// jsdom에는 2D 캔버스가 없다. 그리는 일은 브라우저에서 보고, 여기서는 **무엇을
+// 보내고 무엇을 남기는가**를 본다.
+vi.mock('../services/photoContent', () => ({
+  PHOTO_MEASURE_MAX_SIDE: 256,
+  measurePhoto: async () => ({ natural: { width: 800, height: 800 }, box: { x: 0, y: 0, width: 1, height: 1 } }),
+}))
+vi.mock('../services/paperCutoutShape', () => ({
+  buildPaperShape: async () => ({ url: 'data:image/png;base64,AA', pad: 6, content: { width: 100, height: 100 } }),
+  buildPaperCanvas: async () => null,
+}))
+// 분석은 캔버스에서 픽셀을 읽는 일이다. jsdom에서는 그림이 아예 디코딩되지
+// 않아 `Image`가 load도 error도 내지 않으므로, 진짜 함수를 부르면 영영 기다린다.
+vi.mock('../services/imageAnalysisRunner', () => ({
+  ANALYSIS_MAX_SIDE: 256,
+  analyzeImageBlob: async () => null,
+}))
+vi.mock('../services/compositeRenderer', () => ({
+  renderComposite: async () => new Blob([new Uint8Array([5, 5, 5, 5, 5])], { type: 'image/png' }),
+}))
+vi.mock('../services/workingImage', async () => {
+  const actual = await vi.importActual<typeof import('../services/workingImage')>('../services/workingImage')
+  return {
+    ...actual,
+    toWorkingImage: async (blob: Blob, target: { width: number; height: number }) => ({
+      blob,
+      width: target.width,
+      height: target.height,
+      reencoded: false,
+    }),
+  }
+})
+
+const fetchSpy = vi.fn()
+globalThis.fetch = fetchSpy as unknown as typeof fetch
+
+const PARENT = '../'
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const load = (name: string): Promise<any> => import(/* @vite-ignore */ `${PARENT}${name}`)
+
+function storedAsset(id: string, seed: number): StoredAsset {
+  return {
+    id,
+    blob: new Blob([new Uint8Array([137, 80, 78, 71, seed])], { type: 'image/png' }),
+    fileName: `${id}.png`,
+    mimeType: 'image/png',
+    byteSize: 5,
+  }
+}
+
+/** 컷아웃 후보 하나, 일반 이미지 하나, 문구 하나. */
+function sampleDoc(): BriefDocument {
+  const doc = createEmptyDocument(createEmptyProject('한방 생성 시험'))
+  doc.pages[0]!.id = 'page_1'
+  doc.activePageId = 'page_1'
+  doc.pages[0]!.blocks = [
+    createBlock('main_product_image', {
+      id: 'blk_cut',
+      label: '컷아웃 제품',
+      position: { x: 100, y: 500, width: 400, height: 400 },
+    }),
+    createBlock('sub_product_image', {
+      id: 'blk_plain',
+      label: '일반 이미지',
+      position: { x: 540, y: 500, width: 240, height: 240 },
+    }),
+    createBlock('free_text', {
+      id: 'blk_text',
+      label: '문구',
+      content: '여름 감사제 40% + 사은품',
+      position: { x: 120, y: 180, width: 500, height: 140 },
+    }),
+  ]
+  doc.pages[0]!.canvasHeight = 1000
+  return doc
+}
+
+async function seedJob(extra: Record<string, unknown> = {}) {
+  const doc = sampleDoc()
+  const job = withSource(createStudioJob(doc, 1_000, STUDIO_JOB_ID), doc, 1_000, '한방.eventbrief')
+  await saveStudioJob({
+    ...job,
+    productImages: { blk_cut: 'asset_cut', blk_plain: 'asset_plain' },
+    styleRefs: { page_1: 'asset_style' },
+    ...extra,
+  })
+}
+
+function StudioHarness() {
+  const studio = useStudioJob()
+  if (studio === null) return null
+  return <AppShell mode="studio" binding={studio.binding} />
+}
+
+function renderStudio() {
+  return render(
+    <MemoryRouter initialEntries={['/studio']}>
+      <StudioJobProvider>
+        <StudioHarness />
+      </StudioJobProvider>
+    </MemoryRouter>,
+  )
+}
+
+async function documentReady(container: HTMLElement) {
+  await waitFor(() => expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(3), {
+    timeout: 5000,
+  })
+}
+
+/** 상단 버튼 한 번 → 확인창 실행. 응답은 stub이라 실제 결제는 없다. */
+async function generateOnce(): Promise<FormData> {
+  sessionStorage.setItem('planmaker.openai-key', 'sk-stub')
+  fetchSpy.mockResolvedValue(
+    new Response(
+      JSON.stringify({ image: { b64: btoa('plate-bytes'), mimeType: 'image/png' }, metadata: { requestedSize: '832x992' } }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ),
+  )
+  fireEvent.click(await screen.findByRole('button', { name: /이미지 생성하기|다시 생성/ }))
+  const dialog = await screen.findByRole('dialog')
+  fireEvent.click(within(dialog).getByRole('button', { name: /생성 시작|만들기|시작/ }))
+  await waitFor(() => expect(fetchSpy).toHaveBeenCalled())
+  return fetchSpy.mock.calls[0]![1].body as FormData
+}
+
+const fileNames = (form: FormData) =>
+  form.getAll('images[]').filter((v): v is File => typeof v !== 'string').map((f) => f.name)
+
+beforeEach(async () => {
+  fetchSpy.mockReset()
+  resetAssetStoreForTests()
+  resetDocumentStoreForTests()
+  resetRequestStoreForTests()
+  resetStudioStoreForTests()
+  await clearAll()
+  await clearAllDocuments()
+  await clearAllRequests()
+  await clearAllStudioJobs()
+  sessionStorage.clear()
+  await putAsset(storedAsset('asset_cut', 1))
+  await putAsset(storedAsset('asset_plain', 2))
+  await putAsset(storedAsset('asset_style', 3))
+})
+
+// ── 1. 메인 흐름은 상단 버튼 하나 ────────────────────────────────────────────
+
+describe('§1 상단 버튼 하나가 메인 실행이다', () => {
+  it('두 단계 버튼과 생성 방식 카드는 화면에 없다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+
+    expect(await screen.findByRole('button', { name: /이미지 생성하기/ })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'AI로 배경 생성' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '원본 합성으로 저장' })).toBeNull()
+    expect(screen.queryByRole('region', { name: '생성 방식' })).toBeNull()
+  })
+})
+
+// ── 2. 무엇을 보내고 무엇을 보내지 않는가 ────────────────────────────────────
+
+describe('§2 컷아웃이 없으면 기존 전체 AI 흐름', () => {
+  it('배치도와 제품 원본을 지금까지처럼 보낸다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    const form = await generateOnce()
+
+    const names = fileNames(form)
+    expect(names.some((n) => n.includes('page-layout'))).toBe(true)
+    expect(names.some((n) => n.includes('product_image'))).toBe(true)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('§2 컷아웃이 있으면 원본 보존 완성 디자인', () => {
+  it('컷아웃 원본과 배치도는 보내지 않고, 스타일 레퍼런스와 일반 이미지만 보낸다', async () => {
+    await seedJob({ effects: { blk_cut: { paperCutout: true } } })
+    const { container } = renderStudio()
+    await documentReady(container)
+    const form = await generateOnce()
+
+    const names = fileNames(form)
+    // 배치도에는 컷아웃 픽셀이 그려져 있다 — 그래서 이 흐름에서는 아예 보내지 않는다.
+    expect(names.some((n) => n.includes('page-layout'))).toBe(false)
+    expect(names.some((n) => n.includes('asset_cut') || n.includes('cut'))).toBe(false)
+    expect(names.some((n) => n.includes('style-reference'))).toBe(true)
+    expect(names.some((n) => n.includes('plain'))).toBe(true)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('보낼 수 있는 자산 목록에 컷아웃이 들어갈 길이 없다', async () => {
+    const { preserveAttachmentIds } = await load('domain/preserveDesign')
+    const ids = preserveAttachmentIds({
+      styleReferenceAssetId: 'asset_style',
+      images: [{ blockId: 'blk_plain', assetId: 'asset_plain', rect: { x: 0, y: 0, width: 1, height: 1 }, layer: 1 }],
+      cutouts: [{ blockId: 'blk_cut', assetId: 'asset_cut', rect: { x: 0, y: 0, width: 1, height: 1 }, layer: 0 }],
+    })
+    expect(ids).toContain('asset_style')
+    expect(ids).toContain('asset_plain')
+    expect(ids).not.toContain('asset_cut')
+  })
+})
+
+// ── 3. 프롬프트가 말하는 것 ──────────────────────────────────────────────────
+
+describe('§3 완성 디자인 주문', () => {
+  it('문구 원문과 세 가지 고정 규칙, 컷아웃 자리가 함께 들어간다', async () => {
+    const { buildPreserveDesignPrompt } = await load('domain/preserveDesign')
+    const prompt = buildPreserveDesignPrompt({
+      size: { width: 840, height: 1000 },
+      styleReferenceAssetId: 'asset_style',
+      texts: [
+        {
+          blockId: 'blk_text',
+          content: '여름 감사제 40% + 사은품',
+          rect: { x: 120, y: 180, width: 500, height: 140 },
+          align: 'center',
+          layer: 2,
+        },
+      ],
+      images: [{ blockId: 'blk_plain', assetId: 'asset_plain', rect: { x: 540, y: 500, width: 240, height: 240 }, layer: 1 }],
+      cutouts: [{ blockId: 'blk_cut', assetId: 'asset_cut', rect: { x: 100, y: 500, width: 400, height: 400 }, layer: 0 }],
+      note: '가을 느낌으로',
+    })
+
+    // 문구는 한 글자도 바뀌지 않은 채로 실린다.
+    expect(prompt).toContain('여름 감사제 40% + 사은품')
+    // 세 가지 고정 규칙.
+    expect(prompt).toContain('문자·숫자·띄어쓰기·기호·줄바꿈')
+    expect(prompt).toContain('복제하지 않습니다')
+    expect(prompt).toContain('새 인물·제품·로고를 만들지 않습니다')
+    // 완성 디자인이라는 것 — 단순 배경이 아니다.
+    for (const word of ['장식', '타이포그래피', '완성']) expect(prompt).toContain(word)
+    // 작업자의 추가 지시.
+    expect(prompt).toContain('가을 느낌으로')
+    // 컷아웃 자리는 좌표로만 간다 — 파일명도 바이트도 없다.
+    expect(prompt).not.toContain('asset_cut')
+    expect(prompt).not.toContain('.png')
+  })
+})
+
+// ── 4. 결과: 컷아웃은 브라우저가 얹는다 ──────────────────────────────────────
+
+describe('§4 최종 합성', () => {
+  it('AI 결과 위에 컷아웃만 얹고 문구는 다시 그리지 않는다', async () => {
+    const { planLocalComposite } = await load('domain/composite')
+    const doc = sampleDoc()
+    const plan = planLocalComposite({
+      page: doc.pages[0]!,
+      background: { assetId: 'asset_plate', source: 'ai' },
+      productImages: { blk_cut: 'asset_cut', blk_plain: 'asset_plain' },
+      effects: { blk_cut: { paperCutout: true } },
+      onlyBlockIds: ['blk_cut'],
+      includeTexts: false,
+    })
+    expect(plan.background?.assetId).toBe('asset_plate')
+    expect(plan.layers.map((l: { blockId: string }) => l.blockId)).toEqual(['blk_cut'])
+    expect(plan.layers[0]!.rect).toEqual({ x: 100, y: 500, width: 400, height: 400 })
+    expect(plan.layers[0]!.effects.paperCutout).toBe(true)
+    // 문구는 AI가 이미 그렸다 — 두 번 그리지 않는다.
+    expect(plan.texts).toEqual([])
+    expect(plan.externalCalls).toBe(0)
+  })
+
+  it('생성이 끝나면 합성한 결과가 이 페이지의 결과로 남고 원본은 그대로다', async () => {
+    await seedJob({ effects: { blk_cut: { paperCutout: true } } })
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect(job?.results?.page_1?.assetId).toBeTruthy()
+    }, { timeout: 8000 })
+
+    // 컷아웃 원본 바이트는 손대지 않는다.
+    const cut = await getAsset('asset_cut')
+    expect(cut?.byteSize).toBe(5)
+    expect(cut?.fileName).toBe('asset_cut.png')
+  })
+})
+
+// ── 5. 종이 테두리 두께 ──────────────────────────────────────────────────────
+
+describe('§5 종이 테두리 두께 세 단계', () => {
+  it('두께마다 넓히는 폭이 다르고 기본은 보통이다', async () => {
+    const { paperPad, PAPER_WEIGHTS, DEFAULT_PAPER_WEIGHT } = await load('domain/paperCutout')
+    const box = { width: 400, height: 400 }
+    expect(DEFAULT_PAPER_WEIGHT).toBe('normal')
+    expect(Object.keys(PAPER_WEIGHTS).sort()).toEqual(['normal', 'thick', 'thin'])
+    expect(paperPad(box, 'thin')).toBeLessThan(paperPad(box, 'normal'))
+    expect(paperPad(box, 'normal')).toBeLessThan(paperPad(box, 'thick'))
+    // 아무것도 주지 않으면 지금까지와 같다.
+    expect(paperPad(box)).toBe(paperPad(box, 'normal'))
+  })
+
+  it('컷아웃을 켠 블록에만 세 단계가 보이고, 고르면 저장된다', async () => {
+    await seedJob({ effects: { blk_cut: { paperCutout: true } } })
+    const { container } = renderStudio()
+    await documentReady(container)
+
+    const card = Array.from(container.querySelectorAll<HTMLElement>('.canvas__sheet .block-card')).find((el) =>
+      (el.getAttribute('aria-label') ?? '').startsWith('컷아웃 제품'),
+    )!
+    fireEvent.pointerDown(card, { button: 0 })
+    await waitFor(() => expect(card.getAttribute('aria-pressed')).toBe('true'))
+
+    for (const name of ['얇게', '보통', '두껍게']) {
+      expect(within(card).getByRole('button', { name })).toBeTruthy()
+    }
+    expect(within(card).getByRole('button', { name: '보통' }).getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.click(within(card).getByRole('button', { name: '두껍게' }))
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect(job?.effects?.blk_cut?.paperWeight).toBe('thick')
+    })
+
+    // 컷아웃을 켜지 않은 블록에는 두께 선택이 없다.
+    const plain = Array.from(container.querySelectorAll<HTMLElement>('.canvas__sheet .block-card')).find((el) =>
+      (el.getAttribute('aria-label') ?? '').startsWith('일반 이미지'),
+    )!
+    fireEvent.pointerDown(plain, { button: 0 })
+    await waitFor(() => expect(plain.getAttribute('aria-pressed')).toBe('true'))
+    expect(within(plain).queryByRole('button', { name: '두껍게' })).toBeNull()
+  })
+
+  it('작업 파일 왕복에서 두께가 남고, 예전 파일은 보통으로 읽힌다', async () => {
+    const mod = await load('domain/studioFile')
+    const studioJob = await load('domain/studioJob')
+    const doc = sampleDoc()
+    const job = studioJob.withBlockEffects(
+      createStudioJob(doc, 1_000, STUDIO_JOB_ID),
+      'blk_cut',
+      { paperCutout: true, paperWeight: 'thin' },
+      2_000,
+    )
+    const parsed = mod.parseStudioFileState(JSON.parse(JSON.stringify(mod.toStudioFileState(job))))
+    expect(parsed?.effects?.blk_cut?.paperWeight).toBe('thin')
+
+    const old = mod.parseStudioFileState({
+      version: '0.4.0',
+      source: null,
+      productImages: {},
+      effects: { blk_cut: { paperCutout: true } },
+    })
+    expect(old?.effects?.blk_cut?.paperWeight).toBe('normal')
+  })
+})

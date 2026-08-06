@@ -29,10 +29,12 @@ export interface CompositeSources {
   /** 자산 번호 → 분석값. 없으면 정면광으로 본다. */
   analyses?: ReadonlyMap<string, ImageAnalysis>
   /**
-   * 자산 번호 → 종이 컷아웃 모양 (Studio Patch §3).
+   * 블록 번호 → 종이 컷아웃 모양 (Studio Patch §3).
    *
    * 미리보기와 **같은 함수**가 만든 것을 그대로 받는다. 여기서 다시 계산하면
-   * 두 화면의 외곽선이 어긋날 길이 생긴다.
+   * 두 화면의 외곽선이 어긋날 길이 생긴다. 자산이 아니라 블록으로 세는 것은
+   * 두께가 블록마다 다르기 때문이다 — 같은 그림을 두 자리에 놓고 한쪽만 두껍게
+   * 할 수 있다 (한방 생성 Patch §3).
    */
   papers?: ReadonlyMap<string, PaperCanvas>
 }
@@ -109,7 +111,7 @@ async function drawLayer(
   const shape = silhouette(source, fit)
 
   // ── 종이 컷아웃: 그림자와 사진보다 먼저, 맨 아래에 깔린다 (§3) ────────────
-  const paper = effects.paperCutout ? sources.papers?.get(layer.assetId) : undefined
+  const paper = effects.paperCutout ? sources.papers?.get(layer.blockId) : undefined
   if (paper !== undefined) {
     const out = paperOutset(paper.content, paper.pad)
     const px = fit.dest.x - fit.dest.width * out.x

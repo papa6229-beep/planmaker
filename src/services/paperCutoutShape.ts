@@ -9,7 +9,15 @@
  * 장이고, 자산 저장소에도 작업 파일에도 들어가지 않는다.
  */
 
-import { paperMask, paperOffsets, paperPad, paperSeed, PAPER_COLOR } from '../domain/paperCutout'
+import {
+  paperMask,
+  paperOffsets,
+  paperPad,
+  paperSeed,
+  PAPER_COLOR,
+  DEFAULT_PAPER_WEIGHT,
+  type PaperWeight,
+} from '../domain/paperCutout'
 import type { ContentBox } from '../domain/photoBox'
 
 /**
@@ -54,8 +62,13 @@ async function toBitmap(blob: Blob): Promise<CanvasImageSource & { width: number
  * 실패하면 던지지 않고 `null`을 돌려준다. 종이를 못 그리는 것이 사진을 못 쓰는
  * 이유는 아니고, 그때는 지금까지처럼 사진만 그린다.
  */
-export async function buildPaperShape(blob: Blob, box: ContentBox, seed: string): Promise<PaperShape | null> {
-  const built = await buildPaperCanvas(blob, box, seed)
+export async function buildPaperShape(
+  blob: Blob,
+  box: ContentBox,
+  seed: string,
+  weight: PaperWeight = DEFAULT_PAPER_WEIGHT,
+): Promise<PaperShape | null> {
+  const built = await buildPaperCanvas(blob, box, seed, weight)
   if (built === null) return null
   return { url: built.canvas.toDataURL('image/png'), pad: built.pad, content: built.content }
 }
@@ -72,7 +85,12 @@ export interface PaperCanvas {
  * 최종 합성은 data URL을 다시 그림으로 읽을 이유가 없다 — 캔버스를 그대로
  * 받는다. 미리보기와 **같은 함수**를 지나므로 두 화면의 외곽선이 같다.
  */
-export async function buildPaperCanvas(blob: Blob, box: ContentBox, seed: string): Promise<PaperCanvas | null> {
+export async function buildPaperCanvas(
+  blob: Blob,
+  box: ContentBox,
+  seed: string,
+  weight: PaperWeight = DEFAULT_PAPER_WEIGHT,
+): Promise<PaperCanvas | null> {
   try {
     const bitmap = await toBitmap(blob)
     if (bitmap.width <= 0 || bitmap.height <= 0) return null
@@ -93,7 +111,7 @@ export async function buildPaperCanvas(blob: Blob, box: ContentBox, seed: string
     sctx.drawImage(bitmap, bitmap.width * box.x, bitmap.height * box.y, cropW, cropH, 0, 0, w, h)
     const pixels = sctx.getImageData(0, 0, w, h)
 
-    const pad = paperPad({ width: w, height: h })
+    const pad = paperPad({ width: w, height: h }, weight)
     const mask = paperMask(
       { data: pixels.data, width: pixels.width, height: pixels.height },
       pad,

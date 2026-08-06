@@ -36,7 +36,6 @@ import { ReadyPanel } from '../components/studio/ReadyPanel'
 import { BlockLayerTools } from '../components/studio/BlockLayerTools'
 import { BackgroundTools } from '../components/studio/BackgroundTools'
 import { StyleReferenceTools } from '../components/studio/StyleReferenceTools'
-import { MethodChoice } from '../components/studio/MethodChoice'
 import { BackgroundDialog } from '../components/studio/BackgroundDialog'
 import { CompositeEffectsPanel } from '../components/studio/CompositeEffectsPanel'
 import { BackgroundCompositeProvider } from '../features/studio/useBackgroundComposite'
@@ -263,9 +262,9 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
              만든 뒤에는 부분수정. 블록 편집 도움말은 왼쪽 캔버스가 이미 하는
              말이라 여기서 되풀이하지 않는다 (실작업 UI 마감 §3). */
           <div className="side-right">
-            {/* 어떻게 만들 것인가가 먼저다 — 두 방식은 값을 치르는 방식부터
-                다르다 (§6). */}
-            <MethodChoice />
+            {/* 생성 방식을 고르는 자리는 없다 (한방 생성 Patch §1). 상단
+                `이미지 생성하기` 하나가 메인 실행이고, 종이 컷아웃이 켜져
+                있는지에 따라 흐름은 스스로 갈린다. */}
             {/* 고른 블록의 배치 — 맞춤 방식과 레이어 순서 (§3.1, §4). */}
             <BlockLayerTools />
             <CompositeEffectsPanel />

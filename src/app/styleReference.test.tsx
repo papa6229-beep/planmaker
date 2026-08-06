@@ -11,8 +11,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { AppShell } from './AppShell'
+import { AppShell, AppShellProviders } from './AppShell'
+import { BackgroundDialog } from '../components/studio/BackgroundDialog'
 import { StudioJobProvider, useStudioJob } from '../features/studio/useStudioJob'
+import { useBackgroundComposite } from '../features/studio/useBackgroundComposite'
+import { useBriefDocument } from '../features/document/useBriefDocument'
 import { DocumentsProvider } from '../features/documents/useDocuments'
 import { createBlock, createEmptyProject } from '../domain/factory'
 import { createEmptyDocument } from '../domain/pageSchema'
@@ -118,6 +121,53 @@ function renderStudio() {
       </StudioJobProvider>
     </MemoryRouter>,
   )
+}
+
+/**
+ * 배경 생성 + 원본 합성을 **화면 없이** 부르는 자리.
+ *
+ * 한방 생성 Patch §1에서 이 방식은 새 화면의 기본 경로가 아니게 됐다 — 상단
+ * `이미지 생성하기` 하나가 메인 실행이고, `생성 방식` 카드와 두 단계 버튼은
+ * 화면에서 내렸다. 코드는 그대로 있으므로, 이 검사도 그대로 남아 **같은 경계**를
+ * 본다: 요청에 무엇이 실리고 무엇이 실리지 않는가.
+ */
+function CompositeControls() {
+  const composite = useBackgroundComposite()
+  const { document: doc } = useBriefDocument()
+  if (composite === null) return null
+  const page = doc.pages.find((p) => p.id === doc.activePageId) ?? doc.pages[0]
+  return (
+    <div>
+      <span data-testid="composite-blocks">{page?.blocks.length ?? 0}</span>
+      <button type="button" onClick={composite.beginGenerate}>AI로 배경 생성</button>
+      <BackgroundDialog />
+    </div>
+  )
+}
+
+function CompositeHost() {
+  const studio = useStudioJob()
+  if (studio === null) return null
+  return (
+    <AppShellProviders binding={studio.binding} freePlacement>
+      <CompositeControls />
+    </AppShellProviders>
+  )
+}
+
+function renderComposite() {
+  return render(
+    <MemoryRouter initialEntries={['/studio']}>
+      <StudioJobProvider>
+        <CompositeHost />
+      </StudioJobProvider>
+    </MemoryRouter>,
+  )
+}
+
+/** 문서가 붙기 전에 누르면 아직 이 페이지가 아니다. 블록이 선 뒤에 시작한다. */
+async function compositeReady() {
+  await waitFor(() => expect(screen.getByTestId('composite-blocks').textContent).toBe('3'), { timeout: 5000 })
 }
 
 /**
@@ -259,8 +309,8 @@ describe('페이지당 한 장', () => {
 describe('요청 레퍼런스만 가고 원본은 가지 않는다', () => {
   it('레퍼런스가 없으면 지금까지처럼 이미지 0장으로 나간다', async () => {
     await seedJob()
-    const { container } = renderStudio()
-    await documentReady(container)
+    renderComposite()
+    await compositeReady()
     const form = await generate()
     expect(form.getAll('images[]')).toHaveLength(0)
     expect(fetchSpy).toHaveBeenCalledTimes(1)
@@ -268,8 +318,8 @@ describe('요청 레퍼런스만 가고 원본은 가지 않는다', () => {
 
   it('레퍼런스가 있으면 그 한 장만 실린다', async () => {
     await seedJob({ styleRefs: { page_1: 'asset_style' } })
-    const { container } = renderStudio()
-    await documentReady(container)
+    renderComposite()
+    await compositeReady()
     const form = await generate()
 
     const files = form.getAll('images[]').filter((v): v is File => typeof v !== 'string')
@@ -321,8 +371,8 @@ describe('프롬프트 스타일 참고만, 복제는 아니다', () => {
 
   it('문구가 놓일 자리는 좌표로만 가고 원문은 가지 않는다', async () => {
     await seedJob({ styleRefs: { page_1: 'asset_style' } })
-    const { container } = renderStudio()
-    await documentReady(container)
+    renderComposite()
+    await compositeReady()
     const form = await generate()
     const prompt = String(form.get('prompt'))
     expect(prompt).not.toContain('여름 감사제')
@@ -362,8 +412,8 @@ describe('저장 파일 왕복에서 살아남는다', () => {
 describe('호출과 합성', () => {
   it('승인 뒤 정확히 1회 나가고 자동 재시도는 없다', async () => {
     await seedJob({ styleRefs: { page_1: 'asset_style' } })
-    const { container } = renderStudio()
-    await documentReady(container)
+    renderComposite()
+    await compositeReady()
     await generate()
     await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1))
     await new Promise((r) => setTimeout(r, 300))

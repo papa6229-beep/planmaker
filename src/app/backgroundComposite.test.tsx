@@ -13,8 +13,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { AppShell } from './AppShell'
+import { AppShell, AppShellProviders } from './AppShell'
+import { BackgroundDialog } from '../components/studio/BackgroundDialog'
 import { StudioJobProvider, useStudioJob } from '../features/studio/useStudioJob'
+import { useBackgroundComposite } from '../features/studio/useBackgroundComposite'
+import { useBriefDocument } from '../features/document/useBriefDocument'
 import { briefReducer, createInitialEditorState } from '../features/editor/briefEditor'
 import { createBlock, createEmptyProject } from '../domain/factory'
 import { createEmptyDocument } from '../domain/pageSchema'
@@ -145,6 +148,65 @@ function renderStudio() {
       </StudioJobProvider>
     </MemoryRouter>,
   )
+}
+
+/**
+ * 배경 생성 + 원본 합성을 **화면 없이** 부르는 자리.
+ *
+ * 한방 생성 Patch §1에서 이 방식은 새 화면의 기본 경로가 아니게 됐다 — 상단
+ * `이미지 생성하기` 하나가 메인 실행이고, `생성 방식` 카드와 두 단계 버튼은
+ * 화면에서 내렸다. 코드는 그대로 있으므로, 이 검사도 그대로 남아 **같은 경계**를
+ * 본다: 무엇이 나가는가, 몇 번 나가는가, 무엇이 저장되는가.
+ *
+ * 확인창(`BackgroundDialog`)은 함께 세운다. 사람이 읽는 문장까지가 §6의 요구였고,
+ * 그 문장은 provider의 상태에서 나온다.
+ */
+function CompositeControls() {
+  const composite = useBackgroundComposite()
+  const { document: doc } = useBriefDocument()
+  if (composite === null) return null
+  const page = doc.pages.find((p) => p.id === doc.activePageId) ?? doc.pages[0]
+  return (
+    <div>
+      <span data-testid="composite-blocks">{page?.blocks.length ?? 0}</span>
+      <label>
+        어떤 배경이면 좋을까요
+        <textarea value={composite.wish} onChange={(e) => composite.setWish(e.target.value)} />
+      </label>
+      {/* 실행은 확인창의 `배경 만들기`뿐이다 — 여기 같은 이름의 버튼을 하나 더
+          두면 사람이 확인 없이 지나가는 길이 검사에만 생긴다. */}
+      <button type="button" onClick={composite.beginGenerate}>AI로 배경 생성</button>
+      <button type="button" onClick={composite.saveComposite}>원본 합성으로 저장</button>
+      <BackgroundDialog />
+    </div>
+  )
+}
+
+function CompositeHost() {
+  const studio = useStudioJob()
+  if (studio === null) return null
+  return (
+    <AppShellProviders binding={studio.binding} freePlacement>
+      <CompositeControls />
+    </AppShellProviders>
+  )
+}
+
+function renderComposite() {
+  return render(
+    <MemoryRouter initialEntries={['/studio']}>
+      <StudioJobProvider>
+        <CompositeHost />
+      </StudioJobProvider>
+    </MemoryRouter>,
+  )
+}
+
+/** 문서가 붙기 전에 누르면 아직 이 페이지가 아니다. 블록이 선 뒤에 시작한다. */
+async function compositeReady(blocks: number) {
+  await waitFor(() => expect(screen.getByTestId('composite-blocks').textContent).toBe(String(blocks)), {
+    timeout: 5000,
+  })
 }
 
 /** 캔버스 위의 카드만 — 팔레트와 상단바에도 "이미지"가 붙은 버튼이 있다. */
@@ -586,8 +648,8 @@ describe('배경 생성 + 원본 합성 흐름', () => {
       }),
     )
 
-    renderStudio()
-    fireEvent.click(await screen.findByRole('radio', { name: /배경 생성 \+ 원본 합성/ }))
+    renderComposite()
+    await compositeReady(2)
     fireEvent.change(await screen.findByRole('textbox', { name: /어떤 배경/ }), {
       target: { value: '따뜻한 베이지 스튜디오' },
     })
@@ -630,9 +692,9 @@ describe('배경 생성 + 원본 합성 흐름', () => {
       method: 'background_composite',
     })
 
-    const { container } = renderStudio()
-    // 문서가 붙기 전에 누르면 아직 이 페이지가 아니다 — 캔버스에 블록이 선 뒤에.
-    await imageCard(container)
+    renderComposite()
+    // 문서가 붙기 전에 누르면 아직 이 페이지가 아니다 — 블록이 선 뒤에.
+    await compositeReady(2)
     fireEvent.click(await screen.findByRole('button', { name: '원본 합성으로 저장' }))
 
     const dialog = await screen.findByRole('dialog', { name: '배경 생성 상태' })

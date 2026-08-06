@@ -22,7 +22,13 @@ import { LAYER_MOVES, visibleLayerPosition } from '../../domain/layerOrder'
 import { contentAspect, keepAspect, photoImageStyle, photoRect } from '../../domain/photoBox'
 import { measurePhoto, type PhotoContent } from '../../services/photoContent'
 import { buildPaperShape, type PaperShape } from '../../services/paperCutoutShape'
-import { paperOutset, PAPER_SHADOW } from '../../domain/paperCutout'
+import {
+  paperOutset,
+  DEFAULT_PAPER_WEIGHT,
+  PAPER_SHADOW,
+  PAPER_WEIGHT_OPTIONS,
+  type PaperWeight,
+} from '../../domain/paperCutout'
 import { getAsset } from '../../services/assetStore'
 import { canCarryLink, cardKindLabel, drawsBareText, textAlignOf, TEXT_ALIGNS, type TextAlign } from '../../domain/simpleBlocks'
 import { CARD_CHROME_Y, CARD_PADDING_X, PLACEHOLDER_FONT_PX, fitBlockToText, fitTextSize } from '../../domain/textFit'
@@ -151,6 +157,8 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   const [content, setContent] = useState<PhotoContent | null>(null)
   /** 이 이미지에 종이 컷아웃이 걸려 있는가 (Studio Patch §2). */
   const paperOn = photo && studio !== null && studio.effectsOf(block.id).paperCutout
+  /** 종이 테두리의 두께 (한방 생성 Patch §3). 모르는 값은 보통으로 읽힌다. */
+  const paperWeight: PaperWeight = studio === null ? DEFAULT_PAPER_WEIGHT : studio.effectsOf(block.id).paperWeight
   const [paper, setPaper] = useState<PaperShape | null>(null)
   const [layerOpen, setLayerOpen] = useState(false)
   const drag = useRef<DragState | null>(null)
@@ -316,13 +324,13 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
     void (async () => {
       const asset = await getAsset(productAssetId)
       if (!alive || asset === undefined) return
-      const shape = await buildPaperShape(asset.blob, content.box, productAssetId)
+      const shape = await buildPaperShape(asset.blob, content.box, productAssetId, paperWeight)
       if (alive) setPaper(shape)
     })()
     return () => {
       alive = false
     }
-  }, [paperOn, productAssetId, content])
+  }, [paperOn, productAssetId, content, paperWeight])
 
   /**
    * 연결하는 순간 블록을 그림 비율로 정리한다 (§1 이미지 경계).
@@ -449,6 +457,24 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
           />
           종이 컷아웃
         </label>
+      )}
+      {/* 두께는 켠 자리에만 나온다 (한방 생성 Patch §3). 꺼 둔 블록에 두께를
+          보여 주면 무엇을 두껍게 하는 값인지 화면이 말해 주지 못한다. */}
+      {paperOn && studio !== null && (
+        <span className="block-card__weights" role="group" aria-label="종이 테두리 두께">
+          {PAPER_WEIGHT_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={`block-card__weight${paperWeight === option.value ? ' is-active' : ''}`}
+              aria-pressed={paperWeight === option.value}
+              title={`종이 테두리 ${option.label}`}
+              onClick={() => studio.setEffects(block.id, { paperWeight: option.value })}
+            >
+              {option.label}
+            </button>
+          ))}
+        </span>
       )}
       {/* 레이어 순서는 블록 바로 옆에서 바꾼다 — 우측 패널까지 갔다 오는 동안
           "무엇을 고르고 있었는지"를 놓치기 때문이다 (긴급 Patch §2). */}

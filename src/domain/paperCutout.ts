@@ -20,6 +20,29 @@
 /** 넓히는 폭 — 내용의 짧은 변에 대한 비율. */
 export const PAPER_PAD_RATIO = 0.05
 export const PAPER_MIN_PAD = 2
+
+/**
+ * 종이 테두리의 두께 (한방 생성 Patch §3).
+ *
+ * 세 단계뿐이다. 자유로운 숫자를 주면 작업자가 "몇이 맞는지"를 매번 정해야
+ * 하고, 그 답은 사실 그림마다 다르지 않다 — 얇거나, 보통이거나, 두껍다.
+ */
+export type PaperWeight = 'thin' | 'normal' | 'thick'
+export const DEFAULT_PAPER_WEIGHT: PaperWeight = 'normal'
+
+/** 기준 폭에 곱하는 값. `normal`이 1이므로 지금까지의 결과가 기본이다. */
+export const PAPER_WEIGHTS: Record<PaperWeight, number> = { thin: 0.6, normal: 1, thick: 1.7 }
+
+export const PAPER_WEIGHT_OPTIONS: readonly { value: PaperWeight; label: string }[] = [
+  { value: 'thin', label: '얇게' },
+  { value: 'normal', label: '보통' },
+  { value: 'thick', label: '두껍게' },
+]
+
+/** 모르는 값은 보통으로 읽는다 — 예전 작업이 열리기만 해도 달라지지 않게. */
+export function paperWeightOf(value: unknown): PaperWeight {
+  return value === 'thin' || value === 'thick' ? value : DEFAULT_PAPER_WEIGHT
+}
 /** 각도마다 폭이 흔들리는 정도 0..1. 0이면 정확한 원, 1이면 너덜너덜. */
 export const PAPER_ROUGHNESS = 0.42
 /** 외곽을 훑는 각도 수. 촘촘할수록 테두리가 매끈하다. */
@@ -70,9 +93,12 @@ function pick(seed: number, index: number): number {
 }
 
 /** 이 크기의 그림을 얼마나 밖으로 넓힐 것인가. */
-export function paperPad(content: { width: number; height: number }): number {
+export function paperPad(
+  content: { width: number; height: number },
+  weight: PaperWeight = DEFAULT_PAPER_WEIGHT,
+): number {
   const short = Math.min(content.width, content.height)
-  return Math.max(PAPER_MIN_PAD, Math.round(short * PAPER_PAD_RATIO))
+  return Math.max(PAPER_MIN_PAD, Math.round(short * PAPER_PAD_RATIO * PAPER_WEIGHTS[weight]))
 }
 
 /**

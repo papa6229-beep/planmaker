@@ -35,6 +35,16 @@ import { buildEditTargets, selectedProductAssetIds, selectedTargets, type EditTa
 import { buildEditPrompt } from '../../domain/editPrompt'
 import { planGenerationInputs, MAX_INPUT_IMAGES, type GenerationInputImage } from '../../domain/imageGenerationInputs'
 import { buildOpenAIImagePrompt } from '../../domain/imagePrompt'
+import {
+  buildPreserveDesignPrompt,
+  planPreserveInputs,
+  type PreserveDesignInput,
+  type PreserveImageEntry,
+  type PreserveTextEntry,
+} from '../../domain/preserveDesign'
+import { planLocalComposite } from '../../domain/composite'
+import { getBlockTypeMeta } from '../../domain/blockTypes'
+import { isPairedLinkUrl, textAlignOf } from '../../domain/simpleBlocks'
 import { resolveGptImageSize } from '../../domain/gptImageSize'
 import { documentFingerprint } from '../../domain/documentFingerprint'
 import { pageAsEventBrief } from '../../domain/briefMigration'
@@ -54,14 +64,28 @@ import {
 import { getAllAssets, getAsset, putAsset } from '../../services/assetStore'
 import { sizeLabel, toWorkingImage, workingImageTarget, type WorkingImageTarget } from '../../services/workingImage'
 import { renderPreviewPng } from '../../services/previewRenderer'
+import { renderComposite } from '../../services/compositeRenderer'
+import { collectCompositeSources } from '../../services/compositeSources'
 import { createId } from '../../domain/factory'
+import type { BriefPage } from '../../domain/pageSchema'
 
 /** 중앙 패널이 무엇을 보여 주는가. 참고 이미지 보기와는 아무 관계가 없다. */
 export type StudioCenterView = 'brief' | 'compare'
 
+/**
+ * 이 생성이 어느 길로 가는가 (한방 생성 Patch §1).
+ *
+ * 작업자는 고르지 않는다. 종이 컷아웃이 하나라도 켜져 있으면 `preserve`이고,
+ * 없으면 지금까지의 `full_ai`다 — 화면에 방식 선택이 없는 것은 그래서다.
+ */
+export type GenerationMode = 'full_ai' | 'preserve'
+
 interface GenerationPlan {
   /** 처음부터 만드는 것인가, 이미 있는 결과를 고치는 것인가. */
   kind: 'generate' | 'edit'
+  mode: GenerationMode
+  /** `preserve`에서 브라우저가 나중에 원본 그대로 얹을 블록들. */
+  cutoutBlockIds: string[]
   pageId: string
   prompt: string
   /** 모델에게 요청하는 크기 (16의 배수). */
@@ -149,6 +173,47 @@ function blobFromBase64(b64: string, mimeType: string): Blob {
   return new Blob([bytes], { type: mimeType })
 }
 
+/**
+ * 이 페이지를 세 뭉치로 가른다 (한방 생성 Patch §2).
+ *
+ * 문구는 원문 그대로, 컷아웃이 아닌 이미지는 원본을 보낼 자리로, 컷아웃은
+ * **자리만** 적을 자리로. 가르는 기준은 종이 컷아웃 체크 하나뿐이다.
+ *
+ * 앞뒤 순서는 블록 차례 그대로다 — 화면에서 뒤에 오는 블록이 앞에 그려지므로,
+ * 번호가 클수록 앞이라는 프롬프트의 말과 같은 뜻이 된다.
+ */
+function preserveParts(
+  page: BriefPage,
+  productImages: Readonly<Record<string, string>>,
+  isCutout: (blockId: string) => boolean,
+): { texts: PreserveTextEntry[]; images: PreserveImageEntry[]; cutouts: PreserveImageEntry[] } {
+  const texts: PreserveTextEntry[] = []
+  const images: PreserveImageEntry[] = []
+  const cutouts: PreserveImageEntry[] = []
+
+  page.blocks.forEach((block, layer) => {
+    // 퍼블리싱 주소는 디자인이 아니다 — 합성 계획과 같은 규칙으로 뺀다.
+    if (isPairedLinkUrl(page.blocks, block)) return
+    const meta = getBlockTypeMeta(block.type)
+    const rect = { ...block.position }
+
+    if (meta.requiresAsset) {
+      const assetId = productImages[block.id] ?? block.assetId
+      if (assetId === undefined) return
+      const entry: PreserveImageEntry = { blockId: block.id, assetId, rect, layer }
+      if (isCutout(block.id)) cutouts.push(entry)
+      else images.push(entry)
+      return
+    }
+
+    const content = block.content ?? ''
+    if (!meta.hasText || content.trim().length === 0) return
+    texts.push({ blockId: block.id, content, rect, align: textAlignOf(block), layer })
+  })
+
+  return { texts, images, cutouts }
+}
+
 export function ImageGenerationProvider({ children }: { children: ReactNode }) {
   const { getDocument } = useBriefDocument()
   const studio = useStudioJob()
@@ -180,6 +245,42 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
 
     const size = resolveGptImageSize(page.canvasWidth, page.canvasHeight)
     if (!size.ok) return { blocked: size.message }
+    const working = workingImageTarget(page.canvasHeight)
+    const fingerprint = documentFingerprint(current)
+
+    // ── 갈림길 (§1). 작업자는 고르지 않는다 ─────────────────────────────────
+    const parts = preserveParts(page, studio.job.productImages, (id) => studio.effectsOf(id).paperCutout)
+
+    if (parts.cutouts.length > 0) {
+      const styleRefId = studio.styleReferenceOf(page.id)
+      const note = current.project.aiNote?.trim() ?? ''
+      const preserve: PreserveDesignInput = {
+        size: { width: page.canvasWidth, height: page.canvasHeight },
+        ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
+        texts: parts.texts,
+        images: parts.images,
+        cutouts: parts.cutouts,
+        ...(note.length === 0 ? {} : { note }),
+      }
+      // 컷아웃은 이 목록에 들어갈 길이 없다 — 그 하나가 이 흐름의 경계다.
+      const preserveInputs = planPreserveInputs(preserve)
+      if (preserveInputs.length > MAX_INPUT_IMAGES) {
+        return { blocked: errorTextFor('too_many_inputs') }
+      }
+      return {
+        plan: {
+          kind: 'generate',
+          mode: 'preserve',
+          cutoutBlockIds: parts.cutouts.map((c) => c.blockId),
+          pageId: page.id,
+          prompt: buildPreserveDesignPrompt(preserve, preserveInputs),
+          size: size.size,
+          working,
+          inputs: preserveInputs,
+          fingerprint,
+        },
+      }
+    }
 
     const inputs = planGenerationInputs(request)
     if (inputs.length > MAX_INPUT_IMAGES) {
@@ -189,12 +290,14 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     return {
       plan: {
         kind: 'generate',
+        mode: 'full_ai',
+        cutoutBlockIds: [],
         pageId: page.id,
         prompt: buildOpenAIImagePrompt(request, inputs),
         size: size.size,
-        working: workingImageTarget(page.canvasHeight),
+        working,
         inputs,
-        fingerprint: documentFingerprint(current),
+        fingerprint,
       },
     }
   }, [getDocument, studio])
@@ -230,6 +333,22 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         }
         return files
       }
+      if (plan.mode === 'preserve') {
+        // 배치도를 만들지 않는다. 배치도에는 컷아웃 픽셀이 이미 그려져 있어서,
+        // 보내는 순간 "원본은 보내지 않는다"가 거짓이 된다 (§2).
+        //
+        // 파일명도 우리가 정한 것뿐이다 — 작업자가 올린 원본 파일명은 나가지
+        // 않는다.
+        for (const input of plan.inputs) {
+          const asset = input.assetId === undefined ? undefined : byId.get(input.assetId)
+          if (asset === undefined) continue
+          files.push({
+            fileName: `${String(input.index)}-${input.fileName ?? `${input.role}.png`}`,
+            blob: asset.blob,
+          })
+        }
+        return files
+      }
       for (const input of plan.inputs) {
         if (input.role === 'page_layout') {
           // 편집 핸들도 선택 테두리도 없는, 파일 저장에 쓰는 바로 그 그림이다.
@@ -259,6 +378,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     mimeType: string
     requestedSize: string
     requestId?: string
+    /** `preserve`에서 저장해 둔 완성 디자인 플레이트. 다시 만들 때 재사용한다. */
+    plateAssetId?: string
   } | null>(null)
 
   /**
@@ -280,6 +401,60 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    /**
+     * 저장할 그림과 그 크기.
+     *
+     * `full_ai`에서는 모델이 준 것을 작업본으로 맞춘 그대로다. `preserve`에서는
+     * 모델이 준 것이 **완성 디자인 플레이트**이고, 그 위에 컷아웃만 브라우저가
+     * 원본 그대로 얹은 뒤의 한 장이 결과다 (§2 마지막 줄).
+     */
+    let finalBlob = working.blob
+    let finalSize = { width: working.width, height: working.height }
+    let fileName = `ai-${paid.plan.pageId}.png`
+
+    if (paid.plan.mode === 'preserve') {
+      if (studio === null) {
+        setState({ kind: 'failed', message: errorTextFor('unknown') })
+        return
+      }
+      try {
+        // 플레이트를 자산으로 남긴 뒤 그것을 배경으로 삼는다. 다시 만들기에서는
+        // 같은 플레이트를 그대로 쓰므로 모델을 부르는 자리가 없다.
+        const plateAssetId = paid.plateAssetId ?? createId('asset')
+        if (paid.plateAssetId === undefined) {
+          await putAsset({
+            id: plateAssetId,
+            blob: working.blob,
+            fileName: `plate-${paid.plan.pageId}.png`,
+            mimeType: paid.mimeType,
+            byteSize: working.blob.size,
+          })
+          paidRef.current = { ...paid, plateAssetId }
+        }
+
+        const brief = getDocument()
+        const page = brief.pages.find((p) => p.id === paid.plan.pageId) ?? brief.pages[0]!
+        // 얹는 것은 **AI에게 보내지 않은 컷아웃**뿐이다. 문구와 일반 이미지는
+        // 이미 플레이트 안에 그려져 있으므로 다시 그리면 두 번 나온다.
+        const composite = planLocalComposite({
+          page,
+          background: { assetId: plateAssetId, source: 'ai', requestedSize: paid.requestedSize },
+          productImages: studio.job.productImages,
+          effects: studio.job.effects ?? {},
+          grain: studio.grain,
+          onlyBlockIds: paid.plan.cutoutBlockIds,
+          includeTexts: false,
+        })
+        finalBlob = await renderComposite(composite, await collectCompositeSources(composite))
+        finalSize = { ...composite.size }
+        fileName = `design-${paid.plan.pageId}.png`
+      } catch {
+        // 플레이트는 손에 있다. 다시 만들기만 하면 되고, 모델은 부르지 않는다.
+        setState({ kind: 'convert-failed', message: '완성 디자인은 받았지만 원본 합성에 실패했습니다' })
+        return
+      }
+    }
+
     const assetId = createId('asset')
     const current = pageResultOf(studio?.job ?? null, paid.plan.pageId)
     const editing = paid.plan.kind === 'edit' && current !== undefined
@@ -290,7 +465,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       model: IMAGE_MODEL,
       quality: IMAGE_QUALITY,
       requestedSize: paid.requestedSize,
-      workingSize: sizeLabel({ width: working.width, height: working.height }),
+      workingSize: sizeLabel(finalSize),
       // 부분수정은 기획서를 고친 것이 아니다. 그래서 "이 결과가 어느 기획서에서
       // 나왔는가"와 얼려 둔 대상 목록은 그대로 이어받는다.
       sourceFingerprint: editing ? current.sourceFingerprint : paid.plan.fingerprint,
@@ -323,10 +498,10 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     try {
       await putAsset({
         id: assetId,
-        blob: working.blob,
-        fileName: `ai-${paid.plan.pageId}.png`,
+        blob: finalBlob,
+        fileName,
         mimeType: paid.mimeType,
-        byteSize: working.blob.size,
+        byteSize: finalBlob.size,
       })
       await studio?.recordResult(result)
     } catch {
@@ -502,6 +677,9 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     return {
       plan: {
         kind: 'edit',
+        // 부분수정은 이미 만들어진 한 장을 고치는 일이다 — 갈림길과 무관하다.
+        mode: 'full_ai',
+        cutoutBlockIds: [],
         pageId: currentResult.pageId,
         prompt: buildEditPrompt(editTargets, editItems, {
           currentImage: working,

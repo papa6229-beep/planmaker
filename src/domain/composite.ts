@@ -67,6 +67,16 @@ export interface CompositePlanInput {
   /** 블록 id → 효과 세기. 없는 블록은 기본값. */
   effects: Readonly<Record<string, Partial<CompositeEffects>>>
   grain?: number
+  /**
+   * 이 블록들만 얹는다 (한방 생성 Patch §2).
+   *
+   * 원본 보존 완성 디자인에서는 AI가 이미 배경·장식·문구·일반 이미지를 그려
+   * 놓았다. 그 위에 브라우저가 더할 것은 **AI에게 보내지 않은 컷아웃**뿐이다 —
+   * 나머지를 다시 그리면 같은 것이 두 번 나온다.
+   */
+  onlyBlockIds?: readonly string[]
+  /** 문구를 그릴 것인가. 완성 디자인 위에서는 AI가 이미 그렸으므로 거짓이다. */
+  includeTexts?: boolean
 }
 
 const DEFAULT_PLAN_GRAIN = 0.08
@@ -83,9 +93,12 @@ export function planLocalComposite(input: CompositePlanInput): CompositePlan {
   const size = { width: page.canvasWidth, height: page.canvasHeight }
   const layers: CompositeLayerPlan[] = []
   const texts: CompositeTextPlan[] = []
+  const only = input.onlyBlockIds === undefined ? null : new Set(input.onlyBlockIds)
+  const includeTexts = input.includeTexts !== false
 
   for (const block of page.blocks) {
     if (isPairedLinkUrl(page.blocks, block)) continue
+    if (only !== null && !only.has(block.id)) continue
     const meta = getBlockTypeMeta(block.type)
     const rect = { ...block.position }
 
@@ -104,7 +117,7 @@ export function planLocalComposite(input: CompositePlanInput): CompositePlan {
     }
 
     const content = block.content ?? ''
-    if (!meta.hasText || content.trim().length === 0) continue
+    if (!includeTexts || !meta.hasText || content.trim().length === 0) continue
     // §10: 새 텍스트 엔진을 만들지 않는다. 화면에서 쓰는 그 계산을 그대로 쓴다.
     const bare = drawsBareText(block)
     const area = bare ? {} : { padX: CARD_PADDING_X, padY: CARD_CHROME_Y }
