@@ -51,6 +51,7 @@ import {
   type PreserveTextEntry,
 } from '../../domain/preserveDesign'
 import { analyzeImageBlob } from '../../services/imageAnalysisRunner'
+import { removeKeyBackground } from '../../services/textLayerKey'
 import { planLocalComposite } from '../../domain/composite'
 import { getBlockTypeMeta } from '../../domain/blockTypes'
 import { isPairedLinkUrl, textAlignOf } from '../../domain/simpleBlocks'
@@ -60,7 +61,6 @@ import { pageAsEventBrief } from '../../domain/briefMigration'
 import {
   API_KEY_HEADER,
   errorTextFor,
-  FIELD_BACKGROUND,
   FIELD_IMAGES,
   FIELD_PROMPT,
   FIELD_SIZE,
@@ -189,11 +189,11 @@ export interface ImageGenerationApi {
 const ImageGenerationContext = createContext<ImageGenerationApi | null>(null)
 
 /**
- * 전경 문구 레이어가 이 이상 불투명하면 얹지 않는다.
+ * 단색을 걷어 낸 뒤에도 이 이상 불투명하면 얹지 않는다.
  *
- * 투명해야 할 그림이 불투명하게 돌아오면, 그대로 얹는 순간 배경도 사진도 전부
- * 덮인다 — 문구를 얻으려다 나머지를 다 잃는다. 그래서 얹기 전에 알파를 재고,
- * 덮을 그림이면 얹지 않고 그 사실을 말한다.
+ * 걷어 낼 단색이 없었다는 뜻이고, 그대로 얹으면 배경도 사진도 전부 덮인다 —
+ * 문구를 얻으려다 나머지를 다 잃는다. 그래서 얹기 전에 알파를 재고, 덮을
+ * 그림이면 얹지 않고 그 사실을 말한다.
  */
 const FOREGROUND_MAX_OPAQUE = 0.92
 
@@ -600,12 +600,13 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       key: string,
       inputs: readonly GenerationInputImage[],
       prompt: string,
-      transparent = false,
     ): Promise<{ blob: Blob; mimeType: string; requestedSize: string; requestId?: string } | { code?: string }> => {
       const form = new FormData()
       form.set(FIELD_PROMPT, prompt)
       form.set(FIELD_SIZE, plan.size)
-      if (transparent) form.set(FIELD_BACKGROUND, 'transparent')
+      // 투명 배경은 요청하지 않는다. `gpt-image-2`가 거절한다 —
+      // `param: background`, `Transparent background is not supported for this
+      // model.` 대신 단색 위에 글자를 받아 브라우저가 그 단색을 걷어 낸다.
       for (const file of await collectImages(plan, inputs)) {
         form.append(FIELD_IMAGES, new File([file.blob], file.fileName, { type: file.blob.type || 'image/png' }))
       }
@@ -676,26 +677,33 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
                   ? null
                   : { average: analysis.average, brightness: analysis.brightness },
             }),
-            true,
           )
 
           if (!('blob' in second)) {
             paidRef.current = { ...paidRef.current, foregroundProblem: errorTextFor(second.code) }
           } else {
-            const layer = await analyzeImageBlob(second.blob)
-            if (layer !== null && layer.opaqueRatio > FOREGROUND_MAX_OPAQUE) {
+            // 모델이 준 것은 단색 위의 글자다. 바깥에서 이어지는 그 단색만 걷어
+            // 내면 배경 없는 글자 그림이 된다 (꾸며진 텍스트 Patch §3).
+            const keyed = await removeKeyBackground(second.blob)
+            if (keyed === null) {
               paidRef.current = {
                 ...paidRef.current,
-                foregroundProblem: '문구 레이어가 불투명하게 돌아와 배경과 사진을 덮습니다.',
+                foregroundProblem: '문구 레이어의 배경을 걷어 내지 못했습니다.',
+              }
+            } else if (keyed.opaqueRatio > FOREGROUND_MAX_OPAQUE) {
+              // 지운 뒤에도 거의 다 남았다면 단색 배경이 아니었다는 뜻이다.
+              paidRef.current = {
+                ...paidRef.current,
+                foregroundProblem: '문구 레이어가 단색 배경 없이 돌아와 배경과 사진을 덮습니다.',
               }
             } else {
               const foregroundAssetId = createId('asset')
               await putAsset({
                 id: foregroundAssetId,
-                blob: second.blob,
+                blob: keyed.blob,
                 fileName: `foreground-${plan.pageId}.png`,
-                mimeType: second.mimeType,
-                byteSize: second.blob.size,
+                mimeType: 'image/png',
+                byteSize: keyed.blob.size,
               })
               paidRef.current = { ...paidRef.current, foregroundAssetId }
             }

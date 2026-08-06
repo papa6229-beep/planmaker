@@ -62,6 +62,11 @@ vi.mock('../services/imageAnalysisRunner', () => ({
     light: { x: -0.3, y: 0, confidence: 'low' },
   }),
 }))
+// 단색 걷어 내기도 캔버스 일이다. 규칙 자체는 `chromaKey` 순수 검사에서 재고,
+// 여기서는 걷어 낸 레이어가 흐름을 타고 결과까지 가는지를 본다.
+vi.mock('../services/textLayerKey', () => ({
+  removeKeyBackground: async (blob: Blob) => ({ blob, opaqueRatio: 0.2 }),
+}))
 vi.mock('../services/compositeRenderer', () => ({
   renderComposite: async () => new Blob([new Uint8Array([5, 5, 5, 5, 5])], { type: 'image/png' }),
 }))
@@ -171,14 +176,17 @@ async function documentReady(container: HTMLElement) {
 /** 상단 버튼 한 번. 응답은 stub이라 실제 결제는 없다. */
 async function generateOnce(calls = 2): Promise<FormData[]> {
   sessionStorage.setItem('planmaker.openai-key', 'sk-stub')
-  fetchSpy.mockResolvedValue(
-    new Response(
-      JSON.stringify({
-        image: { b64: btoa('layer-bytes'), mimeType: 'image/png' },
-        metadata: { requestedSize: '832x1184' },
-      }),
-      { status: 200, headers: { 'content-type': 'application/json' } },
-    ),
+  // 매번 **새** Response를 만든다. 하나를 재사용하면 본문이 이미 읽혀 두 번째
+  // 요청이 `no_image`로 떨어지고, 전경 레이어가 조용히 빠진다.
+  fetchSpy.mockImplementation(
+    async () =>
+      new Response(
+        JSON.stringify({
+          image: { b64: btoa('layer-bytes'), mimeType: 'image/png' },
+          metadata: { requestedSize: '832x1184' },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
   )
   fireEvent.click(await screen.findByRole('button', { name: /이미지 생성하기|다시 생성/ }))
   const dialog = await screen.findByRole('dialog')
@@ -356,57 +364,90 @@ describe('§2 문구는 전면 레이어다', () => {
     expect(prompt.indexOf('여름 감사제')).toBeLessThan(prompt.indexOf('8/1 ~ 8/14'))
     // 사진 위를 가로질러도 된다.
     expect(prompt).toContain('그 위로 글씨가 지나가도 좋습니다')
-    // 배경은 투명해야 한다.
-    expect(prompt).toContain('완전히 투명')
-    expect(prompt).toContain('불투명한 배경')
+    // 배경은 걷어 낼 단색이다 (꾸며진 텍스트 Patch §3).
+    expect(prompt).toContain('단색 마젠타')
+    expect(prompt).toContain('마젠타는 나중에 지워집니다')
     // 아래 배경의 색은 숫자로만 간다.
     expect(prompt).toContain('R180')
     expect(prompt).not.toContain('asset_')
   })
 
-  it('두 번째 요청은 투명 배경을 요구하고, 첫 번째는 요구하지 않는다', async () => {
+  it('두 요청 중 어느 쪽도 투명 배경을 요구하지 않고, 문구 생성은 한 번뿐이다', async () => {
     await seedJob({ effects: CUTOUTS })
     const { container } = renderStudio()
     await documentReady(container)
     const [plate, foreground] = await generateOnce()
 
+    // `gpt-image-2`가 거절한 항목이다 — 이제 어느 요청에도 실리지 않는다.
     expect(plate!.get('background')).toBeNull()
-    expect(foreground!.get('background')).toBe('transparent')
-    // 배경 주문에는 문구 원문이 없고, 전경 주문에는 있다.
+    expect(foreground!.get('background')).toBeNull()
+
+    // 배경 주문에는 문구 원문이 없고, 전경 주문에만 있다. 그리고 그 요청은 하나다.
     expect(promptOf(plate!)).not.toContain('여름 감사제 40% + 사은품')
     expect(promptOf(foreground!)).toContain('여름 감사제 40% + 사은품')
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+    const textCalls = fetchSpy.mock.calls.filter((c) =>
+      String((c[1].body as FormData).get('prompt')).includes('전경 문구 레이어'),
+    )
+    expect(textCalls).toHaveLength(1)
   })
 
-  it('실패 기록은 항목 이름과 손질한 설명만 남긴다', async () => {
-    const { safeProviderDetail } = await load('services/openAiImageClient')
+  it('전경 주문은 단색 배경을 시키고, 그 색을 글자에 쓰지 말라고 못 박는다', async () => {
+    const { buildForegroundPrompt } = await load('domain/preserveDesign')
+    const { TEXT_KEY_HEX } = await load('domain/chromaKey')
+    const prompt = buildForegroundPrompt({
+      size: { width: 840, height: 1200 },
+      texts: [
+        { blockId: 't', content: '여름 감사제', rect: { x: 0, y: 0, width: 100, height: 50 }, align: 'center', layer: 0 },
+      ],
+      fixed: [],
+    })
+    expect(prompt).toContain(TEXT_KEY_HEX)
+    expect(prompt).toContain('단색 마젠타')
+    expect(prompt).toContain('마젠타는 나중에 지워집니다')
+    // 글자·라벨에 키 색을 쓰지 말라고 말한다.
+    expect(prompt).toContain('라벨·배지에 마젠타')
+    // 투명을 요구하던 문장은 남아 있지 않다.
+    expect(prompt).not.toContain('완전히 투명')
+  })
 
-    // 어느 값이 문제였는지는 남는다.
-    expect(safeProviderDetail("Invalid value: 'transparent'. Supported values are: 'opaque'."))
-      .toBe("Invalid value: 'transparent'. Supported values are: 'opaque'.")
+  it('바깥에서 이어지는 단색만 지우고 글자·라벨·그림자는 남긴다', async () => {
+    const { keyOutBackground, TEXT_KEY_COLOR } = await load('domain/chromaKey')
 
-    // 키는 어떤 모양이든 남지 않는다.
-    for (const secret of [
-      'Incorrect API key provided: sk-proj-AbCdEfGhIjKlMnOpQrStUv.',
-      'Authorization: Bearer sk-live-1234567890abcdefghij failed.',
-    ]) {
-      const out = safeProviderDetail(secret) ?? ''
-      expect(out).toContain('[redacted]')
-      expect(out).not.toContain('sk-')
+    // 20×20 마젠타 바탕에, 글자 대역(흰색)·라벨(파랑)·그림자(회색)를 심는다.
+    const width = 20
+    const height = 20
+    const data = new Uint8ClampedArray(width * height * 4)
+    const put = (x: number, y: number, rgb: number[]) => {
+      const at = (y * width + x) * 4
+      data[at] = rgb[0]!; data[at + 1] = rgb[1]!; data[at + 2] = rgb[2]!; data[at + 3] = 255
     }
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) put(x, y, [255, 0, 255])
+    }
+    // 글자: 가운데 6×6 흰 사각형, 그 안에 마젠타 구멍 하나 (글자 속 빈 자리).
+    for (let y = 6; y < 12; y += 1) for (let x = 6; x < 12; x += 1) put(x, y, [255, 255, 255])
+    put(8, 8, [255, 0, 255])
+    put(9, 8, [255, 0, 255])
+    // 라벨: 파란 사각형. 그림자: 회색 한 줄.
+    for (let y = 14; y < 17; y += 1) for (let x = 3; x < 9; x += 1) put(x, y, [30, 80, 200])
+    for (let x = 3; x < 9; x += 1) put(x, 17, [120, 120, 120])
 
-    // 우리가 보낸 글이 되돌아와도 남지 않는다.
-    const echoed = safeProviderDetail(
-      `Your prompt was rejected: "${'이벤트 페이지의 전경 문구 레이어 한 장을 만들어 주세요 여름 감사제 40퍼센트'}"`,
-    )
-    expect(echoed).not.toContain('여름 감사제')
-    expect(echoed).toContain('[redacted]')
+    const opaqueRatio = keyOutBackground({ data, width, height }, TEXT_KEY_COLOR)
 
-    // base64 덩어리도 남지 않는다.
-    expect(safeProviderDetail(`image data ${'A'.repeat(120)} rejected`)).not.toContain('AAAA')
-
-    // 길어도 200자를 넘기지 않고, 문자열이 아니면 아무것도 남기지 않는다.
-    expect((safeProviderDetail('가'.repeat(400)) ?? '').length).toBe(200)
-    expect(safeProviderDetail(undefined)).toBeUndefined()
+    const alphaAt = (x: number, y: number) => data[(y * width + x) * 4 + 3]
+    // 바깥 배경은 지워졌다.
+    expect(alphaAt(0, 0)).toBe(0)
+    expect(alphaAt(19, 19)).toBe(0)
+    expect(alphaAt(10, 2)).toBe(0)
+    // 글자·라벨·그림자는 남았다.
+    expect(alphaAt(7, 7)).toBe(255)
+    expect(alphaAt(5, 15)).toBe(255)
+    expect(alphaAt(5, 17)).toBe(255)
+    // 글자 안쪽에 갇힌 같은 색은 바깥과 이어지지 않으므로 남는다 (§3 규칙 그대로).
+    expect(alphaAt(8, 8)).toBe(255)
+    // 남은 비율은 심어 둔 만큼이다 — 배경이 지워졌다는 것을 수치로도 말한다.
+    expect(opaqueRatio).toBeCloseTo((36 + 18 + 6) / 400, 5)
   })
 
   it('서버 경계가 투명 배경을 그대로 공급자에게 넘긴다', async () => {
@@ -690,5 +731,8 @@ describe('§4 배경 → 사진 → 문구', () => {
       expect(asset?.byteSize).toBe(5)
       expect(asset?.fileName).toBe(`${id}.png`)
     }
+
+    // 문구 레이어도 자산으로 남는다 — 빠졌다면 화면이 그렇게 말했을 것이다.
+    expect(screen.queryByText(/배경과 이미지까지만 저장했습니다/)).toBeNull()
   })
 })
