@@ -47,6 +47,13 @@ export interface CompositePlan {
   size: { width: number; height: number }
   /** 이 페이지의 배경. 없으면 흰 바탕이다. */
   background?: StudioBackground
+  /**
+   * 맨 앞에 얹는 한 장 (한방 생성 Patch 2 §4).
+   *
+   * AI가 만든 전경 문구 레이어다. 배경이 투명하므로 아래의 배경과 사진이 그대로
+   * 비치고, 이 겹이 맨 앞이라 **문구는 언제나 이미지보다 앞**에 온다.
+   */
+  foreground?: { assetId: string }
   layers: CompositeLayerPlan[]
   texts: CompositeTextPlan[]
   /** 완성 결과 전체에 얹는 그레인 (§9.5). */
@@ -62,6 +69,8 @@ export interface CompositePlan {
 export interface CompositePlanInput {
   page: BriefPage
   background?: StudioBackground | undefined
+  /** 맨 앞에 얹을 전경 레이어 (한방 생성 Patch 2 §4). */
+  foreground?: { assetId: string } | undefined
   /** 블록 id → 실제 사용 제품 이미지의 자산 id. */
   productImages: Readonly<Record<string, string>>
   /** 블록 id → 효과 세기. 없는 블록은 기본값. */
@@ -134,6 +143,7 @@ export function planLocalComposite(input: CompositePlanInput): CompositePlan {
   return {
     size,
     ...(input.background === undefined ? {} : { background: input.background }),
+    ...(input.foreground === undefined ? {} : { foreground: input.foreground }),
     layers,
     texts,
     grain: input.grain ?? DEFAULT_PLAN_GRAIN,
@@ -141,9 +151,10 @@ export function planLocalComposite(input: CompositePlanInput): CompositePlan {
   }
 }
 
-/** 이 계획이 필요로 하는 자산 번호 전부 — 배경까지. */
+/** 이 계획이 필요로 하는 자산 번호 전부 — 배경과 전경까지. */
 export function compositeAssetIds(plan: CompositePlan): string[] {
   const ids = plan.layers.map((l) => l.assetId)
   if (plan.background !== undefined) ids.push(plan.background.assetId)
+  if (plan.foreground !== undefined) ids.push(plan.foreground.assetId)
   return [...new Set(ids)]
 }

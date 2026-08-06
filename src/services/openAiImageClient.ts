@@ -48,6 +48,13 @@ export interface OpenAiImageRequest {
   /** `가로x세로` — `resolveGptImageSize`가 만든 값. */
   size: string
   images: readonly OpenAiInputImage[]
+  /**
+   * 배경을 투명하게 받을 것인가 (한방 생성 Patch 2).
+   *
+   * 값이 없으면 아무것도 보내지 않는다 — 지금까지의 요청 바이트가 한 글자도
+   * 달라지지 않도록. `png` 출력에서만 뜻이 있고, 우리는 언제나 `png`다.
+   */
+  background?: 'transparent'
 }
 
 export interface OpenAiImageResult {
@@ -117,6 +124,7 @@ export async function requestOpenAiImage(
   form.set('quality', IMAGE_QUALITY)
   form.set('n', '1')
   form.set('output_format', IMAGE_OUTPUT_FORMAT)
+  if (request.background === 'transparent') form.set('background', 'transparent')
   // `input_fidelity`는 넣지 않는다 — gpt-image-2는 이미지 입력을 스스로 고정밀
   // 처리하므로, 여기서 지정하면 모델의 기본 동작을 덮어쓰게 된다.
   // 스트리밍과 중간 이미지도 쓰지 않으므로 아예 보내지 않는다.
@@ -142,6 +150,7 @@ export async function requestOpenAiImage(
             quality: IMAGE_QUALITY,
             n: 1,
             output_format: IMAGE_OUTPUT_FORMAT,
+            ...(request.background === 'transparent' ? { background: 'transparent' } : {}),
           })
         : form,
     })

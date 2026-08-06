@@ -213,76 +213,74 @@ describe('§2 컷아웃이 없으면 기존 전체 AI 흐름', () => {
 })
 
 describe('§2 컷아웃이 있으면 원본 보존 완성 디자인', () => {
-  it('컷아웃 원본과 배치도는 보내지 않고, 스타일 레퍼런스와 일반 이미지만 보낸다', async () => {
+  it('사용자 이미지는 한 장도 보내지 않고, 스타일 레퍼런스만 보낸다', async () => {
     await seedJob({ effects: { blk_cut: { paperCutout: true } } })
     const { container } = renderStudio()
     await documentReady(container)
     const form = await generateOnce()
 
     const names = fileNames(form)
-    // 배치도에는 컷아웃 픽셀이 그려져 있다 — 그래서 이 흐름에서는 아예 보내지 않는다.
-    expect(names.some((n) => n.includes('page-layout'))).toBe(false)
-    expect(names.some((n) => n.includes('asset_cut') || n.includes('cut'))).toBe(false)
-    expect(names.some((n) => n.includes('style-reference'))).toBe(true)
-    expect(names.some((n) => n.includes('plain'))).toBe(true)
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    // 배치도에는 사용자의 그림이 그려져 있다 — 그래서 이 흐름에서는 아예 보내지
+    // 않는다. 일반 이미지도 더는 보내지 않는다: 보내면 모델이 그것을 다시 그리고,
+    // 그 순간 좌표·크기 계약이 깨진다 (한방 생성 Patch 2 §1).
+    expect(names).toEqual(['1-style-reference.png'])
+    for (const banned of ['page-layout', 'cut', 'plain']) {
+      expect(names.some((n) => n.includes(banned))).toBe(false)
+    }
   })
 
-  it('보낼 수 있는 자산 목록에 컷아웃이 들어갈 길이 없다', async () => {
+  it('보낼 수 있는 자산 목록에 사용자 이미지가 들어갈 길이 없다', async () => {
     const { preserveAttachmentIds } = await load('domain/preserveDesign')
-    const ids = preserveAttachmentIds({
-      styleReferenceAssetId: 'asset_style',
-      images: [{ blockId: 'blk_plain', assetId: 'asset_plain', rect: { x: 0, y: 0, width: 1, height: 1 }, layer: 1 }],
-      cutouts: [{ blockId: 'blk_cut', assetId: 'asset_cut', rect: { x: 0, y: 0, width: 1, height: 1 }, layer: 0 }],
-    })
-    expect(ids).toContain('asset_style')
-    expect(ids).toContain('asset_plain')
-    expect(ids).not.toContain('asset_cut')
+    // 인자가 스타일 레퍼런스 하나뿐이라, 컷아웃도 제품도 낄 자리가 없다.
+    expect(preserveAttachmentIds('asset_style')).toEqual(['asset_style'])
+    expect(preserveAttachmentIds(undefined)).toEqual([])
   })
 })
 
 // ── 3. 프롬프트가 말하는 것 ──────────────────────────────────────────────────
 
-describe('§3 완성 디자인 주문', () => {
-  it('문구 원문과 세 가지 고정 규칙, 컷아웃 자리가 함께 들어간다', async () => {
-    const { buildPreserveDesignPrompt } = await load('domain/preserveDesign')
-    const prompt = buildPreserveDesignPrompt({
-      size: { width: 840, height: 1000 },
-      styleReferenceAssetId: 'asset_style',
-      texts: [
-        {
-          blockId: 'blk_text',
-          content: '여름 감사제 40% + 사은품',
-          rect: { x: 120, y: 180, width: 500, height: 140 },
-          align: 'center',
-          layer: 2,
-        },
-      ],
-      images: [{ blockId: 'blk_plain', assetId: 'asset_plain', rect: { x: 540, y: 500, width: 240, height: 240 }, layer: 1 }],
-      cutouts: [{ blockId: 'blk_cut', assetId: 'asset_cut', rect: { x: 100, y: 500, width: 400, height: 400 }, layer: 0 }],
-      note: '가을 느낌으로',
-    })
+describe('§3 두 겹의 주문', () => {
+  it('배경 주문에는 문구가 없고, 전경 주문에는 원문이 그대로 있다', async () => {
+    const { buildPlatePrompt, buildForegroundPrompt } = await load('domain/preserveDesign')
+    const size = { width: 840, height: 1000 }
+    const fixed = [
+      { blockId: 'blk_cut', assetId: 'asset_cut', rect: { x: 100, y: 500, width: 400, height: 400 }, layer: 0, cutout: true },
+      { blockId: 'blk_plain', assetId: 'asset_plain', rect: { x: 540, y: 500, width: 240, height: 240 }, layer: 1, cutout: false },
+    ]
+    const texts = [
+      {
+        blockId: 'blk_text',
+        content: '여름 감사제 40% + 사은품',
+        rect: { x: 120, y: 180, width: 500, height: 140 },
+        align: 'center' as const,
+        layer: 2,
+      },
+    ]
 
-    // 문구는 한 글자도 바뀌지 않은 채로 실린다.
-    expect(prompt).toContain('여름 감사제 40% + 사은품')
-    // 세 가지 고정 규칙.
-    expect(prompt).toContain('문자·숫자·띄어쓰기·기호·줄바꿈')
-    expect(prompt).toContain('복제하지 않습니다')
-    expect(prompt).toContain('새 인물·제품·로고를 만들지 않습니다')
-    // 완성 디자인이라는 것 — 단순 배경이 아니다.
-    for (const word of ['장식', '타이포그래피', '완성']) expect(prompt).toContain(word)
-    // 작업자의 추가 지시.
-    expect(prompt).toContain('가을 느낌으로')
-    // 컷아웃 자리는 좌표로만 간다 — 파일명도 바이트도 없다.
-    expect(prompt).not.toContain('asset_cut')
-    expect(prompt).not.toContain('.png')
+    const plate = buildPlatePrompt({ size, styleReferenceAssetId: 'asset_style', fixed, note: '가을 느낌으로' })
+    expect(plate).not.toContain('여름 감사제 40% + 사은품')
+    expect(plate).toContain('비워 둘 자리')
+    expect(plate).toContain('복제하지 않습니다')
+    expect(plate).toContain('가을 느낌으로')
+
+    const fore = buildForegroundPrompt({ size, styleReferenceAssetId: 'asset_style', fixed, texts })
+    expect(fore).toContain('여름 감사제 40% + 사은품')
+    expect(fore).toContain('문자·숫자·띄어쓰기·기호·줄바꿈')
+    expect(fore).toContain('복제하지 않습니다')
+    expect(fore).toContain('사람, 제품, 로고')
+
+    // 어느 쪽도 자산 번호나 파일명을 싣지 않는다.
+    for (const prompt of [plate, fore]) {
+      expect(prompt).not.toContain('asset_cut')
+      expect(prompt).not.toContain('.png')
+    }
   })
 })
 
 // ── 4. 결과: 컷아웃은 브라우저가 얹는다 ──────────────────────────────────────
 
 describe('§4 최종 합성', () => {
-  it('AI 결과 위에 컷아웃만 얹고 문구는 다시 그리지 않는다', async () => {
+  it('AI 배경 위에 이미지 전부를 얹고 문구는 다시 그리지 않는다', async () => {
     const { planLocalComposite } = await load('domain/composite')
     const doc = sampleDoc()
     const plan = planLocalComposite({
@@ -290,11 +288,11 @@ describe('§4 최종 합성', () => {
       background: { assetId: 'asset_plate', source: 'ai' },
       productImages: { blk_cut: 'asset_cut', blk_plain: 'asset_plain' },
       effects: { blk_cut: { paperCutout: true } },
-      onlyBlockIds: ['blk_cut'],
+      onlyBlockIds: ['blk_cut', 'blk_plain'],
       includeTexts: false,
     })
     expect(plan.background?.assetId).toBe('asset_plate')
-    expect(plan.layers.map((l: { blockId: string }) => l.blockId)).toEqual(['blk_cut'])
+    expect(plan.layers.map((l: { blockId: string }) => l.blockId)).toEqual(['blk_cut', 'blk_plain'])
     expect(plan.layers[0]!.rect).toEqual({ x: 100, y: 500, width: 400, height: 400 })
     expect(plan.layers[0]!.effects.paperCutout).toBe(true)
     // 문구는 AI가 이미 그렸다 — 두 번 그리지 않는다.

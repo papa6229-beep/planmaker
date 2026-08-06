@@ -112,7 +112,7 @@ export function GenerateImageDialog() {
               <div><dt>품질</dt><dd>{CALL_SUMMARY.quality}</dd></div>
               <div><dt>AI 편집 규격</dt><dd>{state.plan.size}</dd></div>
               <div><dt>최종 작업 이미지</dt><dd>{sizeLabel(state.plan.working)}</dd></div>
-              <div><dt>호출 횟수</dt><dd>{CALL_SUMMARY.calls}회 (자동 재시도 없음)</dd></div>
+              <div><dt>호출 횟수</dt><dd>{state.plan.calls}회 (자동 재시도 없음)</dd></div>
             </dl>
             <p className="gen-dialog__hint">
               한 장짜리 이미지를 AI가 다시 그리는 방식이라, 고르지 않은 주변 요소도 조금 달라질 수 있습니다.
@@ -167,8 +167,17 @@ export function GenerateImageDialog() {
           <div><dt>AI 생성 규격</dt><dd>{plan.size}</dd></div>
           <div><dt>최종 작업 이미지</dt><dd>{sizeLabel(plan.working)}</dd></div>
           <div><dt>보낼 이미지</dt><dd>{plan.inputs.length}장</dd></div>
-          <div><dt>호출 횟수</dt><dd>{CALL_SUMMARY.calls}회 (자동 재시도 없음)</dd></div>
+          {/* 한 번 눌러도 안에서 두 번 나가는 길이 있다 (한방 생성 Patch 2 §4).
+              그 수를 화면이 그대로 말한다 — 결제는 이 숫자만큼 일어난다. */}
+          <div><dt>호출 횟수</dt><dd>{plan.calls}회 (자동 재시도 없음)</dd></div>
         </dl>
+
+        {plan.mode === 'preserve' && (
+          <p className="gen-dialog__hint">
+            배경과 장식을 한 번, 문구 레이어를 한 번 만듭니다. 캔버스에 놓인 이미지 {plan.fixedBlockIds.length}장은
+            AI에 보내지 않고 지금 위치·크기 그대로 합성합니다.
+          </p>
+        )}
 
         {needsKey && (
           <label className="gen-dialog__field">

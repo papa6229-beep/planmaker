@@ -276,6 +276,19 @@ export async function renderComposite(plan: CompositePlan, sources: CompositeSou
 
   for (const layer of plan.layers) await drawLayer(ctx, layer, sources, backgroundTone)
 
+  // ── 전경 문구 레이어 (한방 생성 Patch 2 §4) ───────────────────────────────
+  //
+  // 사진을 전부 그린 **뒤에** 얹는다. 순서가 곧 계약이다 — 이 겹이 마지막이므로
+  // 문구는 언제나 이미지보다 앞에 오고, 배경이 투명하므로 아래가 비친다.
+  if (plan.foreground !== undefined) {
+    const blob = sources.blobs.get(plan.foreground.assetId)
+    if (blob !== undefined) {
+      const source = await toSource(blob)
+      // 같은 지면을 그린 한 장이다. 잘라 내지 않고 캔버스에 그대로 맞춘다.
+      ctx.drawImage(source, 0, 0, source.width, source.height, 0, 0, canvas.width, canvas.height)
+    }
+  }
+
   // 문구는 기존 표현 그대로 (§10). 새 텍스트 엔진을 만들지 않는다.
   for (const text of plan.texts) {
     ctx.save()

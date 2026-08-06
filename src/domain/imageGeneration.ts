@@ -29,6 +29,15 @@ export const API_KEY_HEADER = 'X-OpenAI-API-Key'
 export const FIELD_PROMPT = 'prompt'
 export const FIELD_SIZE = 'size'
 export const FIELD_IMAGES = 'images[]'
+/**
+ * 결과의 배경을 투명하게 받을 것인가 (한방 생성 Patch 2 §4).
+ *
+ * 전경 문구 레이어 하나만 이 값을 쓴다. 그 겹이 불투명하면 아래의 배경도 사진도
+ * 전부 덮이므로, 투명은 취향이 아니라 그 겹이 성립하기 위한 조건이다. 값이 없으면
+ * 지금까지처럼 불투명이다 — 기존 요청은 이 필드를 보내지 않으므로 그대로다.
+ */
+export const FIELD_BACKGROUND = 'background'
+export type ImageBackground = 'opaque' | 'transparent'
 
 export interface ImageGenerationMetadata {
   model: typeof IMAGE_MODEL

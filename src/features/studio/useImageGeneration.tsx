@@ -9,9 +9,14 @@
  * 해석은 `buildGenerationRequest` 하나에서만 나온다. 사람이 `AI 제작 요청
  * 미리보기`에서 읽은 것과 모델이 받는 것이 같아야 하기 때문이다.
  *
+ * 원본 보존 흐름은 이 길을 두 번 지난다 — 배경 플레이트 한 번, 전경 문구 레이어
+ * 한 번. 사이에 사용자가 배치한 이미지와 컷아웃을 브라우저가 원본 그대로 끼워
+ * 넣는다 (한방 생성 Patch 2 §4). 버튼은 그대로 하나이고, 나가는 횟수는 확인창이
+ * 미리 말한다.
+ *
  * 돈이 드는 일이라 두 가지를 특히 지킨다.
  *
- *  - **한 번은 한 번이다.** 요청이 나가 있는 동안 버튼은 잠기고, 실패해도 스스로
+ *  - **누른 만큼만 나간다.** 요청이 나가 있는 동안 버튼은 잠기고, 실패해도 스스로
  *    다시 부르지 않는다. 다시 부르는 것은 언제나 사람의 클릭이다.
  *  - **실패는 아무것도 잃지 않는다.** 저장은 성공한 뒤에만 일어나므로, 실패한
  *    호출은 기획서도 이전 결과도 건드리지 못한다.
@@ -36,12 +41,16 @@ import { buildEditPrompt } from '../../domain/editPrompt'
 import { planGenerationInputs, MAX_INPUT_IMAGES, type GenerationInputImage } from '../../domain/imageGenerationInputs'
 import { buildOpenAIImagePrompt } from '../../domain/imagePrompt'
 import {
-  buildPreserveDesignPrompt,
-  planPreserveInputs,
-  type PreserveDesignInput,
-  type PreserveImageEntry,
+  buildForegroundPrompt,
+  buildPlatePrompt,
+  planForegroundInputs,
+  planPlateInputs,
+  type FixedObject,
+  type ForegroundInput,
+  type PlateInput,
   type PreserveTextEntry,
 } from '../../domain/preserveDesign'
+import { analyzeImageBlob } from '../../services/imageAnalysisRunner'
 import { planLocalComposite } from '../../domain/composite'
 import { getBlockTypeMeta } from '../../domain/blockTypes'
 import { isPairedLinkUrl, textAlignOf } from '../../domain/simpleBlocks'
@@ -51,6 +60,7 @@ import { pageAsEventBrief } from '../../domain/briefMigration'
 import {
   API_KEY_HEADER,
   errorTextFor,
+  FIELD_BACKGROUND,
   FIELD_IMAGES,
   FIELD_PROMPT,
   FIELD_SIZE,
@@ -84,8 +94,11 @@ interface GenerationPlan {
   /** 처음부터 만드는 것인가, 이미 있는 결과를 고치는 것인가. */
   kind: 'generate' | 'edit'
   mode: GenerationMode
-  /** `preserve`에서 브라우저가 나중에 원본 그대로 얹을 블록들. */
-  cutoutBlockIds: string[]
+  /**
+   * `preserve`에서 브라우저가 원본 그대로 얹을 블록들 — **일반 이미지와 컷아웃
+   * 전부**. 좌표·크기·비율·레이어 순서는 생성 전 값 그대로다.
+   */
+  fixedBlockIds: string[]
   pageId: string
   prompt: string
   /** 모델에게 요청하는 크기 (16의 배수). */
@@ -94,6 +107,16 @@ interface GenerationPlan {
   working: WorkingImageTarget
   inputs: GenerationInputImage[]
   fingerprint: string
+  /**
+   * `preserve`의 두 번째 겹 — 전경 문구 레이어의 **재료**.
+   *
+   * 프롬프트를 여기서 미리 짓지 않는 이유는, 그 주문이 배경 플레이트의 색을
+   * 인용하기 때문이다. 색은 첫 번째 그림을 받은 뒤에야 손에 들어온다.
+   */
+  foreground?: ForegroundInput
+  foregroundInputs?: GenerationInputImage[]
+  /** 이 계획이 외부로 나가는 횟수. 확인창이 이 값을 그대로 말한다. */
+  calls: number
 }
 
 export type GenerationState =
@@ -165,6 +188,15 @@ export interface ImageGenerationApi {
 
 const ImageGenerationContext = createContext<ImageGenerationApi | null>(null)
 
+/**
+ * 전경 문구 레이어가 이 이상 불투명하면 얹지 않는다.
+ *
+ * 투명해야 할 그림이 불투명하게 돌아오면, 그대로 얹는 순간 배경도 사진도 전부
+ * 덮인다 — 문구를 얻으려다 나머지를 다 잃는다. 그래서 얹기 전에 알파를 재고,
+ * 덮을 그림이면 얹지 않고 그 사실을 말한다.
+ */
+const FOREGROUND_MAX_OPAQUE = 0.92
+
 /** base64 → 이미지 한 장. 이 문자열은 여기서 끝나고 어디에도 저장되지 않는다. */
 function blobFromBase64(b64: string, mimeType: string): Blob {
   const binary = atob(b64)
@@ -174,22 +206,25 @@ function blobFromBase64(b64: string, mimeType: string): Blob {
 }
 
 /**
- * 이 페이지를 세 뭉치로 가른다 (한방 생성 Patch §2).
+ * 이 페이지를 두 뭉치로 가른다 (한방 생성 Patch 2 §1, §2).
  *
- * 문구는 원문 그대로, 컷아웃이 아닌 이미지는 원본을 보낼 자리로, 컷아웃은
- * **자리만** 적을 자리로. 가르는 기준은 종이 컷아웃 체크 하나뿐이다.
+ * **고정 오브젝트**는 모든 이미지 블록과 종이 컷아웃이다 — 둘을 가르지 않는다.
+ * 앞선 판은 컷아웃만 지키고 일반 이미지는 모델에게 맡겼는데, 맡긴 쪽이 이동하고
+ * 확대되고 다시 그려졌다. 지키는 규칙이 하나면 어기는 자리도 없다.
+ *
+ * **문구**는 원문 그대로 넘기되 좌표는 힌트로 넘긴다. 최종 결과에서 문구는
+ * 언제나 이미지보다 앞이다.
  *
  * 앞뒤 순서는 블록 차례 그대로다 — 화면에서 뒤에 오는 블록이 앞에 그려지므로,
- * 번호가 클수록 앞이라는 프롬프트의 말과 같은 뜻이 된다.
+ * 번호가 클수록 앞이라는 말과 같은 뜻이 된다.
  */
 function preserveParts(
   page: BriefPage,
   productImages: Readonly<Record<string, string>>,
   isCutout: (blockId: string) => boolean,
-): { texts: PreserveTextEntry[]; images: PreserveImageEntry[]; cutouts: PreserveImageEntry[] } {
+): { texts: PreserveTextEntry[]; fixed: FixedObject[] } {
   const texts: PreserveTextEntry[] = []
-  const images: PreserveImageEntry[] = []
-  const cutouts: PreserveImageEntry[] = []
+  const fixed: FixedObject[] = []
 
   page.blocks.forEach((block, layer) => {
     // 퍼블리싱 주소는 디자인이 아니다 — 합성 계획과 같은 규칙으로 뺀다.
@@ -200,9 +235,7 @@ function preserveParts(
     if (meta.requiresAsset) {
       const assetId = productImages[block.id] ?? block.assetId
       if (assetId === undefined) return
-      const entry: PreserveImageEntry = { blockId: block.id, assetId, rect, layer }
-      if (isCutout(block.id)) cutouts.push(entry)
-      else images.push(entry)
+      fixed.push({ blockId: block.id, assetId, rect, layer, cutout: isCutout(block.id) })
       return
     }
 
@@ -211,7 +244,7 @@ function preserveParts(
     texts.push({ blockId: block.id, content, rect, align: textAlignOf(block), layer })
   })
 
-  return { texts, images, cutouts }
+  return { texts, fixed }
 }
 
 export function ImageGenerationProvider({ children }: { children: ReactNode }) {
@@ -251,33 +284,39 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     // ── 갈림길 (§1). 작업자는 고르지 않는다 ─────────────────────────────────
     const parts = preserveParts(page, studio.job.productImages, (id) => studio.effectsOf(id).paperCutout)
 
-    if (parts.cutouts.length > 0) {
+    if (parts.fixed.some((f) => f.cutout)) {
       const styleRefId = studio.styleReferenceOf(page.id)
       const note = current.project.aiNote?.trim() ?? ''
-      const preserve: PreserveDesignInput = {
-        size: { width: page.canvasWidth, height: page.canvasHeight },
+      const pageSize = { width: page.canvasWidth, height: page.canvasHeight }
+      const shared = {
+        size: pageSize,
         ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
-        texts: parts.texts,
-        images: parts.images,
-        cutouts: parts.cutouts,
+        fixed: parts.fixed,
         ...(note.length === 0 ? {} : { note }),
       }
-      // 컷아웃은 이 목록에 들어갈 길이 없다 — 그 하나가 이 흐름의 경계다.
-      const preserveInputs = planPreserveInputs(preserve)
-      if (preserveInputs.length > MAX_INPUT_IMAGES) {
+      const plate: PlateInput = shared
+      const foreground: ForegroundInput = { ...shared, texts: parts.texts }
+      // 사용자 이미지는 어느 목록에도 들어갈 길이 없다 — 스타일 레퍼런스뿐이다.
+      const plateInputs = planPlateInputs(plate)
+      const foregroundInputs = planForegroundInputs(foreground)
+      if (plateInputs.length > MAX_INPUT_IMAGES || foregroundInputs.length > MAX_INPUT_IMAGES) {
         return { blocked: errorTextFor('too_many_inputs') }
       }
       return {
         plan: {
           kind: 'generate',
           mode: 'preserve',
-          cutoutBlockIds: parts.cutouts.map((c) => c.blockId),
+          fixedBlockIds: parts.fixed.map((f) => f.blockId),
           pageId: page.id,
-          prompt: buildPreserveDesignPrompt(preserve, preserveInputs),
+          prompt: buildPlatePrompt(plate),
           size: size.size,
           working,
-          inputs: preserveInputs,
+          inputs: plateInputs,
           fingerprint,
+          foreground,
+          foregroundInputs,
+          // 배경 플레이트 한 번, 전경 문구 레이어 한 번.
+          calls: 2,
         },
       }
     }
@@ -291,13 +330,14 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       plan: {
         kind: 'generate',
         mode: 'full_ai',
-        cutoutBlockIds: [],
+        fixedBlockIds: [],
         pageId: page.id,
         prompt: buildOpenAIImagePrompt(request, inputs),
         size: size.size,
         working,
         inputs,
         fingerprint,
+        calls: 1,
       },
     }
   }, [getDocument, studio])
@@ -312,9 +352,17 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     setState({ kind: 'confirm', plan: result.plan, needsKey: readApiKey() === null })
   }, [planNow])
 
-  /** 보낼 이미지들을 실제 바이너리로 모은다. 순서는 `plan.inputs` 그대로. */
+  /**
+   * 보낼 이미지들을 실제 바이너리로 모은다. 순서는 넘긴 목록 그대로.
+   *
+   * `preserve`는 두 번 나가고 두 번 다 같은 목록 모양을 쓰므로, 무엇을 보낼지는
+   * 인자로 받는다 — 계획에서 꺼내 쓰면 두 번째 요청이 첫 번째의 목록을 보낸다.
+   */
   const collectImages = useCallback(
-    async (plan: GenerationPlan): Promise<{ fileName: string; blob: Blob }[]> => {
+    async (
+      plan: GenerationPlan,
+      inputs: readonly GenerationInputImage[] = plan.inputs,
+    ): Promise<{ fileName: string; blob: Blob }[]> => {
       const current = getDocument()
       const page = current.pages.find((p) => p.id === plan.pageId) ?? current.pages[0]!
       const stored = await getAllAssets()
@@ -334,12 +382,12 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         return files
       }
       if (plan.mode === 'preserve') {
-        // 배치도를 만들지 않는다. 배치도에는 컷아웃 픽셀이 이미 그려져 있어서,
-        // 보내는 순간 "원본은 보내지 않는다"가 거짓이 된다 (§2).
+        // 배치도를 만들지 않는다. 배치도에는 사용자의 그림이 이미 그려져 있어서,
+        // 보내는 순간 "원본은 보내지 않는다"가 거짓이 된다 (§1).
         //
         // 파일명도 우리가 정한 것뿐이다 — 작업자가 올린 원본 파일명은 나가지
         // 않는다.
-        for (const input of plan.inputs) {
+        for (const input of inputs) {
           const asset = input.assetId === undefined ? undefined : byId.get(input.assetId)
           if (asset === undefined) continue
           files.push({
@@ -378,8 +426,12 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     mimeType: string
     requestedSize: string
     requestId?: string
-    /** `preserve`에서 저장해 둔 완성 디자인 플레이트. 다시 만들 때 재사용한다. */
+    /** `preserve`에서 저장해 둔 배경 플레이트. 다시 만들 때 재사용한다. */
     plateAssetId?: string
+    /** `preserve`의 두 번째 겹 — 투명 배경의 전경 문구 레이어. */
+    foregroundAssetId?: string
+    /** 전경 레이어를 만들지 못했거나 쓸 수 없었던 이유. 없으면 정상이다. */
+    foregroundProblem?: string
   } | null>(null)
 
   /**
@@ -405,8 +457,12 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
      * 저장할 그림과 그 크기.
      *
      * `full_ai`에서는 모델이 준 것을 작업본으로 맞춘 그대로다. `preserve`에서는
-     * 모델이 준 것이 **완성 디자인 플레이트**이고, 그 위에 컷아웃만 브라우저가
-     * 원본 그대로 얹은 뒤의 한 장이 결과다 (§2 마지막 줄).
+     * 세 겹을 여기서 포갠다 (한방 생성 Patch 2 §4).
+     *
+     *   배경 플레이트 → 사용자가 배치한 이미지·컷아웃 원본 → 전경 문구 레이어
+     *
+     * 가운데 겹이 브라우저의 몫이고, 그 겹만이 좌표·크기·비율·레이어 순서를
+     * 생성 전 값 그대로 지킨다.
      */
     let finalBlob = working.blob
     let finalSize = { width: working.width, height: working.height }
@@ -434,15 +490,18 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
 
         const brief = getDocument()
         const page = brief.pages.find((p) => p.id === paid.plan.pageId) ?? brief.pages[0]!
-        // 얹는 것은 **AI에게 보내지 않은 컷아웃**뿐이다. 문구와 일반 이미지는
-        // 이미 플레이트 안에 그려져 있으므로 다시 그리면 두 번 나온다.
+        // 이미지 블록은 **하나도 빠짐없이** 여기서 얹는다. 문구는 그리지 않는다 —
+        // 문구는 전경 레이어가 이미 디자인해 왔다.
         const composite = planLocalComposite({
           page,
           background: { assetId: plateAssetId, source: 'ai', requestedSize: paid.requestedSize },
+          ...(paid.foregroundAssetId === undefined
+            ? {}
+            : { foreground: { assetId: paid.foregroundAssetId } }),
           productImages: studio.job.productImages,
           effects: studio.job.effects ?? {},
           grain: studio.grain,
-          onlyBlockIds: paid.plan.cutoutBlockIds,
+          onlyBlockIds: paid.plan.fixedBlockIds,
           includeTexts: false,
         })
         finalBlob = await renderComposite(composite, await collectCompositeSources(composite))
@@ -450,7 +509,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         fileName = `design-${paid.plan.pageId}.png`
       } catch {
         // 플레이트는 손에 있다. 다시 만들기만 하면 되고, 모델은 부르지 않는다.
-        setState({ kind: 'convert-failed', message: '완성 디자인은 받았지만 원본 합성에 실패했습니다' })
+        setState({ kind: 'convert-failed', message: '배경과 문구는 받았지만 원본 합성에 실패했습니다' })
         return
       }
     }
@@ -509,11 +568,18 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    const problem = paid.foregroundProblem
     paidRef.current = null
     setSelectedTargetIds([])
     setInstructions({})
-    setState({ kind: 'idle' })
     setView('compare')
+    // 문구 레이어를 못 얻었어도 배경과 사진까지는 저장한다 — 값은 이미 치렀고,
+    // 버리면 아무것도 남지 않는다. 다만 무엇이 빠졌는지는 말한다.
+    setState(
+      problem === undefined
+        ? { kind: 'idle' }
+        : { kind: 'failed', message: `${problem} 배경과 이미지까지만 저장했습니다.` },
+    )
   }, [studio, getDocument])
 
   /** 같은 원본으로 작업본만 다시 만든다. 외부 호출 0건. */
@@ -522,54 +588,120 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     void finishFromPaid()
   }, [finishFromPaid])
 
+  /**
+   * 한 겹을 만든다. **스스로 다시 부르지 않는다** — 실패는 실패한 채로 돌아온다.
+   *
+   * `preserve`가 두 겹이 되면서 이 부분이 두 번 쓰이게 됐다. 두 번 쓰이는 코드를
+   * 두 벌로 두면, 언젠가 한쪽에만 키가 실리거나 한쪽만 재시도하게 된다.
+   */
+  const requestLayer = useCallback(
+    async (
+      plan: GenerationPlan,
+      key: string,
+      inputs: readonly GenerationInputImage[],
+      prompt: string,
+      transparent = false,
+    ): Promise<{ blob: Blob; mimeType: string; requestedSize: string; requestId?: string } | { code?: string }> => {
+      const form = new FormData()
+      form.set(FIELD_PROMPT, prompt)
+      form.set(FIELD_SIZE, plan.size)
+      if (transparent) form.set(FIELD_BACKGROUND, 'transparent')
+      for (const file of await collectImages(plan, inputs)) {
+        form.append(FIELD_IMAGES, new File([file.blob], file.fileName, { type: file.blob.type || 'image/png' }))
+      }
+
+      // 키는 이 요청의 헤더에만 실린다 — 주소에도, 본문에도 없다.
+      const response = await fetch(GENERATE_IMAGE_PATH, {
+        method: 'POST',
+        headers: { [API_KEY_HEADER]: key },
+        body: form,
+      })
+
+      const payload: unknown = await response.json().catch(() => null)
+      if (!response.ok) {
+        return { ...(payload as { error?: { code?: string } } | null)?.error }
+      }
+      const body = payload as {
+        image?: { b64?: string; mimeType?: string }
+        metadata?: { requestedSize?: string; requestId?: string }
+      } | null
+      const b64 = body?.image?.b64
+      if (typeof b64 !== 'string' || b64.length === 0) return { code: 'no_image' }
+
+      const mimeType = body?.image?.mimeType ?? 'image/png'
+      return {
+        blob: blobFromBase64(b64, mimeType),
+        mimeType,
+        requestedSize: body?.metadata?.requestedSize ?? plan.size,
+        ...(body?.metadata?.requestId === undefined ? {} : { requestId: body.metadata.requestId }),
+      }
+    },
+    [collectImages],
+  )
+
   const run = useCallback(
     async (plan: GenerationPlan, key: string) => {
       runningRef.current = true
       setState({ kind: 'running' })
       try {
-        const form = new FormData()
-        form.set(FIELD_PROMPT, plan.prompt)
-        form.set(FIELD_SIZE, plan.size)
-        for (const file of await collectImages(plan)) {
-          form.append(FIELD_IMAGES, new File([file.blob], file.fileName, { type: file.blob.type || 'image/png' }))
-        }
-
-        // 키는 이 요청의 헤더에만 실린다 — 주소에도, 본문에도 없다.
-        const response = await fetch(GENERATE_IMAGE_PATH, {
-          method: 'POST',
-          headers: { [API_KEY_HEADER]: key },
-          body: form,
-        })
-
-        const payload: unknown = await response.json().catch(() => null)
-        if (!response.ok) {
-          const error = (payload as { error?: { code?: string } } | null)?.error
-          setState({ kind: 'failed', message: errorTextFor(error?.code) })
+        const first = await requestLayer(plan, key, plan.inputs, plan.prompt)
+        if (!('blob' in first)) {
+          setState({ kind: 'failed', message: errorTextFor(first.code) })
           return
         }
 
-        const body = payload as {
-          image?: { b64?: string; mimeType?: string }
-          metadata?: { requestedSize?: string; requestId?: string }
-        } | null
-        const b64 = body?.image?.b64
-        if (typeof b64 !== 'string' || b64.length === 0) {
-          setState({ kind: 'failed', message: errorTextFor('no_image') })
-          return
-        }
-
-        // 이미지는 자산 저장소로, 작업 행에는 번호와 메타데이터만.
-        const mimeType = body?.image?.mimeType ?? 'image/png'
         // 여기서부터는 이미 결제된 그림이다. 이 뒤로 무엇이 실패하든 이 원본을
         // 버리지 않는다 — 버리면 돈만 쓰고 아무것도 남지 않는다.
-        const original = blobFromBase64(b64, mimeType)
         paidRef.current = {
           plan,
-          blob: original,
-          mimeType,
-          requestedSize: body?.metadata?.requestedSize ?? plan.size,
-          ...(body?.metadata?.requestId === undefined ? {} : { requestId: body.metadata.requestId }),
+          blob: first.blob,
+          mimeType: first.mimeType,
+          requestedSize: first.requestedSize,
+          ...(first.requestId === undefined ? {} : { requestId: first.requestId }),
         }
+
+        // ── 두 번째 겹: 전경 문구 레이어 (한방 생성 Patch 2 §4) ───────────────
+        if (plan.mode === 'preserve' && plan.foreground !== undefined) {
+          // 플레이트에서 색을 읽는다 — 나가는 것은 숫자뿐이고, 그림은 나가지
+          // 않는다. 이 값으로 글씨가 배경 위에서 읽히는 색을 고르게 한다.
+          const analysis = await analyzeImageBlob(first.blob)
+          const second = await requestLayer(
+            plan,
+            key,
+            plan.foregroundInputs ?? [],
+            buildForegroundPrompt({
+              ...plan.foreground,
+              tone:
+                analysis === null
+                  ? null
+                  : { average: analysis.average, brightness: analysis.brightness },
+            }),
+            true,
+          )
+
+          if (!('blob' in second)) {
+            paidRef.current = { ...paidRef.current, foregroundProblem: errorTextFor(second.code) }
+          } else {
+            const layer = await analyzeImageBlob(second.blob)
+            if (layer !== null && layer.opaqueRatio > FOREGROUND_MAX_OPAQUE) {
+              paidRef.current = {
+                ...paidRef.current,
+                foregroundProblem: '문구 레이어가 불투명하게 돌아와 배경과 사진을 덮습니다.',
+              }
+            } else {
+              const foregroundAssetId = createId('asset')
+              await putAsset({
+                id: foregroundAssetId,
+                blob: second.blob,
+                fileName: `foreground-${plan.pageId}.png`,
+                mimeType: second.mimeType,
+                byteSize: second.blob.size,
+              })
+              paidRef.current = { ...paidRef.current, foregroundAssetId }
+            }
+          }
+        }
+
         await finishFromPaid()
       } catch {
         // 스스로 다시 부르지 않는다. 다음 호출은 사람의 클릭이다.
@@ -578,7 +710,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         runningRef.current = false
       }
     },
-    [collectImages, finishFromPaid],
+    [requestLayer, finishFromPaid],
   )
 
   const confirm = useCallback(
@@ -679,7 +811,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         kind: 'edit',
         // 부분수정은 이미 만들어진 한 장을 고치는 일이다 — 갈림길과 무관하다.
         mode: 'full_ai',
-        cutoutBlockIds: [],
+        fixedBlockIds: [],
+        calls: 1,
         pageId: currentResult.pageId,
         prompt: buildEditPrompt(editTargets, editItems, {
           currentImage: working,

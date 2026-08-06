@@ -17,6 +17,7 @@
 
 import {
   API_KEY_HEADER,
+  FIELD_BACKGROUND,
   FIELD_IMAGES,
   FIELD_PROMPT,
   FIELD_SIZE,
@@ -81,6 +82,9 @@ export async function handleGenerateImage(request: Request, deps: HandlerDeps = 
   }
 
   const images = form.getAll(FIELD_IMAGES).filter((v): v is File => typeof v !== 'string')
+  // 아는 값 하나만 통과시킨다. 모르는 값은 조용히 무시하고 지금까지의 요청 그대로
+  // 나간다 — 이 필드는 전경 문구 레이어 하나를 위해 생겼다.
+  const transparent = form.get(FIELD_BACKGROUND) === 'transparent'
 
   const send = deps.requestImage ?? requestOpenAiImage
   try {
@@ -90,6 +94,7 @@ export async function handleGenerateImage(request: Request, deps: HandlerDeps = 
         prompt,
         size,
         images: images.map((file) => ({ fileName: file.name, blob: file })),
+        ...(transparent ? { background: 'transparent' as const } : {}),
       },
       deps.fetch === undefined ? {} : { fetch: deps.fetch },
     )
