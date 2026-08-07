@@ -34,7 +34,7 @@ import {
 } from 'react'
 import { useBriefDocument } from '../document/useBriefDocument'
 import { useStudioJob } from './useStudioJob'
-import { cursorOf, pageResultOf, revisionsOf } from '../../domain/studioJob'
+import { cursorOf, pageResultOf, revisionsOf, studioLiveAssetIds } from '../../domain/studioJob'
 import { clearApiKey, readApiKey, saveApiKey } from './apiKeySession'
 import { buildGenerationRequest } from '../../domain/generationRequest'
 import { buildEditTargets, selectedProductAssetIds, selectedTargets, type EditTarget } from '../../domain/editTargets'
@@ -84,7 +84,7 @@ import {
   type GeneratedPageResult,
   type ImageRevision,
 } from '../../domain/imageGeneration'
-import { getAllAssets, getAsset, putAsset } from '../../services/assetStore'
+import { deleteAsset, getAllAssets, getAsset, putAsset } from '../../services/assetStore'
 import { sizeLabel, toWorkingImage, workingImageTarget, type WorkingImageTarget } from '../../services/workingImage'
 import { renderPreviewPng } from '../../services/previewRenderer'
 import { renderComposite } from '../../services/compositeRenderer'
@@ -1029,6 +1029,29 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
    * 에서도 불리는데, 거기서 없던 완성본이 만들어지면 안 된다 — 되살리는 일은
    * 사람이 누르는 `rebuildPage`가 맡는다.
    */
+  /**
+   * 아무도 가리키지 않게 된 그림을 지운다 (결과 줄 Patch).
+   *
+   * 다시 합칠 때마다 새 그림이 하나 생기고 앞의 것이 밀려난다. 밀려난 것을 그냥
+   * 두면 저장소가 슬라이더를 놓는 횟수만큼 자란다 — 한 장이 1~2MB이므로 한나절
+   * 손보면 수백 MB가 된다.
+   *
+   * 지우기 전에 **작업 어디에도 남지 않았는지** 확인한다. 값을 치른 결과는 줄에
+   * 들어 있어 여기서 걸리므로 지워지지 않는다.
+   */
+  const dropOrphan = useCallback(
+    async (assetId: string | undefined) => {
+      if (studio === null || assetId === undefined) return
+      if (studioLiveAssetIds(studio.currentJob()).includes(assetId)) return
+      try {
+        await deleteAsset(assetId)
+      } catch {
+        // 못 지워도 작업은 계속된다. 다음 정리가 같은 것을 다시 만난다.
+      }
+    },
+    [studio],
+  )
+
   const recomposePage = useCallback(
     async (pageId: string) => {
       if (studio === null) return
@@ -1037,20 +1060,19 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       const composed = await composePage(pageId)
       if (composed === null) return
       const assetId = await storeComposed(pageId, composed.blob)
-      // 지나온 결과는 지우지 않는다 — 줄에 한 칸을 더할 뿐이다 (§3 마지막 줄).
-      const kept = revisionsOf(previous).slice(0, cursorOf(previous) + 1)
-      const line: ImageRevision[] = [...kept, { assetId, kind: 'edit' }]
-      await studio.recordResult({
-        ...previous,
-        assetId,
-        previousAssetId: previous.assetId,
-        editCount: (previous.editCount ?? 0) + 1,
-        revisions: line,
-        cursor: line.length - 1,
-        createdAt: Date.now(),
-      })
+      // **줄에는 손대지 않는다** (결과 줄 Patch).
+      //
+      // 앞선 판은 다시 합칠 때마다 줄에 한 칸을 더했다. 그런데 여기서 하는 일은
+      // 새 결과를 만드는 것이 아니라 **같은 결과를 다시 그리는 것**이다. 슬라이더를
+      // 한 번 놓을 때마다 칸이 하나씩 늘어 `결과 148 / 148`이 찍혔고, 그 148칸은
+      // 앞뒤로 오갈 값어치가 없는 것들이었다. 값을 치른 것은 그중 몇 개뿐이다.
+      //
+      // 그래서 줄은 **값을 치른 결과**(최초 생성본과 AI 부분수정)만 담는다. 옮기고
+      // 늘린 것을 되돌리는 일은 `실행 취소`가 맡는다 — 그쪽이 그 일을 위해 있다.
+      await studio.recordResult({ ...previous, assetId, createdAt: Date.now() })
+      await dropOrphan(previous.assetId)
     },
-    [studio, composePage, storeComposed],
+    [studio, composePage, storeComposed, dropOrphan],
   )
 
   /**
@@ -1618,9 +1640,15 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       const line = revisionsOf(currentResult)
       const target = line[next]
       if (target === undefined || next === cursorOf(currentResult)) return
-      void studio.recordResult({ ...currentResult, revisions: line, cursor: next, assetId: target.assetId })
+      // 지금 보고 있던 것이 **다시 합친 그림**이면 줄에 없다. 줄로 돌아가는
+      // 순간 그 그림은 아무도 가리키지 않으므로 함께 치운다 — 재료가 그대로라
+      // 필요하면 다시 합치면 된다 (결과 줄 Patch).
+      const leaving = currentResult.assetId
+      void studio
+        .recordResult({ ...currentResult, revisions: line, cursor: next, assetId: target.assetId })
+        .then(() => dropOrphan(leaving))
     },
-    [studio, currentResult],
+    [studio, currentResult, dropOrphan],
   )
 
   /**

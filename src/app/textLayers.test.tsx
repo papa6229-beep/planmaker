@@ -16,7 +16,7 @@ import { AppShell } from './AppShell'
 import { StudioJobProvider, useStudioJob } from '../features/studio/useStudioJob'
 import { createBlock, createEmptyProject } from '../domain/factory'
 import { createEmptyDocument } from '../domain/pageSchema'
-import { clearAll, putAsset, resetAssetStoreForTests, type StoredAsset } from '../services/assetStore'
+import { clearAll, getAllAssets, putAsset, resetAssetStoreForTests, type StoredAsset } from '../services/assetStore'
 import { clearAllDocuments, resetDocumentStoreForTests } from '../services/documentStore'
 import { clearAllRequests, resetRequestStoreForTests } from '../services/requestStore'
 import {
@@ -1506,5 +1506,58 @@ describe('§19 다시 합치기', () => {
     const { container } = renderStudio()
     await documentReady(container)
     expect(screen.queryByRole('button', { name: /완성본 다시 합치기/ })).toBeNull()
+  })
+})
+
+// ── §20 결과 줄은 값을 치른 것만 담는다 ────────────────────────────────────
+
+describe('§20 결과 줄이 자라지 않는다', () => {
+  it('옮기고 톤을 만져도 줄은 한 칸이고, 밀려난 그림은 저장소에서 사라진다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    const lineOf = async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      return job!.results!.page_1!
+    }
+    const first = await lineOf()
+    expect(first.revisions?.length).toBe(1)
+
+    const boxes = await waitFor(() => {
+      const found = container.querySelectorAll<HTMLElement>('.result-object')
+      expect(found.length).toBe(6)
+      return found
+    }, { timeout: 5000 })
+
+    // 세 번 손본다 — 앞선 판이라면 줄이 넷으로 늘어났을 자리다.
+    const title = Array.from(boxes).find((b) => labelOf(b) === '꾸며진 문구 blk_t1')!
+    for (const dx of [20, 40, 60]) {
+      fireEvent.pointerDown(title, { button: 0, clientX: 10, clientY: 10 })
+      fireEvent.pointerMove(window, { clientX: 10 + dx, clientY: 10 })
+      fireEvent.pointerUp(window)
+      await waitFor(async () => {
+        expect((await lineOf()).assetId).not.toBe(first.assetId)
+      }, { timeout: 5000 })
+    }
+
+    const after = await lineOf()
+    // 줄은 그대로 한 칸이다. 값을 치른 것이 하나뿐이니까.
+    expect(after.revisions?.length).toBe(1)
+    expect(after.cursor).toBe(0)
+    // 최초 생성본은 줄에 그대로 남아 있어 언제든 돌아갈 수 있다.
+    expect(after.revisions?.[0]?.assetId).toBe(first.assetId)
+    expect(after.originalAssetId).toBe(first.assetId)
+    // 보고 있는 것은 방금 합친 그림이다.
+    expect(after.assetId).not.toBe(first.assetId)
+
+    // 밀려난 합성본은 저장소에 남지 않는다 — 값을 치른 최초 생성본만 남는다.
+    const kept = new Set((await getAllAssets()).map((a) => a.id))
+    expect(kept.has(first.assetId)).toBe(true)
+    expect(kept.has(after.assetId)).toBe(true)
+    // 세 번 합쳤는데 결과 그림이 셋씩 쌓이지 않았다.
+    const designs = [...kept].filter((id) => id === after.assetId || id === first.assetId)
+    expect(designs.length).toBe(2)
   })
 })
