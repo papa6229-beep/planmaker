@@ -2050,6 +2050,17 @@ button { font-family: inherit; }
 
 /* AI 부분수정 패널 (부분수정 1단계 §2.3). */
 .side-right { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+/**
+ * 칸은 **줄어들지 않는다** (우측 스크롤 Patch).
+ *
+ * 세로 flex의 자식은 기본으로 줄어든다. 그래서 칸이 자기 내용보다 짧게 눌렸고,
+ * 접히는 칸의 `overflow: hidden`이 눌린 만큼을 잘라 냈다 — 넘칠 내용이 아예 생기지
+ * 않으니 세로 스크롤도 나타나지 않았다. 잡은 오브젝트의 톤 슬라이더가 밝기·대비
+ * 둘만 보이고 그 아래가 사라진 것이 그 결과다.
+ *
+ * 자연스러운 높이를 지키게 두면 넘치는 만큼이 그대로 스크롤이 된다.
+ */
+.side-right > * { flex: 0 0 auto; }
 /* 완성본 화면에서는 대상 목록의 이름이 길다. 여기서만 조금 넓힌다. */
 .workspace:has(.side-right--result) { grid-template-columns: 240px 1fr 340px; }
 .edit-panel {
