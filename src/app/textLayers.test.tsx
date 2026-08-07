@@ -10,7 +10,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
 import { StudioJobProvider, useStudioJob } from '../features/studio/useStudioJob'
@@ -467,5 +467,89 @@ describe('§3 넷을 각각 고르고 따로 움직인다', () => {
     expect(plan.textObjects).toHaveLength(4)
     expect(plan.texts).toEqual([])
     expect(plan.externalCalls).toBe(0)
+  })
+})
+
+// ── §4 앞뒤 순서 ────────────────────────────────────────────────────────────
+
+describe('§4 이미지와 문구가 한 줄에 선다', () => {
+  it('순서 계산은 한 칸씩 옮기고 끝에서 멈춘다', async () => {
+    const { reorderLayers, layerOrderOf } = await load('domain/textLayers')
+
+    // 뒤에서 앞 차례. 배열 끝이 맨 앞이다.
+    const order = ['a', 'b', 'c', 'd']
+    expect(reorderLayers(order, 'a', 'front')).toEqual(['b', 'c', 'd', 'a'])
+    expect(reorderLayers(order, 'a', 'forward')).toEqual(['b', 'a', 'c', 'd'])
+    expect(reorderLayers(order, 'd', 'backward')).toEqual(['a', 'b', 'd', 'c'])
+    expect(reorderLayers(order, 'd', 'back')).toEqual(['d', 'a', 'b', 'c'])
+    // 끝에 닿으면 그대로다. 없는 이름도 그대로다.
+    expect(reorderLayers(order, 'd', 'front')).toEqual(order)
+    expect(reorderLayers(order, 'a', 'back')).toEqual(order)
+    expect(reorderLayers(order, 'zz', 'front')).toEqual(order)
+
+    // 두 갈래가 같은 번호 체계로 한 줄에 선다. 같은 번호면 이미지가 뒤다.
+    expect(
+      layerOrderOf(
+        [{ blockId: 'img', layer: 1 }],
+        [{ blockId: 'txt', layer: 1 }, { blockId: 'top', layer: 5 }],
+      ),
+    ).toEqual(['img', 'txt', 'top'])
+  })
+
+  it('문구를 맨 뒤로 보내면 합성도 그 차례로 그린다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    const boxes = await waitFor(() => {
+      const found = container.querySelectorAll<HTMLElement>('.result-object')
+      expect(found.length).toBe(6)
+      return found
+    }, { timeout: 5000 })
+
+    // 처음 차례: 이미지 둘이 뒤, 문구·버튼 넷이 앞.
+    expect(Array.from(boxes).map(labelOf)).toEqual([
+      '이미지 blk_photo',
+      '이미지 blk_cut',
+      ...SHEET_IDS.map((id) => `꾸며진 문구 ${id}`),
+    ])
+
+    const calls = fetchSpy.mock.calls.length
+    const title = Array.from(boxes).find((b) => labelOf(b) === '꾸며진 문구 blk_t1')!
+    fireEvent.pointerDown(title, { button: 0, clientX: 5, clientY: 5 })
+    await waitFor(() => expect(title.getAttribute('aria-pressed')).toBe('true'))
+    fireEvent.pointerUp(window)
+
+    composed.mockClear()
+    fireEvent.click(await within(title).findByRole('button', { name: '맨 뒤로' }))
+
+    // 저장된 번호가 그 문구를 맨 뒤로 보낸다.
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      const t1 = job?.textObjects?.page_1?.find((o) => o.blockId === 'blk_t1')
+      const photo = job?.imageObjects?.page_1?.find((o) => o.blockId === 'blk_photo')
+      expect(t1?.layer).toBe(0)
+      expect(photo!.layer).toBeGreaterThan(t1!.layer)
+    }, { timeout: 5000 })
+
+    // 화면 차례도 따라 바뀐다 — 맨 뒤가 목록의 처음이다.
+    await waitFor(() => {
+      const found = container.querySelectorAll<HTMLElement>('.result-object')
+      expect(labelOf(found[0]!)).toBe('꾸며진 문구 blk_t1')
+    }, { timeout: 5000 })
+
+    // 합성 계획도 같은 번호를 받는다 — 이미지가 그 문구보다 앞이다.
+    await waitFor(() => expect(composed).toHaveBeenCalled(), { timeout: 5000 })
+    const plan = composed.mock.calls.at(-1)![0] as {
+      layers: { blockId: string; order: number }[]
+      textObjects?: { order: number }[]
+    }
+    const back = Math.min(...(plan.textObjects ?? []).map((t) => t.order))
+    expect(back).toBe(0)
+    for (const layer of plan.layers) expect(layer.order).toBeGreaterThan(back)
+
+    // 순서를 바꾸는 데 외부로 나간 요청은 없다.
+    expect(fetchSpy.mock.calls.length).toBe(calls)
   })
 })

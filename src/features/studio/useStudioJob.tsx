@@ -53,6 +53,8 @@ import {
 import { DEFAULT_GRAIN, type CompositeEffects } from '../../domain/compositeEffects'
 import type { GeneratedPageResult } from '../../domain/imageGeneration'
 import type { StudioTextObject } from '../../domain/textObjects'
+import { layerOrderOf, reorderLayers } from '../../domain/textLayers'
+import type { LayerMove } from '../../domain/layerOrder'
 import type { LayoutRect } from '../../domain/imageLayout'
 import { loadStudioJob, saveStudioJob, STUDIO_JOB_ID } from '../../services/studioStore'
 import type { StudioFileState } from '../../domain/studioFile'
@@ -127,6 +129,15 @@ export interface StudioJobApi {
   imageObjectsOf: (pageId: string) => StudioTextObject[]
   setImageObjects: (pageId: string, objects: readonly StudioTextObject[]) => Promise<void>
   moveImageObject: (pageId: string, blockId: string, rect: LayoutRect) => void
+  /**
+   * 결과 화면의 앞뒤 순서를 바꾼다 (레이어 순서 Patch).
+   *
+   * 이미지·컷아웃과 문구가 **한 줄에** 선다. 기획서는 손대지 않는다 — 앞뒤
+   * 겹침은 결과를 보면서 정할 일이고, 기획서는 "무엇을 어디에"를 적는 곳이다.
+   */
+  reorderObject: (pageId: string, blockId: string, move: LayerMove) => Promise<void>
+  /** 이 오브젝트가 뒤에서 몇 번째인가. 끝에 닿은 버튼을 흐리게 하는 데 쓴다. */
+  layerPositionOf: (pageId: string, blockId: string) => { index: number; count: number } | null
   /**
    * 결과 화면에서 고른 오브젝트 — 문구든 이미지든 하나뿐이다.
    *
@@ -362,6 +373,25 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       setImageObjects: (pageId, objects) => mutate((j) => withImageObjects(j, pageId, objects, Date.now())),
       moveImageObject: (pageId, blockId, rect) =>
         void mutate((j) => withImageObject(j, pageId, blockId, { rect }, Date.now())),
+      reorderObject: (pageId, blockId, move) =>
+        mutate((j) => {
+          const images = imageObjectsOf(j, pageId)
+          const texts = textObjectsOf(j, pageId)
+          const next = reorderLayers(layerOrderOf(images, texts), blockId, move)
+          const rank = new Map(next.map((id, i) => [id, i]))
+          const now = Date.now()
+          return {
+            ...j,
+            imageObjects: { ...j.imageObjects, [pageId]: images.map((o) => ({ ...o, layer: rank.get(o.blockId) ?? o.layer })) },
+            textObjects: { ...j.textObjects, [pageId]: texts.map((o) => ({ ...o, layer: rank.get(o.blockId) ?? o.layer })) },
+            updatedAt: now,
+          }
+        }),
+      layerPositionOf: (pageId, blockId) => {
+        const order = layerOrderOf(imageObjectsOf(job, pageId), textObjectsOf(job, pageId))
+        const index = order.indexOf(blockId)
+        return index < 0 ? null : { index, count: order.length }
+      },
       selectedObjectBlockId,
       selectObject: setSelectedObjectBlockId,
       sourceChanged: jobSourceChanged(job),

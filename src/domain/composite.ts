@@ -31,6 +31,8 @@ export interface CompositeLayerPlan {
   /** 캔버스 밖으로 걸친 부분을 뺀 최종 사각형. 전부 밖이면 `null`. */
   crop: CanvasCrop | null
   effects: CompositeEffects
+  /** 앞뒤 차례. 클수록 앞이다 — 문구 오브젝트와 **같은 체계**의 번호다. */
+  order: number
 }
 
 export interface CompositeTextPlan {
@@ -60,7 +62,7 @@ export interface CompositePlan {
    * 블록마다 한 장이고, 작업자가 옮기거나 늘린 **지금의 자리**를 그대로 쓴다.
    * 이 겹이 마지막이라 문구는 언제나 이미지·컷아웃보다 앞이다.
    */
-  textObjects?: readonly { assetId: string; rect: LayoutRect }[]
+  textObjects?: readonly { assetId: string; rect: LayoutRect; order: number }[]
   layers: CompositeLayerPlan[]
   texts: CompositeTextPlan[]
   /** 완성 결과 전체에 얹는 그레인 (§9.5). */
@@ -78,8 +80,8 @@ export interface CompositePlanInput {
   background?: StudioBackground | undefined
   /** 맨 앞에 얹을 전경 레이어 (한방 생성 Patch 2 §4). */
   foreground?: { assetId: string } | undefined
-  /** 맨 앞에 얹을 문구 오브젝트들 (텍스트 오브젝트 Patch §4). */
-  textObjects?: readonly { assetId: string; rect: LayoutRect }[] | undefined
+  /** 얹을 문구 오브젝트들 (텍스트 오브젝트 Patch §4). 차례는 `order`가 정한다. */
+  textObjects?: readonly { assetId: string; rect: LayoutRect; order: number }[] | undefined
   /** 블록 id → 실제 사용 제품 이미지의 자산 id. */
   productImages: Readonly<Record<string, string>>
   /** 블록 id → 효과 세기. 없는 블록은 기본값. */
@@ -102,6 +104,13 @@ export interface CompositePlanInput {
    * 기획서를 고치지 않고도 결과의 자리를 옮기기 위한 갈래다.
    */
   rectOverrides?: Readonly<Record<string, LayoutRect>>
+  /**
+   * 블록 id → 앞뒤 차례 (레이어 순서 Patch).
+   *
+   * 없으면 기획서 블록 차례를 그대로 쓴다. 결과 화면에서 순서를 바꾸면 그 값이
+   * 여기로 온다 — 기획서를 고치지 않고 결과의 앞뒤만 바꾸기 위한 갈래다.
+   */
+  orderOverrides?: Readonly<Record<string, number>>
 }
 
 const DEFAULT_PLAN_GRAIN = 0.08
@@ -121,7 +130,7 @@ export function planLocalComposite(input: CompositePlanInput): CompositePlan {
   const only = input.onlyBlockIds === undefined ? null : new Set(input.onlyBlockIds)
   const includeTexts = input.includeTexts !== false
 
-  for (const block of page.blocks) {
+  for (const [index, block] of page.blocks.entries()) {
     if (isPairedLinkUrl(page.blocks, block)) continue
     if (only !== null && !only.has(block.id)) continue
     const meta = getBlockTypeMeta(block.type)
@@ -137,6 +146,7 @@ export function planLocalComposite(input: CompositePlanInput): CompositePlan {
         fit: imageFitOf(block),
         crop: cropToCanvas(rect, size.width, size.height),
         effects: normalizeEffects({ ...input.effects[block.id] }),
+        order: input.orderOverrides?.[block.id] ?? index,
       })
       continue
     }

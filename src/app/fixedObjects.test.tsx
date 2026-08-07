@@ -618,6 +618,7 @@ describe('§4 배경 → 사진 → 문구', () => {
                 edge: 0, contactShadow: 0, wallShadow: 0, grading: 0, rimLight: 0,
                 paperCutout: false, paperWeight: 1, paperOpacity: 1,
               },
+              order: 0,
             },
           ],
           texts: [],

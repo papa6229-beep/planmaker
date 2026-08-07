@@ -2451,6 +2451,32 @@ button { font-family: inherit; }
   border: 2px solid var(--color-accent);
   border-radius: 2px;
 }
+.result-object__layers {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-panel);
+  cursor: default;
+}
+.result-object__layer {
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.result-object__layer:hover:not(:disabled) { background: var(--color-accent); color: #fff; }
+.result-object__layer:disabled { opacity: 0.35; cursor: default; }
 .result-object__handle--nw { left: -5px; top: -5px; cursor: nwse-resize; }
 .result-object__handle--ne { right: -5px; top: -5px; cursor: nesw-resize; }
 .result-object__handle--sw { left: -5px; bottom: -5px; cursor: nesw-resize; }

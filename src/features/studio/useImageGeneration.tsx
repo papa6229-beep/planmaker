@@ -703,7 +703,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           // 원래 자리다 (스티커판 Patch §5).
           ...(paid.textObjects === undefined || paid.textObjects.length === 0
             ? {}
-            : { textObjects: paid.textObjects.map((t) => ({ assetId: t.assetId, rect: t.rect })) }),
+            : { textObjects: paid.textObjects.map((t) => ({ assetId: t.assetId, rect: t.rect, order: t.layer })) }),
           productImages: studio.job.productImages,
           effects: studio.job.effects ?? {},
           grain: studio.grain,
@@ -827,17 +827,22 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
               .filter((b) => (job.productImages[b.id] ?? b.assetId) !== undefined)
               .map((b) => b.id)
       const rectOverrides: Record<string, LayoutRect> = {}
-      for (const object of images) rectOverrides[object.blockId] = object.rect
+      const orderOverrides: Record<string, number> = {}
+      for (const object of images) {
+        rectOverrides[object.blockId] = object.rect
+        orderOverrides[object.blockId] = object.layer
+      }
 
       const composite = planLocalComposite({
         page,
         background,
-        textObjects: objects.map((t) => ({ assetId: t.assetId, rect: t.rect })),
+        textObjects: objects.map((t) => ({ assetId: t.assetId, rect: t.rect, order: t.layer })),
         productImages: job.productImages,
         effects: job.effects ?? {},
         grain: studio.grain,
         onlyBlockIds: fixed,
         rectOverrides,
+        orderOverrides,
         includeTexts: false,
       })
       const blob = await renderComposite(composite, await collectCompositeSources(composite))

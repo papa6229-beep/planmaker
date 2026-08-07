@@ -316,12 +316,39 @@ export async function renderComposite(plan: CompositePlan, sources: CompositeSou
     }
   }
 
-  for (const layer of plan.layers) await drawLayer(ctx, layer, sources, backgroundTone)
+  // ── 사진·컷아웃과 문구를 **한 줄로** 세워 그린다 (레이어 순서 Patch) ──────
+  //
+  // 앞선 판은 "사진 전부 → 문구 전부"로 못박혀 있어 문구가 언제나 앞이었다.
+  // 이제 둘이 같은 번호 체계를 쓰므로 그 번호대로 그린다 — 문구가 사진 뒤로
+  // 갈 수도, 사진이 문구를 덮을 수도 있다. 번호가 같으면 사진이 뒤에 선다.
+  const drawList: { order: number; image: number; draw: () => Promise<void> }[] = [
+    ...plan.layers.map((layer) => ({
+      order: layer.order,
+      image: 0,
+      draw: () => drawLayer(ctx, layer, sources, backgroundTone),
+    })),
+    ...(plan.textObjects ?? []).map((text) => ({
+      order: text.order,
+      image: 1,
+      draw: async () => {
+        const blob = sources.blobs.get(text.assetId)
+        if (blob === undefined) return
+        const source = await toSource(blob)
+        // 작업자가 옮기거나 늘린 값이 그대로 여기로 온다 — 화면에서 본 자리가
+        // 저장한 파일의 자리다.
+        ctx.drawImage(
+          source, 0, 0, source.width, source.height,
+          text.rect.x, text.rect.y, text.rect.width, text.rect.height,
+        )
+      },
+    })),
+  ].toSorted((a, b) => a.order - b.order || a.image - b.image)
+  for (const item of drawList) await item.draw()
 
   // ── 전경 문구 레이어 (한방 생성 Patch 2 §4) ───────────────────────────────
   //
-  // 사진을 전부 그린 **뒤에** 얹는다. 순서가 곧 계약이다 — 이 겹이 마지막이므로
-  // 문구는 언제나 이미지보다 앞에 오고, 배경이 투명하므로 아래가 비친다.
+  // 블록별로 자르기 전에 만든 예전 결과에만 있다. 한 장짜리라 순서를 다툴 상대가
+  // 없으므로 지금까지처럼 맨 앞이다.
   if (plan.foreground !== undefined) {
     const blob = sources.blobs.get(plan.foreground.assetId)
     if (blob !== undefined) {
@@ -329,17 +356,6 @@ export async function renderComposite(plan: CompositePlan, sources: CompositeSou
       // 같은 지면을 그린 한 장이다. 잘라 내지 않고 캔버스에 그대로 맞춘다.
       ctx.drawImage(source, 0, 0, source.width, source.height, 0, 0, canvas.width, canvas.height)
     }
-  }
-
-  // ── 꾸며진 문구 오브젝트 (텍스트 오브젝트 Patch §4) ───────────────────────
-  //
-  // 사진을 전부 그린 **뒤**, 저마다의 자리에 한 장씩. 작업자가 옮기거나 늘린
-  // 값이 그대로 여기로 온다 — 화면에서 본 자리가 저장한 파일의 자리다.
-  for (const text of plan.textObjects ?? []) {
-    const blob = sources.blobs.get(text.assetId)
-    if (blob === undefined) continue
-    const source = await toSource(blob)
-    ctx.drawImage(source, 0, 0, source.width, source.height, text.rect.x, text.rect.y, text.rect.width, text.rect.height)
   }
 
   // 문구는 기존 표현 그대로 (§10). 새 텍스트 엔진을 만들지 않는다.

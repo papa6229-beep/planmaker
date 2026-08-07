@@ -24,6 +24,8 @@ import { useImageGeneration } from '../../features/studio/useImageGeneration'
 import { getAsset } from '../../services/assetStore'
 import { RESIZE_HANDLES, resizeRect, type ResizeHandle } from '../../features/editor/canvasGeometry'
 import { keepAspect } from '../../domain/photoBox'
+import { LAYER_MOVES } from '../../domain/layerOrder'
+import { layerOrderOf } from '../../domain/textLayers'
 import type { LayoutRect } from '../../domain/imageLayout'
 import type { StudioTextObject } from '../../domain/textObjects'
 
@@ -36,6 +38,14 @@ interface Props {
 /** 이 오브젝트가 무엇에서 나왔는가. 옮길 때 어디에 적는지가 여기서 갈린다. */
 type ObjectKind = 'image' | 'text'
 
+/** 순서 버튼의 글자. 좁은 자리라 이름 대신 기호를 쓰고, 이름은 툴팁에 남긴다. */
+const LAYER_ICONS: Record<string, string> = {
+  front: '⤒',
+  forward: '↑',
+  backward: '↓',
+  back: '⤓',
+}
+
 export function ResultObjectLayer({ pageId, page }: Props) {
   const studio = useStudioJob()
   const generation = useImageGeneration()
@@ -43,10 +53,15 @@ export function ResultObjectLayer({ pageId, page }: Props) {
   const boxRef = useRef<HTMLDivElement | null>(null)
   const texts = studio?.textObjectsOf(pageId) ?? []
   const images = studio?.imageObjectsOf(pageId) ?? []
-  const objects: { kind: ObjectKind; object: StudioTextObject }[] = [
-    ...images.map((object) => ({ kind: 'image' as const, object })),
-    ...texts.map((object) => ({ kind: 'text' as const, object })),
-  ]
+  // 화면의 앞뒤가 합성의 앞뒤와 같아야 한다. 나중에 놓인 것이 위에 그려지므로,
+  // 뒤에서 앞 차례로 세운 목록을 그대로 쓴다 (레이어 순서 Patch).
+  const byId = new Map<string, { kind: ObjectKind; object: StudioTextObject }>([
+    ...images.map((object) => [object.blockId, { kind: 'image' as const, object }] as const),
+    ...texts.map((object) => [object.blockId, { kind: 'text' as const, object }] as const),
+  ])
+  const objects = layerOrderOf(images, texts)
+    .map((id) => byId.get(id))
+    .filter((entry): entry is { kind: ObjectKind; object: StudioTextObject } => entry !== undefined)
   // 그림을 거는 것은 문구뿐이다 — 이미지는 결과 안에 이미 그려져 있고, 여기서
   // 한 장 더 여는 것은 그저 큰 원본을 두 번 읽는 일이다.
   const ids = texts.map((o) => o.assetId).join(',')
@@ -192,6 +207,39 @@ export function ResultObjectLayer({ pageId, page }: Props) {
           >
             {url !== undefined && (
               <img className="result-object__image" src={url} alt="" draggable={false} />
+            )}
+            {/* 앞뒤 순서는 고른 오브젝트 옆에서 바꾼다 — 우측 패널까지 갔다 오는
+                동안 무엇을 고르고 있었는지 놓치기 때문이다. 끝에 닿은 버튼은
+                흐리게 둔다: 눌러도 아무 일이 없는 것보다 미리 말하는 편이 낫다. */}
+            {selected && (
+              <span
+                className="result-object__layers"
+                role="group"
+                aria-label="앞뒤 순서"
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                {LAYER_MOVES.map((move) => {
+                  const at = studio.layerPositionOf(pageId, object.blockId)
+                  const atFront = at !== null && at.index === at.count - 1
+                  const atBack = at !== null && at.index === 0
+                  const off =
+                    move.value === 'front' || move.value === 'forward' ? atFront : atBack
+                  return (
+                    <button
+                      key={move.value}
+                      type="button"
+                      className="result-object__layer"
+                      disabled={off}
+                      title={move.label}
+                      aria-label={move.label}
+                      // 순서를 적고 나서 한 번 다시 합친다. 외부 호출은 없다.
+                      onClick={() => void studio.reorderObject(pageId, object.blockId, move.value).then(settle)}
+                    >
+                      {LAYER_ICONS[move.value]}
+                    </button>
+                  )
+                })}
+              </span>
             )}
             {selected &&
               RESIZE_HANDLES.map((handle) => (

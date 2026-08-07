@@ -17,6 +17,7 @@
  */
 
 import { CARD_CHROME_Y, CARD_PADDING_X, TEXT_CHROME_PX, fitTextSize, wrapLines } from './textFit'
+import type { LayerMove } from './layerOrder'
 import type { LayoutRect } from './imageLayout'
 import type { TextAlign } from './simpleBlocks'
 
@@ -134,4 +135,49 @@ export function containRect(
     width,
     height,
   }
+}
+
+/**
+ * 결과 화면의 앞뒤 순서 (레이어 순서 Patch).
+ *
+ * 지금까지 그리는 순서는 "이미지·컷아웃 전부 → 문구 전부"로 못박혀 있었다.
+ * 문구가 사진에 가려야 할 때가 있고, 사진이 문구를 덮어야 할 때도 있다 — 그건
+ * 결과를 눈으로 보면서 정할 일이지 규칙으로 정할 일이 아니다.
+ *
+ * 다행히 두 갈래 오브젝트가 이미 같은 체계의 `layer` 번호를 갖고 있다(둘 다
+ * 기획서 블록 차례에서 나왔다). 그래서 여기서 하는 일은 **번호 하나를 다시
+ * 매기는 것**뿐이고, 그리는 쪽은 그 번호대로 한 줄로 세우면 된다.
+ *
+ * 받는 배열은 **뒤에서 앞** 차례다 — 배열 끝이 맨 앞이다. 기획서의 블록 배열과
+ * 같은 규칙이라 두 화면이 다른 말을 하지 않는다.
+ */
+export function reorderLayers(order: readonly string[], blockId: string, move: LayerMove): string[] {
+  const from = order.indexOf(blockId)
+  if (from < 0) return [...order]
+
+  const last = order.length - 1
+  const to =
+    move === 'front' ? last
+    : move === 'back' ? 0
+    : move === 'forward' ? Math.min(from + 1, last)
+    : Math.max(from - 1, 0)
+  if (to === from) return [...order]
+
+  const next = [...order]
+  const [moved] = next.splice(from, 1)
+  next.splice(to, 0, moved!)
+  return next
+}
+
+/** 뒤에서 앞 차례로 세운 오브젝트 이름들. 같은 번호는 이미지가 뒤에 선다. */
+export function layerOrderOf(
+  images: readonly { blockId: string; layer: number }[],
+  texts: readonly { blockId: string; layer: number }[],
+): string[] {
+  return [
+    ...images.map((o) => ({ ...o, image: 0 })),
+    ...texts.map((o) => ({ ...o, image: 1 })),
+  ]
+    .toSorted((a, b) => a.layer - b.layer || a.image - b.image)
+    .map((o) => o.blockId)
 }
