@@ -993,3 +993,50 @@ describe('§10 완성 결과 전체의 톤', () => {
     expect(old?.tones ?? {}).toEqual({})
   })
 })
+
+// ── §11 완성한 뒤에 종이 테두리를 다듬는다 ──────────────────────────────────
+
+describe('§11 완성 후 종이 테두리', () => {
+  it('결과 화면의 슬라이더가 합성 계획을 바꾸고, 외부 호출은 없다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    const calls = fetchSpy.mock.calls.length
+    composed.mockClear()
+
+    // 컷아웃이 켜진 블록만 나온다 — 일반 이미지에는 다듬을 테두리가 없다.
+    expect(screen.queryByLabelText('일반 이미지 종이 테두리 두께')).toBeNull()
+
+    const weight = await screen.findByLabelText('컷아웃 종이 테두리 두께')
+    fireEvent.change(weight, { target: { value: '35' } })
+    fireEvent.pointerUp(weight)
+
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect(job?.effects?.blk_cut?.paperWeight).toBeCloseTo(0.35, 5)
+    }, { timeout: 5000 })
+
+    await waitFor(() => expect(composed).toHaveBeenCalled(), { timeout: 5000 })
+    const plan = composed.mock.calls.at(-1)![0] as {
+      layers: { blockId: string; effects: { paperWeight: number; paperOpacity: number } }[]
+    }
+    expect(plan.layers.find((l) => l.blockId === 'blk_cut')?.effects.paperWeight).toBeCloseTo(0.35, 5)
+
+    // 진하기 0은 컷아웃을 끄는 것과 다르다 — 오브젝트도 자리도 그대로다.
+    const opacity = await screen.findByLabelText('컷아웃 종이 테두리 진하기')
+    fireEvent.change(opacity, { target: { value: '0' } })
+    fireEvent.pointerUp(opacity)
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect(job?.effects?.blk_cut?.paperOpacity).toBe(0)
+      expect(job?.effects?.blk_cut?.paperCutout).toBe(true)
+    }, { timeout: 5000 })
+    const after = await loadStudioJob(STUDIO_JOB_ID)
+    expect(after?.imageObjects?.page_1?.find((o) => o.blockId === 'blk_cut')?.rect).toEqual(CUT_RECT)
+
+    // 테두리를 다듬는 데 외부로 나간 요청은 없다.
+    expect(fetchSpy.mock.calls.length).toBe(calls)
+  })
+})

@@ -40,6 +40,7 @@ import { BackgroundDialog } from '../components/studio/BackgroundDialog'
 import { CompositeEffectsPanel } from '../components/studio/CompositeEffectsPanel'
 import { BlockOrderPanel } from '../components/studio/BlockOrderPanel'
 import { ToneAdjustPanel } from '../components/studio/ToneAdjustPanel'
+import { PaperTunePanel } from '../components/studio/PaperTunePanel'
 import { BackgroundCompositeProvider } from '../features/studio/useBackgroundComposite'
 import { StudioEffectsSync } from '../features/studio/StudioEffectsSync'
 import { GenerateImageDialog } from '../components/studio/GenerateImageDialog'
@@ -275,6 +276,8 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
             <CompositeEffectsPanel />
             {/* 결과 전체의 톤. 결과가 있을 때만 나온다 (톤 조절 Patch). */}
             <ToneAdjustPanel />
+            {/* 완성된 배경 위에서 종이 테두리를 다듬는다 (완성 후 컷아웃 Patch). */}
+            <PaperTunePanel />
             {generation !== null && generation.hasResult ? <EditPanel /> : <ReadyPanel />}
           </div>
         ) : (

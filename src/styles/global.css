@@ -2423,6 +2423,29 @@ button { font-family: inherit; }
 .tone__slider input[type='range'] { width: 100%; margin: 0; accent-color: var(--color-accent); cursor: pointer; }
 .tone__reset { align-self: flex-start; }
 
+/* ── 완성본 종이 테두리 다듬기 (완성 후 컷아웃 Patch) ────────────────────── */
+.paper-tune {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-panel);
+}
+.paper-tune__title { margin: 0; font-size: 13px; font-weight: 700; }
+.paper-tune__note { margin: 0; color: var(--color-muted); font-size: 11px; line-height: 1.5; }
+.paper-tune__block { display: flex; flex-direction: column; gap: 4px; }
+.paper-tune__label { margin: 0; font-size: 11px; font-weight: 600; }
+.paper-tune__slider { display: flex; flex-direction: column; gap: 2px; }
+.paper-tune__slider-label { font-size: 11px; color: var(--color-muted); }
+.paper-tune__slider input[type='range'] {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
 /* ── 블록별 디자인 주문 (블록별 주문 Patch) ──────────────────────────────── */
 .block-order {
   display: flex;
