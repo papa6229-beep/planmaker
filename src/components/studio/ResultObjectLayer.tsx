@@ -25,7 +25,7 @@ import { getAsset } from '../../services/assetStore'
 import { RESIZE_HANDLES, resizeRect, type ResizeHandle } from '../../features/editor/canvasGeometry'
 import { keepAspect } from '../../domain/photoBox'
 import { LAYER_MOVES } from '../../domain/layerOrder'
-import { layerOrderOf } from '../../domain/textLayers'
+import { boundsOf, layerOrderOf, scaleWithin } from '../../domain/textLayers'
 import type { LayoutRect } from '../../domain/imageLayout'
 import type { StudioTextObject } from '../../domain/textObjects'
 
@@ -104,22 +104,32 @@ export function ResultObjectLayer({ pageId, page }: Props) {
     else studio.moveTextObject(pageId, blockId, rect)
   }
 
-  const startMove = (kind: ObjectKind, blockId: string, rect: LayoutRect) => (e: ReactPointerEvent) => {
+  const startMove = (blockId: string) => (e: ReactPointerEvent) => {
     if (e.button !== 0) return
     e.preventDefault()
     e.stopPropagation()
-    studio.selectObject(blockId)
+    // Shift·⌘를 누르면 고른 것에 더한다. 그냥 누르면 이것 하나만 고른다.
+    const add = e.shiftKey || e.metaKey || e.ctrlKey
+    studio.selectObject(blockId, add)
+    // 이미 여럿을 골라 둔 채로 그중 하나를 끌면 **함께** 움직인다. 더하기 누름은
+    // 고르는 동작이므로 끌지 않는다.
+    const group = add
+      ? []
+      : (studio.selectedObjectBlockIds.includes(blockId) ? studio.selectedObjectBlockIds : [blockId])
+          .map((id) => objects.find((o) => o.object.blockId === id))
+          .filter((o): o is (typeof objects)[number] => o !== undefined)
+          .map((o) => ({ kind: o.kind, blockId: o.object.blockId, from: { ...o.object.rect } }))
     const startX = e.clientX
     const startY = e.clientY
     const k = scale()
     let moved = false
     const onMove = (ev: PointerEvent) => {
       moved = true
-      place(kind, blockId, {
-        ...rect,
-        x: Math.round(rect.x + (ev.clientX - startX) * k),
-        y: Math.round(rect.y + (ev.clientY - startY) * k),
-      })
+      const dx = Math.round((ev.clientX - startX) * k)
+      const dy = Math.round((ev.clientY - startY) * k)
+      for (const item of group) {
+        place(item.kind, item.blockId, { ...item.from, x: item.from.x + dx, y: item.from.y + dy })
+      }
     }
     const onUp = () => {
       window.removeEventListener('pointermove', onMove)
@@ -131,7 +141,7 @@ export function ResultObjectLayer({ pageId, page }: Props) {
   }
 
   const startResize =
-    (kind: ObjectKind, blockId: string, rect: LayoutRect, handle: ResizeHandle) => (e: ReactPointerEvent) => {
+    (blockId: string, rect: LayoutRect, handle: ResizeHandle) => (e: ReactPointerEvent) => {
       if (e.button !== 0) return
       e.preventDefault()
       e.stopPropagation()
@@ -146,20 +156,24 @@ export function ResultObjectLayer({ pageId, page }: Props) {
       //
       // Shift를 누른 동안에만 가로세로가 풀린다 — 일부러 늘려야 할 때가 있고,
       // 그때는 누르고 있는 손가락이 "지금 비율을 깬다"고 말해 준다.
-      const aspect = rect.height > 0 ? rect.width / rect.height : 1
+      // 여럿을 골라 두었으면 **감싸는 상자**를 잡아 늘린다 — 저마다 자기 자리에서
+      // 커지면 사이 간격이 그대로 남아 배치가 흐트러진다.
+      const group = (studio.selectedObjectBlockIds.includes(blockId) ? studio.selectedObjectBlockIds : [blockId])
+        .map((id) => objects.find((o) => o.object.blockId === id))
+        .filter((o): o is (typeof objects)[number] => o !== undefined)
+        .map((o) => ({ kind: o.kind, blockId: o.object.blockId, from: { ...o.object.rect } }))
+      const from = boundsOf(group.map((g) => g.from)) ?? rect
+      const aspect = from.height > 0 ? from.width / from.height : 1
       const onMove = (ev: PointerEvent) => {
         moved = true
         const dx = (ev.clientX - startX) * k
         const dy = (ev.clientY - startY) * k
         // 잡은 모서리의 반대쪽이 제자리에 남는다. 지면 밖으로도 걸칠 수 있으므로
         // 가두지 않는다 — 밖으로 나간 부분은 다시 합칠 때 지금까지처럼 잘린다.
-        place(
-          kind,
-          blockId,
-          ev.shiftKey
-            ? resizeRect(rect, handle, dx, dy, page.width, page.height, true)
-            : keepAspect(rect, handle, dx, dy, aspect),
-        )
+        const to = ev.shiftKey
+          ? resizeRect(from, handle, dx, dy, page.width, page.height, true)
+          : keepAspect(from, handle, dx, dy, aspect)
+        for (const item of group) place(item.kind, item.blockId, scaleWithin(item.from, from, to))
       }
       const onUp = () => {
         window.removeEventListener('pointermove', onMove)
@@ -212,15 +226,18 @@ export function ResultObjectLayer({ pageId, page }: Props) {
       onPointerDown={() => studio.selectObject(null)}
     >
       {objects.map(({ kind, object }) => {
+        const picked = studio.selectedObjectBlockIds.includes(object.blockId)
+        // 조작점은 마지막에 고른 하나에만 붙는다 — 여럿에 붙으면 무엇을 잡은
+        // 것인지 화면이 말해 주지 못한다.
         const selected = studio.selectedObjectBlockId === object.blockId
         const url = urls[object.assetId]
         return (
           <div
             key={`${kind}-${object.blockId}`}
-            className={`result-object ${kind}-object${selected ? ' is-selected' : ''}`}
+            className={`result-object ${kind}-object${picked ? ' is-picked' : ''}${selected ? ' is-selected' : ''}`}
             role="button"
             tabIndex={0}
-            aria-pressed={selected}
+            aria-pressed={picked}
             aria-label={`${kind === 'image' ? '이미지' : '꾸며진 문구'} ${object.blockId}`}
             style={{
               left: percent(object.rect.x, page.width),
@@ -233,11 +250,11 @@ export function ResultObjectLayer({ pageId, page }: Props) {
                 ? {}
                 : { transform: `rotate(${String(object.angle)}deg)` }),
             }}
-            onPointerDown={startMove(kind, object.blockId, object.rect)}
+            onPointerDown={startMove(object.blockId)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
-                studio.selectObject(object.blockId)
+                studio.selectObject(object.blockId, e.shiftKey)
               }
             }}
           >
@@ -303,7 +320,7 @@ export function ResultObjectLayer({ pageId, page }: Props) {
                   key={handle}
                   className={`result-object__handle result-object__handle--${handle}`}
                   aria-hidden="true"
-                  onPointerDown={startResize(kind, object.blockId, object.rect, handle)}
+                  onPointerDown={startResize(object.blockId, object.rect, handle)}
                 />
               ))}
           </div>

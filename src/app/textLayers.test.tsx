@@ -743,3 +743,74 @@ describe('§7 오브젝트를 기울인다', () => {
     expect(old?.textObjects?.page_1?.[0]?.angle).toBeUndefined()
   })
 })
+
+// ── §8 여럿을 함께 ──────────────────────────────────────────────────────────
+
+describe('§8 여럿을 골라 함께 옮기고 늘린다', () => {
+  it('감싸는 상자 계산', async () => {
+    const { boundsOf, scaleWithin } = await load('domain/textLayers')
+    const a = { x: 10, y: 10, width: 100, height: 50 }
+    const b = { x: 200, y: 40, width: 100, height: 60 }
+    expect(boundsOf([a, b])).toEqual({ x: 10, y: 10, width: 290, height: 90 })
+    expect(boundsOf([])).toBeNull()
+
+    // 감싸는 상자가 두 배가 되면 안의 상자도 자리와 크기가 두 배가 된다.
+    const from = { x: 0, y: 0, width: 100, height: 100 }
+    const to = { x: 0, y: 0, width: 200, height: 200 }
+    expect(scaleWithin({ x: 50, y: 50, width: 20, height: 20 }, from, to)).toEqual({
+      x: 100, y: 100, width: 40, height: 40,
+    })
+  })
+
+  it('둘을 골라 하나를 끌면 둘 다 같은 만큼 움직인다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    const calls = fetchSpy.mock.calls.length
+    const boxes = await waitFor(() => {
+      const found = container.querySelectorAll<HTMLElement>('.result-object')
+      expect(found.length).toBe(6)
+      return found
+    }, { timeout: 5000 })
+    const one = Array.from(boxes).find((b) => labelOf(b) === '꾸며진 문구 blk_t1')!
+    const two = Array.from(boxes).find((b) => labelOf(b) === '꾸며진 문구 blk_t2')!
+
+    const before = await loadStudioJob(STUDIO_JOB_ID)
+    const rectOf = (job: typeof before, id: string) =>
+      job?.textObjects?.page_1?.find((o) => o.blockId === id)?.rect
+
+    // 하나를 고르고, Shift로 하나를 더한다.
+    fireEvent.pointerDown(one, { button: 0, clientX: 0, clientY: 0 })
+    fireEvent.pointerUp(window)
+    fireEvent.pointerDown(two, { button: 0, clientX: 0, clientY: 0, shiftKey: true })
+    fireEvent.pointerUp(window)
+    await waitFor(() => {
+      expect(one.getAttribute('aria-pressed')).toBe('true')
+      expect(two.getAttribute('aria-pressed')).toBe('true')
+    })
+
+    // 그중 하나를 끌면 둘 다 같은 만큼 움직인다.
+    fireEvent.pointerDown(two, { button: 0, clientX: 0, clientY: 0 })
+    fireEvent.pointerMove(window, { clientX: 25, clientY: 40 })
+    fireEvent.pointerUp(window)
+
+    await waitFor(async () => {
+      const now = await loadStudioJob(STUDIO_JOB_ID)
+      for (const id of ['blk_t1', 'blk_t2']) {
+        expect(rectOf(now, id)).toEqual({
+          ...rectOf(before, id)!,
+          x: rectOf(before, id)!.x + 25,
+          y: rectOf(before, id)!.y + 40,
+        })
+      }
+    }, { timeout: 5000 })
+
+    // 고르지 않은 것은 그대로다.
+    const after = await loadStudioJob(STUDIO_JOB_ID)
+    for (const id of ['blk_t3', 'blk_btn']) expect(rectOf(after, id)).toEqual(rectOf(before, id))
+    // 함께 움직이는 데 외부로 나간 요청은 없다.
+    expect(fetchSpy.mock.calls.length).toBe(calls)
+  })
+})

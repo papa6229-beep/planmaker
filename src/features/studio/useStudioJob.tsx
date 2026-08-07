@@ -162,7 +162,16 @@ export interface StudioJobApi {
    * 골라 둔 상태가 화면에 동시에 나타나면 무엇을 옮기는지 알 수 없기 때문이다.
    */
   selectedObjectBlockId: string | null
-  selectObject: (blockId: string | null) => void
+  /**
+   * 고른 오브젝트 전부 (복수 선택 Patch).
+   *
+   * `selectedObjectBlockId`는 그중 **마지막에 고른 것**이다. 조작점과 손잡이는
+   * 그 하나에만 붙는다 — 여럿에 동시에 붙으면 무엇을 잡은 것인지 화면이 말해
+   * 주지 못한다. 끌면 고른 것이 함께 움직인다.
+   */
+  selectedObjectBlockIds: string[]
+  /** `add`가 참이면 고른 것에 더하거나 뺀다 (Shift·⌘ 클릭). */
+  selectObject: (blockId: string | null, add?: boolean) => void
   /** 원본 기획서와 작업본이 달라졌는지 (§7). 자동 병합은 하지 않는다. */
   sourceChanged: boolean
   /**
@@ -209,7 +218,7 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
   const [future, setFuture] = useState<Links[]>([])
   const [lastChangeAt, setLastChangeAt] = useState(0)
   /** 고른 편집 오브젝트 — 새로고침에 남을 이유가 없는 화면 상태다. */
-  const [selectedObjectBlockId, setSelectedObjectBlockId] = useState<string | null>(null)
+  const [selectedObjectBlockIds, setSelectedObjectBlockIds] = useState<string[]>([])
 
   // 작업을 먼저 읽고 나서 편집기를 마운트한다. 편집기는 마운트 순간 한 번
   // `binding.load()`를 호출하므로, 그 전에 작업이 손에 있어야 새로고침 복원이
@@ -420,8 +429,16 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
         const index = order.indexOf(blockId)
         return index < 0 ? null : { index, count: order.length }
       },
-      selectedObjectBlockId,
-      selectObject: setSelectedObjectBlockId,
+      selectedObjectBlockId: selectedObjectBlockIds.at(-1) ?? null,
+      selectedObjectBlockIds,
+      selectObject: (blockId, add = false) =>
+        setSelectedObjectBlockIds((current) => {
+          if (blockId === null) return []
+          if (!add) return current.length === 1 && current[0] === blockId ? current : [blockId]
+          // 이미 고른 것을 다시 누르면 뺀다. 마지막에 고른 것이 조작 대상이므로
+          // 더할 때는 언제나 끝에 붙인다.
+          return current.includes(blockId) ? current.filter((id) => id !== blockId) : [...current, blockId]
+        }),
       sourceChanged: jobSourceChanged(job),
       adoptFile,
       canUndo: past.length > 0,
@@ -444,7 +461,7 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
     }
   }, [
     job, binding, commit, mutate, commitLinks, applyLinks, adoptFile, recordResult,
-    past, future, lastChangeAt, selectedObjectBlockId,
+    past, future, lastChangeAt, selectedObjectBlockIds,
   ])
 
   // 작업을 읽는 동안에는 편집기를 만들지 않는다.

@@ -2453,6 +2453,7 @@ button { font-family: inherit; }
   outline: 1px solid transparent;
 }
 .result-object:hover { outline-color: rgba(99, 102, 241, 0.5); }
+.result-object.is-picked { outline: 2px dashed var(--color-accent); }
 .result-object.is-selected { outline: 2px solid var(--color-accent); }
 .result-object__image { width: 100%; height: 100%; display: block; opacity: 0; }
 .result-object__handle {

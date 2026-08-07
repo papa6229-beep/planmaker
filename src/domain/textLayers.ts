@@ -181,3 +181,32 @@ export function layerOrderOf(
     .toSorted((a, b) => a.layer - b.layer || a.image - b.image)
     .map((o) => o.blockId)
 }
+
+/** 여럿을 감싸는 가장 작은 상자. 하나면 그 상자 그대로다. */
+export function boundsOf(rects: readonly LayoutRect[]): LayoutRect | null {
+  if (rects.length === 0) return null
+  const x = Math.min(...rects.map((r) => r.x))
+  const y = Math.min(...rects.map((r) => r.y))
+  const right = Math.max(...rects.map((r) => r.x + r.width))
+  const bottom = Math.max(...rects.map((r) => r.y + r.height))
+  return { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) }
+}
+
+/**
+ * 감싸는 상자가 `from`에서 `to`로 바뀔 때, 그 안의 한 상자가 가는 자리
+ * (복수 선택 Patch).
+ *
+ * 여럿을 한 덩어리로 잡아 늘리는 일이다. 저마다 자기 자리에서 커지면 사이 간격이
+ * 그대로 남아 덩어리가 흐트러진다 — 감싸는 상자를 기준으로 옮겨야 배치가 같은
+ * 모양으로 커진다.
+ */
+export function scaleWithin(rect: LayoutRect, from: LayoutRect, to: LayoutRect): LayoutRect {
+  const kx = from.width <= 0 ? 1 : to.width / from.width
+  const ky = from.height <= 0 ? 1 : to.height / from.height
+  return {
+    x: Math.round(to.x + (rect.x - from.x) * kx),
+    y: Math.round(to.y + (rect.y - from.y) * ky),
+    width: Math.max(1, Math.round(rect.width * kx)),
+    height: Math.max(1, Math.round(rect.height * ky)),
+  }
+}
