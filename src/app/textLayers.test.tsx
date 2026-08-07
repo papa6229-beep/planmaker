@@ -337,8 +337,10 @@ describe('§2 문구 셋과 버튼 하나가 각각 한 장씩 만들어진다',
       for (const other of Object.values(CONTENTS)) {
         if (other !== mine) expect(prompt).not.toContain(other)
       }
-      // 자리를 지키라고 시키지 않는다 — 자리는 이 도구가 잡는다.
-      expect(prompt).toContain('어디에 그리든 상관없습니다')
+      // 줄 나눔은 기획서가 끊는 그대로, 그리고 기울이지 않는다.
+      expect(prompt).toContain('정확히 1줄입니다')
+      expect(prompt).toContain(`1행: "${mine}"`)
+      expect(prompt).toContain('글자를 기울이지 마세요')
       // 자리별 색은 숫자로만 간다.
       expect(prompt).toContain('R120')
       // 사용자 이미지는 어느 요청에도 실리지 않는다.

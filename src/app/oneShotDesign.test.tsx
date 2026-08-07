@@ -268,6 +268,7 @@ describe('§3 두 겹의 주문', () => {
       align: 'center' as const,
       layer: 2,
       overlapsImage: false,
+      lines: ['여름 감사제 40% + 사은품'],
     }
 
     const plate = buildPlatePrompt({ size, styleReferenceAssetId: 'asset_style', fixed, note: '가을 느낌으로' })
@@ -289,8 +290,10 @@ describe('§3 두 겹의 주문', () => {
     expect(text).toContain('복제하지 않습니다')
     expect(text).toContain('사람, 제품, 로고')
     // 자리를 지키라고 시키지 않는다 — 자리는 이 도구가 잡는다.
-    expect(text).toContain('어디에 그리든 상관없습니다')
-    expect(text).toContain('글자 한 덩어리만')
+    // 줄 나눔은 기획서가 정한 그대로 못 박는다.
+    expect(text).toContain('정확히 1줄입니다')
+    expect(text).toContain('1행: "여름 감사제 40% + 사은품"')
+    expect(text).toContain('글자를 기울이지 마세요')
 
     // 어느 쪽도 자산 번호나 파일명을 싣지 않는다.
     for (const prompt of [plate, text]) {

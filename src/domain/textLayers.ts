@@ -16,6 +16,7 @@
  * 순수 모듈이다. 캔버스도 DOM도 모른다.
  */
 
+import { CARD_CHROME_Y, CARD_PADDING_X, TEXT_CHROME_PX, fitTextSize, wrapLines } from './textFit'
 import type { LayoutRect } from './imageLayout'
 import type { TextAlign } from './simpleBlocks'
 
@@ -45,6 +46,49 @@ export interface TextLayerBlock {
   overlapsImage: boolean
   /** 그 자리 주변의 색. 못 쟀으면 없다. */
   tone?: TextLayerTone | null
+  /** 기획서 화면에서 이 문구가 실제로 끊기는 줄. 그대로 지켜 달라고 보낸다. */
+  lines: readonly string[]
+}
+
+/**
+ * 이 문구를 주문할 **판의 모양** (블록별 문구 2차 Patch).
+ *
+ * 앞선 판은 문구도 페이지와 같은 세로로 긴 판에 그리게 했다. 세로로 긴 판을
+ * "가득 채우라"고 하면 가로 한 줄짜리 문구는 반드시 여러 줄로 쌓인다 — 기획서가
+ * 한 줄로 잡아 둔 제목이 세 줄 로고가 되어 돌아온 것이 그 결과다.
+ *
+ * 그래서 판을 **블록과 같은 모양**으로 준다. 그러면 "가득 채우라"가 곧 "기획서가
+ * 잡은 그 형태로 크게"라는 뜻이 된다. 모델에게 자리를 지키라고 설득하는 대신,
+ * 지킬 수밖에 없는 종이를 건네는 것이다.
+ *
+ * 모델은 1:3~3:1 밖의 판을 받지 않으므로 그 밖은 경계로 접는다. 접히더라도 지금
+ * (0.7:1 세로)보다는 언제나 기획서에 가깝다.
+ */
+export const TEXT_LAYER_MAX_ASPECT = 3
+
+export function textLayerCanvas(rect: LayoutRect): { width: number; height: number } {
+  const width = Math.max(1, rect.width)
+  const height = Math.max(1, rect.height)
+  const aspect = width / height
+  if (aspect > TEXT_LAYER_MAX_ASPECT) return { width: TEXT_LAYER_MAX_ASPECT, height: 1 }
+  if (1 / aspect > TEXT_LAYER_MAX_ASPECT) return { width: 1, height: TEXT_LAYER_MAX_ASPECT }
+  return { width, height }
+}
+
+/**
+ * 기획서 화면에서 이 문구가 실제로 끊기는 줄.
+ *
+ * 합성 계획이 문구를 그릴 때 쓰는 것과 **같은 계산**이다 (`fitTextSize` →
+ * `wrapLines`). 그래야 작업자가 화면에서 본 줄바꿈과 모델에게 보내는 줄바꿈이
+ * 같아진다 — 다르면 지키라고 말한 것과 화면이 어긋난다.
+ */
+export function planLines(content: string, rect: LayoutRect, bare: boolean): string[] {
+  const trimmed = content.trim()
+  if (trimmed.length === 0) return []
+  const box = bare ? {} : { padX: CARD_PADDING_X, padY: CARD_CHROME_Y }
+  const { fontSize } = fitTextSize(trimmed, rect.width, rect.height, box)
+  const padX = bare ? TEXT_CHROME_PX : CARD_PADDING_X
+  return wrapLines(trimmed, fontSize, Math.max(1, rect.width - padX))
 }
 
 /** 지면에서 이 상자가 차지하는 넓이 0..1. */

@@ -39,6 +39,8 @@ export interface PreserveTextEntry {
   kind: 'text' | 'button'
   /** 이미지·컷아웃과 겹치는가 (스티커판 Patch §3). */
   overlapsImage: boolean
+  /** 기획서 화면이 이 문구를 끊는 줄 (블록별 문구 2차 Patch). */
+  lines: readonly string[]
 }
 
 /**
@@ -226,21 +228,29 @@ export function buildTextLayerPrompt(input: TextLayerInput): string {
   const rank = importanceRanks(siblings, size).get(block.blockId) ?? 1
   const lines: string[] = []
 
+  const rows = block.lines.length > 0 ? block.lines : [block.content]
+
   lines.push(
     `${block.kind === 'button' ? '버튼' : '문구'} **한 개**를 디자인해 주세요.`,
     `배경은 **단색 마젠타(${TEXT_KEY_HEX})** 한 가지로 화면 전체를 빈틈없이 채우고, 그 위에 이것 하나만 올립니다.`,
     '마젠타는 나중에 지워집니다. 남은 글자만 이미 만들어진 배경과 사진 위에 얹힙니다.',
-    '',
-    '## 그릴 것 (원문 그대로)',
-    `- "${block.content}"`,
   )
 
   lines.push(
     '',
-    '## 자리는 신경 쓰지 않으셔도 됩니다',
-    '- 판의 **어디에 그리든 상관없습니다.** 실제 자리는 이 도구가 따로 잡습니다.',
-    '- 다만 **글자 한 덩어리만** 그려 주세요. 이 문구 말고는 아무것도 그리지 않습니다.',
-    '- 판을 가득 채울 만큼 **크고 또렷하게** 그려 주세요. 작게 그리면 최종 화질이 떨어집니다.',
+    `## 줄 나눔 — 정확히 ${String(rows.length)}줄입니다`,
+    ...rows.map((row, i) => `${String(i + 1)}행: "${row}"`),
+    '**이 줄 나눔을 그대로 지켜 주세요.** 한 줄을 둘로 쪼개거나 두 줄을 하나로 붙이지 않습니다.',
+    '기획서에서 정한 형태이고, 이대로 실제 페이지에 들어갑니다.',
+  )
+
+  lines.push(
+    '',
+    '## 판을 어떻게 쓰는가',
+    '- 이 판은 **이 문구 하나만을 위한 자리**입니다. 판 전체를 문구가 채우게 그려 주세요.',
+    '- 가장자리 여백은 최소로. 작게 그리면 최종 화질이 떨어집니다.',
+    '- **글자를 기울이지 마세요.** 각 줄은 판의 가로선과 나란한 수평입니다.',
+    '- 이 문구 말고는 아무것도 그리지 않습니다.',
   )
 
   lines.push(
@@ -248,7 +258,6 @@ export function buildTextLayerPrompt(input: TextLayerInput): string {
     '## 이 문구의 성격',
     `- 실제 페이지에서의 자리: ${region(block.rect, size)} · 정렬 ${ALIGN_WORD[block.align]}`,
     `- 지면에서 차지하는 넓이: ${percent(areaShare(block.rect, size))} · 중요도 ${String(rank)}위 / ${String(siblings.length)}개`,
-    `- 가로세로 비율: 약 ${(block.rect.width / Math.max(1, block.rect.height)).toFixed(1)} : 1 — 이 비율에 가깝게 배치해 주세요.`,
     `- 사진·컷아웃과 겹치는가: ${block.overlapsImage ? '겹칩니다 — 사진 위에서도 또렷하게 읽히도록 대비·외곽선·그림자를 충분히 쓰세요.' : '겹치지 않습니다.'}`,
   )
   if (block.tone != null) {
@@ -310,6 +319,8 @@ export function buildTextLayerPrompt(input: TextLayerInput): string {
     '## 넣지 말 것',
     `- 배경 사진·그러데이션·무늬 (배경은 단색 마젠타 ${TEXT_KEY_HEX} 한 가지입니다)`,
     '- 별·꽃·테이프·하프톤처럼 이 문구에 속하지 않는 배경 장식',
+    '- 기울인 글자, 아치·부채꼴처럼 줄을 휘게 하는 배치',
+    '- 위에 적은 줄 나눔과 다른 줄 나눔',
     '- 다른 문구, 안내 글자, 틀·구분선',
     '- 글자·외곽선·그림자·라벨·배지에 마젠타나 그와 비슷한 분홍·자주 계열 색',
     '- 사람, 제품, 로고',

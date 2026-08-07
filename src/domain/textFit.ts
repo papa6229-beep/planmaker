@@ -130,7 +130,7 @@ function estimateWidth(text: string, fontSize: number): number {
  * how Korean without spaces breaks. Modelling this is what lets a block be
  * settled around the wording instead of around a guess.
  */
-function wrapLines(text: string, fontSize: number, innerWidth: number, measure?: MeasureLine): string[] {
+export function wrapLines(text: string, fontSize: number, innerWidth: number, measure?: MeasureLine): string[] {
   const width = (line: string): number => (measure ? measure(line, fontSize) : estimateWidth(line, fontSize))
   const lines: string[] = []
 

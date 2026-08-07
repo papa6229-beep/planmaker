@@ -370,6 +370,7 @@ describe('§2 문구는 전면 레이어다', () => {
       align: 'left' as const,
       layer: 4,
       overlapsImage: false,
+      lines: ['8/1 ~ 8/14 · 선착순 300명'],
     }
     const title = {
       blockId: 'blk_title',
@@ -380,6 +381,7 @@ describe('§2 문구는 전면 레이어다', () => {
       layer: 3,
       overlapsImage: true,
       tone: { average: { r: 180, g: 112, b: 64 }, brightness: 0.5, contrast: 0.42 },
+      lines: ['여름 감사제 40%', '+ 사은품'],
     }
     const prompt = buildTextLayerPrompt({
       size,
@@ -393,12 +395,14 @@ describe('§2 문구는 전면 레이어다', () => {
     })
 
     // 이 주문이 그리는 것은 **하나**다. 옆 문구는 실리지 않는다.
-    expect(prompt).toContain('여름 감사제 40% + 사은품')
+    expect(prompt).toContain('여름 감사제 40%')
     expect(prompt).not.toContain('8/1 ~ 8/14 · 선착순 300명')
     expect(prompt).toContain('문자·숫자·띄어쓰기·기호·줄바꿈')
-    // 자리를 지키라고 시키지 않는다.
-    expect(prompt).toContain('어디에 그리든 상관없습니다')
-    expect(prompt).toContain('글자 한 덩어리만')
+    // 줄 나눔은 기획서가 정한 그대로 못 박는다.
+    expect(prompt).toContain('정확히 2줄입니다')
+    expect(prompt).toContain('1행: "여름 감사제 40%"')
+    expect(prompt).toContain('2행: "+ 사은품"')
+    expect(prompt).toContain('글자를 기울이지 마세요')
     // 크기와 중요도는 여전히 전달한다.
     expect(prompt).toContain('중요도 1위 / 2개')
     expect(prompt).toContain('글꼴 분위기')
@@ -425,9 +429,9 @@ describe('§2 문구는 전면 레이어다', () => {
     expect(plate!.get('background')).toBeNull()
     expect(foreground!.get('background')).toBeNull()
 
-    // 배경 주문에는 문구 원문이 없고, 문구 주문에만 있다.
-    expect(promptOf(plate!)).not.toContain('여름 감사제 40% + 사은품')
-    expect(promptOf(foreground!)).toContain('여름 감사제 40% + 사은품')
+    // 배경 주문에는 문구 원문이 없고, 문구 주문에만 있다 — 기획서가 끊는 줄 그대로.
+    expect(promptOf(plate!)).not.toContain('여름 감사제')
+    expect(promptOf(foreground!)).toContain('여름 감사제')
     // 배경 1 + 문구 2 = 3회. 문구 요청은 블록 수만큼이고, 한 요청에 한 문구다.
     expect(fetchSpy).toHaveBeenCalledTimes(3)
     const textCalls = fetchSpy.mock.calls.filter((c) =>
@@ -447,6 +451,7 @@ describe('§2 문구는 전면 레이어다', () => {
       align: 'center' as const,
       layer: 0,
       overlapsImage: false,
+      lines: ['여름 감사제'],
     }
     const prompt = buildTextLayerPrompt({
       size: { width: 840, height: 1200 },

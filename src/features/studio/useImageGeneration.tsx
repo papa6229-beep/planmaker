@@ -52,7 +52,9 @@ import {
 } from '../../domain/preserveDesign'
 import {
   containRect,
+  planLines,
   rectsOverlap,
+  textLayerCanvas,
   type TextLayerBlock,
   type TextLayerTone,
 } from '../../domain/textLayers'
@@ -63,7 +65,7 @@ import { analyzeRegions } from '../../services/regionTone'
 import type { StudioTextObject } from '../../domain/textObjects'
 import { planLocalComposite } from '../../domain/composite'
 import { getBlockTypeMeta } from '../../domain/blockTypes'
-import { isPairedLinkUrl, textAlignOf } from '../../domain/simpleBlocks'
+import { drawsBareText, isPairedLinkUrl, textAlignOf } from '../../domain/simpleBlocks'
 import { resolveGptImageSize } from '../../domain/gptImageSize'
 import { documentFingerprint } from '../../domain/documentFingerprint'
 import { pageAsEventBrief } from '../../domain/briefMigration'
@@ -126,6 +128,8 @@ interface GenerationPlan {
    * 손에 들어온다.
    */
   textBlocks?: TextLayerBlock[]
+  /** 블록 id → 그 문구를 주문할 판 크기. 블록과 같은 모양이다 (2차 Patch). */
+  textSizes?: Record<string, string>
   /**
    * 문구 오브젝트 하나만 다시 디자인하는 길 (텍스트 오브젝트 Patch §3).
    *
@@ -272,6 +276,8 @@ function preserveParts(
       // 겹침은 여기서 정해진다. 뒤에서 채운다 — 이미지 목록이 다 모인 뒤라야
       // 판정이 참이다.
       overlapsImage: false,
+      // 화면이 이 문구를 몇 줄로 끊는가. 합성이 쓰는 그 계산 그대로다.
+      lines: planLines(content, rect, drawsBareText(block)),
     })
   })
 
@@ -341,7 +347,17 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         align: text.align,
         layer: text.layer,
         overlapsImage: text.overlapsImage,
+        // 화면이 실제로 끊는 그 줄. 모델에게 그대로 지키라고 보낸다.
+        lines: text.lines,
       }))
+      // 문구마다 **블록과 같은 모양의 판**을 요청한다. 세로로 긴 페이지 판을
+      // 그대로 쓰면 한 줄짜리 문구가 여러 줄로 쌓여 돌아온다 (2차 Patch).
+      const textSizes: Record<string, string> = {}
+      for (const block of textBlocks) {
+        const canvas = textLayerCanvas(block.rect)
+        const resolved = resolveGptImageSize(canvas.width, canvas.height)
+        textSizes[block.blockId] = resolved.ok ? resolved.size : size.size
+      }
 
       // 사용자 이미지는 어느 목록에도 들어갈 길이 없다 — 스타일 레퍼런스와, 이
       // 도구가 다음 단계에서 직접 받아 올 배경뿐이다.
@@ -364,7 +380,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           working,
           inputs: plateInputs,
           fingerprint,
-          ...(textBlocks.length === 0 ? {} : { textBlocks }),
+          ...(textBlocks.length === 0 ? {} : { textBlocks, textSizes }),
           // 배경 한 번 + 문구·버튼 하나당 한 번. 확인창이 이 수를 그대로 말한다.
           calls: 1 + textBlocks.length,
         },
@@ -867,10 +883,12 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       key: string,
       inputs: readonly GenerationInputImage[],
       prompt: string,
+      /** 이 요청만의 판 크기. 없으면 계획의 페이지 규격 그대로다. */
+      sizeOverride?: string,
     ): Promise<{ blob: Blob; mimeType: string; requestedSize: string; requestId?: string } | { code?: string }> => {
       const form = new FormData()
       form.set(FIELD_PROMPT, prompt)
-      form.set(FIELD_SIZE, plan.size)
+      form.set(FIELD_SIZE, sizeOverride ?? plan.size)
       // 투명 배경은 요청하지 않는다. `gpt-image-2`가 거절한다 —
       // `param: background`, `Transparent background is not supported for this
       // model.` 대신 단색 위에 글자를 받아 브라우저가 그 단색을 걷어 낸다.
@@ -900,7 +918,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       return {
         blob: blobFromBase64(b64, mimeType),
         mimeType,
-        requestedSize: body?.metadata?.requestedSize ?? plan.size,
+        requestedSize: body?.metadata?.requestedSize ?? sizeOverride ?? plan.size,
         ...(body?.metadata?.requestId === undefined ? {} : { requestId: body.metadata.requestId }),
       }
     },
@@ -1007,6 +1025,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
                 fixed,
                 ...(note.length === 0 ? {} : { note }),
               }),
+              plan.textSizes?.[block.blockId],
             )
             if (!('blob' in answer)) {
               problems.push(`"${block.content}": ${errorTextFor(answer.code)}`)
