@@ -616,7 +616,7 @@ describe('§4 배경 → 사진 → 문구', () => {
               crop: { sx: 0, sy: 0, sWidth: 100, sHeight: 100, dx: 60, dy: 520, dWidth: 520, dHeight: 520 },
               effects: {
                 edge: 0, contactShadow: 0, wallShadow: 0, grading: 0, rimLight: 0,
-                paperCutout: false, paperWeight: 'normal',
+                paperCutout: false, paperWeight: 1, paperOpacity: 1,
               },
             },
           ],
@@ -710,7 +710,7 @@ describe('§4 배경 → 사진 → 문구', () => {
         crop,
         effects: {
           edge: 0, contactShadow: 0, wallShadow: 0, grading: 0, rimLight: 0,
-          paperCutout: true, paperWeight: 'normal' as const,
+          paperCutout: true, paperWeight: 1, paperOpacity: 1,
         },
       },
     ],

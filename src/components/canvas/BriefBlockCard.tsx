@@ -25,9 +25,10 @@ import { buildPaperShape, type PaperShape } from '../../services/paperCutoutShap
 import {
   paperOutset,
   DEFAULT_PAPER_WEIGHT,
+  DEFAULT_PAPER_OPACITY,
+  PAPER_WEIGHT_MAX,
+  PAPER_WEIGHT_MIN,
   PAPER_SHADOW,
-  PAPER_WEIGHT_OPTIONS,
-  type PaperWeight,
 } from '../../domain/paperCutout'
 import { getAsset } from '../../services/assetStore'
 import { canCarryLink, cardKindLabel, drawsBareText, textAlignOf, TEXT_ALIGNS, type TextAlign } from '../../domain/simpleBlocks'
@@ -158,7 +159,8 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   /** 이 이미지에 종이 컷아웃이 걸려 있는가 (Studio Patch §2). */
   const paperOn = photo && studio !== null && studio.effectsOf(block.id).paperCutout
   /** 종이 테두리의 두께 (한방 생성 Patch §3). 모르는 값은 보통으로 읽힌다. */
-  const paperWeight: PaperWeight = studio === null ? DEFAULT_PAPER_WEIGHT : studio.effectsOf(block.id).paperWeight
+  const paperWeight = studio === null ? DEFAULT_PAPER_WEIGHT : studio.effectsOf(block.id).paperWeight
+  const paperOpacity = studio === null ? DEFAULT_PAPER_OPACITY : studio.effectsOf(block.id).paperOpacity
   const [paper, setPaper] = useState<PaperShape | null>(null)
   const [layerOpen, setLayerOpen] = useState(false)
   const drag = useRef<DragState | null>(null)
@@ -458,24 +460,41 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
           종이 컷아웃
         </label>
       )}
-      {/* 두께는 켠 자리에만 나온다 (한방 생성 Patch §3). 꺼 둔 블록에 두께를
-          보여 주면 무엇을 두껍게 하는 값인지 화면이 말해 주지 못한다. */}
+      {/* 두께와 진하기는 켠 자리에만 나온다. 꺼 둔 블록에 보여 주면 무엇을
+          두껍게 하는 값인지 화면이 말해 주지 못한다 (두께·투명도 Patch).
+
+          단계가 아니라 슬라이더인 것은, 알맞은 두께가 그림마다 다르기 때문이다.
+          진하기 0은 컷아웃을 끄는 것과 다르다 — 테두리만 보이지 않을 뿐 오브젝트도
+          자리도 그대로다. */}
       {paperOn && studio !== null && (
-        <span className="block-card__weights" role="group" aria-label="종이 테두리 두께">
-          {PAPER_WEIGHT_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={`block-card__weight${paperWeight === option.value ? ' is-active' : ''}`}
-              aria-pressed={paperWeight === option.value}
-              title={`종이 테두리 ${option.label}`}
-              onClick={() => studio.setEffects(block.id, { paperWeight: option.value })}
-            >
-              {option.label}
-            </button>
-          ))}
+        <span className="block-card__paper-tune" role="group" aria-label="종이 테두리">
+          <label className="block-card__tune">
+            <span className="block-card__tune-label">두께</span>
+            <input
+              type="range"
+              min={Math.round(PAPER_WEIGHT_MIN * 100)}
+              max={Math.round(PAPER_WEIGHT_MAX * 100)}
+              value={Math.round(paperWeight * 100)}
+              aria-label="종이 테두리 두께"
+              title={`종이 테두리 두께 ${paperWeight.toFixed(2)}배`}
+              onChange={(e) => studio.setEffects(block.id, { paperWeight: Number(e.target.value) / 100 })}
+            />
+          </label>
+          <label className="block-card__tune">
+            <span className="block-card__tune-label">진하기</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={Math.round(paperOpacity * 100)}
+              aria-label="종이 테두리 진하기"
+              title={`종이 테두리 진하기 ${String(Math.round(paperOpacity * 100))}%`}
+              onChange={(e) => studio.setEffects(block.id, { paperOpacity: Number(e.target.value) / 100 })}
+            />
+          </label>
         </span>
       )}
+
       {/* 레이어 순서는 블록 바로 옆에서 바꾼다 — 우측 패널까지 갔다 오는 동안
           "무엇을 고르고 있었는지"를 놓치기 때문이다 (긴급 Patch §2). */}
       <span className="block-card__layer" ref={layerRef}>
@@ -757,6 +776,9 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
                   top: `${-out.y * 100}%`,
                   width: `${(1 + out.x * 2) * 100}%`,
                   height: `${(1 + out.y * 2) * 100}%`,
+                  // 진하기는 종이와 그림자에 함께 걸린다 — 종이만 옅어지고
+                  // 그림자가 남으면 무엇이 그림자를 지는지 알 수 없다.
+                  opacity: paperOpacity,
                   filter: `drop-shadow(${px(PAPER_SHADOW.dx)} ${px(PAPER_SHADOW.dy)} ${px(PAPER_SHADOW.blur)} rgba(24, 26, 34, ${PAPER_SHADOW.opacity}))`,
                 }
               })()}

@@ -345,21 +345,40 @@ describe('§4 최종 합성', () => {
   })
 })
 
-// ── 5. 종이 테두리 두께 ──────────────────────────────────────────────────────
+// ── 5. 종이 테두리 두께·진하기 ───────────────────────────────────────────────
 
-describe('§5 종이 테두리 두께 세 단계', () => {
-  it('두께마다 넓히는 폭이 다르고 기본은 보통이다', async () => {
-    const { paperPad, PAPER_WEIGHTS, DEFAULT_PAPER_WEIGHT } = await load('domain/paperCutout')
+describe('§5 종이 테두리 두께와 진하기', () => {
+  it('두께는 배율이고, 예전 세 단계는 그때 뜻하던 값으로 읽힌다', async () => {
+    const { paperPad, paperWeightOf, paperOpacityOf, DEFAULT_PAPER_WEIGHT, PAPER_WEIGHT_MIN, PAPER_WEIGHT_MAX } =
+      await load('domain/paperCutout')
     const box = { width: 400, height: 400 }
-    expect(DEFAULT_PAPER_WEIGHT).toBe('normal')
-    expect(Object.keys(PAPER_WEIGHTS).sort()).toEqual(['normal', 'thick', 'thin'])
-    expect(paperPad(box, 'thin')).toBeLessThan(paperPad(box, 'normal'))
-    expect(paperPad(box, 'normal')).toBeLessThan(paperPad(box, 'thick'))
+
+    // 기본은 지금까지의 `보통`이다 — 예전 작업을 열어도 결과가 달라지지 않는다.
+    expect(DEFAULT_PAPER_WEIGHT).toBe(1)
+    expect(paperWeightOf('normal')).toBe(1)
+    expect(paperWeightOf('thin')).toBe(0.6)
+    expect(paperWeightOf('thick')).toBe(1.7)
+    expect(paperWeightOf(undefined)).toBe(1)
+
+    // 예전 `얇게`보다 더 얇게 갈 수 있다 — 이 Patch가 연 자리다.
+    expect(PAPER_WEIGHT_MIN).toBeLessThan(0.6)
+    expect(paperPad(box, PAPER_WEIGHT_MIN)).toBeLessThan(paperPad(box, 0.6))
+    expect(paperPad(box, 0.6)).toBeLessThan(paperPad(box, 1))
+    expect(paperPad(box, 1)).toBeLessThan(paperPad(box, 1.7))
+    // 범위 밖은 경계로 접는다.
+    expect(paperWeightOf(99)).toBe(PAPER_WEIGHT_MAX)
+    expect(paperWeightOf(-3)).toBe(PAPER_WEIGHT_MIN)
     // 아무것도 주지 않으면 지금까지와 같다.
-    expect(paperPad(box)).toBe(paperPad(box, 'normal'))
+    expect(paperPad(box)).toBe(paperPad(box, 1))
+
+    // 진하기는 0..1이고 기본은 1이다.
+    expect(paperOpacityOf(undefined)).toBe(1)
+    expect(paperOpacityOf(0)).toBe(0)
+    expect(paperOpacityOf(2)).toBe(1)
+    expect(paperOpacityOf(-1)).toBe(0)
   })
 
-  it('컷아웃을 켠 블록에만 세 단계가 보이고, 고르면 저장된다', async () => {
+  it('컷아웃을 켠 블록에만 두 슬라이더가 나오고, 움직이면 저장된다', async () => {
     await seedJob({ effects: { blk_cut: { paperCutout: true } } })
     const { container } = renderStudio()
     await documentReady(container)
@@ -370,45 +389,57 @@ describe('§5 종이 테두리 두께 세 단계', () => {
     fireEvent.pointerDown(card, { button: 0 })
     await waitFor(() => expect(card.getAttribute('aria-pressed')).toBe('true'))
 
-    for (const name of ['얇게', '보통', '두껍게']) {
-      expect(within(card).getByRole('button', { name })).toBeTruthy()
-    }
-    expect(within(card).getByRole('button', { name: '보통' }).getAttribute('aria-pressed')).toBe('true')
+    const thickness = within(card).getByLabelText('종이 테두리 두께')
+    const opacity = within(card).getByLabelText('종이 테두리 진하기')
+    expect(thickness.getAttribute('value')).toBe('100')
+    expect(opacity.getAttribute('value')).toBe('100')
 
-    fireEvent.click(within(card).getByRole('button', { name: '두껍게' }))
+    // 예전 `얇게`(0.6)보다 얇게 내린다.
+    fireEvent.change(thickness, { target: { value: '25' } })
     await waitFor(async () => {
       const job = await loadStudioJob(STUDIO_JOB_ID)
-      expect(job?.effects?.blk_cut?.paperWeight).toBe('thick')
+      expect(job?.effects?.blk_cut?.paperWeight).toBeCloseTo(0.25, 5)
     })
 
-    // 컷아웃을 켜지 않은 블록에는 두께 선택이 없다.
+    // 진하기 0 — 보이지 않지만 컷아웃은 켜진 채로 남는다.
+    fireEvent.change(opacity, { target: { value: '0' } })
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect(job?.effects?.blk_cut?.paperOpacity).toBe(0)
+      expect(job?.effects?.blk_cut?.paperCutout).toBe(true)
+    })
+
+    // 컷아웃을 켜지 않은 블록에는 조절이 없다.
     const plain = Array.from(container.querySelectorAll<HTMLElement>('.canvas__sheet .block-card')).find((el) =>
       (el.getAttribute('aria-label') ?? '').startsWith('일반 이미지'),
     )!
     fireEvent.pointerDown(plain, { button: 0 })
     await waitFor(() => expect(plain.getAttribute('aria-pressed')).toBe('true'))
-    expect(within(plain).queryByRole('button', { name: '두껍게' })).toBeNull()
+    expect(within(plain).queryByLabelText('종이 테두리 두께')).toBeNull()
   })
 
-  it('작업 파일 왕복에서 두께가 남고, 예전 파일은 보통으로 읽힌다', async () => {
+  it('작업 파일 왕복에서 두께·진하기가 남고, 예전 파일도 그대로 읽힌다', async () => {
     const mod = await load('domain/studioFile')
     const studioJob = await load('domain/studioJob')
     const doc = sampleDoc()
     const job = studioJob.withBlockEffects(
       createStudioJob(doc, 1_000, STUDIO_JOB_ID),
       'blk_cut',
-      { paperCutout: true, paperWeight: 'thin' },
+      { paperCutout: true, paperWeight: 0.2, paperOpacity: 0.35 },
       2_000,
     )
     const parsed = mod.parseStudioFileState(JSON.parse(JSON.stringify(mod.toStudioFileState(job))))
-    expect(parsed?.effects?.blk_cut?.paperWeight).toBe('thin')
+    expect(parsed?.effects?.blk_cut?.paperWeight).toBeCloseTo(0.2, 5)
+    expect(parsed?.effects?.blk_cut?.paperOpacity).toBeCloseTo(0.35, 5)
 
+    // 예전 파일의 문자열 두께는 그때 뜻하던 배율로 읽히고, 진하기는 1이다.
     const old = mod.parseStudioFileState({
-      version: '0.4.0',
+      version: '0.5.0',
       source: null,
       productImages: {},
-      effects: { blk_cut: { paperCutout: true } },
+      effects: { blk_cut: { paperCutout: true, paperWeight: 'thin' } },
     })
-    expect(old?.effects?.blk_cut?.paperWeight).toBe('normal')
+    expect(old?.effects?.blk_cut?.paperWeight).toBe(0.6)
+    expect(old?.effects?.blk_cut?.paperOpacity).toBe(1)
   })
 })

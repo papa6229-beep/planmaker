@@ -16,7 +16,6 @@ import {
   paperSeed,
   PAPER_COLOR,
   DEFAULT_PAPER_WEIGHT,
-  type PaperWeight,
 } from '../domain/paperCutout'
 import type { ContentBox } from '../domain/photoBox'
 
@@ -66,7 +65,7 @@ export async function buildPaperShape(
   blob: Blob,
   box: ContentBox,
   seed: string,
-  weight: PaperWeight = DEFAULT_PAPER_WEIGHT,
+  weight: number = DEFAULT_PAPER_WEIGHT,
 ): Promise<PaperShape | null> {
   const built = await buildPaperCanvas(blob, box, seed, weight)
   if (built === null) return null
@@ -89,7 +88,7 @@ export async function buildPaperCanvas(
   blob: Blob,
   box: ContentBox,
   seed: string,
-  weight: PaperWeight = DEFAULT_PAPER_WEIGHT,
+  weight: number = DEFAULT_PAPER_WEIGHT,
 ): Promise<PaperCanvas | null> {
   try {
     const bitmap = await toBitmap(blob)

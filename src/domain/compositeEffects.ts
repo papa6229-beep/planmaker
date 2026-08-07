@@ -10,7 +10,7 @@
  * 구워 넣는 것이 아니다. 그래서 세기를 0으로 내리면 원본이 그대로 돌아온다.
  */
 
-import { DEFAULT_PAPER_WEIGHT, paperWeightOf, type PaperWeight } from './paperCutout'
+import { DEFAULT_PAPER_OPACITY, DEFAULT_PAPER_WEIGHT, paperOpacityOf, paperWeightOf } from './paperCutout'
 
 export interface CompositeEffects {
   /** 가장자리 정리 — 반투명 경계의 배경색 번짐 완화 (§9.1). */
@@ -34,11 +34,14 @@ export interface CompositeEffects {
    */
   paperCutout: boolean
   /** 종이 테두리의 두께 — 얇게·보통·두껍게 (한방 생성 Patch §3). */
-  paperWeight: PaperWeight
+  /** 종이 테두리의 두께 배율. `1`이 지금까지의 `보통`이다. */
+  paperWeight: number
+  /** 종이 테두리의 진하기 0..1. `0`이면 보이지 않지만 오브젝트는 남는다. */
+  paperOpacity: number
 }
 
 /** 세기로 조절하는 항목만 — 종이 컷아웃은 체크 하나라 여기 끼지 않는다. */
-export type CompositeStrengthKey = Exclude<keyof CompositeEffects, 'paperCutout' | 'paperWeight'>
+export type CompositeStrengthKey = Exclude<keyof CompositeEffects, 'paperCutout' | 'paperWeight' | 'paperOpacity'>
 
 /**
  * 아무것도 만지지 않았을 때의 값.
@@ -55,6 +58,7 @@ export const DEFAULT_COMPOSITE_EFFECTS: CompositeEffects = {
   rimLight: 0.2,
   paperCutout: false,
   paperWeight: DEFAULT_PAPER_WEIGHT,
+  paperOpacity: DEFAULT_PAPER_OPACITY,
 }
 
 /** 화면에 그대로 쓰는 이름 — 순서까지 여기서 정한다 (§11). */
@@ -93,6 +97,7 @@ export function normalizeEffects(raw: unknown): CompositeEffects {
     // 보기만 해도 결과가 달라진다.
     paperCutout: value.paperCutout === true,
     paperWeight: paperWeightOf(value.paperWeight),
+    paperOpacity: paperOpacityOf(value.paperOpacity),
   }
 }
 

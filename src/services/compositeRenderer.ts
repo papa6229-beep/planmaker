@@ -145,7 +145,9 @@ async function drawLayer(
   const shape = silhouette(source, fit)
 
   // ── 종이 컷아웃: 그림자와 사진보다 먼저, 맨 아래에 깔린다 (§3) ────────────
-  const paper = effects.paperCutout ? sources.papers?.get(layer.blockId) : undefined
+  // 진하기가 0이면 그리지 않는다. 오브젝트도 자리도 그대로이고, 보이지만
+  // 않는다 — 컷아웃을 끄는 것과는 다른 일이다 (두께·투명도 Patch).
+  const paper = effects.paperCutout && effects.paperOpacity > 0 ? sources.papers?.get(layer.blockId) : undefined
   if (paper !== undefined) {
     // 종이는 **블록**을 기준으로 삼는다 — 화면이 쓰는 그 기준이다. 그림이 앉은
     // 자리(`fit.dest`)를 기준으로 잡으면, 투명한 띠가 있는 그림에서 종이만
@@ -157,6 +159,9 @@ async function drawLayer(
     const ph = layer.rect.height * (1 + out.y * 2)
     const short = Math.min(layer.rect.width, layer.rect.height)
     ctx.save()
+    // 진하기는 종이와 그림자에 함께 걸린다 — 종이만 옅어지고 그림자가 남으면
+    // 무엇이 그림자를 지는지 알 수 없다.
+    ctx.globalAlpha = effects.paperOpacity
     // 얕고 부드러운 그림자. 캔버스 그림자는 알파를 따라가므로 종이 모양 그대로
     // 진다 — 사각형 그림자가 아니다.
     ctx.shadowColor = `rgba(24, 26, 34, ${PAPER_SHADOW.opacity})`

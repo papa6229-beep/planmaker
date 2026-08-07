@@ -22,27 +22,46 @@ export const PAPER_PAD_RATIO = 0.05
 export const PAPER_MIN_PAD = 2
 
 /**
- * 종이 테두리의 두께 (한방 생성 Patch §3).
+ * 종이 테두리의 두께 (두께·투명도 Patch).
  *
- * 세 단계뿐이다. 자유로운 숫자를 주면 작업자가 "몇이 맞는지"를 매번 정해야
- * 하고, 그 답은 사실 그림마다 다르지 않다 — 얇거나, 보통이거나, 두껍다.
+ * 앞선 판은 얇게·보통·두껍게 셋뿐이었다. 실제로 써 보니 **가장 얇은 것보다 더
+ * 얇아야** 하는 자리가 있었고, 그 지점은 그림마다 달라서 셋 중 하나로 고를 수
+ * 없었다. 그래서 배율을 그대로 열어 둔다.
+ *
+ * `1`이 지금까지의 `보통`이다 — 예전 작업을 열어도 결과가 달라지지 않는다.
  */
-export type PaperWeight = 'thin' | 'normal' | 'thick'
-export const DEFAULT_PAPER_WEIGHT: PaperWeight = 'normal'
+export const DEFAULT_PAPER_WEIGHT = 1
+export const PAPER_WEIGHT_MIN = 0.1
+export const PAPER_WEIGHT_MAX = 2.5
 
-/** 기준 폭에 곱하는 값. `normal`이 1이므로 지금까지의 결과가 기본이다. */
-export const PAPER_WEIGHTS: Record<PaperWeight, number> = { thin: 0.6, normal: 1, thick: 1.7 }
+/** 예전 세 단계가 가리키던 배율. 옛 작업 파일을 읽을 때만 쓴다. */
+const LEGACY_WEIGHTS: Record<string, number> = { thin: 0.6, normal: 1, thick: 1.7 }
 
-export const PAPER_WEIGHT_OPTIONS: readonly { value: PaperWeight; label: string }[] = [
-  { value: 'thin', label: '얇게' },
-  { value: 'normal', label: '보통' },
-  { value: 'thick', label: '두껍게' },
-]
-
-/** 모르는 값은 보통으로 읽는다 — 예전 작업이 열리기만 해도 달라지지 않게. */
-export function paperWeightOf(value: unknown): PaperWeight {
-  return value === 'thin' || value === 'thick' ? value : DEFAULT_PAPER_WEIGHT
+/**
+ * 모르는 값은 보통으로 읽는다 — 예전 작업이 열리기만 해도 달라지지 않게.
+ *
+ * 예전에 저장된 `'thin'`·`'normal'`·`'thick'`도 그때 뜻하던 배율로 읽는다.
+ */
+export function paperWeightOf(value: unknown): number {
+  if (typeof value === 'string' && value in LEGACY_WEIGHTS) return LEGACY_WEIGHTS[value]!
+  if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_PAPER_WEIGHT
+  return Math.min(PAPER_WEIGHT_MAX, Math.max(PAPER_WEIGHT_MIN, value))
 }
+
+/**
+ * 종이 테두리의 진하기 0..1 (두께·투명도 Patch).
+ *
+ * `0`이면 테두리도 그림자도 보이지 않는다. 그렇다고 컷아웃을 끄는 것과 같지는
+ * 않다 — 컷아웃을 끄면 이 페이지가 다른 생성 방식으로 넘어가 버린다. 여기서는
+ * **보이지만 않을 뿐** 오브젝트도 자리도 그대로다.
+ */
+export const DEFAULT_PAPER_OPACITY = 1
+
+export function paperOpacityOf(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_PAPER_OPACITY
+  return Math.min(1, Math.max(0, value))
+}
+
 /** 각도마다 폭이 흔들리는 정도 0..1. 0이면 정확한 원, 1이면 너덜너덜. */
 export const PAPER_ROUGHNESS = 0.42
 /** 외곽을 훑는 각도 수. 촘촘할수록 테두리가 매끈하다. */
@@ -95,10 +114,10 @@ function pick(seed: number, index: number): number {
 /** 이 크기의 그림을 얼마나 밖으로 넓힐 것인가. */
 export function paperPad(
   content: { width: number; height: number },
-  weight: PaperWeight = DEFAULT_PAPER_WEIGHT,
+  weight: number = DEFAULT_PAPER_WEIGHT,
 ): number {
   const short = Math.min(content.width, content.height)
-  return Math.max(PAPER_MIN_PAD, Math.round(short * PAPER_PAD_RATIO * PAPER_WEIGHTS[weight]))
+  return Math.max(PAPER_MIN_PAD, Math.round(short * PAPER_PAD_RATIO * paperWeightOf(weight)))
 }
 
 /**
