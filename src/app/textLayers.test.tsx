@@ -375,7 +375,7 @@ describe('§2 문구 셋과 버튼 하나가 각각 한 장씩 만들어진다',
 // ── §3 만든 뒤 따로 움직인다 ────────────────────────────────────────────────
 
 describe('§3 넷을 각각 고르고 따로 움직인다', () => {
-  it('하나를 옮기거나 늘려도 나머지 셋은 그대로다', async () => {
+  it('하나를 옮기거나 늘려도 나머지는 그대로고, 모서리는 비율을 지킨다', async () => {
     await seedJob()
     const { container } = renderStudio()
     await documentReady(container)
@@ -416,9 +416,31 @@ describe('§3 넷을 각각 고르고 따로 움직인다', () => {
       })
     }, { timeout: 5000 })
 
-    // 손대지 않은 셋은 처음 값 그대로다.
+    // 모서리를 잡으면 가로세로 비율이 유지된다 — 그림이 찌그러지지 않는다.
+    const first = sheetBoxes[0]!
+    const beforeT1 = rectOf(before, 'blk_t1')!
+    fireEvent.pointerDown(first, { button: 0, clientX: 0, clientY: 0 })
+    await waitFor(() => expect(first.getAttribute('aria-pressed')).toBe('true'))
+    fireEvent.pointerUp(window)
+    const handle = await waitFor(() => {
+      // eslint-disable-next-line testing-library/no-node-access
+      const found = first.querySelector<HTMLElement>('.result-object__handle--se')
+      expect(found).not.toBeNull()
+      return found!
+    })
+    fireEvent.pointerDown(handle, { button: 0, clientX: 0, clientY: 0 })
+    // 가로로만 끌어도 세로가 같은 비율로 따라온다.
+    fireEvent.pointerMove(window, { clientX: 120, clientY: 0 })
+    fireEvent.pointerUp(window)
+    await waitFor(async () => {
+      const now = rectOf(await loadStudioJob(STUDIO_JOB_ID), 'blk_t1')!
+      expect(now.width).toBeGreaterThan(beforeT1.width)
+      expect(now.width / now.height).toBeCloseTo(beforeT1.width / beforeT1.height, 3)
+    }, { timeout: 5000 })
+
+    // 손대지 않은 둘은 처음 값 그대로다.
     const after = await loadStudioJob(STUDIO_JOB_ID)
-    for (const id of ['blk_t1', 'blk_t2', 'blk_t3']) {
+    for (const id of ['blk_t2', 'blk_t3']) {
       expect(rectOf(after, id)).toEqual(rectOf(before, id))
     }
     expect(after?.imageObjects?.page_1?.find((o) => o.blockId === 'blk_cut')?.rect).toEqual(CUT_RECT)

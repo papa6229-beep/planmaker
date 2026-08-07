@@ -23,6 +23,7 @@ import { useStudioJob } from '../../features/studio/useStudioJob'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
 import { getAsset } from '../../services/assetStore'
 import { RESIZE_HANDLES, resizeRect, type ResizeHandle } from '../../features/editor/canvasGeometry'
+import { keepAspect } from '../../domain/photoBox'
 import type { LayoutRect } from '../../domain/imageLayout'
 import type { StudioTextObject } from '../../domain/textObjects'
 
@@ -124,15 +125,25 @@ export function ResultObjectLayer({ pageId, page }: Props) {
       const startY = e.clientY
       const k = scale()
       let moved = false
+      // 이 오브젝트는 이미 그려진 **그림**이다. 가로세로를 따로 늘리면 획 굵기가
+      // 한쪽만 두꺼워져 글자도 사진도 찌그러진다. 그래서 기본은 비율 고정이고,
+      // 기획서의 사진 블록이 쓰는 그 계산(`keepAspect`)을 그대로 쓴다.
+      //
+      // Shift를 누른 동안에만 가로세로가 풀린다 — 일부러 늘려야 할 때가 있고,
+      // 그때는 누르고 있는 손가락이 "지금 비율을 깬다"고 말해 준다.
+      const aspect = rect.height > 0 ? rect.width / rect.height : 1
       const onMove = (ev: PointerEvent) => {
         moved = true
-        // 캔버스의 이미지 블록과 같은 계산이다 — 잡은 모서리의 반대쪽이 제자리에
-        // 남는다. 지면 밖으로도 걸칠 수 있으므로 가두지 않는다. 밖으로 나간
-        // 부분은 다시 합칠 때 지금까지처럼 잘린다.
+        const dx = (ev.clientX - startX) * k
+        const dy = (ev.clientY - startY) * k
+        // 잡은 모서리의 반대쪽이 제자리에 남는다. 지면 밖으로도 걸칠 수 있으므로
+        // 가두지 않는다 — 밖으로 나간 부분은 다시 합칠 때 지금까지처럼 잘린다.
         place(
           kind,
           blockId,
-          resizeRect(rect, handle, (ev.clientX - startX) * k, (ev.clientY - startY) * k, page.width, page.height, true),
+          ev.shiftKey
+            ? resizeRect(rect, handle, dx, dy, page.width, page.height, true)
+            : keepAspect(rect, handle, dx, dy, aspect),
         )
       }
       const onUp = () => {

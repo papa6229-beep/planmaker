@@ -399,8 +399,9 @@ describe('§3 하나를 손대도 나머지는 그대로다', () => {
     await waitFor(async () => {
       const now = await loadStudioJob(STUDIO_JOB_ID)
       const t2 = now?.textObjects?.page_1?.find((o) => o.blockId === 'blk_t2')
-      expect(t2?.rect.width).toBe(beforeT2.width + 40)
-      expect(t2?.rect.height).toBe(beforeT2.height + 20)
+      // 모서리는 비율을 지킨다 — 커지되 가로세로 비는 그대로다.
+      expect(t2!.rect.width).toBeGreaterThan(beforeT2.width)
+      expect(t2!.rect.width / t2!.rect.height).toBeCloseTo(beforeT2.width / beforeT2.height, 3)
     }, { timeout: 5000 })
 
     job = await loadStudioJob(STUDIO_JOB_ID)
