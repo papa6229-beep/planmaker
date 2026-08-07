@@ -210,3 +210,71 @@ export function scaleWithin(rect: LayoutRect, from: LayoutRect, to: LayoutRect):
     height: Math.max(1, Math.round(rect.height * ky)),
   }
 }
+
+/**
+ * 돌아간 오브젝트의 크기 조절 (회전 크기 Patch).
+ *
+ * 상자는 한가운데를 축으로 돈다. 그래서 **옮기는 것**은 회전과 상관이 없다 —
+ * `left`·`top`을 얼마 옮기면 화면에서도 정확히 그만큼 움직인다.
+ *
+ * 크기는 다르다. 손잡이는 돌아간 상자에 붙어 화면에서 비스듬히 보이는데, 계산은
+ * 안 돌아간 축으로 한다. 그래서 커서를 오른쪽 아래로 끄는데 상자는 제 축을 따라
+ * 엉뚱한 쪽으로 자란다.
+ *
+ * 고치는 데 두 걸음이 필요하다.
+ *
+ *  1. **손가락의 방향을 상자의 축으로 옮긴다** (`toLocalDelta`). 화면에서 오른쪽
+ *     아래로 끈 것이, 30도 돌아간 상자에게는 무엇인지로 바꾼다.
+ *  2. **잡지 않은 모서리를 제자리에 묶는다** (`spunResize`). 안 돌아간 상자는
+ *     반대쪽 모서리를 그대로 두면 그만이지만, 돌아간 상자는 축이 한가운데라
+ *     크기가 바뀌면 그 모서리가 화면에서 함께 움직인다. 가운데를 그만큼 되밀어
+ *     묶어 둔다.
+ */
+
+/** 화면에서 끈 거리를, 그만큼 돌아간 상자의 축으로 옮긴 거리. */
+export function toLocalDelta(dx: number, dy: number, angle: number): { dx: number; dy: number } {
+  if (angle === 0) return { dx, dy }
+  const rad = (angle * Math.PI) / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  return { dx: dx * cos + dy * sin, dy: -dx * sin + dy * cos }
+}
+
+/** 이 손잡이를 잡았을 때 제자리에 있어야 할 모서리 — 가운데에서 본 방향. */
+const ANCHOR: Record<string, { x: number; y: number }> = {
+  se: { x: -1, y: -1 },
+  sw: { x: 1, y: -1 },
+  ne: { x: -1, y: 1 },
+  nw: { x: 1, y: 1 },
+}
+
+/**
+ * 잡지 않은 모서리가 **화면에서** 제자리에 남도록 자리를 고쳐 준다.
+ *
+ * `to`는 안 돌아간 축에서 계산된 결과다 — 크기는 맞고 자리가 틀리다. 각도가 0이면
+ * 그 자리가 이미 맞으므로 그대로 돌려준다.
+ */
+export function spunResize(
+  from: LayoutRect,
+  to: LayoutRect,
+  handle: string,
+  angle: number,
+): LayoutRect {
+  const anchor = ANCHOR[handle]
+  if (angle === 0 || anchor === undefined) return to
+  const rad = (angle * Math.PI) / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  // 반쪽 크기가 얼마나 줄었는가 — 그만큼 잡지 않은 모서리가 밀려난다.
+  const gx = anchor.x * (from.width - to.width) / 2
+  const gy = anchor.y * (from.height - to.height) / 2
+  // 밀려나는 방향은 상자와 함께 돌아간 방향이다.
+  const cx = from.x + from.width / 2 + (gx * cos - gy * sin)
+  const cy = from.y + from.height / 2 + (gx * sin + gy * cos)
+  return {
+    x: Math.round(cx - to.width / 2),
+    y: Math.round(cy - to.height / 2),
+    width: to.width,
+    height: to.height,
+  }
+}

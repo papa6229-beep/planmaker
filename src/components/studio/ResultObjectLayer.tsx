@@ -25,7 +25,7 @@ import { getAsset } from '../../services/assetStore'
 import { RESIZE_HANDLES, resizeRect, type ResizeHandle } from '../../features/editor/canvasGeometry'
 import { keepAspect } from '../../domain/photoBox'
 import { LAYER_MOVES } from '../../domain/layerOrder'
-import { boundsOf, layerOrderOf, scaleWithin } from '../../domain/textLayers'
+import { boundsOf, layerOrderOf, scaleWithin, spunResize, toLocalDelta } from '../../domain/textLayers'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
 import type { LayoutRect } from '../../domain/imageLayout'
 import type { StudioTextObject } from '../../domain/textObjects'
@@ -183,15 +183,24 @@ export function ResultObjectLayer({ pageId, page }: Props) {
         .map((o) => ({ kind: o.kind, blockId: o.object.blockId, from: { ...o.object.rect } }))
       const from = boundsOf(group.map((g) => g.from)) ?? rect
       const aspect = from.height > 0 ? from.width / from.height : 1
+      // 하나만 잡았을 때만 그 상자의 각도를 쓴다 (회전 크기 Patch). 여럿을 한
+      // 덩어리로 잡으면 저마다 각도가 달라 하나의 축이 없다 — 그때는 지금까지처럼
+      // 감싸는 상자를 안 돌아간 축으로 늘린다.
+      const angle = (group.length === 1 ? objects.find((o) => o.object.blockId === blockId)?.object.angle : 0) ?? 0
       const onMove = (ev: PointerEvent) => {
         moved = true
-        const dx = (ev.clientX - startX) * k
-        const dy = (ev.clientY - startY) * k
+        // 손가락이 화면에서 간 거리를 **이 상자의 축**으로 옮긴다. 손잡이는 돌아간
+        // 상자에 붙어 있으므로, 옮기지 않으면 커서와 상자가 따로 논다.
+        const screen = { dx: (ev.clientX - startX) * k, dy: (ev.clientY - startY) * k }
+        const local = toLocalDelta(screen.dx, screen.dy, angle)
         // 잡은 모서리의 반대쪽이 제자리에 남는다. 지면 밖으로도 걸칠 수 있으므로
         // 가두지 않는다 — 밖으로 나간 부분은 다시 합칠 때 지금까지처럼 잘린다.
-        const to = ev.shiftKey
-          ? resizeRect(from, handle, dx, dy, page.width, page.height, true)
-          : keepAspect(from, handle, dx, dy, aspect)
+        const box = ev.shiftKey
+          ? resizeRect(from, handle, local.dx, local.dy, page.width, page.height, true)
+          : keepAspect(from, handle, local.dx, local.dy, aspect)
+        // 돌아간 상자는 축이 한가운데라, 크기가 바뀌면 잡지 않은 모서리도 화면에서
+        // 움직인다. 가운데를 그만큼 되밀어 그 모서리를 묶어 둔다.
+        const to = spunResize(from, box, handle, angle)
         for (const item of group) place(item.kind, item.blockId, scaleWithin(item.from, from, to))
       }
       const onUp = () => {
@@ -382,8 +391,13 @@ export function ResultObjectLayer({ pageId, page }: Props) {
                   const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0
                   if (step === 0) return
                   e.preventDefault()
+                  studio.markStep()
                   studio.spinObject(pageId, object.blockId, (object.angle ?? 0) + step * (e.shiftKey ? 15 : 1))
-                  settle()
+                }}
+                // 누를 때마다 합치면 키를 누르고 있는 동안 지면 한 장을 몇십 번
+                // 다시 그린다. 손을 뗄 때 한 번이면 충분하다.
+                onKeyUp={(e) => {
+                  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') settle()
                 }}
               />
             )}

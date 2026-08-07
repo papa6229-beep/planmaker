@@ -774,6 +774,9 @@ describe('§7 오브젝트를 기울인다', () => {
     // 방향키로 15도. 눈으로 끄는 것과 같은 값을 쓴다.
     const spin = await within(title).findByRole('slider', { name: '기울기' })
     fireEvent.keyDown(spin, { key: 'ArrowRight', shiftKey: true })
+    // 다시 합치는 것은 **손을 뗄 때** 한 번이다 — 누르고 있는 동안 지면을 몇십 번
+    // 다시 그리지 않는다 (회전 크기 Patch).
+    fireEvent.keyUp(spin, { key: 'ArrowRight' })
 
     await waitFor(async () => {
       const job = await loadStudioJob(STUDIO_JOB_ID)
@@ -1533,13 +1536,19 @@ describe('§20 결과 줄이 자라지 않는다', () => {
 
     // 세 번 손본다 — 앞선 판이라면 줄이 넷으로 늘어났을 자리다.
     const title = Array.from(boxes).find((b) => labelOf(b) === '꾸며진 문구 blk_t1')!
+    // **직전 값**과 달라지기를 기다린다. 맨 처음 값과 비교하면 두 번째부터는 이미
+    // 참이라 기다리지 않고 지나가, 아직 끝나지 않은 합성 위에서 확인하게 된다.
+    let seen = first.assetId
+    const displaced: string[] = []
     for (const dx of [20, 40, 60]) {
       fireEvent.pointerDown(title, { button: 0, clientX: 10, clientY: 10 })
       fireEvent.pointerMove(window, { clientX: 10 + dx, clientY: 10 })
       fireEvent.pointerUp(window)
       await waitFor(async () => {
-        expect((await lineOf()).assetId).not.toBe(first.assetId)
+        expect((await lineOf()).assetId).not.toBe(seen)
       }, { timeout: 5000 })
+      if (seen !== first.assetId) displaced.push(seen)
+      seen = (await lineOf()).assetId
     }
 
     const after = await lineOf()
@@ -1552,12 +1561,87 @@ describe('§20 결과 줄이 자라지 않는다', () => {
     // 보고 있는 것은 방금 합친 그림이다.
     expect(after.assetId).not.toBe(first.assetId)
 
-    // 밀려난 합성본은 저장소에 남지 않는다 — 값을 치른 최초 생성본만 남는다.
+    // 밀려난 합성본은 저장소에서 사라진다. 지우기는 저장 뒤에 이어지므로 기다린다.
+    expect(displaced.length).toBe(2)
+    await waitFor(async () => {
+      const ids = new Set((await getAllAssets()).map((a) => a.id))
+      for (const gone of displaced) expect(ids.has(gone)).toBe(false)
+    }, { timeout: 5000 })
+
+    // 값을 치른 최초 생성본과 지금 보고 있는 그림은 남아 있다.
     const kept = new Set((await getAllAssets()).map((a) => a.id))
     expect(kept.has(first.assetId)).toBe(true)
     expect(kept.has(after.assetId)).toBe(true)
-    // 세 번 합쳤는데 결과 그림이 셋씩 쌓이지 않았다.
-    const designs = [...kept].filter((id) => id === after.assetId || id === first.assetId)
-    expect(designs.length).toBe(2)
+  })
+})
+
+// ── §21 돌아간 오브젝트의 크기 조절 ────────────────────────────────────────
+
+describe('§21 돌아간 상자를 늘린다', () => {
+  /** 화면에 실제로 찍히는 모서리 — 가운데를 축으로 돌린 뒤의 자리다. */
+  const cornerOnScreen = (r: LayoutRect, sx: number, sy: number, angle: number) => {
+    const rad = (angle * Math.PI) / 180
+    const cx = r.x + r.width / 2
+    const cy = r.y + r.height / 2
+    const ox = (sx * r.width) / 2
+    const oy = (sy * r.height) / 2
+    return {
+      x: cx + ox * Math.cos(rad) - oy * Math.sin(rad),
+      y: cy + ox * Math.sin(rad) + oy * Math.cos(rad),
+    }
+  }
+
+  it('손가락 방향을 상자의 축으로 옮긴다', async () => {
+    const { toLocalDelta } = await load('domain/textLayers')
+    // 안 돌아간 상자는 화면 방향이 곧 제 방향이다.
+    expect(toLocalDelta(10, 4, 0)).toEqual({ dx: 10, dy: 4 })
+    // 90도 돌아간 상자에게 "화면의 오른쪽"은 제 축의 아래쪽이다.
+    const q = toLocalDelta(10, 0, 90)
+    expect(q.dx).toBeCloseTo(0, 6)
+    expect(q.dy).toBeCloseTo(-10, 6)
+    // 어느 각도든 길이는 변하지 않는다 — 방향만 바꾸는 계산이다.
+    const t = toLocalDelta(3, 4, 37)
+    expect(Math.hypot(t.dx, t.dy)).toBeCloseTo(5, 6)
+  })
+
+  it('잡지 않은 모서리가 화면에서 제자리에 남는다', async () => {
+    const { spunResize } = await load('domain/textLayers')
+    const from: LayoutRect = { x: 100, y: 200, width: 300, height: 120 }
+
+    for (const angle of [0, 15, 30, -45, 90, 170]) {
+      for (const [handle, sx, sy] of [
+        ['se', -1, -1],
+        ['sw', 1, -1],
+        ['ne', -1, 1],
+        ['nw', 1, 1],
+      ] as const) {
+        // 안 돌아간 축에서 계산된 결과 — 잡지 않은 모서리를 그 축에서 묶어 둔
+        // 모양이다. 손잡이마다 묶이는 모서리가 달라 자리도 다르다.
+        const w = 380
+        const h = 170
+        const grown: LayoutRect = {
+          x: handle === 'se' || handle === 'ne' ? from.x : from.x + from.width - w,
+          y: handle === 'se' || handle === 'sw' ? from.y : from.y + from.height - h,
+          width: w,
+          height: h,
+        }
+        const fixed = spunResize(from, grown, handle, angle)
+        const before = cornerOnScreen(from, sx, sy, angle)
+        const after = cornerOnScreen(fixed, sx, sy, angle)
+        // 반올림 한 칸 안에서 제자리다.
+        expect(Math.abs(after.x - before.x)).toBeLessThanOrEqual(1)
+        expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1)
+        // 크기는 계산된 그대로 지킨다.
+        expect(fixed.width).toBe(380)
+        expect(fixed.height).toBe(170)
+      }
+    }
+  })
+
+  it('각도가 0이면 지금까지의 자리를 한 칸도 바꾸지 않는다', async () => {
+    const { spunResize } = await load('domain/textLayers')
+    const from: LayoutRect = { x: 10, y: 20, width: 100, height: 50 }
+    const to: LayoutRect = { x: 10, y: 20, width: 140, height: 80 }
+    expect(spunResize(from, to, 'se', 0)).toEqual(to)
   })
 })
