@@ -222,6 +222,18 @@ async function generateOnce(calls = CALLS) {
   }, { timeout: 10000 })
 }
 
+
+/**
+ * 접혀 있는 우측 패널 칸을 편다 (우측 패널 정리 Patch).
+ *
+ * 이미 펴져 있으면 그대로 둔다 — 열림 상태는 이 파일 안에서 이어지므로, 앞선
+ * 검사가 펴 둔 칸을 다시 눌러 접어 버리지 않게 한다.
+ */
+async function openFold(name: RegExp) {
+  const head = await screen.findByRole('button', { name })
+  if (head.getAttribute('aria-expanded') === 'false') fireEvent.click(head)
+}
+
 const labelOf = (el: HTMLElement) => el.getAttribute('aria-label') ?? ''
 const bodies = () => fetchSpy.mock.calls.map((c) => c[1].body as FormData)
 const promptOf = (form: FormData) => String(form.get('prompt'))
@@ -974,6 +986,7 @@ describe('§10 완성 결과 전체의 톤', () => {
     const calls = fetchSpy.mock.calls.length
     composed.mockClear()
 
+    await openFold(/결과 톤 조절/)
     const slider = await screen.findByLabelText('밝기 조절')
     fireEvent.change(slider, { target: { value: '40' } })
     fireEvent.pointerUp(slider)
@@ -1014,6 +1027,7 @@ describe('§11 완성 후 종이 테두리', () => {
     // 컷아웃이 켜진 블록만 나온다 — 일반 이미지에는 다듬을 테두리가 없다.
     // 이름은 부분수정 목록과 같은 번호다. 블록 이름표는 둘 다 `이미지`라 구분되지
     // 않는다 (컷아웃 구분 Patch).
+    await openFold(/종이 테두리 다듬기/)
     expect(screen.queryByLabelText('이미지 1 종이 테두리 두께')).toBeNull()
 
     const weight = await screen.findByLabelText('이미지 2 종이 테두리 두께')
@@ -1161,6 +1175,7 @@ describe('§13 고른 오브젝트만 톤 조절', () => {
       return found
     }, { timeout: 5000 })
 
+    await openFold(/결과 톤 조절/)
     // 아무것도 고르지 않았으면 블록별 슬라이더는 없다.
     expect(screen.queryByLabelText(/큰 문구 밝기 조절/)).toBeNull()
 

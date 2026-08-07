@@ -2421,6 +2421,53 @@ button { font-family: inherit; }
 .tone__slider { display: flex; flex-direction: column; gap: 2px; }
 .tone__slider-label { font-size: 11px; color: var(--color-muted); }
 .tone__slider input[type='range'] { width: 100%; margin: 0; accent-color: var(--color-accent); cursor: pointer; }
+/* ── 접었다 펴는 우측 패널 한 칸 (우측 패널 정리 Patch) ──────────────────── */
+.fold {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-panel);
+  overflow: hidden;
+}
+.fold__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.fold__head:hover { background: var(--color-hover, rgba(0, 0, 0, 0.04)); }
+.fold__mark { width: 10px; color: var(--color-muted); font-size: 10px; }
+.fold__title { flex: 0 1 auto; }
+.fold__note {
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: 11px;
+  font-weight: 400;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fold__body { padding: 0 10px 10px; }
+/* 접히는 칸 안에서는 바깥 테두리와 배경을 한 번 더 두르지 않는다. */
+.fold__body > .tone,
+.fold__body > .paper-tune,
+.fold__body > .block-order,
+.fold__body > .effects,
+.fold__body > .block-tools {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
 .tone__reset { align-self: flex-start; }
 /* 고른 오브젝트 하나에만 거는 톤 (블록별 톤 Patch) */
 .tone__object {

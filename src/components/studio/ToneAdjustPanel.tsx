@@ -16,6 +16,7 @@ import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
 import { TONE_FIELDS, toneIsFlat } from '../../domain/toneAdjust'
+import { PanelFold } from './PanelFold'
 
 export function ToneAdjustPanel() {
   const studio = useStudioJob()
@@ -29,8 +30,8 @@ export function ToneAdjustPanel() {
   const settle = () => void generation.recomposePage(activePageId)
 
   return (
+    <PanelFold id="tone" title="결과 톤 조절" note="밝기 · 대비 · 채도 · 색온도">
     <section className="tone" aria-label="결과 톤 조절">
-      <h2 className="tone__title">결과 톤 조절</h2>
       <p className="tone__note">
         완성 결과 전체에 겁니다. 원본은 그대로 두고 그릴 때마다 이 값으로 다시 계산합니다.
       </p>
@@ -76,6 +77,7 @@ export function ToneAdjustPanel() {
 
       <ObjectTone settle={settle} busy={busy} />
     </section>
+    </PanelFold>
   )
 }
 

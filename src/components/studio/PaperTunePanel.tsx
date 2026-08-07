@@ -27,6 +27,7 @@ import { useImageGeneration } from '../../features/studio/useImageGeneration'
 import { useAssets } from '../../features/assets/useAssets'
 import { getBlockTypeMeta } from '../../domain/blockTypes'
 import { PAPER_WEIGHT_MAX, PAPER_WEIGHT_MIN } from '../../domain/paperCutout'
+import { PanelFold } from './PanelFold'
 
 export function PaperTunePanel() {
   const studio = useStudioJob()
@@ -53,8 +54,8 @@ export function PaperTunePanel() {
   const settle = () => void generation.recomposePage(activePageId)
 
   return (
+    <PanelFold id="paper-tune" title="종이 테두리 다듬기" note={`컷아웃 ${String(cutouts.length)}개`}>
     <section className="paper-tune" aria-label="완성본 종이 테두리">
-      <h2 className="paper-tune__title">종이 테두리 다듬기</h2>
       <p className="paper-tune__note">
         완성된 배경 위에서 두께와 진하기를 고칩니다. AI를 다시 부르지 않습니다.
       </p>
@@ -108,5 +109,6 @@ export function PaperTunePanel() {
         )
       })}
     </section>
+    </PanelFold>
   )
 }

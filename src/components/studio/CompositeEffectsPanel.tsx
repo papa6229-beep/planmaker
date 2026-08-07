@@ -13,6 +13,7 @@ import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { getBlockTypeMeta } from '../../domain/blockTypes'
 import { COMPOSITE_EFFECT_FIELDS, DEFAULT_COMPOSITE_EFFECTS } from '../../domain/compositeEffects'
+import { PanelFold } from './PanelFold'
 
 export function CompositeEffectsPanel() {
   const studio = useStudioJob()
@@ -23,8 +24,8 @@ export function CompositeEffectsPanel() {
   const effects = studio.effectsOf(selected.id)
 
   return (
+    <PanelFold id="effects" title="합성 효과" note="그림자 · 림라이트 · 색 맞춤">
     <section className="effects" aria-label="합성 효과">
-      <h2 className="effects__title">합성 효과</h2>
       <p className="effects__note">원본은 그대로 두고, 그릴 때마다 이 값으로 다시 계산합니다.</p>
 
       <div className="effects__row">
@@ -78,5 +79,6 @@ export function CompositeEffectsPanel() {
         </div>
       </details>
     </section>
+    </PanelFold>
   )
 }

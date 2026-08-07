@@ -20,6 +20,7 @@ import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { getBlockTypeMeta } from '../../domain/blockTypes'
 import { ACCEPTED_MIME_TYPES } from '../../features/assets/imageUtils'
+import { PanelFold } from './PanelFold'
 
 const IMAGE_ACCEPT = ACCEPTED_MIME_TYPES.join(',')
 
@@ -43,8 +44,12 @@ export function BlockOrderPanel() {
   }
 
   return (
+    <PanelFold
+      id="block-order"
+      title="이 블록의 디자인 주문"
+      note={order.note !== undefined || order.referenceAssetId !== undefined ? '적어 둔 것 있음' : '생성 전에'}
+    >
     <section className="block-order" aria-label="이 블록의 디자인 주문">
-      <h2 className="block-order__title">이 블록의 디자인 주문</h2>
       <p className="block-order__hint">
         생성하기 전에 이 문구에만 붙는 주문입니다. 페이지 전체 지시보다 우선합니다.
       </p>
@@ -96,5 +101,6 @@ export function BlockOrderPanel() {
         }}
       />
     </section>
+    </PanelFold>
   )
 }

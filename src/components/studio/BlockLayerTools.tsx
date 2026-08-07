@@ -13,6 +13,7 @@
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { getBlockTypeMeta } from '../../domain/blockTypes'
 import { IMAGE_FIT_OPTIONS, imageFitOf } from '../../domain/imageLayout'
+import { PanelFold } from './PanelFold'
 
 export function BlockLayerTools() {
   const { selected, setImageFit } = useBriefEditor()
@@ -21,8 +22,8 @@ export function BlockLayerTools() {
   const fit = imageFitOf(selected)
 
   return (
+    <PanelFold id="block-tools" title={`${selected.label} 배치`} note="이미지 맞춤" defaultOpen>
     <section className="block-tools" aria-label="블록 배치">
-      <h2 className="block-tools__title">{selected.label}</h2>
 
       <div className="block-tools__group">
         <span className="block-tools__label" id="block-tools-fit">
@@ -46,5 +47,6 @@ export function BlockLayerTools() {
       {/* 순서를 바꾸는 자리는 블록 위다. 여기서 그것을 되풀이하지 않는다. */}
       <p className="block-tools__note">레이어 순서는 블록을 고르면 나타나는 `레이어` 메뉴에서 바꿉니다.</p>
     </section>
+    </PanelFold>
   )
 }
