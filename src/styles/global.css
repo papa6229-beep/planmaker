@@ -2049,7 +2049,56 @@ button { font-family: inherit; }
 .edit-panel__title { margin: 0 0 4px; font-size: 13px; font-weight: 700; }
 .edit-panel__hint { margin: 0 0 8px; font-size: 11px; color: var(--color-muted); }
 .edit-panel__targets { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 2px; max-height: 200px; overflow: auto; }
-.edit-panel__target { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
+.edit-panel__targets > li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+/* 지금 완성본에서 잡고 있는 줄. 체크(고칠 대상)와는 뜻이 다르다 (이름표 Patch). */
+.edit-panel__targets > li.is-held {
+  background: rgba(99, 91, 255, 0.14);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+.edit-panel__target { display: flex; flex: 1 1 auto; align-items: center; gap: 6px; min-width: 0; font-size: 12px; cursor: pointer; }
+.edit-panel__target-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.edit-panel__hold {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.edit-panel__hold:hover:not(:disabled) { background: var(--color-accent); color: #fff; }
+.edit-panel__hold[aria-pressed='true'] { background: var(--color-accent); color: #fff; }
+.edit-panel__hold:disabled { opacity: 0.35; cursor: default; }
+
+/* 잡은 오브젝트의 이름표 (이름표 Patch).
+   상자 **아래**에 둔다 — 위쪽 줄은 이미 지우기·기울기·순서 버튼이 쓰고 있다. */
+.result-object__name {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  max-width: 220px;
+  overflow: hidden;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
 .edit-panel__chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 8px; }
 .edit-panel__chip {
   padding: 2px 8px;
@@ -2431,20 +2480,44 @@ button { font-family: inherit; }
 .fold__head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   width: 100%;
   padding: 9px 10px;
   border: 0;
-  background: transparent;
+  background: var(--color-surface, rgba(99, 91, 255, 0.06));
   color: inherit;
   font: inherit;
   font-size: 13px;
   font-weight: 700;
   text-align: left;
   cursor: pointer;
+  transition: background 120ms ease;
 }
-.fold__head:hover { background: var(--color-hover, rgba(0, 0, 0, 0.04)); }
-.fold__mark { width: 10px; color: var(--color-muted); font-size: 10px; }
+.fold--open .fold__head { border-bottom: 1px solid var(--color-border); }
+.fold__head:hover { background: rgba(99, 91, 255, 0.13); }
+.fold__head:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+/* 화살표를 동그라미에 넣어 "누르는 것"으로 읽히게 한다. */
+.fold__mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 9px;
+  line-height: 1;
+}
+/* 안에 적어 둔 것이 있으면 점 하나. 접혀 있어도 빈 칸과 구별된다. */
+.fold__dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-accent);
+}
 .fold__title { flex: 0 1 auto; }
 .fold__note {
   flex: 1 1 auto;

@@ -1084,12 +1084,17 @@ describe('§12 오브젝트 삭제', () => {
     fireEvent.pointerUp(window)
 
     // 한 번 누른 것만으로는 지워지지 않는다 — 되돌리기가 없는 화면이다.
-    fireEvent.click(await within(title).findByRole('button', { name: '큰 문구 지우기' }))
+    // 이름은 부분수정 목록과 같다 (이름표 Patch) — 블록 이름표가 아니다.
+    fireEvent.click(
+      await within(title).findByRole('button', { name: new RegExp(`${CONTENTS.blk_t1!} 지우기`) }),
+    )
     const before = await loadStudioJob(STUDIO_JOB_ID)
     expect(before?.textObjects?.page_1?.some((o) => o.blockId === 'blk_t1')).toBe(true)
 
     composed.mockClear()
-    fireEvent.click(await within(title).findByRole('button', { name: '큰 문구 정말 지우기' }))
+    fireEvent.click(
+      await within(title).findByRole('button', { name: new RegExp(`${CONTENTS.blk_t1!} 정말 지우기`) }),
+    )
 
     await waitFor(async () => {
       const job = await loadStudioJob(STUDIO_JOB_ID)
@@ -1134,7 +1139,7 @@ describe('§12 오브젝트 삭제', () => {
       )!
     for (const id of IMAGE_IDS) {
       const drawn = composed.mock.calls.length
-      const name = id === 'blk_photo' ? '일반 이미지' : '컷아웃'
+      const name = id === 'blk_photo' ? '이미지 1' : '이미지 2'
       // 매번 다시 찾는다 — 앞의 다시 합치기가 화면을 새로 그렸을 수 있다.
       fireEvent.pointerDown(boxFor(id), { button: 0, clientX: 5, clientY: 5 })
       await waitFor(() => expect(boxFor(id).getAttribute('aria-pressed')).toBe('true'), { timeout: 5000 })
@@ -1274,5 +1279,55 @@ describe('§14 결과를 되돌린다', () => {
 
     // 되돌리는 데 외부로 나간 요청은 없다.
     expect(fetchSpy.mock.calls.length).toBe(calls)
+  })
+})
+
+// ── §15 무엇을 잡았는지 화면이 말한다 ───────────────────────────────────────
+
+describe('§15 잡은 것의 이름', () => {
+  it('잡으면 이름표가 붙고 목록의 그 줄이 강조되며, 목록에서도 잡을 수 있다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    const boxes = await waitFor(() => {
+      const found = container.querySelectorAll<HTMLElement>('.result-object')
+      expect(found.length).toBe(6)
+      return found
+    }, { timeout: 5000 })
+
+    // 아무것도 안 잡았으면 이름표도, 강조된 줄도 없다.
+    expect(container.querySelectorAll('.result-object__name').length).toBe(0)
+    expect(container.querySelectorAll('.edit-panel__targets > li.is-held').length).toBe(0)
+
+    const cut = Array.from(boxes).find((b) => labelOf(b) === '이미지 blk_cut')!
+    fireEvent.pointerDown(cut, { button: 0, clientX: 5, clientY: 5 })
+    await waitFor(() => expect(cut.getAttribute('aria-pressed')).toBe('true'))
+    fireEvent.pointerUp(window)
+
+    // 상자에 붙는 이름은 **부분수정 목록과 같은 이름**이다.
+    const tag = await waitFor(() => {
+      const found = container.querySelector('.result-object__name')
+      expect(found).not.toBeNull()
+      return found!
+    }, { timeout: 5000 })
+    expect(tag.textContent).toBe('이미지 2')
+
+    // 그 줄이 강조된다.
+    await waitFor(() => {
+      const held = container.querySelectorAll<HTMLElement>('.edit-panel__targets > li.is-held')
+      expect(held.length).toBe(1)
+      expect(held[0]!.textContent).toContain('이미지 2')
+    }, { timeout: 5000 })
+
+    // 반대 방향 — 목록에서 다른 것을 잡으면 캔버스의 선택이 그리로 옮겨간다.
+    fireEvent.click(
+      await screen.findByRole('button', { name: new RegExp(`${CONTENTS.blk_t1!} 화면에서 잡기`) }),
+    )
+    await waitFor(() => {
+      expect(container.querySelector('.result-object__name')?.textContent).toContain(CONTENTS.blk_t1!)
+    }, { timeout: 5000 })
+    expect(cut.getAttribute('aria-pressed')).toBe('false')
   })
 })

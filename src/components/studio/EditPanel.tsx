@@ -96,6 +96,7 @@ function TargetReference({ target, busy }: { target: EditTarget; busy: boolean }
 export function EditPanel() {
   const generation = useImageGeneration()
   const refine = useInstructionRefine()
+  const studio = useStudioJob()
   if (generation === null || !generation.hasResult || generation.editTargets.length === 0) return null
 
   const busy = generation.state.kind === 'running'
@@ -113,21 +114,40 @@ export function EditPanel() {
         </p>
       </header>
 
+      {/* 지금 캔버스에서 잡고 있는 것이 이 목록의 어느 줄인지 눈으로 잇는다
+          (이름표 Patch). 체크는 "고칠 대상", 강조는 "지금 잡은 것" — 뜻이 달라서
+          한 칸에 합치지 않는다. 오른쪽 ⌖를 누르면 캔버스에서 그것을 잡는다. */}
       <ul className="edit-panel__targets">
-        {generation.editTargets.map((t) => (
-          <li key={t.targetId}>
-            <label className="edit-panel__target">
-              <input
-                type="checkbox"
-                aria-label={t.label}
-                checked={generation.selectedTargetIds.includes(t.targetId)}
-                disabled={busy}
-                onChange={() => generation.toggleTarget(t.targetId)}
-              />
-              <span>{t.label}</span>
-            </label>
-          </li>
-        ))}
+        {generation.editTargets.map((t) => {
+          const held = t.blockId !== undefined && (studio?.selectedObjectBlockIds ?? []).includes(t.blockId)
+          return (
+            <li key={t.targetId} className={held ? 'is-held' : undefined}>
+              <label className="edit-panel__target">
+                <input
+                  type="checkbox"
+                  aria-label={t.label}
+                  checked={generation.selectedTargetIds.includes(t.targetId)}
+                  disabled={busy}
+                  onChange={() => generation.toggleTarget(t.targetId)}
+                />
+                <span className="edit-panel__target-name">{t.label}</span>
+              </label>
+              {t.blockId !== undefined && studio !== null && (
+                <button
+                  type="button"
+                  className="edit-panel__hold"
+                  aria-label={`${t.label} 화면에서 잡기`}
+                  aria-pressed={held}
+                  title="완성본에서 이것을 잡습니다"
+                  disabled={busy}
+                  onClick={() => studio.selectObject(t.blockId!)}
+                >
+                  ⌖
+                </button>
+              )}
+            </li>
+          )
+        })}
       </ul>
 
       {/* 고른 대상마다 자기 지시 칸을 갖는다. 하나의 문장을 여럿에게 나눠 쓰면

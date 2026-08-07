@@ -30,7 +30,7 @@ export function ToneAdjustPanel() {
   const settle = () => void generation.recomposePage(activePageId)
 
   return (
-    <PanelFold id="tone" title="결과 톤 조절" note="밝기 · 대비 · 채도 · 색온도">
+    <PanelFold id="tone" title="결과 톤 조절" note="밝기 · 대비 · 채도 · 색온도" marked={!toneIsFlat(tone)}>
     <section className="tone" aria-label="결과 톤 조절">
       <p className="tone__note">
         완성 결과 전체에 겁니다. 원본은 그대로 두고 그릴 때마다 이 값으로 다시 계산합니다.

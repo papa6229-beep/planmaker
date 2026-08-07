@@ -46,8 +46,9 @@ export function BlockOrderPanel() {
   return (
     <PanelFold
       id="block-order"
-      title="이 블록의 디자인 주문"
-      note={order.note !== undefined || order.referenceAssetId !== undefined ? '적어 둔 것 있음' : '생성 전에'}
+      title="이 문구 디자인 주문"
+      note="주문 적기 · 참고 그림"
+      marked={(order.note ?? '').trim().length > 0 || order.referenceAssetId !== undefined}
     >
     <section className="block-order" aria-label="이 블록의 디자인 주문">
       <p className="block-order__hint">

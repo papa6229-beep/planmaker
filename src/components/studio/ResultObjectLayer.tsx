@@ -54,9 +54,17 @@ export function ResultObjectLayer({ pageId, page }: Props) {
   const [urls, setUrls] = useState<Record<string, string>>({})
   /** 지우기를 한 번 누른 오브젝트. 두 번째 누름이 실제로 지운다. */
   const [confirming, setConfirming] = useState<string | null>(null)
-  /** 사람이 읽는 이름. 기획서 블록에서 그대로 가져온다. */
+  /**
+   * 사람이 읽는 이름 (이름표 Patch).
+   *
+   * 부분수정 목록이 쓰는 번호(`이미지 2`, `문구 3`)를 **그대로** 쓴다. 기획서 블록의
+   * 이름표는 이미지가 전부 `이미지`라 둘 이상이면 구별되지 않고, 무엇보다 오른쪽
+   * 목록과 다른 이름이면 같은 것을 두 이름으로 부르게 된다.
+   */
   const labelOf = (blockId: string) =>
-    pages.find((p) => p.id === pageId)?.blocks.find((b) => b.id === blockId)?.label ?? '오브젝트'
+    generation?.editTargets.find((t) => t.blockId === blockId)?.label ??
+    pages.find((p) => p.id === pageId)?.blocks.find((b) => b.id === blockId)?.label ??
+    '오브젝트'
   const boxRef = useRef<HTMLDivElement | null>(null)
   const texts = studio?.textObjectsOf(pageId) ?? []
   const images = studio?.imageObjectsOf(pageId) ?? []
@@ -273,6 +281,9 @@ export function ResultObjectLayer({ pageId, page }: Props) {
             {url !== undefined && (
               <img className="result-object__image" src={url} alt="" draggable={false} />
             )}
+            {/* 잡은 것이 무엇인지 상자가 직접 말한다 (이름표 Patch). 오른쪽
+                목록에도 같은 이름이 있으므로 두 화면이 같은 것을 가리킨다. */}
+            {selected && <span className="result-object__name">{labelOf(object.blockId)}</span>}
             {/* 앞뒤 순서는 고른 오브젝트 옆에서 바꾼다 — 우측 패널까지 갔다 오는
                 동안 무엇을 고르고 있었는지 놓치기 때문이다. 끝에 닿은 버튼은
                 흐리게 둔다: 눌러도 아무 일이 없는 것보다 미리 말하는 편이 낫다. */}
