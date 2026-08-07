@@ -43,6 +43,11 @@ vi.mock('../features/assets/imageUtils', async () => {
 vi.mock('../services/previewRenderer', () => ({
   renderPreviewPng: async () => new Blob([new Uint8Array([9])], { type: 'image/png' }),
 }))
+vi.mock('../services/referenceUpload', () => ({
+  // 참고 그림 줄이기는 캔버스를 쓴다. 규칙은 §순수 검사에서 숫자로 재고, 여기서는
+  // 원본을 그대로 흘려 보내 "무엇을 보냈는가"만 본다.
+  shrinkReference: async (blob: Blob) => blob,
+}))
 vi.mock('../services/photoContent', () => ({
   PHOTO_MEASURE_MAX_SIDE: 256,
   measurePhoto: async () => ({ natural: { width: 800, height: 800 }, box: { x: 0, y: 0, width: 1, height: 1 } }),
@@ -1007,9 +1012,11 @@ describe('§11 완성 후 종이 테두리', () => {
     composed.mockClear()
 
     // 컷아웃이 켜진 블록만 나온다 — 일반 이미지에는 다듬을 테두리가 없다.
-    expect(screen.queryByLabelText('일반 이미지 종이 테두리 두께')).toBeNull()
+    // 이름은 부분수정 목록과 같은 번호다. 블록 이름표는 둘 다 `이미지`라 구분되지
+    // 않는다 (컷아웃 구분 Patch).
+    expect(screen.queryByLabelText('이미지 1 종이 테두리 두께')).toBeNull()
 
-    const weight = await screen.findByLabelText('컷아웃 종이 테두리 두께')
+    const weight = await screen.findByLabelText('이미지 2 종이 테두리 두께')
     fireEvent.change(weight, { target: { value: '35' } })
     fireEvent.pointerUp(weight)
 
@@ -1025,7 +1032,7 @@ describe('§11 완성 후 종이 테두리', () => {
     expect(plan.layers.find((l) => l.blockId === 'blk_cut')?.effects.paperWeight).toBeCloseTo(0.35, 5)
 
     // 진하기 0은 컷아웃을 끄는 것과 다르다 — 오브젝트도 자리도 그대로다.
-    const opacity = await screen.findByLabelText('컷아웃 종이 테두리 진하기')
+    const opacity = await screen.findByLabelText('이미지 2 종이 테두리 진하기')
     fireEvent.change(opacity, { target: { value: '0' } })
     fireEvent.pointerUp(opacity)
     await waitFor(async () => {
@@ -1200,5 +1207,57 @@ describe('§13 고른 오브젝트만 톤 조절', () => {
     expect(parsed?.objectTones?.blk_t1?.brightness).toBeCloseTo(-0.5, 5)
     const old = mod.parseStudioFileState({ version: '0.10.0', source: null, productImages: {} })
     expect(old?.objectTones ?? {}).toEqual({})
+  })
+})
+
+// ── §14 결과 화면의 실행 취소 ───────────────────────────────────────────────
+
+describe('§14 결과를 되돌린다', () => {
+  it('오브젝트를 옮긴 뒤 실행 취소하면 기획서가 아니라 그 오브젝트가 돌아온다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    const boxes = await waitFor(() => {
+      const found = container.querySelectorAll<HTMLElement>('.result-object')
+      expect(found.length).toBe(6)
+      return found
+    }, { timeout: 5000 })
+
+    const before = await loadStudioJob(STUDIO_JOB_ID)
+    const rectOf = (job: typeof before, id: string) =>
+      job?.textObjects?.page_1?.find((o) => o.blockId === id)?.rect
+    const blocksOf = (job: typeof before) => job?.doc.pages[0]?.blocks.map((b) => b.id)
+    const was = rectOf(before, 'blk_t1')!
+    const calls = fetchSpy.mock.calls.length
+
+    // 한 번 끌어 옮긴다 — 옮기는 동안 수십 번 고쳐 써도 되돌릴 칸은 하나다.
+    const title = Array.from(boxes).find((b) => labelOf(b) === '꾸며진 문구 blk_t1')!
+    fireEvent.pointerDown(title, { button: 0, clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(window, { clientX: 40, clientY: 30 })
+    fireEvent.pointerMove(window, { clientX: 70, clientY: 60 })
+    fireEvent.pointerUp(window)
+
+    await waitFor(async () => {
+      const now = await loadStudioJob(STUDIO_JOB_ID)
+      expect(rectOf(now, 'blk_t1')).not.toEqual(was)
+    }, { timeout: 5000 })
+
+    fireEvent.click(screen.getByRole('button', { name: '실행 취소' }))
+
+    // 옮기기 전 자리로 돌아온다.
+    await waitFor(async () => {
+      const now = await loadStudioJob(STUDIO_JOB_ID)
+      expect(rectOf(now, 'blk_t1')).toEqual(was)
+    }, { timeout: 5000 })
+
+    // **기획서는 손대지 않는다.** 앞선 판은 여기서 기획서가 한 단계 뒤로 갔다.
+    const after = await loadStudioJob(STUDIO_JOB_ID)
+    expect(blocksOf(after)).toEqual(blocksOf(before))
+    expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(6)
+
+    // 되돌리는 데 외부로 나간 요청은 없다.
+    expect(fetchSpy.mock.calls.length).toBe(calls)
   })
 })

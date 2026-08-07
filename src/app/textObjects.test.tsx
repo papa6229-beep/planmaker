@@ -35,6 +35,11 @@ vi.mock('../features/assets/imageUtils', async () => {
 vi.mock('../services/previewRenderer', () => ({
   renderPreviewPng: async () => new Blob([new Uint8Array([9])], { type: 'image/png' }),
 }))
+vi.mock('../services/referenceUpload', () => ({
+  // 참고 그림 줄이기는 캔버스를 쓴다. 규칙은 §순수 검사에서 숫자로 재고, 여기서는
+  // 원본을 그대로 흘려 보내 "무엇을 보냈는가"만 본다.
+  shrinkReference: async (blob: Blob) => blob,
+}))
 vi.mock('../services/photoContent', () => ({
   PHOTO_MEASURE_MAX_SIDE: 256,
   measurePhoto: async () => ({ natural: { width: 800, height: 800 }, box: { x: 0, y: 0, width: 1, height: 1 } }),

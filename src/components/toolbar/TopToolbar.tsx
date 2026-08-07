@@ -65,7 +65,7 @@ export function TopToolbar({
     editorChangedAt.current = Date.now()
   }
   const studioIsNewer = studio !== null && studio.lastChangeAt > editorChangedAt.current
-  const { undoPageDelete, requestTeam, setRequestTeam } = useBriefDocument()
+  const { undoPageDelete, requestTeam, setRequestTeam, activePageId } = useBriefDocument()
   const { state: ioState, startExport, startImport, busy } = useEventBriefIo()
   const { saveNow } = useBriefDocument()
   const navigate = useNavigate()
@@ -109,14 +109,28 @@ export function TopToolbar({
    * is restored from the document's own snapshot; everything else undoes
    * through the editor as before (손검수 2 §4.2).
    */
+  /**
+   * 되돌린 뒤 결과를 다시 합친다 (결과 되돌리기 Patch).
+   *
+   * 결과는 그려 둔 PNG 한 장이다. 오브젝트의 자리를 되돌려도 그 장은 되돌아온
+   * 자리를 모르므로, 되돌린 값으로 한 번 더 그려야 화면이 사실이 된다. 외부
+   * 호출은 없다.
+   */
+  const settleStudio = () => {
+    if (activePageId.length > 0) void generation?.recomposePage(activePageId)
+  }
   const undoLast = () => {
-    if (studio !== null && studio.canUndo && studioIsNewer) studio.undo()
-    else if (undoPageDelete !== null) undoPageDelete()
+    if (studio !== null && studio.canUndo && studioIsNewer) {
+      studio.undo()
+      settleStudio()
+    } else if (undoPageDelete !== null) undoPageDelete()
     else undo()
   }
   const redoLast = () => {
-    if (studio !== null && studio.canRedo && !canRedo) studio.redo()
-    else redo()
+    if (studio !== null && studio.canRedo && !canRedo) {
+      studio.redo()
+      settleStudio()
+    } else redo()
   }
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const titleRef = useRef<HTMLInputElement | null>(null)

@@ -37,6 +37,11 @@ vi.mock('../features/assets/imageUtils', async () => {
 vi.mock('../services/previewRenderer', () => ({
   renderPreviewPng: async () => new Blob([new Uint8Array([9, 9, 9, 9])], { type: 'image/png' }),
 }))
+vi.mock('../services/referenceUpload', () => ({
+  // 참고 그림 줄이기는 캔버스를 쓴다. 규칙은 §순수 검사에서 숫자로 재고, 여기서는
+  // 원본을 그대로 흘려 보내 "무엇을 보냈는가"만 본다.
+  shrinkReference: async (blob: Blob) => blob,
+}))
 // jsdom에는 2D 캔버스가 없다. 그리는 일은 브라우저에서 보고, 여기서는 **무엇을
 // 보내고 무엇을 남기는가**를 본다.
 vi.mock('../services/photoContent', () => ({

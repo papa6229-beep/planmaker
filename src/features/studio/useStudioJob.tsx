@@ -240,6 +240,14 @@ export interface StudioJobApi {
    */
   canUndo: boolean
   canRedo: boolean
+  /**
+   * 지금 상태를 되돌릴 자리로 표시한다 (결과 되돌리기 Patch).
+   *
+   * 끌기를 **시작할 때** 한 번 부른다. 그 뒤의 첫 쓰기에서만 칸이 만들어지므로,
+   * 손가락을 따라 수십 번 고쳐 써도 `실행 취소` 한 번이면 끌기 전으로 돌아간다.
+   * 표시만 하고 아무것도 고치지 않으면 칸도 생기지 않는다.
+   */
+  markStep: () => void
   undo: () => void
   redo: () => void
   lastChangeAt: number
@@ -251,15 +259,55 @@ function emptyJob(now: number): StudioJob {
   return createStudioJob(createEmptyDocument(createEmptyProject('')), now, STUDIO_JOB_ID)
 }
 
-type Links = Record<string, string>
+/**
+ * 되돌리기 한 칸 (결과 되돌리기 Patch).
+ *
+ * 앞선 판은 **제품 이미지 연결만** 담았다. 그래서 결과 화면에서 오브젝트를 옮기고
+ * `실행 취소`를 누르면 되돌릴 것이 없다고 판정되어, 아무 관계 없는 **기획서**가 한
+ * 단계 뒤로 갔다 — 방금 한 일은 그대로 남고 하지 않은 일이 사라지는, 가장 나쁜
+ * 종류의 되돌리기였다.
+ *
+ * 그래서 편집기 히스토리 **밖에 있는 것 전부**를 한 칸에 담는다. 기획서 문서는
+ * 여기 들어오지 않는다 — 그쪽은 편집기가 이미 자기 히스토리로 갖고 있다.
+ */
+interface StudioStep {
+  productImages: Record<string, string>
+  textObjects: Record<string, StudioTextObject[]>
+  imageObjects: Record<string, StudioTextObject[]>
+  objectTones: Record<string, ToneAdjust>
+  tones: Record<string, ToneAdjust>
+  effects: Record<string, CompositeEffects>
+}
+
+/** 되돌리기가 기억하는 칸 수. 넘으면 오래된 것부터 버린다. */
+const STUDIO_HISTORY_MAX = 40
+
+function snapshotOf(job: StudioJob): StudioStep {
+  return {
+    productImages: { ...job.productImages },
+    textObjects: { ...job.textObjects },
+    imageObjects: { ...job.imageObjects },
+    objectTones: { ...job.objectTones },
+    tones: { ...job.tones },
+    effects: { ...job.effects },
+  }
+}
 
 export function StudioJobProvider({ children }: { children: ReactNode }) {
   const [job, setJob] = useState<StudioJob | null>(null)
   const jobRef = useRef<StudioJob | null>(null)
   jobRef.current = job
   // 연결만 담는 얕은 히스토리. 문서 편집은 편집기가 이미 되돌린다.
-  const [past, setPast] = useState<Links[]>([])
-  const [future, setFuture] = useState<Links[]>([])
+  const [past, setPast] = useState<StudioStep[]>([])
+  const [future, setFuture] = useState<StudioStep[]>([])
+  /**
+   * 다음 변경이 되돌릴 자리 — 아직 쌓지 않은 것.
+   *
+   * 끌기 한 번은 수십 번 고쳐 쓴다. 고칠 때마다 쌓으면 `실행 취소` 수십 번이
+   * 한 번의 끌기를 되감게 되므로, **끌기가 시작될 때 한 번** 표시해 두고 그
+   * 뒤의 첫 쓰기에서만 칸을 만든다.
+   */
+  const pendingRef = useRef<StudioStep | null>(null)
   const [lastChangeAt, setLastChangeAt] = useState(0)
   /** 고른 편집 오브젝트 — 새로고침에 남을 이유가 없는 화면 상태다. */
   const [selectedObjectBlockIds, setSelectedObjectBlockIds] = useState<string[]>([])
@@ -285,6 +333,15 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
 
   /** 작업을 바꾸고 즉시 저장한다. 화면과 저장소가 어긋나지 않게 한 곳에서. */
   const commit = useCallback(async (next: StudioJob) => {
+    // 표시해 둔 자리가 있으면 그것이 되돌릴 칸이 된다. 표시가 없으면 이 쓰기는
+    // 되돌리기와 무관한 일이다 (결과 저장, 파일 채택 같은 것).
+    const pending = pendingRef.current
+    if (pending !== null) {
+      pendingRef.current = null
+      setPast((p) => [...p, pending].slice(-STUDIO_HISTORY_MAX))
+      setFuture([])
+      setLastChangeAt(Date.now())
+    }
     jobRef.current = next
     setJob(next)
     await saveStudioJob(next)
@@ -306,24 +363,38 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
     [commit],
   )
 
+  /** 지금 상태를 되돌릴 자리로 표시한다. 실제 칸은 다음 쓰기에서 만들어진다. */
+  const markStep = useCallback(() => {
+    const current = jobRef.current
+    if (current !== null) pendingRef.current = snapshotOf(current)
+  }, [])
+
   /** 연결을 바꾸면서 되돌릴 자리를 남긴다. */
   const commitLinks = useCallback(
     (next: StudioJob) => {
-      const before = jobRef.current?.productImages ?? {}
-      setPast((p) => [...p, before])
-      setFuture([])
-      setLastChangeAt(Date.now())
+      markStep()
       void commit(next)
     },
-    [commit],
+    [commit, markStep],
   )
 
-  const applyLinks = useCallback(
-    (links: Links) => {
+  /** 되돌리기·다시하기가 칸 하나를 그대로 되돌려 놓는다. 새 칸은 만들지 않는다. */
+  const applyStep = useCallback(
+    (step: StudioStep) => {
       const current = jobRef.current
       if (!current) return
+      pendingRef.current = null
       setLastChangeAt(Date.now())
-      void commit({ ...current, productImages: links })
+      void commit({
+        ...current,
+        productImages: { ...step.productImages },
+        textObjects: { ...step.textObjects },
+        imageObjects: { ...step.imageObjects },
+        objectTones: { ...step.objectTones },
+        tones: { ...step.tones },
+        effects: { ...step.effects },
+        updatedAt: Date.now(),
+      })
     },
     [commit],
   )
@@ -507,24 +578,25 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       adoptFile,
       canUndo: past.length > 0,
       canRedo: future.length > 0,
+      markStep,
       undo: () => {
         const previous = past.at(-1)
         if (previous === undefined) return
         setPast((p) => p.slice(0, -1))
-        setFuture((f) => [...f, job.productImages])
-        applyLinks(previous)
+        setFuture((f) => [...f, snapshotOf(job)])
+        applyStep(previous)
       },
       redo: () => {
         const next = future.at(-1)
         if (next === undefined) return
         setFuture((f) => f.slice(0, -1))
-        setPast((p) => [...p, job.productImages])
-        applyLinks(next)
+        setPast((p) => [...p, snapshotOf(job)])
+        applyStep(next)
       },
       lastChangeAt,
     }
   }, [
-    job, binding, commit, mutate, commitLinks, applyLinks, adoptFile, recordResult,
+    job, binding, commit, mutate, commitLinks, applyStep, markStep, adoptFile, recordResult,
     past, future, lastChangeAt, selectedObjectBlockIds,
   ])
 

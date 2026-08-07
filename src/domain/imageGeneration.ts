@@ -126,6 +126,7 @@ export type ImageGenerationErrorCode =
   | 'no_image'
   | 'save_failed'
   | 'too_many_inputs'
+  | 'inputs_too_large'
   | 'target_not_found'
   | 'rate_limited'
   | 'aspect_out_of_range'
@@ -148,6 +149,8 @@ export const ERROR_TEXT: Record<ImageGenerationErrorCode, string> = {
   no_image: '응답에서 이미지를 받지 못했습니다. 다시 시도해 주세요.',
   save_failed: '생성은 되었지만 결과를 저장하지 못했습니다. 다시 시도해 주세요.',
   too_many_inputs: '한 번에 보낼 수 있는 이미지 수를 넘었습니다. 연결한 이미지를 줄여 주세요.',
+  inputs_too_large:
+    '함께 보낸 이미지가 너무 커서 요청이 전달되지 못했습니다. 디자인 스타일 레퍼런스나 블록 참고 그림을 더 작은 파일로 바꿔 주세요.',
   target_not_found:
     '수정할 대상을 현재 결과에서 찾지 못했습니다. 기존 이미지로 돌아갑니다. 어느 문구·이미지인지 더 구체적으로 적어 다시 시도해 주세요.',
   rate_limited: '요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요.',
@@ -157,4 +160,22 @@ export const ERROR_TEXT: Record<ImageGenerationErrorCode, string> = {
 
 export function errorTextFor(code: string | undefined): string {
   return ERROR_TEXT[(code ?? 'unknown') as ImageGenerationErrorCode] ?? ERROR_TEXT.unknown
+}
+
+/**
+ * 우리 코드가 없는 실패를 상태 코드만으로 분류한다 (부분수정 실패 Patch).
+ *
+ * 서버 함수는 실패해도 언제나 우리 코드를 담아 돌려준다. 그러므로 **코드가 없는
+ * 응답은 그 함수가 불리기도 전에 끝난 요청**이다 — 본문이 너무 커서 앞단에서
+ * 잘렸거나, 시간이 다 됐거나, 앞단 자체가 죽은 경우다.
+ *
+ * 지금까지는 이 셋이 모두 `unknown` 한 칸에 들어가 "잠시 후 다시 시도해 주세요"만
+ * 남았다. 다시 시도해도 같은 자리에서 같은 이유로 실패하므로, 그 문장은 사람을
+ * 같은 실패로 두 번 보내는 안내였다.
+ */
+export function httpFailureCode(status: number): ImageGenerationErrorCode {
+  if (status === 413) return 'inputs_too_large'
+  if (status === 408 || status === 504 || status === 524) return 'function_timeout'
+  if (status === 502 || status === 503) return 'network_error'
+  return 'unknown'
 }

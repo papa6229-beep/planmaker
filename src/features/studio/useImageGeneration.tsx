@@ -73,6 +73,7 @@ import { pageAsEventBrief } from '../../domain/briefMigration'
 import {
   API_KEY_HEADER,
   errorTextFor,
+  httpFailureCode,
   FIELD_IMAGES,
   FIELD_PROMPT,
   FIELD_SIZE,
@@ -87,6 +88,7 @@ import { getAllAssets, getAsset, putAsset } from '../../services/assetStore'
 import { sizeLabel, toWorkingImage, workingImageTarget, type WorkingImageTarget } from '../../services/workingImage'
 import { renderPreviewPng } from '../../services/previewRenderer'
 import { renderComposite } from '../../services/compositeRenderer'
+import { shrinkReference } from '../../services/referenceUpload'
 import { collectCompositeSources } from '../../services/compositeSources'
 import { createId } from '../../domain/factory'
 import type { BriefPage } from '../../domain/pageSchema'
@@ -469,6 +471,22 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
    * `preserve`는 두 번 나가고 두 번 다 같은 목록 모양을 쓰므로, 무엇을 보낼지는
    * 인자로 받는다 — 계획에서 꺼내 쓰면 두 번째 요청이 첫 번째의 목록을 보낸다.
    */
+  /**
+   * 이 그림을 원본 그대로 보낼 것인가, 줄여 보낼 것인가 (부분수정 실패 Patch).
+   *
+   * 참고용(`page_reference`)만 줄인다 — 스타일 레퍼런스, 만들어진 배경, 블록 참고
+   * 그림이다. 이것들은 색과 짜임새를 읽으라고 보내는 자료이고, 작업자가 올린
+   * 원본은 크기 제한 없이 저장되므로 웹에서 받은 큰 사진이 그대로 실린다.
+   *
+   * 제품 원본과 고칠 통이미지(`product_image`, `page_layout`)는 손대지 않는다.
+   * 그쪽은 **다시 그려져 나와야 하는 그림**이라, 줄이면 결과가 나빠진다.
+   */
+  const sized = useCallback(
+    async (input: GenerationInputImage, blob: Blob): Promise<Blob> =>
+      input.role === 'page_reference' ? await shrinkReference(blob) : blob,
+    [],
+  )
+
   const collectImages = useCallback(
     async (
       plan: GenerationPlan,
@@ -493,7 +511,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           if (asset === undefined) continue
           // 이름이 곧 역할이다 — 서버 로그와 검사에서 무엇을 보냈는지 읽힌다.
           const name = input.fileName ?? `${input.role}-${input.assetId ?? ''}.png`
-          files.push({ fileName: `${String(input.index)}-${name}`, blob: asset.blob })
+          files.push({ fileName: `${String(input.index)}-${name}`, blob: await sized(input, asset.blob) })
         }
         return files
       }
@@ -508,7 +526,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           if (asset === undefined) continue
           files.push({
             fileName: `${String(input.index)}-${input.fileName ?? `${input.role}.png`}`,
-            blob: asset.blob,
+            blob: await sized(input, asset.blob),
           })
         }
         return files
@@ -529,7 +547,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       }
       return files
     },
-    [getDocument],
+    [getDocument, sized],
   )
 
   /**
@@ -1023,7 +1041,10 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
 
       const payload: unknown = await response.json().catch(() => null)
       if (!response.ok) {
-        return { ...(payload as { error?: { code?: string } } | null)?.error }
+        const failure = (payload as { error?: { code?: string } } | null)?.error
+        // 우리 서버 함수는 실패해도 코드를 담는다. 코드가 없으면 그 함수까지
+        // 가지도 못한 요청이므로, 상태 코드로 이름을 붙인다 (부분수정 실패 Patch).
+        return failure?.code === undefined ? { code: httpFailureCode(response.status) } : { ...failure }
       }
       const body = payload as {
         image?: { b64?: string; mimeType?: string }

@@ -115,6 +115,9 @@ export function ResultObjectLayer({ pageId, page }: Props) {
     if (e.button !== 0) return
     e.preventDefault()
     e.stopPropagation()
+    // 이 끌기 하나가 되돌리기 한 칸이다 (결과 되돌리기 Patch). 손가락을 따라
+    // 수십 번 고쳐 써도 칸은 여기서 한 번만 만들어진다.
+    studio.markStep()
     // Shift·⌘를 누르면 고른 것에 더한다. 그냥 누르면 이것 하나만 고른다.
     const add = e.shiftKey || e.metaKey || e.ctrlKey
     studio.selectObject(blockId, add)
@@ -152,6 +155,7 @@ export function ResultObjectLayer({ pageId, page }: Props) {
       if (e.button !== 0) return
       e.preventDefault()
       e.stopPropagation()
+      studio.markStep()
       studio.selectObject(blockId)
       const startX = e.clientX
       const startY = e.clientY
@@ -201,6 +205,7 @@ export function ResultObjectLayer({ pageId, page }: Props) {
     if (e.button !== 0) return
     e.preventDefault()
     e.stopPropagation()
+    studio.markStep()
     studio.selectObject(blockId)
     const box = boxRef.current?.getBoundingClientRect()
     if (box === undefined) return
@@ -293,7 +298,10 @@ export function ResultObjectLayer({ pageId, page }: Props) {
                       title={move.label}
                       aria-label={move.label}
                       // 순서를 적고 나서 한 번 다시 합친다. 외부 호출은 없다.
-                      onClick={() => void studio.reorderObject(pageId, object.blockId, move.value).then(settle)}
+                      onClick={() => {
+                        studio.markStep()
+                        void studio.reorderObject(pageId, object.blockId, move.value).then(settle)
+                      }}
                     >
                       {LAYER_ICONS[move.value]}
                     </button>
@@ -319,6 +327,7 @@ export function ResultObjectLayer({ pageId, page }: Props) {
                       title="기획서 블록은 그대로 남습니다"
                       onClick={() => {
                         setConfirming(null)
+                        studio.markStep()
                         void studio.removeObject(pageId, object.blockId).then(settle)
                       }}
                     >

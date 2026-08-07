@@ -49,6 +49,9 @@ export function ToneAdjustPanel() {
               value={Math.round(tone[field.key] * 100)}
               aria-label={`${field.label} 조절`}
               disabled={busy}
+              // 슬라이더 한 번 끄는 것이 되돌리기 한 칸이다 (결과 되돌리기 Patch).
+              onPointerDown={() => studio.markStep()}
+              onKeyDown={() => studio.markStep()}
               onChange={(e) => void studio.setTone(activePageId, { [field.key]: Number(e.target.value) / 100 })}
               onPointerUp={settle}
               onKeyUp={settle}
@@ -62,6 +65,7 @@ export function ToneAdjustPanel() {
         className="btn tone__reset"
         disabled={busy || toneIsFlat(tone)}
         onClick={() => {
+          studio.markStep()
           void studio
             .setTone(activePageId, { brightness: 0, contrast: 0, saturation: 0, temperature: 0 })
             .then(settle)
@@ -112,6 +116,8 @@ function ObjectTone({ settle, busy }: { settle: () => void; busy: boolean }) {
               value={Math.round(tone[field.key] * 100)}
               aria-label={`${label} ${field.label} 조절`}
               disabled={busy}
+              onPointerDown={() => studio.markStep()}
+              onKeyDown={() => studio.markStep()}
               onChange={(e) =>
                 void studio.setObjectTone(blockId, { [field.key]: Number(e.target.value) / 100 })
               }
@@ -126,6 +132,7 @@ function ObjectTone({ settle, busy }: { settle: () => void; busy: boolean }) {
         className="btn tone__reset"
         disabled={busy || toneIsFlat(tone)}
         onClick={() => {
+          studio.markStep()
           void studio
             .setObjectTone(blockId, { brightness: 0, contrast: 0, saturation: 0, temperature: 0 })
             .then(settle)
