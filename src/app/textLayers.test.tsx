@@ -1380,3 +1380,46 @@ describe('§16 완성본이 가운데를 다 쓴다', () => {
     expect(screen.queryByRole('button', { name: /합성 효과/ })).toBeNull()
   })
 })
+
+// ── §17 페이지를 오가도 화면이 맞는 것을 가리킨다 ───────────────────────────
+
+describe('§17 페이지 전환', () => {
+  it('결과 없는 페이지로 가면 기획서로 돌아오고, 돌아오면 다시 완성본이다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    // 1페이지: 완성본 화면.
+    await waitFor(() => {
+      expect(screen.getByRole('radio', { name: '완성본', checked: true })).toBeTruthy()
+    }, { timeout: 5000 })
+
+    const calls = fetchSpy.mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: '+ 페이지 추가' }))
+
+    // 2페이지에는 결과가 없다. 완성본을 가리킨 채로 두면 빈 화면만 남으므로
+    // 기획서로 돌아온다 — 탭도, 완성본 배율도 이 화면에는 없다.
+    await waitFor(() => {
+      expect(screen.queryByRole('radio', { name: '완성본' })).toBeNull()
+    }, { timeout: 5000 })
+    expect(screen.queryByText('아직 생성한 결과가 없습니다.')).toBeNull()
+    expect(screen.queryByLabelText('완성본 확대')).toBeNull()
+    // 기획서 캔버스가 서 있어야 2페이지 작업을 시작할 수 있다.
+    expect(container.querySelector('.canvas__sheet')).not.toBeNull()
+    // 생성 전 도구가 우측에 돌아온다.
+    expect(screen.getByLabelText('축소')).toBeTruthy()
+
+    // 1페이지로 돌아오면 만들어 둔 결과가 그대로다.
+    fireEvent.click(screen.getByRole('button', { name: '1페이지' }))
+    await waitFor(() => {
+      expect(screen.getByRole('radio', { name: '완성본', checked: true })).toBeTruthy()
+    }, { timeout: 5000 })
+    const job = await loadStudioJob(STUDIO_JOB_ID)
+    expect(job?.results?.page_1).toBeDefined()
+    expect(job?.textObjects?.page_1?.length).toBe(SHEET_IDS.length)
+
+    // 페이지를 오가는 데 외부로 나간 요청은 없다.
+    expect(fetchSpy.mock.calls.length).toBe(calls)
+  })
+})

@@ -213,7 +213,18 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
   const { activeReference } = useBriefDocument()
   const { state } = useBriefEditor()
   const generation = useImageGeneration()
-  const compare = generation?.view === 'compare'
+  /**
+   * 가운데가 완성본을 보여 주는가 (페이지 전환 Patch).
+   *
+   * `view`는 페이지마다가 아니라 화면 전체에 하나뿐이다. 그래서 1페이지를 만든
+   * 뒤 2페이지로 넘어가면, 2페이지에는 결과가 없는데 화면은 여전히 완성본을
+   * 가리켰다 — 탭은 결과가 있어야 나오므로 사라지고, 우측 도구도 전부 결과를
+   * 요구하므로 비었다. 빈 화면 하나만 남는다.
+   *
+   * 결과가 없는 페이지에서 완성본을 보여 줄 것이 없다. 그때는 기획서로 돌아간다 —
+   * 결과가 있는 페이지로 돌아오면 다시 완성본이다.
+   */
+  const compare = generation !== null && generation.view === 'compare' && generation.hasResult
   // Offer the first-start choice only on a genuinely untouched page — a document
   // already being worked on never sees it again.
   const showStart =
