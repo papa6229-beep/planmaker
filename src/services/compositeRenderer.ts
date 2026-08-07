@@ -125,6 +125,31 @@ function silhouette(
   return canvas
 }
 
+/**
+ * 상자 한가운데를 축으로 돌려 놓고 그린다 (회전 Patch).
+ *
+ * 축이 상자 한가운데인 것은 화면과 같아야 하기 때문이다. CSS의 `rotate`도 기본
+ * 축이 한가운데라, 여기서 다른 축을 쓰면 눈으로 맞춘 각도가 저장한 그림에서
+ * 어긋난다. 각도가 0이면 좌표계를 건드리지 않는다 — 지금까지와 같은 길이다.
+ */
+async function spun(
+  ctx: CanvasRenderingContext2D,
+  rect: { x: number; y: number; width: number; height: number },
+  angle: number | undefined,
+  draw: () => Promise<void>,
+): Promise<void> {
+  if (angle === undefined || angle === 0) {
+    await draw()
+    return
+  }
+  ctx.save()
+  ctx.translate(rect.x + rect.width / 2, rect.y + rect.height / 2)
+  ctx.rotate((angle * Math.PI) / 180)
+  ctx.translate(-(rect.x + rect.width / 2), -(rect.y + rect.height / 2))
+  await draw()
+  ctx.restore()
+}
+
 /** 이 그림 한 장을 효과까지 얹어 그린다. */
 async function drawLayer(
   ctx: CanvasRenderingContext2D,
@@ -325,22 +350,23 @@ export async function renderComposite(plan: CompositePlan, sources: CompositeSou
     ...plan.layers.map((layer) => ({
       order: layer.order,
       image: 0,
-      draw: () => drawLayer(ctx, layer, sources, backgroundTone),
+      draw: () => spun(ctx, layer.rect, layer.angle, () => drawLayer(ctx, layer, sources, backgroundTone)),
     })),
     ...(plan.textObjects ?? []).map((text) => ({
       order: text.order,
       image: 1,
-      draw: async () => {
-        const blob = sources.blobs.get(text.assetId)
-        if (blob === undefined) return
-        const source = await toSource(blob)
-        // 작업자가 옮기거나 늘린 값이 그대로 여기로 온다 — 화면에서 본 자리가
-        // 저장한 파일의 자리다.
-        ctx.drawImage(
-          source, 0, 0, source.width, source.height,
-          text.rect.x, text.rect.y, text.rect.width, text.rect.height,
-        )
-      },
+      draw: () =>
+        spun(ctx, text.rect, text.angle, async () => {
+          const blob = sources.blobs.get(text.assetId)
+          if (blob === undefined) return
+          const source = await toSource(blob)
+          // 작업자가 옮기거나 늘린 값이 그대로 여기로 온다 — 화면에서 본 자리가
+          // 저장한 파일의 자리다.
+          ctx.drawImage(
+            source, 0, 0, source.width, source.height,
+            text.rect.x, text.rect.y, text.rect.width, text.rect.height,
+          )
+        }),
     })),
   ].toSorted((a, b) => a.order - b.order || a.image - b.image)
   for (const item of drawList) await item.draw()

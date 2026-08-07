@@ -170,6 +170,37 @@ export function ResultObjectLayer({ pageId, page }: Props) {
       window.addEventListener('pointerup', onUp)
     }
 
+  /**
+   * 상자 한가운데를 축으로 돌린다 (회전 Patch).
+   *
+   * 손잡이를 잡은 손가락과 한가운데를 잇는 선의 각도를 그대로 쓴다. Shift를
+   * 누르면 15도씩 끊어져 수평·수직을 정확히 맞출 수 있다.
+   */
+  const startSpin = (blockId: string, rect: LayoutRect) => (e: ReactPointerEvent) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    studio.selectObject(blockId)
+    const box = boxRef.current?.getBoundingClientRect()
+    if (box === undefined) return
+    const cx = box.left + ((rect.x + rect.width / 2) / page.width) * box.width
+    const cy = box.top + ((rect.y + rect.height / 2) / page.height) * box.height
+    // 손잡이는 상자 위에 있다 — 그 방향을 0도로 삼아야 잡은 곳이 따라온다.
+    let moved = false
+    const onMove = (ev: PointerEvent) => {
+      moved = true
+      const deg = (Math.atan2(ev.clientY - cy, ev.clientX - cx) * 180) / Math.PI + 90
+      studio.spinObject(pageId, blockId, ev.shiftKey ? Math.round(deg / 15) * 15 : Math.round(deg))
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      if (moved) settle()
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
   const percent = (value: number, total: number) => `${((value / total) * 100).toFixed(4)}%`
 
   return (
@@ -196,6 +227,11 @@ export function ResultObjectLayer({ pageId, page }: Props) {
               top: percent(object.rect.y, page.height),
               width: percent(object.rect.width, page.width),
               height: percent(object.rect.height, page.height),
+              // 화면과 저장한 그림이 같은 축으로 돈다 — CSS도 캔버스도 상자
+              // 한가운데가 축이다.
+              ...(object.angle === undefined || object.angle === 0
+                ? {}
+                : { transform: `rotate(${String(object.angle)}deg)` }),
             }}
             onPointerDown={startMove(kind, object.blockId, object.rect)}
             onKeyDown={(e) => {
@@ -240,6 +276,26 @@ export function ResultObjectLayer({ pageId, page }: Props) {
                   )
                 })}
               </span>
+            )}
+            {selected && (
+              <span
+                className="result-object__spin"
+                role="slider"
+                tabIndex={0}
+                aria-label="기울기"
+                aria-valuenow={object.angle ?? 0}
+                aria-valuemin={-180}
+                aria-valuemax={180}
+                title={`기울기 ${String(object.angle ?? 0)}° · Shift로 15° 단위`}
+                onPointerDown={startSpin(object.blockId, object.rect)}
+                onKeyDown={(e) => {
+                  const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0
+                  if (step === 0) return
+                  e.preventDefault()
+                  studio.spinObject(pageId, object.blockId, (object.angle ?? 0) + step * (e.shiftKey ? 15 : 1))
+                  settle()
+                }}
+              />
             )}
             {selected &&
               RESIZE_HANDLES.map((handle) => (

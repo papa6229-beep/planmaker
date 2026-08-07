@@ -162,11 +162,14 @@ function readTextObjects(raw: unknown): Record<string, StudioTextObject[]> {
       if (!isRecord(rect)) continue
       const nums = ['x', 'y', 'width', 'height'].map((k) => rect[k])
       if (nums.some((n) => typeof n !== 'number' || !Number.isFinite(n))) continue
+      const angle = item.angle
       kept.push({
         blockId,
         assetId,
         rect: { x: nums[0] as number, y: nums[1] as number, width: nums[2] as number, height: nums[3] as number },
         layer: typeof layer === 'number' ? layer : 0,
+        // 기울기는 예전 파일에 없다. 없으면 0이고, 그때는 아무것도 달라지지 않는다.
+        ...(typeof angle === 'number' && Number.isFinite(angle) ? { angle } : {}),
       })
     }
     out[pageId] = kept

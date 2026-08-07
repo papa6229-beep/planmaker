@@ -688,3 +688,58 @@ describe('§6 부분수정은 고른 것만 건드린다', () => {
     }
   })
 })
+
+// ── §7 기울이기 ─────────────────────────────────────────────────────────────
+
+describe('§7 오브젝트를 기울인다', () => {
+  it('기울기가 저장되고 합성 계획에 실리며, 작업 파일에도 남는다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    const calls = fetchSpy.mock.calls.length
+    const boxes = await waitFor(() => {
+      const found = container.querySelectorAll<HTMLElement>('.result-object')
+      expect(found.length).toBe(6)
+      return found
+    }, { timeout: 5000 })
+
+    const title = Array.from(boxes).find((b) => labelOf(b) === '꾸며진 문구 blk_t1')!
+    fireEvent.pointerDown(title, { button: 0, clientX: 5, clientY: 5 })
+    await waitFor(() => expect(title.getAttribute('aria-pressed')).toBe('true'))
+    fireEvent.pointerUp(window)
+
+    composed.mockClear()
+    // 방향키로 15도. 눈으로 끄는 것과 같은 값을 쓴다.
+    const spin = await within(title).findByRole('slider', { name: '기울기' })
+    fireEvent.keyDown(spin, { key: 'ArrowRight', shiftKey: true })
+
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect(job?.textObjects?.page_1?.find((o) => o.blockId === 'blk_t1')?.angle).toBe(15)
+    }, { timeout: 5000 })
+
+    // 합성 계획이 그 각도를 받는다.
+    await waitFor(() => expect(composed).toHaveBeenCalled(), { timeout: 5000 })
+    const plan = composed.mock.calls.at(-1)![0] as { textObjects?: { angle?: number }[] }
+    expect((plan.textObjects ?? []).some((t) => t.angle === 15)).toBe(true)
+    // 손대지 않은 것에는 각도가 없다 — 예전 결과가 열려도 달라지지 않는 이유다.
+    expect((plan.textObjects ?? []).filter((t) => t.angle !== undefined)).toHaveLength(1)
+    // 기울이는 데 외부로 나간 요청은 없다.
+    expect(fetchSpy.mock.calls.length).toBe(calls)
+
+    // 작업 파일 왕복에서 각도가 남고, 예전 파일에는 없다.
+    const mod = await load('domain/studioFile')
+    const job = await loadStudioJob(STUDIO_JOB_ID)
+    const parsed = mod.parseStudioFileState(JSON.parse(JSON.stringify(mod.toStudioFileState(job!))))
+    expect(parsed?.textObjects?.page_1?.find((o: { blockId: string }) => o.blockId === 'blk_t1')?.angle).toBe(15)
+    const old = mod.parseStudioFileState({
+      version: '0.7.0',
+      source: null,
+      productImages: {},
+      textObjects: { page_1: [{ blockId: 'b', assetId: 'a', rect: { x: 0, y: 0, width: 1, height: 1 }, layer: 0 }] },
+    })
+    expect(old?.textObjects?.page_1?.[0]?.angle).toBeUndefined()
+  })
+})

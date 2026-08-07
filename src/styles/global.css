@@ -2489,6 +2489,28 @@ button { font-family: inherit; }
 }
 .result-object__layer:hover:not(:disabled) { background: var(--color-accent); color: #fff; }
 .result-object__layer:disabled { opacity: 0.35; cursor: default; }
+.result-object__spin {
+  position: absolute;
+  left: 50%;
+  top: -26px;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  border: 2px solid var(--color-accent);
+  border-radius: 999px;
+  background: #fff;
+  cursor: grab;
+}
+.result-object__spin::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 2px;
+  height: 12px;
+  margin-left: -1px;
+  background: var(--color-accent);
+}
 .result-object__handle--nw { left: -5px; top: -5px; cursor: nwse-resize; }
 .result-object__handle--ne { right: -5px; top: -5px; cursor: nesw-resize; }
 .result-object__handle--sw { left: -5px; bottom: -5px; cursor: nesw-resize; }

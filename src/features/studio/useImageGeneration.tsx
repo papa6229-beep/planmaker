@@ -840,21 +840,29 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
               .map((b) => b.id)
       const rectOverrides: Record<string, LayoutRect> = {}
       const orderOverrides: Record<string, number> = {}
+      const angleOverrides: Record<string, number> = {}
       for (const object of images) {
         rectOverrides[object.blockId] = object.rect
         orderOverrides[object.blockId] = object.layer
+        if (object.angle !== undefined) angleOverrides[object.blockId] = object.angle
       }
 
       const composite = planLocalComposite({
         page,
         background,
-        textObjects: objects.map((t) => ({ assetId: t.assetId, rect: t.rect, order: t.layer })),
+        textObjects: objects.map((t) => ({
+          assetId: t.assetId,
+          rect: t.rect,
+          order: t.layer,
+          ...(t.angle === undefined ? {} : { angle: t.angle }),
+        })),
         productImages: job.productImages,
         effects: job.effects ?? {},
         grain: studio.grain,
         onlyBlockIds: fixed,
         rectOverrides,
         orderOverrides,
+        angleOverrides,
         includeTexts: false,
       })
       const blob = await renderComposite(composite, await collectCompositeSources(composite))

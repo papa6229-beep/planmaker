@@ -146,6 +146,13 @@ export interface StudioJobApi {
    * 겹침은 결과를 보면서 정할 일이고, 기획서는 "무엇을 어디에"를 적는 곳이다.
    */
   reorderObject: (pageId: string, blockId: string, move: LayerMove) => Promise<void>
+  /**
+   * 오브젝트를 기울인다 (회전 Patch). 상자 한가운데가 축이다.
+   *
+   * 이미 기울어져 그려진 그림을 펴 주지는 않는다 — 이 값은 우리가 더 기울이는
+   * 각도다.
+   */
+  spinObject: (pageId: string, blockId: string, angle: number) => void
   /** 이 오브젝트가 뒤에서 몇 번째인가. 끝에 닿은 버튼을 흐리게 하는 데 쓴다. */
   layerPositionOf: (pageId: string, blockId: string) => { index: number; count: number } | null
   /**
@@ -399,6 +406,14 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
             textObjects: { ...j.textObjects, [pageId]: texts.map((o) => ({ ...o, layer: rank.get(o.blockId) ?? o.layer })) },
             updatedAt: now,
           }
+        }),
+      spinObject: (pageId, blockId, angle) =>
+        void mutate((j) => {
+          const wrapped = ((angle % 360) + 360) % 360
+          const patch = { angle: wrapped > 180 ? wrapped - 360 : wrapped }
+          return imageObjectsOf(j, pageId).some((o) => o.blockId === blockId)
+            ? withImageObject(j, pageId, blockId, patch, Date.now())
+            : withTextObject(j, pageId, blockId, patch, Date.now())
         }),
       layerPositionOf: (pageId, blockId) => {
         const order = layerOrderOf(imageObjectsOf(job, pageId), textObjectsOf(job, pageId))
