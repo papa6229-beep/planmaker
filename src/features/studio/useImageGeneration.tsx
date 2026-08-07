@@ -725,6 +725,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           productImages: studio.job.productImages,
           effects: studio.job.effects ?? {},
           grain: studio.grain,
+          tone: studio.toneOf(paid.plan.pageId),
           onlyBlockIds: paid.plan.fixedBlockIds,
           includeTexts: false,
         })
@@ -865,6 +866,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         productImages: job.productImages,
         effects: job.effects ?? {},
         grain: studio.grain,
+        tone: studio.toneOf(pageId),
         onlyBlockIds: fixed,
         rectOverrides,
         orderOverrides,

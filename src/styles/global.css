@@ -2405,6 +2405,24 @@ button { font-family: inherit; }
   accent-color: var(--color-accent);
 }
 
+/* ── 결과 톤 조절 (톤 조절 Patch) ────────────────────────────────────────── */
+.tone {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-panel);
+}
+.tone__title { margin: 0; font-size: 13px; font-weight: 700; }
+.tone__note { margin: 0; color: var(--color-muted); font-size: 11px; line-height: 1.5; }
+.tone__sliders { display: flex; flex-direction: column; gap: 6px; }
+.tone__slider { display: flex; flex-direction: column; gap: 2px; }
+.tone__slider-label { font-size: 11px; color: var(--color-muted); }
+.tone__slider input[type='range'] { width: 100%; margin: 0; accent-color: var(--color-accent); cursor: pointer; }
+.tone__reset { align-self: flex-start; }
+
 /* ── 블록별 디자인 주문 (블록별 주문 Patch) ──────────────────────────────── */
 .block-order {
   display: flex;

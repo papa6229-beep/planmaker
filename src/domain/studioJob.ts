@@ -22,6 +22,7 @@ import { referencedAssetIds } from './pageOps'
 import { normalizeEffects, type CompositeEffects } from './compositeEffects'
 import type { GeneratedPageResult, ImageRevision } from './imageGeneration'
 import type { StudioTextObject } from './textObjects'
+import { NO_TONE, normalizeTone, type ToneAdjust } from './toneAdjust'
 import type { BriefDocument } from './pageSchema'
 
 export const STUDIO_JOB_VERSION = '0.1.0'
@@ -134,6 +135,8 @@ export interface StudioJob {
   blockOrders?: Record<string, BlockOrder>
   /** 완성 결과 전체에 얹는 그레인 (§9.5). */
   grain?: number
+  /** 페이지 id → 완성 결과 전체의 톤 조절 (톤 조절 Patch). */
+  tones?: Record<string, ToneAdjust>
   /** 이 작업이 고른 생성 방식 (§6). */
   method?: GenerationMethod
   createdAt: number
@@ -479,6 +482,16 @@ export function withBlockOrder(
   if (next.note === undefined && next.referenceAssetId === undefined) delete orders[blockId]
   else orders[blockId] = next
   return { ...job, blockOrders: orders, updatedAt: now }
+}
+
+/** 이 페이지의 톤 조절. 없으면 손대지 않은 상태다. */
+export function toneOf(job: StudioJob | null, pageId: string): ToneAdjust {
+  return job === null ? NO_TONE : normalizeTone(job.tones?.[pageId])
+}
+
+export function withTone(job: StudioJob, pageId: string, patch: Partial<ToneAdjust>, now: number): StudioJob {
+  const next = normalizeTone({ ...toneOf(job, pageId), ...patch })
+  return { ...job, tones: { ...job.tones, [pageId]: next }, updatedAt: now }
 }
 
 export function imageObjectsOf(job: StudioJob | null, pageId: string): StudioTextObject[] {

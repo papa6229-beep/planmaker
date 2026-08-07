@@ -39,6 +39,7 @@ import { StyleReferenceTools } from '../components/studio/StyleReferenceTools'
 import { BackgroundDialog } from '../components/studio/BackgroundDialog'
 import { CompositeEffectsPanel } from '../components/studio/CompositeEffectsPanel'
 import { BlockOrderPanel } from '../components/studio/BlockOrderPanel'
+import { ToneAdjustPanel } from '../components/studio/ToneAdjustPanel'
 import { BackgroundCompositeProvider } from '../features/studio/useBackgroundComposite'
 import { StudioEffectsSync } from '../features/studio/StudioEffectsSync'
 import { GenerateImageDialog } from '../components/studio/GenerateImageDialog'
@@ -272,6 +273,8 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
                 뒤의 부분수정과 목적이 다르므로 자리도 따로 둔다. */}
             <BlockOrderPanel />
             <CompositeEffectsPanel />
+            {/* 결과 전체의 톤. 결과가 있을 때만 나온다 (톤 조절 Patch). */}
+            <ToneAdjustPanel />
             {generation !== null && generation.hasResult ? <EditPanel /> : <ReadyPanel />}
           </div>
         ) : (

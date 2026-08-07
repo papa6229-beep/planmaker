@@ -875,3 +875,78 @@ describe('§9 블록마다 미리 주문한다', () => {
     expect(old?.blockOrders ?? {}).toEqual({})
   })
 })
+
+// ── §10 결과 톤 조절 ────────────────────────────────────────────────────────
+
+describe('§10 완성 결과 전체의 톤', () => {
+  it('픽셀 계산이 순서대로 걸리고, 0이면 손대지 않는다', async () => {
+    const { applyTone, normalizeTone, toneIsFlat, NO_TONE } = await load('domain/toneAdjust')
+
+    // 넷 다 0이면 한 픽셀도 바뀌지 않는다 — 되돌릴 것이 없다는 뜻이다.
+    const flat = new Uint8ClampedArray([100, 120, 140, 255])
+    applyTone(flat, NO_TONE)
+    expect([...flat]).toEqual([100, 120, 140, 255])
+    expect(toneIsFlat(NO_TONE)).toBe(true)
+
+    // 밝기를 올리면 셋 다 같은 만큼 오른다.
+    const lifted = new Uint8ClampedArray([100, 120, 140, 255])
+    applyTone(lifted, { ...NO_TONE, brightness: 0.5 })
+    expect(lifted[0]).toBeGreaterThan(100)
+    expect(lifted[1]! - 120).toBe(lifted[0]! - 100)
+
+    // 채도 -1이면 회색이 된다 — 세 채널이 같아진다.
+    const gray = new Uint8ClampedArray([200, 60, 20, 255])
+    applyTone(gray, { ...NO_TONE, saturation: -1 })
+    expect(gray[0]).toBe(gray[1])
+    expect(gray[1]).toBe(gray[2])
+
+    // 색온도 +는 붉은 쪽을 올리고 푸른 쪽을 내린다.
+    const warm = new Uint8ClampedArray([128, 128, 128, 255])
+    applyTone(warm, { ...NO_TONE, temperature: 1 })
+    expect(warm[0]!).toBeGreaterThan(128)
+    expect(warm[2]!).toBeLessThan(128)
+
+    // 투명한 자리는 건드리지 않는다.
+    const clear = new Uint8ClampedArray([10, 20, 30, 0])
+    applyTone(clear, { ...NO_TONE, brightness: 1 })
+    expect([...clear]).toEqual([10, 20, 30, 0])
+
+    // 범위 밖은 경계로 접고, 모르는 값은 0이다.
+    expect(normalizeTone({ brightness: 9, contrast: -9, saturation: 'x', temperature: null })).toEqual({
+      brightness: 1, contrast: -1, saturation: 0, temperature: 0,
+    })
+  })
+
+  it('슬라이더가 합성 계획에 실리고, 작업 파일에 남는다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    const calls = fetchSpy.mock.calls.length
+    composed.mockClear()
+
+    const slider = await screen.findByLabelText('밝기 조절')
+    fireEvent.change(slider, { target: { value: '40' } })
+    fireEvent.pointerUp(slider)
+
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect(job?.tones?.page_1?.brightness).toBeCloseTo(0.4, 5)
+    }, { timeout: 5000 })
+
+    await waitFor(() => expect(composed).toHaveBeenCalled(), { timeout: 5000 })
+    const plan = composed.mock.calls.at(-1)![0] as { tone: { brightness: number } }
+    expect(plan.tone.brightness).toBeCloseTo(0.4, 5)
+    // 톤을 만지는 데 외부로 나간 요청은 없다.
+    expect(fetchSpy.mock.calls.length).toBe(calls)
+
+    // 작업 파일에 남고, 예전 파일은 손대지 않은 상태로 읽힌다.
+    const mod = await load('domain/studioFile')
+    const job = await loadStudioJob(STUDIO_JOB_ID)
+    const parsed = mod.parseStudioFileState(JSON.parse(JSON.stringify(mod.toStudioFileState(job!))))
+    expect(parsed?.tones?.page_1?.brightness).toBeCloseTo(0.4, 5)
+    const old = mod.parseStudioFileState({ version: '0.9.0', source: null, productImages: {} })
+    expect(old?.tones ?? {}).toEqual({})
+  })
+})

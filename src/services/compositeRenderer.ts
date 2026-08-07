@@ -15,6 +15,7 @@
 
 import { contactShadow, wallShadow, type CompositeEffects } from '../domain/compositeEffects'
 import { paperOutset, PAPER_SHADOW } from '../domain/paperCutout'
+import { applyTone, normalizeTone, toneIsFlat } from '../domain/toneAdjust'
 import { photoImageStyle, type ContentBox } from '../domain/photoBox'
 import { fitSourceRect } from '../domain/imageLayout'
 import type { PaperCanvas } from './paperCutoutShape'
@@ -403,6 +404,18 @@ export async function renderComposite(plan: CompositePlan, sources: CompositeSou
       y += text.fontSize * 1.25
     }
     ctx.restore()
+  }
+
+  // ── 톤 조절: 모두 그린 **뒤**, 그레인 **앞** (톤 조절 Patch) ──────────────
+  //
+  // 결과 전체에 한 번 건다. 겹마다 걸면 배경과 사진의 톤이 따로 놀고, 그레인
+  // 뒤에 걸면 노이즈까지 함께 밝아져 결이 뭉갠 것처럼 보인다.
+  // 예전에 만든 계획에는 이 칸이 없다. 없으면 손대지 않은 것으로 읽는다.
+  const tone = normalizeTone(plan.tone)
+  if (!toneIsFlat(tone)) {
+    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    applyTone(pixels.data, tone)
+    ctx.putImageData(pixels, 0, 0)
   }
 
   drawGrain(ctx, canvas.width, canvas.height, plan.grain)

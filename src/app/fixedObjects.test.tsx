@@ -620,6 +620,7 @@ describe('§4 배경 → 사진 → 문구', () => {
           ],
           texts: [],
           grain: 0,
+          tone: { brightness: 0, contrast: 0, saturation: 0, temperature: 0 },
           externalCalls: 0,
         },
         { blobs: new Map([['a_plate', plate], ['a_photo', photo], ['a_fore', fore]]) },

@@ -23,6 +23,8 @@ import {
   blockEffectsOf,
   blockOrderOf,
   withBlockOrder,
+  toneOf,
+  withTone,
   createStudioJob,
   linkProductImage,
   methodOf,
@@ -60,6 +62,7 @@ import type { GeneratedPageResult } from '../../domain/imageGeneration'
 import type { StudioTextObject } from '../../domain/textObjects'
 import { layerOrderOf, reorderLayers } from '../../domain/textLayers'
 import type { LayerMove } from '../../domain/layerOrder'
+import type { ToneAdjust } from '../../domain/toneAdjust'
 import type { LayoutRect } from '../../domain/imageLayout'
 import { loadStudioJob, saveStudioJob, STUDIO_JOB_ID } from '../../services/studioStore'
 import type { StudioFileState } from '../../domain/studioFile'
@@ -127,6 +130,14 @@ export interface StudioJobApi {
   /** 완성 결과 전체의 그레인 (§9.5). */
   grain: number
   setGrain: (value: number) => void
+  /**
+   * 완성 결과 전체의 톤 조절 (톤 조절 Patch).
+   *
+   * 원본 결과 그림은 바뀌지 않는다. 다시 그릴 때 곱하는 값이라, 전부 0으로
+   * 내리면 손대기 전 그림이 그대로 돌아온다.
+   */
+  toneOf: (pageId: string) => ToneAdjust
+  setTone: (pageId: string, patch: Partial<ToneAdjust>) => Promise<void>
   /** 이 작업이 고른 생성 방식 (§6). */
   method: GenerationMethod
   setMethod: (method: GenerationMethod) => void
@@ -401,6 +412,8 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       grain: job.grain ?? DEFAULT_GRAIN,
       setGrain: (value) =>
         void commit({ ...job, grain: Math.min(1, Math.max(0, value)), updatedAt: Date.now() }),
+      toneOf: (pageId) => toneOf(job, pageId),
+      setTone: (pageId, patch) => mutate((j) => withTone(j, pageId, patch, Date.now())),
       method: methodOf(job),
       setMethod: (next) => void commit(withMethod(job, next, Date.now())),
       textObjectsOf: (pageId) => textObjectsOf(job, pageId),

@@ -20,6 +20,7 @@ import { getBlockTypeMeta } from './blockTypes'
 import { drawsBareText, isPairedLinkUrl, textAlignOf, type TextAlign } from './simpleBlocks'
 import { CARD_CHROME_Y, CARD_PADDING_X, fitTextSize } from './textFit'
 import type { BriefPage } from './pageSchema'
+import { normalizeTone, type ToneAdjust } from './toneAdjust'
 import type { StudioBackground } from './studioJob'
 
 export interface CompositeLayerPlan {
@@ -69,6 +70,8 @@ export interface CompositePlan {
   texts: CompositeTextPlan[]
   /** 완성 결과 전체에 얹는 그레인 (§9.5). */
   grain: number
+  /** 완성 결과 전체의 톤 조절 (톤 조절 Patch). 넷 다 0이면 손대지 않는다. */
+  tone: ToneAdjust
   /**
    * 이 계획을 실행하는 데 필요한 외부 이미지 생성 호출 수.
    *
@@ -89,6 +92,8 @@ export interface CompositePlanInput {
   /** 블록 id → 효과 세기. 없는 블록은 기본값. */
   effects: Readonly<Record<string, Partial<CompositeEffects>>>
   grain?: number
+  /** 완성 결과 전체의 톤 조절 (톤 조절 Patch). */
+  tone?: ToneAdjust
   /**
    * 이 블록들만 얹는다 (한방 생성 Patch §2).
    *
@@ -179,6 +184,7 @@ export function planLocalComposite(input: CompositePlanInput): CompositePlan {
     layers,
     texts,
     grain: input.grain ?? DEFAULT_PLAN_GRAIN,
+    tone: normalizeTone(input.tone),
     externalCalls: 0,
   }
 }
