@@ -91,6 +91,7 @@ import { collectCompositeSources } from '../../services/compositeSources'
 import { createId } from '../../domain/factory'
 import type { BriefPage } from '../../domain/pageSchema'
 import type { LayoutRect } from '../../domain/imageLayout'
+import type { ToneAdjust } from '../../domain/toneAdjust'
 import { buildTextEditPrompt, planTextEditInputs } from '../../domain/preserveDesign'
 
 /** 중앙 패널이 무엇을 보여 주는가. 참고 이미지 보기와는 아무 관계가 없다. */
@@ -334,6 +335,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
   const [instructions, setInstructions] = useState<Record<string, string>>({})
   /** 요청이 나가 있는 동안은 한 번도 더 나가지 않는다. */
   const runningRef = useRef(false)
+  /** 다시 합치기의 차례표. 늦게 끝난 예전 합성이 최신 결과를 덮지 않게 한다. */
+  const recomposeRef = useRef(0)
 
   const doc = studio === null ? null : getDocument()
   const activePageId = doc?.activePageId ?? ''
@@ -919,10 +922,12 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       const rectOverrides: Record<string, LayoutRect> = {}
       const orderOverrides: Record<string, number> = {}
       const angleOverrides: Record<string, number> = {}
+      const objectTones: Record<string, ToneAdjust> = {}
       for (const object of images) {
         rectOverrides[object.blockId] = object.rect
         orderOverrides[object.blockId] = object.layer
         if (object.angle !== undefined) angleOverrides[object.blockId] = object.angle
+        objectTones[object.blockId] = studio.objectToneOf(object.blockId)
       }
 
       const composite = planLocalComposite({
@@ -933,6 +938,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           rect: t.rect,
           order: t.layer,
           ...(t.angle === undefined ? {} : { angle: t.angle }),
+          // 이 문구 하나에만 거는 톤 (블록별 톤 Patch). 전체 톤과 따로 산다.
+          tone: studio.objectToneOf(t.blockId),
         })),
         productImages: job.productImages,
         effects: job.effects ?? {},
@@ -942,9 +949,15 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         rectOverrides,
         orderOverrides,
         angleOverrides,
+        objectTones,
         includeTexts: false,
       })
+      // 이 다시 합치기가 **아직 최신인가**. 슬라이더를 여러 번 놓거나 오브젝트를
+      // 잇달아 지우면 두 번이 겹쳐 흐르고, 먼저 시작한 쪽이 늦게 끝나면 예전
+      // 그림이 최신 결과를 덮는다. 자기 차례를 적어 두고 끝날 때 확인한다.
+      const ticket = (recomposeRef.current += 1)
       const blob = await renderComposite(composite, await collectCompositeSources(composite))
+      if (ticket !== recomposeRef.current) return
       const assetId = createId('asset')
       await putAsset({
         id: assetId,
@@ -953,6 +966,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         mimeType: 'image/png',
         byteSize: blob.size,
       })
+      if (ticket !== recomposeRef.current) return
       // 지나온 결과는 지우지 않는다 — 줄에 한 칸을 더할 뿐이다 (§3 마지막 줄).
       const kept = revisionsOf(previous).slice(0, cursorOf(previous) + 1)
       const line: ImageRevision[] = [...kept, { assetId, kind: 'edit' }]

@@ -24,7 +24,9 @@ import {
   blockOrderOf,
   withBlockOrder,
   toneOf,
+  objectToneOf,
   withTone,
+  withObjectTone,
   createStudioJob,
   linkProductImage,
   methodOf,
@@ -138,6 +140,15 @@ export interface StudioJobApi {
    */
   toneOf: (pageId: string) => ToneAdjust
   setTone: (pageId: string, patch: Partial<ToneAdjust>) => Promise<void>
+  /**
+   * 오브젝트 **하나에만** 거는 톤 (블록별 톤 Patch).
+   *
+   * 페이지 전체 톤과 따로 산다. 사진 하나만 어둡게 깔고 페이지 전체를 밝히는
+   * 일은 한 벌의 값으로는 되지 않기 때문이다. 그리는 차례는 블록별이 먼저,
+   * 전체가 나중이다.
+   */
+  objectToneOf: (blockId: string) => ToneAdjust
+  setObjectTone: (blockId: string, patch: Partial<ToneAdjust>) => Promise<void>
   /** 이 작업이 고른 생성 방식 (§6). */
   method: GenerationMethod
   setMethod: (method: GenerationMethod) => void
@@ -425,6 +436,8 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
         void commit({ ...job, grain: Math.min(1, Math.max(0, value)), updatedAt: Date.now() }),
       toneOf: (pageId) => toneOf(job, pageId),
       setTone: (pageId, patch) => mutate((j) => withTone(j, pageId, patch, Date.now())),
+      objectToneOf: (blockId) => objectToneOf(job, blockId),
+      setObjectTone: (blockId, patch) => mutate((j) => withObjectTone(j, blockId, patch, Date.now())),
       method: methodOf(job),
       setMethod: (next) => void commit(withMethod(job, next, Date.now())),
       textObjectsOf: (pageId) => textObjectsOf(job, pageId),

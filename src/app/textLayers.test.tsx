@@ -1107,27 +1107,98 @@ describe('§12 오브젝트 삭제', () => {
       expect(container.querySelectorAll('.result-object').length).toBe(6)
     }, { timeout: 5000 })
 
-    for (const id of IMAGE_IDS) {
-      const box = Array.from(container.querySelectorAll<HTMLElement>('.result-object')).find(
+    const boxFor = (id: string) =>
+      Array.from(container.querySelectorAll<HTMLElement>('.result-object')).find(
         (b) => labelOf(b) === `이미지 ${id}`,
       )!
-      fireEvent.pointerDown(box, { button: 0, clientX: 5, clientY: 5 })
-      await waitFor(() => expect(box.getAttribute('aria-pressed')).toBe('true'))
-      fireEvent.pointerUp(window)
+    for (const id of IMAGE_IDS) {
+      const drawn = composed.mock.calls.length
       const name = id === 'blk_photo' ? '일반 이미지' : '컷아웃'
-      fireEvent.click(await within(box).findByRole('button', { name: `${name} 지우기` }))
-      fireEvent.click(await within(box).findByRole('button', { name: `${name} 정말 지우기` }))
+      // 매번 다시 찾는다 — 앞의 다시 합치기가 화면을 새로 그렸을 수 있다.
+      fireEvent.pointerDown(boxFor(id), { button: 0, clientX: 5, clientY: 5 })
+      await waitFor(() => expect(boxFor(id).getAttribute('aria-pressed')).toBe('true'), { timeout: 5000 })
+      fireEvent.pointerUp(window)
+      fireEvent.click(await within(boxFor(id)).findByRole('button', { name: `${name} 지우기` }))
+      fireEvent.click(await within(boxFor(id)).findByRole('button', { name: `${name} 정말 지우기` }))
       await waitFor(async () => {
         const job = await loadStudioJob(STUDIO_JOB_ID)
         expect(job?.imageObjects?.page_1?.some((o) => o.blockId === id)).toBe(false)
       }, { timeout: 5000 })
+      // 다음 지우기로 넘어가기 전에 이번 합성이 끝나기를 기다린다.
+      await waitFor(() => expect(composed.mock.calls.length).toBeGreaterThan(drawn), { timeout: 5000 })
     }
 
-    // 목록이 비었다고 예전 결과로 읽히면 지운 것이 전부 되살아난다. 그러지 않는다.
+    // 목록이 비었다고 예전 결과로 읽히면 지운 것이 **전부 되살아난다** — 그러면
+    // 빈 계획은 한 번도 나올 수 없다. 마지막 한 건만 보지 않는 것은, 잇달아
+    // 지우면 합성 둘이 겹쳐 흐르고 끝나는 차례가 정해져 있지 않기 때문이다.
     await waitFor(async () => {
       await loadStudioJob(STUDIO_JOB_ID)
-      const plan = composed.mock.calls.at(-1)![0] as { layers: { blockId: string }[] }
-      expect(plan.layers.length).toBe(0)
+      const plans = composed.mock.calls.map((c) => c[0] as { layers: { blockId: string }[] })
+      expect(plans.some((plan) => plan.layers.length === 0)).toBe(true)
     }, { timeout: 5000 })
+  })
+})
+
+// ── §13 블록별 톤 ───────────────────────────────────────────────────────────
+
+describe('§13 고른 오브젝트만 톤 조절', () => {
+  it('고른 것에만 값이 붙고, 전체 톤과 따로 남으며, 작업 파일에도 남는다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    const boxes = await waitFor(() => {
+      const found = container.querySelectorAll<HTMLElement>('.result-object')
+      expect(found.length).toBe(6)
+      return found
+    }, { timeout: 5000 })
+
+    // 아무것도 고르지 않았으면 블록별 슬라이더는 없다.
+    expect(screen.queryByLabelText(/큰 문구 밝기 조절/)).toBeNull()
+
+    const calls = fetchSpy.mock.calls.length
+    const title = Array.from(boxes).find((b) => labelOf(b) === '꾸며진 문구 blk_t1')!
+    fireEvent.pointerDown(title, { button: 0, clientX: 5, clientY: 5 })
+    await waitFor(() => expect(title.getAttribute('aria-pressed')).toBe('true'))
+    fireEvent.pointerUp(window)
+
+    // 전체는 밝게, 고른 문구 하나는 어둡게 — 한 벌의 값으로는 안 되는 일이다.
+    const whole = await screen.findByLabelText('밝기 조절')
+    fireEvent.change(whole, { target: { value: '30' } })
+    fireEvent.pointerUp(whole)
+
+    const mine = await screen.findByLabelText('큰 문구 밝기 조절')
+    fireEvent.change(mine, { target: { value: '-50' } })
+    fireEvent.pointerUp(mine)
+
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect(job?.objectTones?.blk_t1?.brightness).toBeCloseTo(-0.5, 5)
+      expect(job?.tones?.page_1?.brightness).toBeCloseTo(0.3, 5)
+    }, { timeout: 5000 })
+
+    // 합성 계획에서도 둘이 따로 실린다.
+    await waitFor(async () => {
+      await loadStudioJob(STUDIO_JOB_ID)
+      const plan = composed.mock.calls.at(-1)![0] as {
+        tone: { brightness: number }
+        textObjects?: { tone?: { brightness: number } }[]
+      }
+      expect(plan.tone.brightness).toBeCloseTo(0.3, 5)
+      const mineTone = (plan.textObjects ?? []).map((t) => t.tone?.brightness ?? 0)
+      expect(mineTone.filter((v) => v !== 0)).toEqual([-0.5])
+    }, { timeout: 5000 })
+
+    // 톤을 만지는 데 외부로 나간 요청은 없다.
+    expect(fetchSpy.mock.calls.length).toBe(calls)
+
+    // 작업 파일에 남고, 예전 파일은 손대지 않은 상태로 읽힌다.
+    const mod = await load('domain/studioFile')
+    const job = await loadStudioJob(STUDIO_JOB_ID)
+    const parsed = mod.parseStudioFileState(JSON.parse(JSON.stringify(mod.toStudioFileState(job!))))
+    expect(parsed?.objectTones?.blk_t1?.brightness).toBeCloseTo(-0.5, 5)
+    const old = mod.parseStudioFileState({ version: '0.10.0', source: null, productImages: {} })
+    expect(old?.objectTones ?? {}).toEqual({})
   })
 })

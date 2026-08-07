@@ -137,6 +137,16 @@ export interface StudioJob {
   grain?: number
   /** 페이지 id → 완성 결과 전체의 톤 조절 (톤 조절 Patch). */
   tones?: Record<string, ToneAdjust>
+  /**
+   * 블록 id → **그 오브젝트 하나에만** 거는 톤 (블록별 톤 Patch).
+   *
+   * 페이지 전체 톤과 따로 산다. 사진 하나만 어둡게 깔고 페이지 전체를 밝히는 일은
+   * 한 벌의 값으로는 되지 않기 때문이다. 그리는 차례는 블록별이 먼저, 전체가
+   * 나중이다.
+   *
+   * 효과·블록 주문과 같이 블록 id 하나로 센다 — 블록은 페이지 하나에만 속한다.
+   */
+  objectTones?: Record<string, ToneAdjust>
   /** 이 작업이 고른 생성 방식 (§6). */
   method?: GenerationMethod
   createdAt: number
@@ -487,6 +497,20 @@ export function withBlockOrder(
 /** 이 페이지의 톤 조절. 없으면 손대지 않은 상태다. */
 export function toneOf(job: StudioJob | null, pageId: string): ToneAdjust {
   return job === null ? NO_TONE : normalizeTone(job.tones?.[pageId])
+}
+
+export function objectToneOf(job: StudioJob | null, blockId: string): ToneAdjust {
+  return job === null ? NO_TONE : normalizeTone(job.objectTones?.[blockId])
+}
+
+export function withObjectTone(
+  job: StudioJob,
+  blockId: string,
+  patch: Partial<ToneAdjust>,
+  now: number,
+): StudioJob {
+  const next = normalizeTone({ ...objectToneOf(job, blockId), ...patch })
+  return { ...job, objectTones: { ...job.objectTones, [blockId]: next }, updatedAt: now }
 }
 
 export function withTone(job: StudioJob, pageId: string, patch: Partial<ToneAdjust>, now: number): StudioJob {

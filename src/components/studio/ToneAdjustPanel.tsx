@@ -69,6 +69,70 @@ export function ToneAdjustPanel() {
       >
         손대기 전으로
       </button>
+
+      <ObjectTone settle={settle} busy={busy} />
     </section>
+  )
+}
+
+/**
+ * 고른 오브젝트 하나에만 거는 톤 (블록별 톤 Patch).
+ *
+ * 위의 전체 톤과 **따로** 산다. 사진 하나만 어둡게 깔고 페이지 전체를 밝히는 일은
+ * 한 벌의 값으로는 되지 않는다. 그리는 차례도 그대로다 — 이 값이 먼저 걸리고,
+ * 다 그린 뒤에 전체 톤이 한 번 더 걸린다.
+ *
+ * 오브젝트를 고르지 않았으면 나오지 않는다. 무엇에 걸리는지 화면이 말하지 못하는
+ * 슬라이더는 두지 않는다.
+ */
+function ObjectTone({ settle, busy }: { settle: () => void; busy: boolean }) {
+  const studio = useStudioJob()
+  const { pages, activePageId } = useBriefDocument()
+  const blockId = studio?.selectedObjectBlockId ?? null
+  if (studio === null || blockId === null) return null
+
+  const label =
+    pages.find((p) => p.id === activePageId)?.blocks.find((b) => b.id === blockId)?.label ?? '고른 오브젝트'
+  const tone = studio.objectToneOf(blockId)
+
+  return (
+    <div className="tone__object">
+      <p className="tone__object-title">고른 것만 · {label}</p>
+      <div className="tone__sliders">
+        {TONE_FIELDS.map((field) => (
+          <label key={field.key} className="tone__slider">
+            <span className="tone__slider-label">
+              {field.label} · {tone[field.key] > 0 ? '+' : ''}
+              {Math.round(tone[field.key] * 100)}
+            </span>
+            <input
+              type="range"
+              min={-100}
+              max={100}
+              value={Math.round(tone[field.key] * 100)}
+              aria-label={`${label} ${field.label} 조절`}
+              disabled={busy}
+              onChange={(e) =>
+                void studio.setObjectTone(blockId, { [field.key]: Number(e.target.value) / 100 })
+              }
+              onPointerUp={settle}
+              onKeyUp={settle}
+            />
+          </label>
+        ))}
+      </div>
+      <button
+        type="button"
+        className="btn tone__reset"
+        disabled={busy || toneIsFlat(tone)}
+        onClick={() => {
+          void studio
+            .setObjectTone(blockId, { brightness: 0, contrast: 0, saturation: 0, temperature: 0 })
+            .then(settle)
+        }}
+      >
+        이것만 손대기 전으로
+      </button>
+    </div>
   )
 }

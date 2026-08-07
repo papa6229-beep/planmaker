@@ -15,7 +15,7 @@
 
 import { contactShadow, wallShadow, type CompositeEffects } from '../domain/compositeEffects'
 import { paperOutset, PAPER_SHADOW } from '../domain/paperCutout'
-import { applyTone, normalizeTone, toneIsFlat } from '../domain/toneAdjust'
+import { applyTone, normalizeTone, toneIsFlat, type ToneAdjust } from '../domain/toneAdjust'
 import { photoImageStyle, type ContentBox } from '../domain/photoBox'
 import { fitSourceRect } from '../domain/imageLayout'
 import type { PaperCanvas } from './paperCutoutShape'
@@ -149,6 +149,44 @@ async function spun(
   ctx.translate(-(rect.x + rect.width / 2), -(rect.y + rect.height / 2))
   await draw()
   ctx.restore()
+}
+
+/**
+ * 이 오브젝트 하나에만 톤을 걸어 그린다 (블록별 톤 Patch).
+ *
+ * 자리만 잡아 그 사각형의 픽셀을 고칠 수는 없다. 그 자리에는 이미 배경이 깔려
+ * 있어서, 사각형째 밝히면 그림 뒤의 배경까지 밝아진 네모가 남는다. 그래서 빈 판에
+ * 이 오브젝트만 그리고, **그려진 픽셀에만** 값을 걸어 통째로 얹는다 — 투명한
+ * 자리는 `applyTone`이 지나치므로 배경은 손대지 않는다.
+ *
+ * 톤이 넷 다 0이면 판을 만들지 않는다. 지금까지와 같은 길이다.
+ */
+async function tonedDraw(
+  ctx: CanvasRenderingContext2D,
+  size: { width: number; height: number },
+  tone: ToneAdjust | undefined,
+  draw: (target: CanvasRenderingContext2D) => Promise<void>,
+): Promise<void> {
+  const value = tone === undefined ? null : normalizeTone(tone)
+  if (value === null || toneIsFlat(value)) {
+    await draw(ctx)
+    return
+  }
+  const off = document.createElement('canvas')
+  off.width = size.width
+  off.height = size.height
+  const octx = off.getContext('2d')
+  if (!octx) {
+    await draw(ctx)
+    return
+  }
+  octx.imageSmoothingEnabled = true
+  octx.imageSmoothingQuality = 'high'
+  await draw(octx)
+  const pixels = octx.getImageData(0, 0, off.width, off.height)
+  applyTone(pixels.data, value)
+  octx.putImageData(pixels, 0, 0)
+  ctx.drawImage(off, 0, 0)
 }
 
 /** 이 그림 한 장을 효과까지 얹어 그린다. */
@@ -347,30 +385,39 @@ export async function renderComposite(plan: CompositePlan, sources: CompositeSou
   // 앞선 판은 "사진 전부 → 문구 전부"로 못박혀 있어 문구가 언제나 앞이었다.
   // 이제 둘이 같은 번호 체계를 쓰므로 그 번호대로 그린다 — 문구가 사진 뒤로
   // 갈 수도, 사진이 문구를 덮을 수도 있다. 번호가 같으면 사진이 뒤에 선다.
-  const drawList: { order: number; image: number; draw: () => Promise<void> }[] = [
+  const drawList: {
+    order: number
+    image: number
+    tone?: ToneAdjust
+    draw: (c: CanvasRenderingContext2D) => Promise<void>
+  }[] = [
     ...plan.layers.map((layer) => ({
       order: layer.order,
       image: 0,
-      draw: () => spun(ctx, layer.rect, layer.angle, () => drawLayer(ctx, layer, sources, backgroundTone)),
+      ...(layer.tone === undefined ? {} : { tone: layer.tone }),
+      draw: (c: CanvasRenderingContext2D) =>
+        spun(c, layer.rect, layer.angle, () => drawLayer(c, layer, sources, backgroundTone)),
     })),
     ...(plan.textObjects ?? []).map((text) => ({
       order: text.order,
       image: 1,
-      draw: () =>
-        spun(ctx, text.rect, text.angle, async () => {
+      ...(text.tone === undefined ? {} : { tone: text.tone }),
+      draw: (c: CanvasRenderingContext2D) =>
+        spun(c, text.rect, text.angle, async () => {
           const blob = sources.blobs.get(text.assetId)
           if (blob === undefined) return
           const source = await toSource(blob)
           // 작업자가 옮기거나 늘린 값이 그대로 여기로 온다 — 화면에서 본 자리가
           // 저장한 파일의 자리다.
-          ctx.drawImage(
+          c.drawImage(
             source, 0, 0, source.width, source.height,
             text.rect.x, text.rect.y, text.rect.width, text.rect.height,
           )
         }),
     })),
   ].toSorted((a, b) => a.order - b.order || a.image - b.image)
-  for (const item of drawList) await item.draw()
+  // 블록별 톤이 먼저 걸리고, 다 그린 뒤에 페이지 전체 톤이 한 번 더 걸린다.
+  for (const item of drawList) await tonedDraw(ctx, plan.size, item.tone, item.draw)
 
   // ── 전경 문구 레이어 (한방 생성 Patch 2 §4) ───────────────────────────────
   //

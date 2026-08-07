@@ -36,6 +36,14 @@ export interface CompositeLayerPlan {
   effects: CompositeEffects
   /** 앞뒤 차례. 클수록 앞이다 — 문구 오브젝트와 **같은 체계**의 번호다. */
   order: number
+  /**
+   * 이 오브젝트에만 거는 톤 (블록별 톤 Patch).
+   *
+   * 페이지 전체 톤과 다른 값이다. 이것이 먼저 걸리고, 다 그린 뒤에 전체 톤이
+   * 한 번 더 걸린다 — 사진 하나만 어둡게 깔고 페이지 전체를 밝히는 일이 그래야
+   * 된다. 없거나 넷 다 0이면 지금까지와 같은 길이다.
+   */
+  tone?: ToneAdjust
 }
 
 export interface CompositeTextPlan {
@@ -65,7 +73,14 @@ export interface CompositePlan {
    * 블록마다 한 장이고, 작업자가 옮기거나 늘린 **지금의 자리**를 그대로 쓴다.
    * 이 겹이 마지막이라 문구는 언제나 이미지·컷아웃보다 앞이다.
    */
-  textObjects?: readonly { assetId: string; rect: LayoutRect; order: number; angle?: number }[]
+  textObjects?: readonly {
+    assetId: string
+    rect: LayoutRect
+    order: number
+    angle?: number
+    /** 이 문구에만 거는 톤 (블록별 톤 Patch). */
+    tone?: ToneAdjust
+  }[]
   layers: CompositeLayerPlan[]
   texts: CompositeTextPlan[]
   /** 완성 결과 전체에 얹는 그레인 (§9.5). */
@@ -86,7 +101,9 @@ export interface CompositePlanInput {
   /** 맨 앞에 얹을 전경 레이어 (한방 생성 Patch 2 §4). */
   foreground?: { assetId: string } | undefined
   /** 얹을 문구 오브젝트들 (텍스트 오브젝트 Patch §4). 차례는 `order`가 정한다. */
-  textObjects?: readonly { assetId: string; rect: LayoutRect; order: number; angle?: number }[] | undefined
+  textObjects?:
+    | readonly { assetId: string; rect: LayoutRect; order: number; angle?: number; tone?: ToneAdjust }[]
+    | undefined
   /** 블록 id → 실제 사용 제품 이미지의 자산 id. */
   productImages: Readonly<Record<string, string>>
   /** 블록 id → 효과 세기. 없는 블록은 기본값. */
@@ -120,6 +137,8 @@ export interface CompositePlanInput {
   orderOverrides?: Readonly<Record<string, number>>
   /** 블록 id → 시계 방향 기울기(도) (회전 Patch). */
   angleOverrides?: Readonly<Record<string, number>>
+  /** 블록 id → 그 오브젝트에만 거는 톤 (블록별 톤 Patch). */
+  objectTones?: Readonly<Record<string, ToneAdjust>>
 }
 
 const DEFAULT_PLAN_GRAIN = 0.08
@@ -157,6 +176,7 @@ export function planLocalComposite(input: CompositePlanInput): CompositePlan {
         effects: normalizeEffects({ ...input.effects[block.id] }),
         order: input.orderOverrides?.[block.id] ?? index,
         ...(input.angleOverrides?.[block.id] === undefined ? {} : { angle: input.angleOverrides[block.id] }),
+        ...(input.objectTones?.[block.id] === undefined ? {} : { tone: input.objectTones[block.id] }),
       })
       continue
     }

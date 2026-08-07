@@ -2422,6 +2422,15 @@ button { font-family: inherit; }
 .tone__slider-label { font-size: 11px; color: var(--color-muted); }
 .tone__slider input[type='range'] { width: 100%; margin: 0; accent-color: var(--color-accent); cursor: pointer; }
 .tone__reset { align-self: flex-start; }
+/* 고른 오브젝트 하나에만 거는 톤 (블록별 톤 Patch) */
+.tone__object {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+.tone__object-title { margin: 0; font-size: 11px; font-weight: 600; }
 
 /* ── 완성본 종이 테두리 다듬기 (완성 후 컷아웃 Patch) ────────────────────── */
 .paper-tune {
