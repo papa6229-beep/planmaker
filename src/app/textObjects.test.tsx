@@ -51,15 +51,6 @@ vi.mock('../services/imageAnalysisRunner', () => ({
 vi.mock('../services/textLayerKey', () => ({
   removeKeyBackground: async (blob: Blob) => ({ blob, opaqueRatio: 0.2 }),
 }))
-vi.mock('../services/textLayerSplit', () => ({
-  sliceTextLayer: async (_blob: Blob, blocks: { blockId: string; rect: unknown; layer: number }[]) =>
-    blocks.map((b) => ({
-      blockId: b.blockId,
-      layer: b.layer,
-      rect: b.rect as { x: number; y: number; width: number; height: number },
-      blob: new Blob([new Uint8Array([7, 7])], { type: 'image/png' }),
-    })),
-}))
 const composed = vi.fn()
 vi.mock('../services/compositeRenderer', () => ({
   renderComposite: async (plan: unknown) => {
@@ -206,48 +197,6 @@ beforeEach(async () => {
   await clearAllStudioJobs()
   sessionStorage.clear()
   await putAsset(storedAsset('asset_cut', 1))
-})
-
-// ── §1 자르는 규칙 ──────────────────────────────────────────────────────────
-
-describe('§1 한 장을 블록별로 자른다', () => {
-  it('덩어리를 쪼개지 않고, 가까운 블록이 가져간다', async () => {
-    const { splitTextLayer } = await load('domain/textObjects')
-
-    // 40×20. 왼쪽에 글자 덩어리(그림자가 아래로 삐져나옴), 오른쪽에 다른 글자.
-    const width = 40
-    const height = 20
-    const data = new Uint8ClampedArray(width * height * 4)
-    const put = (x: number, y: number) => {
-      data[(y * width + x) * 4 + 3] = 255
-    }
-    // 왼쪽 덩어리: 2..9 × 4..8, 그리고 아래로 이어진 그림자 한 줄 (9행).
-    for (let y = 4; y <= 8; y += 1) for (let x = 2; x <= 9; x += 1) put(x, y)
-    for (let x = 3; x <= 8; x += 1) put(x, 9)
-    // 오른쪽 덩어리: 28..35 × 4..8
-    for (let y = 4; y <= 8; y += 1) for (let x = 28; x <= 35; x += 1) put(x, y)
-
-    const { owner, slices } = splitTextLayer(
-      { data, width, height },
-      [
-        { blockId: 'left', rect: { x: 0, y: 0, width: 12, height: 10 }, layer: 0 },
-        { blockId: 'right', rect: { x: 26, y: 0, width: 12, height: 10 }, layer: 1 },
-      ],
-      { x: 1, y: 1 },
-    )
-
-    expect(slices.map((s: { blockId: string }) => s.blockId)).toEqual(['left', 'right'])
-    const left = slices.find((s: { blockId: string }) => s.blockId === 'left')!
-    // 그림자까지 품는다 — 사각형으로 자르지 않았다는 뜻이다.
-    expect(left.box).toEqual({ x: 2, y: 4, width: 8, height: 6 })
-    const right = slices.find((s: { blockId: string }) => s.blockId === 'right')!
-    expect(right.box).toEqual({ x: 28, y: 4, width: 8, height: 5 })
-    // 임자가 갈린다 — 옆 문구의 픽셀은 딸려 오지 않는다.
-    expect(owner[6 * width + 5]).toBe(0)
-    expect(owner[6 * width + 30]).toBe(1)
-    // 빈 자리는 누구의 것도 아니다.
-    expect(owner[0]).toBe(-1)
-  })
 })
 
 // ── §1 생성 뒤 오브젝트로 남는다 ────────────────────────────────────────────

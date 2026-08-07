@@ -55,17 +55,6 @@ vi.mock('../services/imageAnalysisRunner', () => ({
 vi.mock('../services/textLayerKey', () => ({
   removeKeyBackground: async (blob: Blob) => ({ blob, opaqueRatio: 0.2 }),
 }))
-// 자르는 규칙 자체는 아래 §1 순수 검사에서 픽셀로 잰다. 여기서는 "블록마다
-// 하나"라는 약속만 그대로 흘려보낸다.
-vi.mock('../services/textLayerSplit', () => ({
-  sliceTextLayer: async (_blob: Blob, blocks: { blockId: string; rect: unknown; layer: number }[]) =>
-    blocks.map((b) => ({
-      blockId: b.blockId,
-      layer: b.layer,
-      rect: b.rect as LayoutRect,
-      blob: new Blob([new Uint8Array([7, 7])], { type: 'image/png' }),
-    })),
-}))
 const composed = vi.fn()
 vi.mock('../services/compositeRenderer', () => ({
   renderComposite: async (plan: unknown) => {
@@ -239,66 +228,6 @@ beforeEach(async () => {
   sessionStorage.clear()
   await putAsset(storedAsset('asset_photo', 1))
   await putAsset(storedAsset('asset_cut', 2))
-})
-
-// ── §1 문구의 임자는 상자이지 덩어리가 아니다 ────────────────────────────────
-
-describe('§1 가까운 문구가 합쳐지지도 쪼개지지도 않는다', () => {
-  it('이어진 획은 상자 경계에서 갈리고, 떨어진 낱글자는 한 블록으로 모인다', async () => {
-    const { splitTextLayer } = await load('domain/textObjects')
-
-    const width = 60
-    const height = 30
-    const data = new Uint8ClampedArray(width * height * 4)
-    const put = (x: number, y: number) => {
-      data[(y * width + x) * 4 + 3] = 255
-    }
-
-    // A: 서로 **떨어진** 낱글자 두 덩어리. 덩어리를 세는 규칙이면 여기서 쪼개진다.
-    for (let y = 3; y <= 8; y += 1) for (let x = 2; x <= 5; x += 1) put(x, y)
-    for (let y = 3; y <= 8; y += 1) for (let x = 10; x <= 15; x += 1) put(x, y)
-    // A와 B를 **잇는** 획 한 줄. 덩어리를 세는 규칙이면 여기서 둘이 합쳐진다.
-    for (let x = 16; x <= 21; x += 1) put(x, 6)
-    // B
-    for (let y = 3; y <= 8; y += 1) for (let x = 21; x <= 37; x += 1) put(x, y)
-    // C
-    for (let y = 3; y <= 8; y += 1) for (let x = 42; x <= 55; x += 1) put(x, y)
-    // 배경 장식(별) — 어느 상자에서도 멀다.
-    put(30, 25)
-    put(31, 26)
-
-    const { owner, slices } = splitTextLayer(
-      { data, width, height },
-      [
-        { blockId: 'a', rect: { x: 0, y: 0, width: 18, height: 12 }, layer: 0 },
-        { blockId: 'b', rect: { x: 20, y: 0, width: 18, height: 12 }, layer: 1 },
-        { blockId: 'c', rect: { x: 40, y: 0, width: 18, height: 12 }, layer: 2 },
-      ],
-      { x: 1, y: 1 },
-    )
-
-    // 블록 셋 → 조각 셋. 이름도 블록 이름 그대로다.
-    expect(slices.map((s: { blockId: string }) => s.blockId)).toEqual(['a', 'b', 'c'])
-
-    const box = (id: string) =>
-      (slices.find((s: { blockId: string }) => s.blockId === id) as { box: LayoutRect }).box
-    // 떨어진 두 낱글자가 한 조각 안에 함께 든다 (쪼개짐 없음).
-    expect(box('a')).toEqual({ x: 2, y: 3, width: 18, height: 6 })
-    // 이어진 획인데도 상자 경계에서 갈린다 (합쳐짐 없음).
-    expect(box('b')).toEqual({ x: 20, y: 3, width: 18, height: 6 })
-    expect(box('c')).toEqual({ x: 42, y: 3, width: 14, height: 6 })
-
-    expect(owner[5 * width + 4]).toBe(0)
-    expect(owner[5 * width + 30]).toBe(1)
-    expect(owner[5 * width + 50]).toBe(2)
-    // 별은 누구의 것도 아니고, 어느 조각의 상자 안에도 들지 않는다.
-    expect(owner[25 * width + 30]).toBe(-1)
-    expect(owner[26 * width + 31]).toBe(-1)
-    for (const id of ['a', 'b', 'c']) {
-      const b = box(id)
-      expect(25 >= b.y && 25 < b.y + b.height).toBe(false)
-    }
-  })
 })
 
 // ── §3 블록 하나에 오브젝트 하나 ────────────────────────────────────────────

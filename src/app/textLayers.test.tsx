@@ -626,3 +626,65 @@ describe('§5 배경 주문이 그 자리에 놓일 사진의 색을 안다', ()
     expect(old?.keepReferenceBg ?? {}).toEqual({})
   })
 })
+
+// ── §6 고른 문구만 하나씩 다시 만든다 ───────────────────────────────────────
+
+describe('§6 부분수정은 고른 것만 건드린다', () => {
+  it('둘을 고르면 두 번 나가고, 고르지 않은 것과 배경·이미지는 그대로다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    const before = await loadStudioJob(STUDIO_JOB_ID)
+    const assetOf = (job: typeof before, id: string) =>
+      job?.textObjects?.page_1?.find((o) => o.blockId === id)?.assetId
+    const rectOf = (job: typeof before, id: string) =>
+      job?.textObjects?.page_1?.find((o) => o.blockId === id)?.rect
+    const madeCalls = fetchSpy.mock.calls.length
+
+    // 문구 둘을 고르고 각자의 지시를 적는다.
+    for (const content of [CONTENTS.blk_t1!, CONTENTS.blk_t3!]) {
+      fireEvent.click(await screen.findByRole('checkbox', { name: new RegExp(content) }))
+    }
+    for (const label of [/여름 감사제 40% 수정 지시/, /선착순 300명 수정 지시/]) {
+      fireEvent.change(await screen.findByLabelText(label), { target: { value: '더 굵게' } })
+    }
+
+    fireEvent.click(await screen.findByRole('button', { name: 'AI 부분수정 실행' }))
+    const dialog = await screen.findByRole('dialog')
+    // 확인창이 나갈 횟수를 그대로 말한다.
+    expect(dialog.textContent).toContain('2회')
+    fireEvent.click(
+      // eslint-disable-next-line testing-library/no-node-access
+      Array.from(dialog.querySelectorAll('button')).find((b) => /실행|시작|계속/.test(b.textContent ?? ''))!,
+    )
+
+    // 고른 둘만 그림이 바뀐다.
+    await waitFor(async () => {
+      const now = await loadStudioJob(STUDIO_JOB_ID)
+      expect(assetOf(now, 'blk_t1')).not.toBe(assetOf(before, 'blk_t1'))
+      expect(assetOf(now, 'blk_t3')).not.toBe(assetOf(before, 'blk_t3'))
+    }, { timeout: 10000 })
+
+    const after = await loadStudioJob(STUDIO_JOB_ID)
+    // 고르지 않은 문구는 그림도 자리도 그대로다 — 별개 파일이라 바뀔 수가 없다.
+    for (const id of ['blk_t2', 'blk_btn']) {
+      expect(assetOf(after, id)).toBe(assetOf(before, id))
+      expect(rectOf(after, id)).toEqual(rectOf(before, id))
+    }
+    // 고친 것도 자리와 크기는 그대로다. 바뀌는 것은 그림뿐이다.
+    for (const id of ['blk_t1', 'blk_t3']) {
+      expect(rectOf(after, id)).toEqual(rectOf(before, id))
+    }
+    // 배경과 이미지·컷아웃은 손대지 않는다.
+    expect(after?.backgrounds?.page_1).toEqual(before?.backgrounds?.page_1)
+    expect(after?.imageObjects?.page_1).toEqual(before?.imageObjects?.page_1)
+
+    // 고른 개수만큼만 나갔다. 통이미지를 다시 그리지 않았다.
+    expect(fetchSpy.mock.calls.length).toBe(madeCalls + 2)
+    for (const call of fetchSpy.mock.calls.slice(madeCalls)) {
+      expect(String((call[1].body as FormData).get('prompt'))).toContain('문구 **한 개**만 새로 디자인')
+    }
+  })
+})

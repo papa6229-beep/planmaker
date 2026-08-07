@@ -60,7 +60,6 @@ import {
   type TextLayerTone,
 } from '../../domain/textLayers'
 import { removeKeyBackground } from '../../services/textLayerKey'
-import { sliceTextLayer } from '../../services/textLayerSplit'
 import { trimToContent } from '../../services/trimToContent'
 import { analyzeRegions } from '../../services/regionTone'
 import { analyzeImageBlob } from '../../services/imageAnalysisRunner'
@@ -145,7 +144,7 @@ interface GenerationPlan {
    * 이 값이 있으면 통이미지를 다시 그리지 않는다. 나가는 것은 그 문구의 지금
    * 디자인 한 장이고, 돌아온 그림은 같은 자리에 갈아 끼워진다.
    */
-  textEdit?: { blockId: string; assetId: string; rect: LayoutRect; content: string }
+  textEdits?: { blockId: string; assetId: string; rect: LayoutRect; content: string; instruction: string; size: string }[]
   /** 이 계획이 외부로 나가는 횟수. 확인창이 이 값을 그대로 말한다. */
   calls: number
 }
@@ -985,46 +984,76 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       runningRef.current = true
       setState({ kind: 'running' })
       try {
-        const first = await requestLayer(plan, key, plan.inputs, await platePrompt(plan))
-        if (!('blob' in first)) {
-          setState({ kind: 'failed', message: errorTextFor(first.code) })
+        // ── 고른 문구만 하나씩 갈아 끼우는 길 (블록별 부분수정 Patch) ────────
+        //
+        // 통이미지를 다시 그리지 않으므로 배경도 사진도 고르지 않은 문구도 손대지
+        // 않는다. 하나가 실패해도 나머지는 그대로 간다 — 값을 이미 치렀다.
+        if (plan.textEdits !== undefined && studio !== null) {
+          const problems: string[] = []
+          let changed = 0
+          for (const edit of plan.textEdits) {
+            const answer = await requestLayer(
+              plan,
+              key,
+              [
+                {
+                  index: 1,
+                  role: 'page_layout',
+                  assetId: edit.assetId,
+                  fileName: 'current-text.png',
+                  label: '지금의 문구 디자인 — 이것을 고칩니다.',
+                },
+              ],
+              buildTextEditPrompt({
+                size: { width: edit.rect.width, height: edit.rect.height },
+                content: edit.content,
+                instruction: edit.instruction,
+                rect: edit.rect,
+              }),
+              edit.size,
+            )
+            if (!('blob' in answer)) {
+              problems.push(`"${edit.content}": ${errorTextFor(answer.code)}`)
+              continue
+            }
+            const keyed = await removeKeyBackground(answer.blob)
+            if (keyed === null || keyed.opaqueRatio > FOREGROUND_MAX_OPAQUE) {
+              problems.push(`"${edit.content}": 임시 배경을 걷어 내지 못했습니다.`)
+              continue
+            }
+            const trimmed = await trimToContent(keyed.blob)
+            if (trimmed === null) {
+              problems.push(`"${edit.content}": 새 디자인에서 글자를 찾지 못했습니다.`)
+              continue
+            }
+            const assetId = createId('asset')
+            await putAsset({
+              id: assetId,
+              blob: trimmed.blob,
+              fileName: `text-${edit.blockId}.png`,
+              mimeType: 'image/png',
+              byteSize: trimmed.blob.size,
+            })
+            // 자리와 크기는 그대로. 바뀌는 것은 그림 하나뿐이다 — 판을 그 자리
+            // 모양으로 주문했으므로 늘어나거나 눌리지 않는다.
+            await studio.replaceTextObjectAsset(plan.pageId, edit.blockId, assetId)
+            changed += 1
+          }
+          if (changed > 0) await recomposePage(plan.pageId)
+          setSelectedTargetIds([])
+          setInstructions({})
+          setView('compare')
+          setState(
+            problems.length === 0
+              ? { kind: 'idle' }
+              : { kind: 'failed', message: `문구 ${String(problems.length)}개를 고치지 못했습니다 — ${problems.join(' / ')}` },
+          )
           return
         }
 
-        // ── 문구 하나만 갈아 끼우는 길 (텍스트 오브젝트 Patch §3) ─────────────
-        if (plan.textEdit !== undefined && studio !== null) {
-          const keyed = await removeKeyBackground(first.blob)
-          if (keyed === null || keyed.opaqueRatio > FOREGROUND_MAX_OPAQUE) {
-            setState({ kind: 'failed', message: '문구 레이어의 임시 배경을 걷어 내지 못했습니다.' })
-            return
-          }
-          const brief = getDocument()
-          const page = brief.pages.find((p) => p.id === plan.pageId) ?? brief.pages[0]!
-          const sliced = await sliceTextLayer(
-            keyed.blob,
-            [{ blockId: plan.textEdit.blockId, rect: plan.textEdit.rect, layer: 0 }],
-            { width: page.canvasWidth, height: page.canvasHeight },
-          )
-          const piece = sliced?.[0]
-          if (piece === undefined) {
-            setState({ kind: 'failed', message: '새 문구 디자인에서 글자를 찾지 못했습니다.' })
-            return
-          }
-          const assetId = createId('asset')
-          await putAsset({
-            id: assetId,
-            blob: piece.blob,
-            fileName: `text-${plan.textEdit.blockId}.png`,
-            mimeType: 'image/png',
-            byteSize: piece.blob.size,
-          })
-          // 자리와 크기는 그대로. 바뀌는 것은 그림 하나뿐이다.
-          await studio.replaceTextObjectAsset(plan.pageId, plan.textEdit.blockId, assetId)
-          await recomposePage(plan.pageId)
-          setSelectedTargetIds([])
-          setInstructions({})
-          setState({ kind: 'idle' })
-          setView('compare')
+        const first = await requestLayer(plan, key, plan.inputs, await platePrompt(plan))
+        if (!('blob' in first)) {
+          setState({ kind: 'failed', message: errorTextFor(first.code) })
           return
         }
 
@@ -1182,45 +1211,51 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     if (!size.ok) return { blocked: size.message }
     const working = workingImageTarget(page.canvasHeight)
 
-    // ── 문구 오브젝트 하나만 고른 자리 (텍스트 오브젝트 Patch §3) ─────────────
+    // ── 고른 것이 모두 문구 오브젝트인 자리 (블록별 부분수정 Patch) ───────────
     //
-    // 통이미지를 다시 그리지 않는다. 배경도 사진도 옆 문구도 그대로 두고, 고른
-    // 문구의 그림만 새로 받아 갈아 끼운다.
+    // 통이미지를 다시 그리지 않는다. 배경도 사진도 고르지 않은 문구도 그대로 두고,
+    // **고른 것만 하나씩** 새로 받아 갈아 끼운다. 고르지 않은 것은 별개 파일이라
+    // 바뀔 수가 없다 — 고정한다고 따로 말할 필요가 없는 것은 그래서다.
+    //
+    // 이미지·컷아웃이 섞여 있으면 지금까지의 통이미지 길로 간다. 그쪽은 원본
+    // 사진이라 다시 그리게 할 수 없고, 문구와 같은 방법이 통하지 않는다.
     const objects = studio.textObjectsOf(currentResult.pageId)
-    const only = editItems.length === 1 ? editItems[0]! : null
-    const object = only === null ? undefined : objects.find((o) => o.blockId === only.target.blockId)
-    if (only !== null && object !== undefined) {
+    const picked = editItems.map((item) => ({
+      item,
+      object: objects.find((o) => o.blockId === item.target.blockId),
+    }))
+    if (picked.length > 0 && picked.every((p) => p.object !== undefined)) {
+      const textEdits = picked.map(({ item, object }) => {
+        const canvas = textLayerCanvas(object!.rect)
+        const resolved = resolveGptImageSize(canvas.width, canvas.height)
+        return {
+          blockId: object!.blockId,
+          assetId: object!.assetId,
+          rect: object!.rect,
+          content: item.target.content ?? '',
+          instruction: item.instruction,
+          size: resolved.ok ? resolved.size : size.size,
+        }
+      })
       return {
         plan: {
           kind: 'edit',
           mode: 'preserve',
           fixedBlockIds: [],
-          calls: 1,
+          // 고른 문구 하나에 한 번씩. 확인창이 이 수를 그대로 말한다.
+          calls: textEdits.length,
           pageId: currentResult.pageId,
           prompt: buildTextEditPrompt({
             size: { width: page.canvasWidth, height: page.canvasHeight },
-            content: only.target.content ?? '',
-            instruction: only.instruction,
-            rect: object.rect,
+            content: textEdits[0]!.content,
+            instruction: textEdits[0]!.instruction,
+            rect: textEdits[0]!.rect,
           }),
           size: size.size,
           working,
-          inputs: [
-            {
-              index: 1,
-              role: 'page_layout',
-              assetId: object.assetId,
-              fileName: 'current-text.png',
-              label: '지금의 문구 디자인 — 이것을 고칩니다.',
-            },
-          ],
+          inputs: [],
           fingerprint: currentResult.sourceFingerprint,
-          textEdit: {
-            blockId: object.blockId,
-            assetId: object.assetId,
-            rect: object.rect,
-            content: only.target.content ?? '',
-          },
+          textEdits,
         },
       }
     }

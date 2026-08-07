@@ -26,8 +26,9 @@ export function EditPanel() {
       <header className="edit-panel__head">
         <h2 className="edit-panel__title">AI 부분수정</h2>
         <p className="edit-panel__hint">
-          고칠 대상을 고르고 원하는 바를 문장으로 적어 주세요. 한 장짜리 이미지를 다시 그리는 방식이라 주변이 조금
-          달라질 수 있습니다.
+          고칠 대상을 고르고 원하는 바를 문장으로 적어 주세요. 문구·버튼만 고르면 <b>고른 것만</b> 하나씩 새로
+          만들고 나머지는 손대지 않습니다. 이미지·컷아웃이 섞이면 한 장짜리 이미지를 다시 그리는 방식이라 주변이
+          조금 달라질 수 있습니다.
         </p>
       </header>
 
