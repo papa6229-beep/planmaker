@@ -159,7 +159,7 @@ async function generateFirst(): Promise<void> {
   fireEvent.click(screen.getByRole('button', { name: '이미지 생성하기' }))
   fireEvent.change(screen.getByLabelText('테스트용 OpenAI API 키'), { target: { value: KEY } })
   fireEvent.click(screen.getByRole('button', { name: '저장하고 계속' }))
-  await waitFor(() => expect(screen.getByText('AI 1차 생성 결과')).toBeTruthy(), { timeout: 8000 })
+  await waitFor(() => expect(screen.getByRole('heading', { name: '완성본' })).toBeTruthy(), { timeout: 8000 })
 }
 
 function editPanel(): HTMLElement {

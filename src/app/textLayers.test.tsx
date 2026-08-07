@@ -1117,7 +1117,11 @@ describe('§12 오브젝트 삭제', () => {
     // **기획서 블록은 그대로다.** 다시 생성하면 다시 나온다.
     const after = await loadStudioJob(STUDIO_JOB_ID)
     expect(after?.doc.pages[0]?.blocks.some((b) => b.id === 'blk_t1')).toBe(true)
-    expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(6)
+    // 완성본 화면에서는 기획서가 접혀 있다 (완성본 모드 Patch). 꺼내서 확인한다.
+    fireEvent.click(await screen.findByRole('button', { name: '기획서 나란히 보기' }))
+    await waitFor(() => {
+      expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(6)
+    }, { timeout: 5000 })
 
     // 지우는 데 외부로 나간 요청은 없다.
     expect(fetchSpy.mock.calls.length).toBe(calls)
@@ -1275,7 +1279,10 @@ describe('§14 결과를 되돌린다', () => {
     // **기획서는 손대지 않는다.** 앞선 판은 여기서 기획서가 한 단계 뒤로 갔다.
     const after = await loadStudioJob(STUDIO_JOB_ID)
     expect(blocksOf(after)).toEqual(blocksOf(before))
-    expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(6)
+    fireEvent.click(await screen.findByRole('button', { name: '기획서 나란히 보기' }))
+    await waitFor(() => {
+      expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(6)
+    }, { timeout: 5000 })
 
     // 되돌리는 데 외부로 나간 요청은 없다.
     expect(fetchSpy.mock.calls.length).toBe(calls)
@@ -1329,5 +1336,47 @@ describe('§15 잡은 것의 이름', () => {
       expect(container.querySelector('.result-object__name')?.textContent).toContain(CONTENTS.blk_t1!)
     }, { timeout: 5000 })
     expect(cut.getAttribute('aria-pressed')).toBe('false')
+  })
+})
+
+// ── §16 완성본 모드 ─────────────────────────────────────────────────────────
+
+describe('§16 완성본이 가운데를 다 쓴다', () => {
+  it('기획서는 접혀 있고, 배율은 완성본의 것이며, 판의 폭이 그 배율을 탄다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    // 만들고 나면 완성본 화면이다. 기획서 캔버스는 접혀 있다.
+    await waitFor(() => {
+      expect(screen.getByRole('radio', { name: '완성본', checked: true })).toBeTruthy()
+    }, { timeout: 5000 })
+    expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(0)
+
+    // 확대·축소는 **완성본의 것**이다. 기획서 막대는 이 화면에 없다.
+    expect(screen.queryByLabelText('축소')).toBeNull()
+    const stage = () => container.querySelector<HTMLElement>('.compare__stage')!
+    await waitFor(() => expect(stage()).not.toBeNull(), { timeout: 5000 })
+    expect(stage().style.width).toBe('840px')
+
+    // 100%로 두면 페이지 폭 그대로, 확대하면 판이 그만큼 넓어진다.
+    fireEvent.click(screen.getByRole('button', { name: '100%' }))
+    await waitFor(() => expect(stage().style.width).toBe('840px'), { timeout: 5000 })
+    fireEvent.click(screen.getByLabelText('완성본 확대'))
+    await waitFor(() => {
+      expect(Number.parseInt(stage().style.width, 10)).toBeGreaterThan(840)
+    }, { timeout: 5000 })
+
+    // 기획서는 필요할 때만 꺼낸다.
+    fireEvent.click(screen.getByRole('button', { name: '기획서 나란히 보기' }))
+    await waitFor(() => {
+      expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(6)
+    }, { timeout: 5000 })
+
+    // 우측은 완성본 도구만 — 생성 전 도구는 이 화면에 없다.
+    expect(screen.getByRole('region', { name: 'AI 부분수정' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /이 문구 디자인 주문/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /합성 효과/ })).toBeNull()
   })
 })

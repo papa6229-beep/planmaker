@@ -23,6 +23,8 @@ import { PageTabs } from '../components/pages/PageTabs'
 import { BlockPalette } from '../components/palette/BlockPalette'
 import { BriefCanvas } from '../components/canvas/BriefCanvas'
 import { CanvasZoomControls } from '../components/canvas/CanvasZoomControls'
+import { ResultZoomControls } from '../components/studio/ResultZoomControls'
+import { ResultViewProvider } from '../features/studio/useResultView'
 import { PropertiesPanel } from '../components/inspector/PropertiesPanel'
 import { BriefLibrary } from '../components/library/BriefLibrary'
 import { SummaryPanel } from '../components/summary/SummaryPanel'
@@ -180,9 +182,11 @@ function GlobalEventBriefDrop() {
 function StudioViewTabs() {
   const generation = useImageGeneration()
   if (generation === null) return null
+  // 이름이 곧 무엇을 보는지다. `AI 결과 비교`는 둘을 나란히 두던 시절의 이름이라,
+  // 완성본이 가운데를 다 쓰는 지금은 화면을 잘못 설명한다 (완성본 모드 Patch).
   const tabs: { value: 'brief' | 'compare'; label: string }[] = [
-    { value: 'brief', label: '기획서 작업' },
-    { value: 'compare', label: 'AI 결과 비교' },
+    { value: 'brief', label: '기획서' },
+    { value: 'compare', label: '완성본' },
   ]
   return (
     <div className="studio-view" role="radiogroup" aria-label="중앙 보기">
@@ -248,7 +252,9 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
             {/* 오버레이는 참고 이미지를 겹쳐 보는 조작이다. 작업판에는 그 자료가
                 없으므로 조작도 두지 않는다. */}
             {mode !== 'studio' && <ReferenceViewControls />}
-            <CanvasZoomControls />
+            {/* 완성본을 보는 동안 기획서 배율을 움직여 봐야 아무것도 달라지지
+                않는다. 그래서 같은 자리에 완성본의 배율이 선다. */}
+            {compare ? <ResultZoomControls /> : <CanvasZoomControls />}
           </div>
           {showStart && !compare && <StartChoice onDismiss={() => setStartDismissed(true)} />}
           <div className="stage">
@@ -263,22 +269,35 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
         ) : mode === 'studio' ? (
           /* 작업판의 우측은 지금 할 일 하나만 말한다: 만들기 전에는 준비 상태,
              만든 뒤에는 부분수정. 블록 편집 도움말은 왼쪽 캔버스가 이미 하는
-             말이라 여기서 되풀이하지 않는다 (실작업 UI 마감 §3). */
-          <div className="side-right">
+             말이라 여기서 되풀이하지 않는다 (실작업 UI 마감 §3).
+
+             그리고 **지금 보고 있는 화면의 도구만** 둔다 (완성본 모드 Patch).
+             여섯 벌을 한 줄에 쌓으면 절반은 그 화면에서 쓸 일이 없는 것들이고,
+             쓸 것을 찾는 데 스크롤이 든다. 기획서 쪽 셋은 어차피 고른 블록이
+             있어야 나오는데, 완성본을 보는 동안에는 기획서 캔버스가 접혀 있어
+             고를 수가 없다 — 그때 남는 것은 지난 선택의 잔상뿐이다. */
+          <div className={`side-right${compare ? ' side-right--result' : ''}`}>
             {/* 생성 방식을 고르는 자리는 없다 (한방 생성 Patch §1). 상단
                 `이미지 생성하기` 하나가 메인 실행이고, 종이 컷아웃이 켜져
                 있는지에 따라 흐름은 스스로 갈린다. */}
-            {/* 고른 블록의 배치 — 맞춤 방식과 레이어 순서 (§3.1, §4). */}
-            <BlockLayerTools />
-            {/* 생성 **전**에 이 블록에만 붙이는 주문 (블록별 주문 Patch). 완성
-                뒤의 부분수정과 목적이 다르므로 자리도 따로 둔다. */}
-            <BlockOrderPanel />
-            <CompositeEffectsPanel />
-            {/* 결과 전체의 톤. 결과가 있을 때만 나온다 (톤 조절 Patch). */}
-            <ToneAdjustPanel />
-            {/* 완성된 배경 위에서 종이 테두리를 다듬는다 (완성 후 컷아웃 Patch). */}
-            <PaperTunePanel />
-            {generation !== null && generation.hasResult ? <EditPanel /> : <ReadyPanel />}
+            {compare ? (
+              <>
+                <EditPanel />
+                {/* 결과 전체의 톤 (톤 조절 Patch). */}
+                <ToneAdjustPanel />
+                {/* 완성된 배경 위에서 종이 테두리를 다듬는다 (완성 후 컷아웃 Patch). */}
+                <PaperTunePanel />
+              </>
+            ) : (
+              <>
+                {/* 고른 블록의 배치 — 맞춤 방식과 레이어 순서 (§3.1, §4). */}
+                <BlockLayerTools />
+                {/* 생성 **전**에 이 블록에만 붙이는 주문 (블록별 주문 Patch). */}
+                <BlockOrderPanel />
+                <CompositeEffectsPanel />
+                <ReadyPanel />
+              </>
+            )}
           </div>
         ) : (
           <div className="side-right">
@@ -334,6 +353,7 @@ export function AppShellProviders({
         <BriefDocumentProvider {...(binding ? { binding } : {})}>
           <EventBriefIoProvider>
             <CanvasViewProvider>
+              <ResultViewProvider>
               {/* 작업판 밖에서는 이 provider 안의 훅이 전부 `null`을 내므로,
                   작성기 화면에는 생성 버튼도 결과 비교도 나타나지 않는다. */}
               <ImageGenerationProvider>
@@ -349,6 +369,7 @@ export function AppShellProviders({
                   </BackgroundCompositeProvider>
                 </InstructionRefineProvider>
               </ImageGenerationProvider>
+              </ResultViewProvider>
             </CanvasViewProvider>
           </EventBriefIoProvider>
         </BriefDocumentProvider>

@@ -508,15 +508,21 @@ describe('§13-1·10·11 생성 버튼과 결과 비교 화면', () => {
   it('opens the comparison view by itself once a result comes back', async () => {
     await seedReady()
     await openStudio()
-    expect(screen.queryByRole('radio', { name: 'AI 결과 비교' })).toBeNull()
+    expect(screen.queryByRole('radio', { name: '완성본' })).toBeNull()
     await generateOnce()
     await waitFor(() => {
-      expect(screen.getByRole('radio', { name: 'AI 결과 비교', checked: true })).toBeTruthy()
+      expect(screen.getByRole('radio', { name: '완성본', checked: true })).toBeTruthy()
     }, { timeout: 8000 })
+    expect(screen.getByRole('heading', { name: '완성본' })).toBeTruthy()
+    // 완성본이 가운데를 다 쓴다 — 기획서는 접혀 있다 (완성본 모드 Patch).
+    expect(screen.queryByText('기획서 작업본')).toBeNull()
+    expect(document.querySelector('.compare__brief .canvas')).toBeNull()
+    // 꺼내면 복제본이 아니라 그대로의 캔버스다 — 계속 편집할 수 있다.
+    fireEvent.click(screen.getByRole('button', { name: '기획서 나란히 보기' }))
+    await waitFor(() => {
+      expect(document.querySelector('.compare__brief .canvas')).toBeTruthy()
+    }, { timeout: 5000 })
     expect(screen.getByText('기획서 작업본')).toBeTruthy()
-    expect(screen.getByText('AI 1차 생성 결과')).toBeTruthy()
-    // 왼쪽은 복제본이 아니라 그대로의 캔버스다 — 계속 편집할 수 있다.
-    expect(document.querySelector('.compare__brief .canvas')).toBeTruthy()
   }, 20000)
 
   it('will not call when an image slot has no real product image', async () => {
@@ -591,20 +597,20 @@ describe('§13-9·12·13·14 결과는 페이지별로 남고, 실패해도 잃�
     await seedReady()
     await openStudio()
     await generateOnce()
-    await waitFor(() => expect(screen.getByText('AI 1차 생성 결과')).toBeTruthy(), { timeout: 8000 })
+    await waitFor(() => expect(screen.getByRole('heading', { name: '완성본' })).toBeTruthy(), { timeout: 8000 })
 
     cleanup()
     await openStudio()
     // 새로 열면 기획서 작업이 먼저지만, 결과는 그대로 있어 다시 열 수 있다.
-    fireEvent.click(await screen.findByRole('radio', { name: 'AI 결과 비교' }))
-    expect(screen.getByText('AI 1차 생성 결과')).toBeTruthy()
+    fireEvent.click(await screen.findByRole('radio', { name: '완성본' }))
+    expect(screen.getByRole('heading', { name: '완성본' })).toBeTruthy()
   }, 25000)
 
   it('marks the result as older than the brief once the brief changes', async () => {
     await seedReady()
     await openStudio()
     await generateOnce()
-    await waitFor(() => expect(screen.getByText('AI 1차 생성 결과')).toBeTruthy(), { timeout: 8000 })
+    await waitFor(() => expect(screen.getByRole('heading', { name: '완성본' })).toBeTruthy(), { timeout: 8000 })
     expect(screen.queryByText('기획서 수정 전 생성 결과')).toBeNull()
 
     fireEvent.change(document.querySelector('.editor-topbar__title') as HTMLInputElement, {
@@ -620,7 +626,7 @@ describe('§13-9·12·13·14 결과는 페이지별로 남고, 실패해도 잃�
     await seedReady()
     await openStudio()
     await generateOnce()
-    await waitFor(() => expect(screen.getByText('AI 1차 생성 결과')).toBeTruthy(), { timeout: 8000 })
+    await waitFor(() => expect(screen.getByRole('heading', { name: '완성본' })).toBeTruthy(), { timeout: 8000 })
     const before = (await loadStudioJob(STUDIO_JOB_ID))!
     const firstResult = before.results[before.doc.pages[0]!.id]!
 

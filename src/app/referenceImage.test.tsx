@@ -80,7 +80,7 @@ describe('reference image — tools', () => {
 
 describe('reference image — 보기 방식', () => {
   /**
-   * 나란히 보기는 없앴다 (1단계 §4). 그 자리를 중앙의 `AI 결과 비교`가 쓰고,
+   * 나란히 보기는 없앴다 (1단계 §4). 그 자리를 중앙의 `완성본`이 쓰고,
    * 참고 이미지를 겹쳐 보는 일은 오버레이가 그대로 한다.
    */
   it('offers only 캔버스만 and 오버레이', async () => {

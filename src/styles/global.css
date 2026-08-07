@@ -1982,17 +1982,27 @@ button { font-family: inherit; }
   gap: 12px;
   min-height: 0;
   min-width: 0;
-  overflow: auto;
+  overflow: hidden;
 }
 .compare__pane {
-  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
 }
+/* 기획서를 꺼내지 않으면 완성본이 가운데를 **전부** 쓴다 (완성본 모드 Patch). */
+.compare__result { flex: 1 1 0; padding: 0 12px 12px; }
+.compare--split .compare__brief { flex: 1 1 0; }
+.compare--split .compare__result { flex: 1 1 0; }
 .compare__brief .canvas { flex: 1; min-height: 0; min-width: 0; }
-.compare__result { overflow: auto; padding: 0 12px 12px; }
+.compare__with-brief { margin-left: auto; font-size: 11px; }
+.compare__with-brief.is-active { background: var(--color-accent); color: #fff; }
+/* 배율이 100%를 넘으면 판이 이 창보다 커진다 — 그때만 스크롤이 생긴다. */
+.compare__viewport {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
 .compare__head {
   flex: none;
   display: flex;
@@ -2012,7 +2022,7 @@ button { font-family: inherit; }
   font-size: 12px;
   font-weight: 600;
 }
-/* 원본 비율 그대로. 폭만 기획서 쪽과 맞춘다 — 자르지 않는다. */
+/* 원본 비율 그대로. 폭은 판이 정하고, 판의 폭은 배율이 정한다 — 자르지 않는다. */
 .compare__image { display: block; width: 100%; height: auto; }
 .compare__empty { margin: 24px 0; text-align: center; font-size: 12px; color: var(--color-muted); }
 
@@ -2040,6 +2050,8 @@ button { font-family: inherit; }
 
 /* AI 부분수정 패널 (부분수정 1단계 §2.3). */
 .side-right { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+/* 완성본 화면에서는 대상 목록의 이름이 길다. 여기서만 조금 넓힌다. */
+.workspace:has(.side-right--result) { grid-template-columns: 240px 1fr 340px; }
 .edit-panel {
   flex: none;
   padding: 12px;
@@ -2670,7 +2682,7 @@ button { font-family: inherit; }
 .style-ref__keep small { display: block; color: var(--color-muted); font-size: 11px; }
 
 /* ── 결과 위의 편집 오브젝트 (블록 연결 Patch §2) ────────────────────────── */
-.compare__stage { position: relative; display: block; }
+.compare__stage { position: relative; display: block; max-width: none; margin: 0 auto; }
 .result-objects { position: absolute; inset: 0; }
 .result-object {
   position: absolute;
