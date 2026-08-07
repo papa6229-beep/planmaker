@@ -22,7 +22,7 @@
  */
 
 import { TEXT_KEY_HEX } from './chromaKey'
-import { areaShare, importanceRanks, type StickerBlock, type StickerCell } from './stickerSheet'
+import { areaShare, importanceRanks, type TextLayerBlock } from './textLayers'
 import type { GenerationInputImage } from './imageGenerationInputs'
 import type { TextAlign } from './simpleBlocks'
 import type { LayoutRect } from './imageLayout'
@@ -73,18 +73,21 @@ export interface PlateInput {
 }
 
 /**
- * 문구·버튼 스티커판 주문의 재료 (스티커판 Patch §4).
+ * 문구·버튼 한 장 주문의 재료 (블록별 문구 Patch).
  *
- * `cells`가 이 주문의 계약이다. 칸 하나에 블록 하나이고, 돌아온 그림은 그
- * 좌표로만 잘린다 — 픽셀을 보고 나누는 자리가 없다.
+ * 블록 하나에 한 장이다. 모델에게 시키는 것은 **글자 한 덩어리를 예쁘게 그리는
+ * 일**뿐이고, 그 그림을 어디에 얼마나 크게 놓을지는 브라우저가 정한다.
  */
-export interface StickerSheetInput {
+export interface TextLayerInput {
+  /** 페이지 크기. 자리·넓이를 설명할 때의 기준자다. */
   size: { width: number; height: number }
   styleReferenceAssetId?: string | undefined
   /** 1단계에서 **실제로 생성된** 배경. 사용자 이미지가 아니다. */
   backgroundAssetId?: string | undefined
-  blocks: readonly StickerBlock[]
-  cells: readonly StickerCell[]
+  /** 이번에 그릴 블록 하나. */
+  block: TextLayerBlock
+  /** 이 페이지의 문구·버튼 전부 — 위계를 매기는 근거로만 쓴다. */
+  siblings: readonly TextLayerBlock[]
   /** 사진이 이미 놓인 자리 — 좌표뿐이다. */
   fixed: readonly FixedObject[]
   note?: string
@@ -110,12 +113,12 @@ export function planPlateInputs(input: PlateInput): GenerationInputImage[] {
 }
 
 /**
- * 스티커판 요청에 붙는 그림 — 스타일 레퍼런스와 **AI가 만든 배경**뿐이다.
+ * 문구 한 장 요청에 붙는 그림 — 스타일 레퍼런스와 **AI가 만든 배경**뿐이다.
  *
  * 배경은 1단계에서 이 도구가 받아 온 그림이라 사용자의 사진이 아니다. 고정
  * 이미지가 얹힌 합성 페이지는 여기 낄 자리가 없다 — 인자에 아예 없다.
  */
-export function planStickerInputs(input: {
+export function planTextLayerInputs(input: {
   styleReferenceAssetId?: string | undefined
   backgroundAssetId?: string | undefined
 }): GenerationInputImage[] {
@@ -147,14 +150,6 @@ function region(rect: LayoutRect, size: { width: number; height: number }): stri
 }
 
 const ALIGN_WORD: Record<TextAlign, string> = { left: '왼쪽', center: '가운데', right: '오른쪽' }
-
-/** 판 전체에 대한 비율 사각형을 사람이 읽는 말로. */
-function unitRegion(rect: LayoutRect): string {
-  return [
-    `가로 ${percent(rect.x)} 지점부터 ${percent(rect.width)}`,
-    `세로 ${percent(rect.y)} 지점부터 ${percent(rect.height)}`,
-  ].join(', ')
-}
 
 /**
  * 1) 배경 플레이트 주문.
@@ -213,94 +208,86 @@ export function buildPlatePrompt(input: PlateInput): string {
 }
 
 /**
- * 2) 문구·버튼 스티커판 주문 (스티커판 Patch §4).
+ * 2) 문구·버튼 한 장 주문 (블록별 문구 Patch).
  *
- * 단색 마젠타 위에 **칸을 나눠** 글자만 그린 한 장이다. 투명 배경은 이 모델이
+ * 단색 마젠타 위에 **이 문구 하나만** 그린 한 장이다. 투명 배경은 이 모델이
  * 만들어 주지 않으므로(공급자 답: `Transparent background is not supported for
  * this model.`), 브라우저가 그 단색을 걷어 낸다 (`chromaKey.ts`).
  *
- * 앞선 판과 다른 것은 하나다. 문구를 **지면 배치대로** 그리게 한 뒤 픽셀을 보고
- * 나누는 것이 아니라, 칸을 미리 정해 주고 **그 칸 좌표로만** 자른다. 그래서 어느
- * 조각이 어느 블록의 것인지 추측할 일이 없다.
+ * 앞선 판들과 다른 것은 하나다. **자리를 지키라고 시키지 않는다.** 판 어디에
+ * 그리든 상관없다고 분명히 말해 두고, 받은 그림에서 그려진 부분만 잘라 내
+ * 브라우저가 기획서 자리에 앉힌다. 모델이 못 하는 일을 시키지 않는 것이 요점이다.
  *
- * 자리·크기·중요도·겹침·주변 색은 여전히 전부 전달한다 — 다만 그것은 "이 칸 안에
- * 어떤 디자인을 그릴지"의 근거이지, 판 위의 배치 지시가 아니다.
+ * 자리·넓이·중요도·겹침·주변 색은 여전히 전부 전달한다 — 다만 그것은 "어떤
+ * 디자인이어야 하는가"의 근거이지 배치 지시가 아니다.
  */
-export function buildStickerPrompt(input: StickerSheetInput): string {
-  const { size, blocks, cells, fixed, backgroundAssetId, note } = input
-  const ranks = importanceRanks(blocks, size)
-  const byId = new Map(cells.map((cell) => [cell.blockId, cell]))
+export function buildTextLayerPrompt(input: TextLayerInput): string {
+  const { size, block, siblings, fixed, backgroundAssetId, note } = input
+  const rank = importanceRanks(siblings, size).get(block.blockId) ?? 1
   const lines: string[] = []
 
   lines.push(
-    '이벤트 페이지에 쓸 **문구·버튼 스티커판** 한 장을 만들어 주세요.',
-    '완성 디자인이 아닙니다. 칸으로 나뉜 판이고, 각 칸을 잘라 내 실제 페이지의 제자리에 붙입니다.',
-    `배경은 **단색 마젠타(${TEXT_KEY_HEX})** 한 가지로 화면 전체를 빈틈없이 채우고, 그 위에 문구·버튼 디자인만 올려 주세요.`,
-    '마젠타는 나중에 지워집니다. 남은 글자만 이미 만들어진 배경과 사진 위에 그대로 얹힙니다.',
-    `크기는 가로 ${size.width}, 세로 ${size.height} 비율입니다.`,
+    `${block.kind === 'button' ? '버튼' : '문구'} **한 개**를 디자인해 주세요.`,
+    `배경은 **단색 마젠타(${TEXT_KEY_HEX})** 한 가지로 화면 전체를 빈틈없이 채우고, 그 위에 이것 하나만 올립니다.`,
+    '마젠타는 나중에 지워집니다. 남은 글자만 이미 만들어진 배경과 사진 위에 얹힙니다.',
+    '',
+    '## 그릴 것 (원문 그대로)',
+    `- "${block.content}"`,
   )
 
   lines.push(
     '',
-    '## 칸 나누기 — 이 주문에서 가장 중요한 규칙',
-    `판을 아래 ${cells.length}개의 칸으로 나눠 주세요. **칸 하나에는 지정된 블록 하나만** 디자인합니다.`,
-    '- 한 칸에 두 문구를 함께 넣지 않습니다.',
-    '- 한 문구를 두 칸에 나눠 넣지 않습니다.',
-    '- 글자·외곽선·그림자·라벨·배지·버튼 배경판이 **지정된 사각형 밖으로 한 획도 넘어가지 않게** 해 주세요.',
-    '- 칸과 칸 사이의 여백은 비워 둡니다. 거기에 무엇이 묻으면 그 칸은 쓸 수 없습니다.',
-    '- 칸 안에서는 여백을 넉넉히 쓰지 말고, 지정된 사각형을 **가득 채우도록** 크게 디자인해 주세요.',
+    '## 자리는 신경 쓰지 않으셔도 됩니다',
+    '- 판의 **어디에 그리든 상관없습니다.** 실제 자리는 이 도구가 따로 잡습니다.',
+    '- 다만 **글자 한 덩어리만** 그려 주세요. 이 문구 말고는 아무것도 그리지 않습니다.',
+    '- 판을 가득 채울 만큼 **크고 또렷하게** 그려 주세요. 작게 그리면 최종 화질이 떨어집니다.',
   )
 
-  lines.push('', '## 칸별 주문')
-  for (const block of blocks) {
-    const cell = byId.get(block.blockId)
-    if (cell === undefined) continue
-    const rank = ranks.get(block.blockId) ?? 0
+  lines.push(
+    '',
+    '## 이 문구의 성격',
+    `- 실제 페이지에서의 자리: ${region(block.rect, size)} · 정렬 ${ALIGN_WORD[block.align]}`,
+    `- 지면에서 차지하는 넓이: ${percent(areaShare(block.rect, size))} · 중요도 ${String(rank)}위 / ${String(siblings.length)}개`,
+    `- 가로세로 비율: 약 ${(block.rect.width / Math.max(1, block.rect.height)).toFixed(1)} : 1 — 이 비율에 가깝게 배치해 주세요.`,
+    `- 사진·컷아웃과 겹치는가: ${block.overlapsImage ? '겹칩니다 — 사진 위에서도 또렷하게 읽히도록 대비·외곽선·그림자를 충분히 쓰세요.' : '겹치지 않습니다.'}`,
+  )
+  if (block.tone != null) {
+    const tone = block.tone
     lines.push(
-      `### cell ${String(cell.index)}`,
-      `- 그릴 것: ${block.kind === 'button' ? '버튼' : '문구'} — "${block.content}"`,
-      `- 그릴 자리(판 전체 기준): ${unitRegion(cell.crop)}`,
-      `- 실제 페이지에서의 자리: ${region(block.rect, size)} · 정렬 ${ALIGN_WORD[block.align]}`,
-      `- 지면에서 차지하는 넓이: ${percent(areaShare(block.rect, size))} · 중요도 ${String(rank)}위 / ${String(blocks.length)}개`,
-      `- 사진·컷아웃과 겹치는가: ${block.overlapsImage ? '겹칩니다 — 사진 위에서도 또렷하게 읽히도록 대비·외곽선·그림자를 충분히 쓰세요.' : '겹치지 않습니다.'}`,
+      `- 그 자리 주변의 색: 평균색 R${String(Math.round(tone.average.r))} G${String(Math.round(tone.average.g))} B${String(Math.round(tone.average.b))}, 밝기 ${tone.brightness.toFixed(2)} (0=어두움, 1=밝음), 대비 ${tone.contrast.toFixed(2)}`,
+      '- 이 배경 위에서 또렷하게 읽히도록 색과 대비를 정해 주세요.',
     )
-    if (block.tone != null) {
-      const tone = block.tone
-      lines.push(
-        `- 그 자리 주변의 색: 평균색 R${String(Math.round(tone.average.r))} G${String(Math.round(tone.average.g))} B${String(Math.round(tone.average.b))}, 밝기 ${tone.brightness.toFixed(2)} (0=어두움, 1=밝음), 대비 ${tone.contrast.toFixed(2)}`,
-      )
-    }
   }
 
   lines.push(
     '',
-    '## 문구는 원문 그대로입니다',
-    '문구의 **문자·숫자·띄어쓰기·기호·줄바꿈을 절대 바꾸지 않습니다.** 맞춤법을 고치거나 줄여 쓰거나 번역하지 말아 주세요.',
+    '## 원문은 한 글자도 바꾸지 않습니다',
+    '**문자·숫자·띄어쓰기·기호·줄바꿈을 절대 바꾸지 않습니다.** 맞춤법을 고치거나 줄여 쓰거나 번역하지 말아 주세요.',
     '지시에 없는 문구를 새로 만들지 않습니다.',
   )
 
   lines.push(
     '',
     '## 크기와 중요도',
-    '- 큰 상자는 주요 문구로, 작은 상자는 보조 문구로 다뤄 주세요.',
     '- 중요도가 앞선 문구일수록 굵고 강한 활자로, 뒤일수록 차분하게 풀어 주세요.',
-    '- 칸 안에서 글자 크기·행간·정렬·효과는 디자인을 위해 조절해도 좋습니다.',
     '- 스타일 레퍼런스의 글꼴 분위기와 디자인 표현을 참고해 주세요.',
+    '- 글자색·외곽선·그림자, 그리고 이 문구에 붙는 라벨·배지까지는 함께 그려도 좋습니다.',
   )
 
-  lines.push(
-    '',
-    '## 버튼을 그릴 때',
-    '- 버튼은 **배경판·테두리·글자를 한 덩어리로** 그 칸 안에 함께 그려 주세요.',
-    '- 버튼 배경판도 지정된 사각형 밖으로 넘기지 않습니다.',
-  )
+  if (block.kind === 'button') {
+    lines.push(
+      '',
+      '## 버튼을 그릴 때',
+      '- **배경판·테두리·글자를 한 덩어리로** 함께 그려 주세요.',
+    )
+  }
 
   if (fixed.length > 0) {
-    lines.push('', '## 실제 페이지에서 사진이 이미 놓여 있는 자리')
-    for (const item of fixed) lines.push(`- ${region(item.rect, size)}`)
     lines.push(
-      '문구가 그 위에 겹치는 것은 그대로 둡니다. 겹침을 피해 옮기지 않습니다.',
-      '다만 이 자리에 **사람·제품·로고를 새로 그리지 않습니다.**',
+      '',
+      '## 실제 페이지에서 사진이 이미 놓여 있는 자리',
+      ...fixed.map((item) => `- ${region(item.rect, size)}`),
+      '이 자리에 **사람·제품·로고를 새로 그리지 않습니다.**',
     )
   }
 
@@ -311,7 +298,7 @@ export function buildStickerPrompt(input: StickerSheetInput): string {
   )
   if (backgroundAssetId !== undefined) {
     lines.push(
-      '- 1단계에서 생성된 배경: 이 글자들이 실제로 놓일 바탕입니다. 그 위에서 읽히도록 색과 대비를 정해 주세요. **배경을 다시 그리지 않습니다.**',
+      '- 1단계에서 생성된 배경: 이 글자가 실제로 놓일 바탕입니다. 그 위에서 읽히도록 색과 대비를 정해 주세요. **배경을 다시 그리지 않습니다.**',
     )
   }
 
@@ -322,8 +309,8 @@ export function buildStickerPrompt(input: StickerSheetInput): string {
     '',
     '## 넣지 말 것',
     `- 배경 사진·그러데이션·무늬 (배경은 단색 마젠타 ${TEXT_KEY_HEX} 한 가지입니다)`,
-    '- 별·꽃·테이프·하프톤처럼 문구에 속하지 않는 배경 장식',
-    '- 칸 구분선, 칸 번호, 안내 글자',
+    '- 별·꽃·테이프·하프톤처럼 이 문구에 속하지 않는 배경 장식',
+    '- 다른 문구, 안내 글자, 틀·구분선',
     '- 글자·외곽선·그림자·라벨·배지에 마젠타나 그와 비슷한 분홍·자주 계열 색',
     '- 사람, 제품, 로고',
     '- 워터마크',

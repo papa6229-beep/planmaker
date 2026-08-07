@@ -86,17 +86,10 @@ vi.mock('../services/workingImage', async () => {
   }
 })
 
-// 칸대로 자르는 일은 캔버스의 몫이다. 자르는 좌표의 규칙은 순수 검사에서 숫자로
-// 재고, 여기서는 흐름만 본다.
-vi.mock('../services/stickerSheetSlice', () => ({
-  sliceStickerSheet: async (_blob: Blob, cells: { blockId: string; index: number }[]) => ({
-    pieces: cells.map((c) => ({
-      blockId: c.blockId,
-      index: c.index,
-      blob: new Blob([new Uint8Array([7, 7])], { type: 'image/png' }),
-    })),
-    inks: cells.map((c) => ({ index: c.index, blockId: c.blockId, guardRatio: 0 })),
-  }),
+// 여백을 잘라 내는 일은 캔버스의 몫이다. 규칙은 순수 검사에서 재고, 여기서는
+// 흐름만 본다. 돌려주는 크기는 블록 상자와 같은 비율로 둔다.
+vi.mock('../services/trimToContent', () => ({
+  trimToContent: async (blob: Blob) => ({ blob, width: 400, height: 100 }),
 }))
 vi.mock('../services/regionTone', () => ({
   REGION_MAX_SIDE: 512,
@@ -210,7 +203,7 @@ async function generateOnce() {
     // eslint-disable-next-line testing-library/no-node-access
     Array.from(dialog.querySelectorAll('button')).find((b) => /생성 시작|저장하고 계속/.test(b.textContent ?? ''))!,
   )
-  await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2), { timeout: 8000 })
+  await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(4), { timeout: 8000 })
   await waitFor(async () => {
     const job = await loadStudioJob(STUDIO_JOB_ID)
     expect((job?.imageObjects?.page_1 ?? []).length).toBe(2)
@@ -359,6 +352,7 @@ describe('§3 하나를 손대도 나머지는 그대로다', () => {
 
     const before = await loadStudioJob(STUDIO_JOB_ID)
     const beforeTexts = before?.textObjects?.page_1 ?? []
+    const beforeT2 = beforeTexts.find((o) => o.blockId === 'blk_t2')!.rect
     const calls = fetchSpy.mock.calls.length
 
     const boxes = await objectBoxes(container)
@@ -405,8 +399,8 @@ describe('§3 하나를 손대도 나머지는 그대로다', () => {
     await waitFor(async () => {
       const now = await loadStudioJob(STUDIO_JOB_ID)
       const t2 = now?.textObjects?.page_1?.find((o) => o.blockId === 'blk_t2')
-      expect(t2?.rect.width).toBe(440)
-      expect(t2?.rect.height).toBe(110)
+      expect(t2?.rect.width).toBe(beforeT2.width + 40)
+      expect(t2?.rect.height).toBe(beforeT2.height + 20)
     }, { timeout: 5000 })
 
     job = await loadStudioJob(STUDIO_JOB_ID)

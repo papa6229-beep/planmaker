@@ -14,7 +14,7 @@
 
 import { analyzeCutout } from '../domain/imageAnalysis'
 import type { LayoutRect } from '../domain/imageLayout'
-import type { StickerRegionTone } from '../domain/stickerSheet'
+import type { TextLayerTone } from '../domain/textLayers'
 
 /** 재기 위해 줄이는 크기 — `imageAnalysisRunner`와 같은 이유, 같은 값. */
 export const REGION_MAX_SIDE = 512
@@ -43,7 +43,7 @@ export async function analyzeRegions(
   blob: Blob,
   rects: readonly LayoutRect[],
   page: { width: number; height: number },
-): Promise<(StickerRegionTone | null)[]> {
+): Promise<(TextLayerTone | null)[]> {
   const empty = rects.map(() => null)
   if (rects.length === 0 || page.width <= 0 || page.height <= 0) return empty
   try {

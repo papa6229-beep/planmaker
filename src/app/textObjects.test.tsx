@@ -80,17 +80,10 @@ vi.mock('../services/workingImage', async () => {
   }
 })
 
-// 칸대로 자르는 일은 캔버스의 몫이다. 자르는 좌표의 규칙은 순수 검사에서 숫자로
-// 재고, 여기서는 흐름만 본다.
-vi.mock('../services/stickerSheetSlice', () => ({
-  sliceStickerSheet: async (_blob: Blob, cells: { blockId: string; index: number }[]) => ({
-    pieces: cells.map((c) => ({
-      blockId: c.blockId,
-      index: c.index,
-      blob: new Blob([new Uint8Array([7, 7])], { type: 'image/png' }),
-    })),
-    inks: cells.map((c) => ({ index: c.index, blockId: c.blockId, guardRatio: 0 })),
-  }),
+// 여백을 잘라 내는 일은 캔버스의 몫이다. 규칙은 순수 검사에서 재고, 여기서는
+// 흐름만 본다. 돌려주는 크기는 블록 상자와 같은 비율로 둔다.
+vi.mock('../services/trimToContent', () => ({
+  trimToContent: async (blob: Blob) => ({ blob, width: 400, height: 100 }),
 }))
 vi.mock('../services/regionTone', () => ({
   REGION_MAX_SIDE: 512,
@@ -193,7 +186,7 @@ async function generateOnce() {
     // eslint-disable-next-line testing-library/no-node-access
     Array.from(dialog.querySelectorAll('button')).find((b) => /생성 시작|저장하고 계속/.test(b.textContent ?? ''))!,
   )
-  await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2), { timeout: 8000 })
+  await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(3), { timeout: 8000 })
   await waitFor(async () => {
     const job = await loadStudioJob(STUDIO_JOB_ID)
     expect((job?.textObjects?.page_1 ?? []).length).toBe(2)
@@ -269,13 +262,16 @@ describe('§1 생성 결과가 블록별 오브젝트로 남는다', () => {
     const job = await loadStudioJob(STUDIO_JOB_ID)
     const objects = job?.textObjects?.page_1 ?? []
     expect(objects.map((o) => o.blockId).sort()).toEqual(['blk_note', 'blk_title'])
-    // 처음 자리는 기획서 블록의 자리다.
+    // 처음 자리는 기획서 블록 상자 안이다 — 상자를 넘지 않는 가장 큰 크기로,
+    // 비율을 지켜 가운데에 (`containRect`). 검사 mock 의 그림은 400×100이다.
     const title = objects.find((o) => o.blockId === 'blk_title')!
-    expect(title.rect).toEqual({ x: 80, y: 120, width: 600, height: 180 })
+    expect(title.rect).toEqual({ x: 80, y: 135, width: 600, height: 150 })
+    expect(title.rect.width).toBeLessThanOrEqual(600)
+    expect(title.rect.height).toBeLessThanOrEqual(180)
     // 저마다 다른 그림이다.
     expect(new Set(objects.map((o) => o.assetId)).size).toBe(2)
-    // 문구 생성 호출은 페이지당 한 번뿐이다 (배경 1 + 문구 1).
-    expect(fetchSpy).toHaveBeenCalledTimes(2)
+    // 배경 1 + 문구 2 = 3회. 문구는 블록 하나에 한 번씩 나간다.
+    expect(fetchSpy).toHaveBeenCalledTimes(3)
   })
 })
 

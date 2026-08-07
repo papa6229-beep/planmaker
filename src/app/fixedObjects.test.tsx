@@ -88,17 +88,10 @@ vi.mock('../services/workingImage', async () => {
   }
 })
 
-// 칸대로 자르는 일은 캔버스의 몫이다. 자르는 좌표의 규칙은 순수 검사에서 숫자로
-// 재고, 여기서는 흐름만 본다.
-vi.mock('../services/stickerSheetSlice', () => ({
-  sliceStickerSheet: async (_blob: Blob, cells: { blockId: string; index: number }[]) => ({
-    pieces: cells.map((c) => ({
-      blockId: c.blockId,
-      index: c.index,
-      blob: new Blob([new Uint8Array([7, 7])], { type: 'image/png' }),
-    })),
-    inks: cells.map((c) => ({ index: c.index, blockId: c.blockId, guardRatio: 0 })),
-  }),
+// 여백을 잘라 내는 일은 캔버스의 몫이다. 규칙은 순수 검사에서 재고, 여기서는
+// 흐름만 본다. 돌려주는 크기는 블록 상자와 같은 비율로 둔다.
+vi.mock('../services/trimToContent', () => ({
+  trimToContent: async (blob: Blob) => ({ blob, width: 400, height: 100 }),
 }))
 vi.mock('../services/regionTone', () => ({
   REGION_MAX_SIDE: 512,
@@ -196,7 +189,7 @@ async function documentReady(container: HTMLElement) {
 }
 
 /** 상단 버튼 한 번. 응답은 stub이라 실제 결제는 없다. */
-async function generateOnce(calls = 2): Promise<FormData[]> {
+async function generateOnce(calls = 3): Promise<FormData[]> {
   sessionStorage.setItem('planmaker.openai-key', 'sk-stub')
   // 매번 **새** Response를 만든다. 하나를 재사용하면 본문이 이미 읽혀 두 번째
   // 요청이 `no_image`로 떨어지고, 전경 레이어가 조용히 빠진다.
@@ -269,8 +262,8 @@ describe('§3 어디서 깨졌는가', () => {
     await documentReady(container)
     const [plate, foreground] = await generateOnce()
 
-    // 배경 요청에는 스타일 레퍼런스뿐이고, 스티커판 요청에는 **이 도구가 방금
-    // 받아 온 배경** 한 장이 더 붙는다 — 사용자의 그림이 아니다.
+    // 배경 요청에는 스타일 레퍼런스뿐이고, 문구 요청마다 **이 도구가 방금 받아 온
+    // 배경** 한 장이 더 붙는다 — 사용자의 그림이 아니다.
     expect(fileNames(plate!)).toEqual(['1-style-reference.png'])
     expect(fileNames(foreground!)).toEqual(['1-style-reference.png', '2-background-plate.png'])
 
@@ -318,7 +311,7 @@ describe('§1 이미지와 컷아웃은 고정이다', () => {
   })
 
   it('붙일 수 있는 것은 스타일 레퍼런스 하나뿐이다', async () => {
-    const { preserveAttachmentIds, planPlateInputs, planStickerInputs } = await load('domain/preserveDesign')
+    const { preserveAttachmentIds, planPlateInputs, planTextLayerInputs } = await load('domain/preserveDesign')
     expect(preserveAttachmentIds(undefined)).toEqual([])
     expect(preserveAttachmentIds('asset_style')).toEqual(['asset_style'])
 
@@ -326,12 +319,12 @@ describe('§1 이미지와 컷아웃은 고정이다', () => {
     const plate = planPlateInputs({ size: { width: 840, height: 1200 }, fixed })
     // 레퍼런스가 없으면 아무것도 붙지 않는다 — 고정 오브젝트가 목록에 낄 자리가 없다.
     expect(plate).toEqual([])
-    expect(planStickerInputs({})).toEqual([])
+    expect(planTextLayerInputs({})).toEqual([])
 
-    // 스티커판에 붙을 수 있는 것은 레퍼런스와 **AI가 만든 배경**뿐이다. 제품·
+    // 문구 요청에 붙을 수 있는 것은 레퍼런스와 **AI가 만든 배경**뿐이다. 제품·
     // 인물·로고가 끼어들 인자가 이 함수에 아예 없다.
-    const sheet = planStickerInputs({ styleReferenceAssetId: 'asset_style', backgroundAssetId: 'asset_plate' })
-    expect(sheet.map((i: { assetId: string }) => i.assetId)).toEqual(['asset_style', 'asset_plate'])
+    const text = planTextLayerInputs({ styleReferenceAssetId: 'asset_style', backgroundAssetId: 'asset_plate' })
+    expect(text.map((i: { assetId: string }) => i.assetId)).toEqual(['asset_style', 'asset_plate'])
   })
 
   it('최종 합성은 모든 이미지 블록을 문서 순서대로, 생성 전 좌표 그대로 얹는다', async () => {
@@ -364,56 +357,49 @@ describe('§1 이미지와 컷아웃은 고정이다', () => {
 // ── §2 텍스트는 앞이고 자유롭다 ─────────────────────────────────────────────
 
 describe('§2 문구는 전면 레이어다', () => {
-  it('스티커판 주문은 원문을 그대로 싣고, 칸마다 자리·중요도·주변 색을 말한다', async () => {
-    const { buildStickerPrompt } = await load('domain/preserveDesign')
-    const { planStickerCells } = await load('domain/stickerSheet')
+  it('문구 주문은 원문을 그대로 싣고, 자리·중요도·주변 색을 말한다', async () => {
+    const { buildTextLayerPrompt } = await load('domain/preserveDesign')
     const doc = sampleDoc()
     const blocks = doc.pages[0]!.blocks
     const size = { width: 840, height: 1200 }
-    const sheetBlocks = [
-      {
-        blockId: 'blk_note',
-        content: '8/1 ~ 8/14 · 선착순 300명',
-        kind: 'text' as const,
-        rect: blocks[4]!.position,
-        align: 'left' as const,
-        layer: 4,
-        overlapsImage: false,
-      },
-      {
-        blockId: 'blk_title',
-        content: '여름 감사제 40% + 사은품',
-        kind: 'text' as const,
-        rect: blocks[3]!.position,
-        align: 'center' as const,
-        layer: 3,
-        overlapsImage: true,
-        tone: { average: { r: 180, g: 112, b: 64 }, brightness: 0.5, contrast: 0.42 },
-      },
-    ]
-    const prompt = buildStickerPrompt({
+    const note = {
+      blockId: 'blk_note',
+      content: '8/1 ~ 8/14 · 선착순 300명',
+      kind: 'text' as const,
+      rect: blocks[4]!.position,
+      align: 'left' as const,
+      layer: 4,
+      overlapsImage: false,
+    }
+    const title = {
+      blockId: 'blk_title',
+      content: '여름 감사제 40% + 사은품',
+      kind: 'text' as const,
+      rect: blocks[3]!.position,
+      align: 'center' as const,
+      layer: 3,
+      overlapsImage: true,
+      tone: { average: { r: 180, g: 112, b: 64 }, brightness: 0.5, contrast: 0.42 },
+    }
+    const prompt = buildTextLayerPrompt({
       size,
       styleReferenceAssetId: 'asset_style',
       backgroundAssetId: 'asset_plate',
-      blocks: sheetBlocks,
-      cells: planStickerCells(sheetBlocks, size),
+      block: title,
+      siblings: [note, title],
       fixed: [
         { blockId: 'blk_big', assetId: 'asset_big', rect: blocks[0]!.position, layer: 0, cutout: true },
       ],
     })
 
-    // 원문 그대로.
+    // 이 주문이 그리는 것은 **하나**다. 옆 문구는 실리지 않는다.
     expect(prompt).toContain('여름 감사제 40% + 사은품')
-    expect(prompt).toContain('8/1 ~ 8/14 · 선착순 300명')
+    expect(prompt).not.toContain('8/1 ~ 8/14 · 선착순 300명')
     expect(prompt).toContain('문자·숫자·띄어쓰기·기호·줄바꿈')
-    // 칸이 계약이다 — 한 칸에 한 블록, 칸 밖으로 넘기지 않는다.
-    expect(prompt).toContain('cell 1')
-    expect(prompt).toContain('cell 2')
-    expect(prompt).toContain('칸 하나에는 지정된 블록 하나만')
-    expect(prompt).toContain('한 문구를 두 칸에 나눠 넣지 않습니다')
-    expect(prompt).toContain('한 획도 넘어가지 않게')
+    // 자리를 지키라고 시키지 않는다.
+    expect(prompt).toContain('어디에 그리든 상관없습니다')
+    expect(prompt).toContain('글자 한 덩어리만')
     // 크기와 중요도는 여전히 전달한다.
-    expect(prompt).toContain('큰 상자는 주요 문구')
     expect(prompt).toContain('중요도 1위 / 2개')
     expect(prompt).toContain('글꼴 분위기')
     // 사진과 겹치는 자리는 그 위에서 읽히게 한다.
@@ -424,7 +410,7 @@ describe('§2 문구는 전면 레이어다', () => {
     // 그 자리 주변의 색은 숫자로만 간다.
     expect(prompt).toContain('R180')
     expect(prompt).toContain('대비 0.42')
-    // 장식은 스티커판에 만들지 않는다.
+    // 장식은 이 한 장에 만들지 않는다.
     expect(prompt).toContain('별·꽃·테이프·하프톤')
     expect(prompt).not.toContain('asset_')
   })
@@ -439,36 +425,33 @@ describe('§2 문구는 전면 레이어다', () => {
     expect(plate!.get('background')).toBeNull()
     expect(foreground!.get('background')).toBeNull()
 
-    // 배경 주문에는 문구 원문이 없고, 전경 주문에만 있다. 그리고 그 요청은 하나다.
+    // 배경 주문에는 문구 원문이 없고, 문구 주문에만 있다.
     expect(promptOf(plate!)).not.toContain('여름 감사제 40% + 사은품')
     expect(promptOf(foreground!)).toContain('여름 감사제 40% + 사은품')
-    expect(fetchSpy).toHaveBeenCalledTimes(2)
+    // 배경 1 + 문구 2 = 3회. 문구 요청은 블록 수만큼이고, 한 요청에 한 문구다.
+    expect(fetchSpy).toHaveBeenCalledTimes(3)
     const textCalls = fetchSpy.mock.calls.filter((c) =>
-      String((c[1].body as FormData).get('prompt')).includes('문구·버튼 스티커판'),
+      String((c[1].body as FormData).get('prompt')).includes('한 개**를 디자인해'),
     )
-    expect(textCalls).toHaveLength(1)
+    expect(textCalls).toHaveLength(2)
   })
 
-  it('스티커판 주문은 단색 배경을 시키고, 그 색을 글자에 쓰지 말라고 못 박는다', async () => {
-    const { buildStickerPrompt } = await load('domain/preserveDesign')
-    const { planStickerCells } = await load('domain/stickerSheet')
+  it('문구 주문은 단색 배경을 시키고, 그 색을 글자에 쓰지 말라고 못 박는다', async () => {
+    const { buildTextLayerPrompt } = await load('domain/preserveDesign')
     const { TEXT_KEY_HEX } = await load('domain/chromaKey')
-    const size = { width: 840, height: 1200 }
-    const sheetBlocks = [
-      {
-        blockId: 't',
-        content: '여름 감사제',
-        kind: 'text' as const,
-        rect: { x: 0, y: 0, width: 100, height: 50 },
-        align: 'center' as const,
-        layer: 0,
-        overlapsImage: false,
-      },
-    ]
-    const prompt = buildStickerPrompt({
-      size,
-      blocks: sheetBlocks,
-      cells: planStickerCells(sheetBlocks, size),
+    const block = {
+      blockId: 't',
+      content: '여름 감사제',
+      kind: 'text' as const,
+      rect: { x: 0, y: 0, width: 100, height: 50 },
+      align: 'center' as const,
+      layer: 0,
+      overlapsImage: false,
+    }
+    const prompt = buildTextLayerPrompt({
+      size: { width: 840, height: 1200 },
+      block,
+      siblings: [block],
       fixed: [],
     })
     expect(prompt).toContain(TEXT_KEY_HEX)
@@ -783,7 +766,7 @@ describe('§4 배경 → 사진 → 문구', () => {
     sessionStorage.setItem('planmaker.openai-key', 'sk-stub')
     fireEvent.click(await screen.findByRole('button', { name: /이미지 생성하기|다시 생성/ }))
     const dialog = await screen.findByRole('dialog')
-    expect(dialog.textContent).toContain('2회')
+    expect(dialog.textContent).toContain('3회')
     expect(dialog.textContent).toContain('3장')
   })
 

@@ -43,25 +43,22 @@ import { planGenerationInputs, MAX_INPUT_IMAGES, type GenerationInputImage } fro
 import { buildOpenAIImagePrompt } from '../../domain/imagePrompt'
 import {
   buildPlatePrompt,
-  buildStickerPrompt,
+  buildTextLayerPrompt,
   planPlateInputs,
-  planStickerInputs,
+  planTextLayerInputs,
   type FixedObject,
   type PlateInput,
   type PreserveTextEntry,
-  type StickerSheetInput,
 } from '../../domain/preserveDesign'
 import {
-  planStickerCells,
+  containRect,
   rectsOverlap,
-  spilledCells,
-  type StickerBlock,
-  type StickerCell,
-  type StickerRegionTone,
-} from '../../domain/stickerSheet'
+  type TextLayerBlock,
+  type TextLayerTone,
+} from '../../domain/textLayers'
 import { removeKeyBackground } from '../../services/textLayerKey'
 import { sliceTextLayer } from '../../services/textLayerSplit'
-import { sliceStickerSheet } from '../../services/stickerSheetSlice'
+import { trimToContent } from '../../services/trimToContent'
 import { analyzeRegions } from '../../services/regionTone'
 import type { StudioTextObject } from '../../domain/textObjects'
 import { planLocalComposite } from '../../domain/composite'
@@ -122,15 +119,13 @@ interface GenerationPlan {
   inputs: GenerationInputImage[]
   fingerprint: string
   /**
-   * `preserve`의 두 번째 겹 — 문구·버튼 스티커판의 **재료** (스티커판 Patch §4).
+   * `preserve`의 두 번째 겹 — 문구·버튼 **블록마다 한 장** (블록별 문구 Patch).
    *
    * 프롬프트를 여기서 미리 짓지 않는 이유는, 그 주문이 실제로 만들어진 배경과
    * 그 위 자리별 색을 인용하기 때문이다. 둘 다 첫 번째 그림을 받은 뒤에야
    * 손에 들어온다.
    */
-  sticker?: StickerSheetInput
-  /** 칸 계획. 자를 좌표는 요청을 보내기 **전에** 이미 정해져 있다. */
-  cells?: StickerCell[]
+  textBlocks?: TextLayerBlock[]
   /**
    * 문구 오브젝트 하나만 다시 디자인하는 길 (텍스트 오브젝트 Patch §3).
    *
@@ -335,9 +330,10 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         ...(note.length === 0 ? {} : { note }),
       }
       const plate: PlateInput = shared
-      // 문구·버튼은 칸으로 나눈다. 자를 좌표가 요청보다 **먼저** 정해지는 것이
-      // 이 갈래의 요점이다 (스티커판 Patch §4, §5).
-      const stickerBlocks: StickerBlock[] = parts.texts.map((text) => ({
+      // 문구·버튼은 **블록마다 한 장**이다 (블록별 문구 Patch). 한 장을 받아
+      // 나중에 가르는 자리가 아예 없으므로, 두 문구가 섞이거나 한 문구가
+      // 쪼개질 길이 없다.
+      const textBlocks: TextLayerBlock[] = parts.texts.map((text) => ({
         blockId: text.blockId,
         content: text.content,
         kind: text.kind,
@@ -346,18 +342,15 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         layer: text.layer,
         overlapsImage: text.overlapsImage,
       }))
-      const cells = planStickerCells(stickerBlocks, pageSize)
-      const sticker: StickerSheetInput | undefined =
-        stickerBlocks.length === 0 ? undefined : { ...shared, blocks: stickerBlocks, cells }
 
       // 사용자 이미지는 어느 목록에도 들어갈 길이 없다 — 스타일 레퍼런스와, 이
       // 도구가 다음 단계에서 직접 받아 올 배경뿐이다.
       const plateInputs = planPlateInputs(plate)
-      const stickerInputs = planStickerInputs({
+      const textInputs = planTextLayerInputs({
         ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
         backgroundAssetId: 'pending',
       })
-      if (plateInputs.length > MAX_INPUT_IMAGES || stickerInputs.length > MAX_INPUT_IMAGES) {
+      if (plateInputs.length > MAX_INPUT_IMAGES || textInputs.length > MAX_INPUT_IMAGES) {
         return { blocked: errorTextFor('too_many_inputs') }
       }
       return {
@@ -371,9 +364,9 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           working,
           inputs: plateInputs,
           fingerprint,
-          ...(sticker === undefined ? {} : { sticker, cells }),
-          // 배경 한 번, 스티커판 한 번. 문구가 하나도 없으면 배경 한 번뿐이다.
-          calls: sticker === undefined ? 1 : 2,
+          ...(textBlocks.length === 0 ? {} : { textBlocks }),
+          // 배경 한 번 + 문구·버튼 하나당 한 번. 확인창이 이 수를 그대로 말한다.
+          calls: 1 + textBlocks.length,
         },
       }
     }
@@ -537,8 +530,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
    * 나가는 것은 이 함수가 돌려주는 숫자뿐이다.
    */
   const measureRegions = useCallback(
-    async (plan: GenerationPlan, plateAssetId: string | undefined): Promise<(StickerRegionTone | null)[]> => {
-      const blocks = plan.sticker?.blocks ?? []
+    async (plan: GenerationPlan, plateAssetId: string | undefined): Promise<(TextLayerTone | null)[]> => {
+      const blocks = plan.textBlocks ?? []
       const empty = blocks.map(() => null)
       if (studio === null || plateAssetId === undefined || blocks.length === 0) return empty
       try {
@@ -564,50 +557,44 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
   )
 
   /**
-   * 스티커판을 **미리 정한 칸 좌표로만** 자른다 (§5, 실패 처리).
+   * 문구 한 장을 받아 편집 오브젝트 하나로 만든다 (블록별 문구 Patch).
    *
-   * 한 칸이라도 자기 자리를 넘었으면 아무것도 얹지 않고 어느 칸인지만 말한다.
-   * 다시 부르지 않고, 픽셀을 보고 다시 나누지도 않는다 — 그 두 길이 이 Patch가
-   * 없애는 결함이다.
+   * 임시 바탕을 걷어 내고, **그려진 부분만** 남기고, 기획서가 정한 상자 안에
+   * 비율을 지켜 앉힌다. 어느 픽셀이 누구 것인지 고르는 자리가 없다 — 이 그림에
+   * 블록은 하나뿐이다.
+   *
+   * 실패하면 이유를 돌려준다. 다시 부르지 않는다.
    */
-  const cutSheet = useCallback(
+  const drawTextLayer = useCallback(
     async (
       blob: Blob,
-      plan: GenerationPlan,
-    ): Promise<{ objects?: StudioTextObject[]; problem?: string }> => {
-      const cells = plan.cells ?? []
-      const blocks = plan.sticker?.blocks ?? []
+      block: TextLayerBlock,
+    ): Promise<{ object?: StudioTextObject; problem?: string }> => {
       const keyed = await removeKeyBackground(blob)
-      if (keyed === null) return { problem: '스티커판의 임시 배경을 걷어 내지 못했습니다.' }
+      if (keyed === null) return { problem: `"${block.content}"의 임시 배경을 걷어 내지 못했습니다.` }
       if (keyed.opaqueRatio > FOREGROUND_MAX_OPAQUE) {
-        return { problem: '스티커판이 단색 배경 없이 돌아와 배경과 사진을 덮습니다.' }
+        return { problem: `"${block.content}"이(가) 단색 배경 없이 돌아와 배경과 사진을 덮습니다.` }
       }
-      const cut = await sliceStickerSheet(keyed.blob, cells)
-      if (cut === null) return { problem: '스티커판을 칸대로 자르지 못했습니다.' }
+      const trimmed = await trimToContent(keyed.blob)
+      if (trimmed === null) return { problem: `"${block.content}"에서 글자를 찾지 못했습니다.` }
 
-      const spilled = spilledCells(cut.inks)
-      if (spilled.length > 0) {
-        const names = spilled.map((s) => `cell ${String(s.index)}(${s.blockId})`).join(', ')
-        return { problem: `스티커판의 ${names}이(가) 지정된 칸을 넘었습니다. 문구를 얹지 않았습니다.` }
+      const assetId = createId('asset')
+      await putAsset({
+        id: assetId,
+        blob: trimmed.blob,
+        fileName: `text-${block.blockId}.png`,
+        mimeType: 'image/png',
+        byteSize: trimmed.blob.size,
+      })
+      return {
+        object: {
+          blockId: block.blockId,
+          assetId,
+          // 기획서 상자를 넘지 않는 가장 큰 크기로, 가운데에.
+          rect: containRect(trimmed, block.rect),
+          layer: block.layer,
+        },
       }
-
-      const byId = new Map(blocks.map((b) => [b.blockId, b]))
-      const objects: StudioTextObject[] = []
-      for (const piece of cut.pieces) {
-        const block = byId.get(piece.blockId)
-        if (block === undefined) continue
-        const assetId = createId('asset')
-        await putAsset({
-          id: assetId,
-          blob: piece.blob,
-          fileName: `text-${piece.blockId}.png`,
-          mimeType: 'image/png',
-          byteSize: piece.blob.size,
-        })
-        // 자리와 크기는 기획서의 원래 값 그대로다 (§5 마지막 줄).
-        objects.push({ blockId: piece.blockId, assetId, rect: { ...block.rect }, layer: block.layer })
-      }
-      return { objects }
     },
     [],
   )
@@ -978,39 +965,64 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           ...(first.requestId === undefined ? {} : { requestId: first.requestId }),
         }
 
-        // ── 두 번째 겹: 문구·버튼 스티커판 (스티커판 Patch §2~§5) ─────────────
-        if (plan.mode === 'preserve' && plan.sticker !== undefined && studio !== null) {
+        // ── 두 번째 겹부터: 문구·버튼 한 블록에 한 장 (블록별 문구 Patch) ────
+        const textBlocks = plan.textBlocks ?? []
+        if (plan.mode === 'preserve' && textBlocks.length > 0 && studio !== null) {
           // ① 배경을 먼저 완성해 둔다 — 자산으로 남기고 이 페이지의 배경으로
-          //    삼는다. 두 번째 요청에 붙일 그림이 바로 이것이다.
+          //    삼는다. 이어지는 요청마다 붙일 그림이 바로 이것이다.
           const plateAssetId = await storePlate(plan, first)
 
           // ② 고정 오브젝트 로컬 배치 + ③ 자리별 색. 둘 다 브라우저 안에서
           //    끝난다 — 여기서 나가는 외부 호출은 0건이다. 합성 페이지 자체는
           //    요청에 실리지 않고, 여기서 뽑은 숫자만 실린다.
           const tones = await measureRegions(plan, plateAssetId)
-
-          const stickerInputs = planStickerInputs({
-            ...(plan.sticker.styleReferenceAssetId === undefined
-              ? {}
-              : { styleReferenceAssetId: plan.sticker.styleReferenceAssetId }),
+          const styleRefId = studio.styleReferenceOf(plan.pageId)
+          const inputs = planTextLayerInputs({
+            ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
             ...(plateAssetId === undefined ? {} : { backgroundAssetId: plateAssetId }),
           })
-          const sheet: StickerSheetInput = {
-            ...plan.sticker,
-            ...(plateAssetId === undefined ? {} : { backgroundAssetId: plateAssetId }),
-            blocks: plan.sticker.blocks.map((block, i) => ({ ...block, tone: tones[i] ?? null })),
-          }
-          const second = await requestLayer(plan, key, stickerInputs, buildStickerPrompt(sheet))
+          const note = getDocument().project.aiNote?.trim() ?? ''
+          const fixed = preserveParts(
+            getDocument().pages.find((p) => p.id === plan.pageId) ?? getDocument().pages[0]!,
+            studio.job.productImages,
+            (id) => studio.effectsOf(id).paperCutout,
+          ).fixed
 
-          if (!('blob' in second)) {
-            paidRef.current = { ...paidRef.current, foregroundProblem: errorTextFor(second.code) }
-          } else {
-            const cut = await cutSheet(second.blob, plan)
-            paidRef.current = {
-              ...paidRef.current,
-              ...(cut.objects === undefined ? {} : { textObjects: cut.objects }),
-              ...(cut.problem === undefined ? {} : { foregroundProblem: cut.problem }),
+          // ④ 블록마다 한 번씩. 하나가 실패해도 나머지는 그대로 간다 — 값을 치른
+          //    것을 잃지 않기 위해서다. 스스로 다시 부르는 자리는 없다.
+          const objects: StudioTextObject[] = []
+          const problems: string[] = []
+          for (const [index, block] of textBlocks.entries()) {
+            const withTone: TextLayerBlock = { ...block, tone: tones[index] ?? null }
+            const answer = await requestLayer(
+              plan,
+              key,
+              inputs,
+              buildTextLayerPrompt({
+                size: plan.working,
+                ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
+                ...(plateAssetId === undefined ? {} : { backgroundAssetId: plateAssetId }),
+                block: withTone,
+                siblings: textBlocks,
+                fixed,
+                ...(note.length === 0 ? {} : { note }),
+              }),
+            )
+            if (!('blob' in answer)) {
+              problems.push(`"${block.content}": ${errorTextFor(answer.code)}`)
+              continue
             }
+            const drawn = await drawTextLayer(answer.blob, withTone)
+            if (drawn.object !== undefined) objects.push(drawn.object)
+            if (drawn.problem !== undefined) problems.push(drawn.problem)
+          }
+
+          paidRef.current = {
+            ...paidRef.current,
+            textObjects: objects,
+            ...(problems.length === 0
+              ? {}
+              : { foregroundProblem: `문구 ${String(problems.length)}개를 얹지 못했습니다 — ${problems.join(' / ')}` }),
           }
         }
 
@@ -1022,7 +1034,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         runningRef.current = false
       }
     },
-    [requestLayer, finishFromPaid, studio, getDocument, recomposePage, storePlate, measureRegions, cutSheet],
+    [requestLayer, finishFromPaid, studio, getDocument, recomposePage, storePlate, measureRegions, drawTextLayer],
   )
 
   const confirm = useCallback(
