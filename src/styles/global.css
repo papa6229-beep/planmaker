@@ -2568,6 +2568,31 @@ button { font-family: inherit; }
 }
 .result-object__layer:hover:not(:disabled) { background: var(--color-accent); color: #fff; }
 .result-object__layer:disabled { opacity: 0.35; cursor: default; }
+/* 지우기 — 순서 버튼 왼쪽에 따로 선다 (오브젝트 삭제 Patch) */
+.result-object__remove {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-panel);
+  cursor: default;
+}
+.result-object__confirm {
+  padding: 0 8px;
+  height: 20px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-danger, #c0392b);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
 .result-object__spin {
   position: absolute;
   left: 50%;

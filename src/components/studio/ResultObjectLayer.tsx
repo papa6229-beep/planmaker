@@ -26,6 +26,7 @@ import { RESIZE_HANDLES, resizeRect, type ResizeHandle } from '../../features/ed
 import { keepAspect } from '../../domain/photoBox'
 import { LAYER_MOVES } from '../../domain/layerOrder'
 import { boundsOf, layerOrderOf, scaleWithin } from '../../domain/textLayers'
+import { useBriefDocument } from '../../features/document/useBriefDocument'
 import type { LayoutRect } from '../../domain/imageLayout'
 import type { StudioTextObject } from '../../domain/textObjects'
 
@@ -49,7 +50,13 @@ const LAYER_ICONS: Record<string, string> = {
 export function ResultObjectLayer({ pageId, page }: Props) {
   const studio = useStudioJob()
   const generation = useImageGeneration()
+  const { pages } = useBriefDocument()
   const [urls, setUrls] = useState<Record<string, string>>({})
+  /** 지우기를 한 번 누른 오브젝트. 두 번째 누름이 실제로 지운다. */
+  const [confirming, setConfirming] = useState<string | null>(null)
+  /** 사람이 읽는 이름. 기획서 블록에서 그대로 가져온다. */
+  const labelOf = (blockId: string) =>
+    pages.find((p) => p.id === pageId)?.blocks.find((b) => b.id === blockId)?.label ?? '오브젝트'
   const boxRef = useRef<HTMLDivElement | null>(null)
   const texts = studio?.textObjectsOf(pageId) ?? []
   const images = studio?.imageObjectsOf(pageId) ?? []
@@ -292,6 +299,52 @@ export function ResultObjectLayer({ pageId, page }: Props) {
                     </button>
                   )
                 })}
+              </span>
+            )}
+            {/* 지우기는 두 번 눌러야 한다 (오브젝트 삭제 Patch). 결과 화면에는
+                되돌리기가 없어서, 한 번의 잘못 누름이 그대로 남기 때문이다.
+                지워지는 것은 이번 결과에 얹힌 그림뿐이고 기획서 블록은 그대로
+                남는다 — 다시 생성하면 다시 나온다. */}
+            {selected && (
+              <span
+                className="result-object__remove"
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                {confirming === object.blockId ? (
+                  <>
+                    <button
+                      type="button"
+                      className="result-object__confirm"
+                      aria-label={`${labelOf(object.blockId)} 정말 지우기`}
+                      title="기획서 블록은 그대로 남습니다"
+                      onClick={() => {
+                        setConfirming(null)
+                        void studio.removeObject(pageId, object.blockId).then(settle)
+                      }}
+                    >
+                      정말 지울까요?
+                    </button>
+                    <button
+                      type="button"
+                      className="result-object__layer"
+                      aria-label={`${labelOf(object.blockId)} 지우기 취소`}
+                      title="취소"
+                      onClick={() => setConfirming(null)}
+                    >
+                      ✕
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="result-object__layer"
+                    aria-label={`${labelOf(object.blockId)} 지우기`}
+                    title="이 결과에서만 지웁니다 — 기획서 블록은 그대로입니다"
+                    onClick={() => setConfirming(object.blockId)}
+                  >
+                    🗑
+                  </button>
+                )}
               </span>
             )}
             {selected && (

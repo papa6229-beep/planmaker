@@ -898,15 +898,19 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       const job = studio.currentJob()
       const background = job.backgrounds?.[pageId]
       const objects = job.textObjects?.[pageId] ?? []
-      const images = job.imageObjects?.[pageId] ?? []
+      // **목록이 있는가**로 가른다. 비어 있는 목록과 없는 목록은 다르다 —
+      // 마지막 하나를 지운 결과가 "예전 결과"로 읽히면 지운 것이 전부 되살아난다
+      // (오브젝트 삭제 Patch).
+      const imagesEntry = job.imageObjects?.[pageId]
+      const images = imagesEntry ?? []
       const previous = pageResultOf(job, pageId)
       if (page === undefined || background === undefined || previous === undefined) return
 
-      // 이미지 오브젝트가 있으면 그 목록이 곧 얹을 목록이고, 그 자리가 곧 얹을
-      // 자리다. 없는 것은 이 Patch 이전에 만든 결과뿐이라, 그때는 지금까지처럼
-      // 기획서 블록에서 다시 센다.
+      // 이미지 오브젝트 목록이 있으면 그 목록이 곧 얹을 목록이고, 그 자리가 곧
+      // 얹을 자리다. 없는 것은 이 Patch 이전에 만든 결과뿐이라, 그때는 지금까지
+      // 처럼 기획서 블록에서 다시 센다.
       const fixed =
-        images.length > 0
+        imagesEntry !== undefined
           ? images.map((o) => o.blockId)
           : page.blocks
               .filter((b) => getBlockTypeMeta(b.type).requiresAsset)

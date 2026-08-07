@@ -1040,3 +1040,94 @@ describe('§11 완성 후 종이 테두리', () => {
     expect(fetchSpy.mock.calls.length).toBe(calls)
   })
 })
+
+// ── §12 완성 결과에서 오브젝트를 지운다 ─────────────────────────────────────
+
+describe('§12 오브젝트 삭제', () => {
+  it('두 번 눌러야 지워지고, 기획서 블록은 그대로 남는다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    const boxes = await waitFor(() => {
+      const found = container.querySelectorAll<HTMLElement>('.result-object')
+      expect(found.length).toBe(6)
+      return found
+    }, { timeout: 5000 })
+
+    const calls = fetchSpy.mock.calls.length
+    const title = Array.from(boxes).find((b) => labelOf(b) === '꾸며진 문구 blk_t1')!
+    fireEvent.pointerDown(title, { button: 0, clientX: 5, clientY: 5 })
+    await waitFor(() => expect(title.getAttribute('aria-pressed')).toBe('true'))
+    fireEvent.pointerUp(window)
+
+    // 한 번 누른 것만으로는 지워지지 않는다 — 되돌리기가 없는 화면이다.
+    fireEvent.click(await within(title).findByRole('button', { name: '큰 문구 지우기' }))
+    const before = await loadStudioJob(STUDIO_JOB_ID)
+    expect(before?.textObjects?.page_1?.some((o) => o.blockId === 'blk_t1')).toBe(true)
+
+    composed.mockClear()
+    fireEvent.click(await within(title).findByRole('button', { name: '큰 문구 정말 지우기' }))
+
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect(job?.textObjects?.page_1?.some((o) => o.blockId === 'blk_t1')).toBe(false)
+    }, { timeout: 5000 })
+
+    // 화면에서도 빠진다. 나머지 다섯은 그대로다.
+    await waitFor(() => {
+      expect(container.querySelectorAll('.result-object').length).toBe(5)
+    }, { timeout: 5000 })
+
+    // 다시 합칠 때도 빠진 채로 그려진다.
+    await waitFor(() => expect(composed).toHaveBeenCalled(), { timeout: 5000 })
+    const plan = composed.mock.calls.at(-1)![0] as {
+      layers: { blockId: string }[]
+      textObjects?: { assetId: string }[]
+    }
+    expect(plan.textObjects?.length).toBe(SHEET_IDS.length - 1)
+
+    // **기획서 블록은 그대로다.** 다시 생성하면 다시 나온다.
+    const after = await loadStudioJob(STUDIO_JOB_ID)
+    expect(after?.doc.pages[0]?.blocks.some((b) => b.id === 'blk_t1')).toBe(true)
+    expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(6)
+
+    // 지우는 데 외부로 나간 요청은 없다.
+    expect(fetchSpy.mock.calls.length).toBe(calls)
+  })
+
+  it('이미지를 전부 지워도 되살아나지 않는다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('.result-object').length).toBe(6)
+    }, { timeout: 5000 })
+
+    for (const id of IMAGE_IDS) {
+      const box = Array.from(container.querySelectorAll<HTMLElement>('.result-object')).find(
+        (b) => labelOf(b) === `이미지 ${id}`,
+      )!
+      fireEvent.pointerDown(box, { button: 0, clientX: 5, clientY: 5 })
+      await waitFor(() => expect(box.getAttribute('aria-pressed')).toBe('true'))
+      fireEvent.pointerUp(window)
+      const name = id === 'blk_photo' ? '일반 이미지' : '컷아웃'
+      fireEvent.click(await within(box).findByRole('button', { name: `${name} 지우기` }))
+      fireEvent.click(await within(box).findByRole('button', { name: `${name} 정말 지우기` }))
+      await waitFor(async () => {
+        const job = await loadStudioJob(STUDIO_JOB_ID)
+        expect(job?.imageObjects?.page_1?.some((o) => o.blockId === id)).toBe(false)
+      }, { timeout: 5000 })
+    }
+
+    // 목록이 비었다고 예전 결과로 읽히면 지운 것이 전부 되살아난다. 그러지 않는다.
+    await waitFor(async () => {
+      await loadStudioJob(STUDIO_JOB_ID)
+      const plan = composed.mock.calls.at(-1)![0] as { layers: { blockId: string }[] }
+      expect(plan.layers.length).toBe(0)
+    }, { timeout: 5000 })
+  })
+})

@@ -194,6 +194,17 @@ export interface StudioJobApi {
   selectedObjectBlockIds: string[]
   /** `add`가 참이면 고른 것에 더하거나 뺀다 (Shift·⌘ 클릭). */
   selectObject: (blockId: string | null, add?: boolean) => void
+  /**
+   * 완성 결과에서 오브젝트 하나를 뺀다 (오브젝트 삭제 Patch).
+   *
+   * **기획서는 손대지 않는다.** 여기서 지우는 것은 이번 결과에 얹힌 그림이고,
+   * 기획서의 그 블록은 그대로 남는다 — 다시 생성하면 다시 나온다. 결과 화면에서
+   * "이번 장에는 이게 없는 편이 낫다"고 정하는 일이지, 기획을 고치는 일이 아니다.
+   *
+   * 문구든 이미지든 같은 함수로 지운다. 블록 하나에 오브젝트도 하나라, 어느
+   * 목록에 있는지는 부르는 쪽이 알 필요가 없다.
+   */
+  removeObject: (pageId: string, blockId: string) => Promise<void>
   /** 원본 기획서와 작업본이 달라졌는지 (§7). 자동 병합은 하지 않는다. */
   sourceChanged: boolean
   /**
@@ -465,6 +476,20 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
           // 더할 때는 언제나 끝에 붙인다.
           return current.includes(blockId) ? current.filter((id) => id !== blockId) : [...current, blockId]
         }),
+      removeObject: async (pageId, blockId) => {
+        await mutate((j) => {
+          const now = Date.now()
+          const texts = textObjectsOf(j, pageId)
+          const images = imageObjectsOf(j, pageId)
+          return {
+            ...j,
+            textObjects: { ...j.textObjects, [pageId]: texts.filter((o) => o.blockId !== blockId) },
+            imageObjects: { ...j.imageObjects, [pageId]: images.filter((o) => o.blockId !== blockId) },
+            updatedAt: now,
+          }
+        })
+        setSelectedObjectBlockIds((current) => current.filter((id) => id !== blockId))
+      },
       sourceChanged: jobSourceChanged(job),
       adoptFile,
       canUndo: past.length > 0,
