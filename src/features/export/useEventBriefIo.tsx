@@ -15,6 +15,7 @@ import { useAssets } from '../assets/useAssets'
 import { useBriefDocument } from '../document/useBriefDocument'
 import { useStudioJob } from '../studio/useStudioJob'
 import { remapStudioFileState, studioFileAssetIds, toStudioFileState } from '../../domain/studioFile'
+import { jobResults } from '../../domain/studioJob'
 import { deleteAssets, getAllAssets, pruneAssets, putAssets } from '../../services/assetStore'
 import { resolveAssetCollisions } from '../../services/importAssets'
 import { allDocumentAssetIds } from '../../services/documentStore'
@@ -36,7 +37,12 @@ export type IoState =
   /** The file has been handed to the browser; shown briefly, then cleared. */
   | { kind: 'exported' }
   | { kind: 'export-failed'; message: string }
-  | { kind: 'import-confirm'; pending: ImportedDocument }
+  /**
+   * 교체하기 전에 묻는 자리. `saveFailed`는 **이 창에서** 파일로 저장하려다
+   * 실패했다는 뜻이다 — 그때는 교체하지 않고 창을 그대로 둔다. 실패를 알리면서
+   * 잃을 것을 그대로 잃게 하는 것이 여기서 할 수 있는 가장 나쁜 일이다.
+   */
+  | { kind: 'import-confirm'; pending: ImportedDocument; saveFailed?: string }
   | { kind: 'importing'; message: string }
   | { kind: 'import-failed'; message: string }
 
@@ -48,6 +54,11 @@ export interface EventBriefIoApi {
   confirmExportWithWarnings: () => Promise<void>
   startImport: (file: File) => Promise<void>
   confirmImport: () => Promise<void>
+  /**
+   * 교체 확인 창에서 "저장하고 열기". 지금 작업을 파일로 먼저 저장하고, **저장이
+   * 성공한 뒤에만** 교체한다. 저장에 실패하면 교체하지 않고 창에 그 사실을 적는다.
+   */
+  saveThenConfirmImport: () => Promise<void>
   dismiss: () => void
 }
 
@@ -89,8 +100,12 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
 
   const dismiss = useCallback(() => setState({ kind: 'idle' }), [])
 
-  const doExport = useCallback(async (fileName?: string) => {
-    if (runningRef.current) return
+  /**
+   * 저장이 실제로 끝났으면 `null`, 실패했으면 그 이유. 저장을 전제로 움직이는
+   * 호출부가 이 값을 본다 — 실패를 성공으로 읽으면 잃지 않으려던 것을 잃는다.
+   */
+  const doExport = useCallback(async (fileName?: string): Promise<string | null> => {
+    if (runningRef.current) return '이미 저장 중입니다.'
     runningRef.current = true
     setState({ kind: 'exporting', message: '내보내기 준비 중…' })
     try {
@@ -122,8 +137,11 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
       setState({ kind: 'exported' })
       // The confirmation is a short note, not something to dismiss.
       window.setTimeout(() => setState((s) => (s.kind === 'exported' ? { kind: 'idle' } : s)), 4000)
+      return null
     } catch (err) {
-      setState({ kind: 'export-failed', message: messageFor(err) })
+      const message = messageFor(err)
+      setState({ kind: 'export-failed', message })
+      return message
     } finally {
       runningRef.current = false
     }
@@ -234,7 +252,13 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
       try {
         // Pass the File (a Blob) straight to JSZip — no arrayBuffer() needed.
         const imported = await readEventDocument(file)
-        if (hasUserWork(getDocument())) {
+        /**
+         * 완성본은 기획서 문서 밖에 있다. `hasUserWork`는 문서만 보므로, 만들어
+         * 둔 완성본이 있는데 문서가 비어 있으면 **묻지 않고** 교체했다 — 실제로
+         * 이 길로 완성본을 통째로 잃은 적이 있다. 잃을 것이 어느 쪽에 있든 묻는다.
+         */
+        const madeCount = Object.keys(jobResults(studio?.job ?? null)).length
+        if (hasUserWork(getDocument()) || madeCount > 0) {
           setState({ kind: 'import-confirm', pending: imported })
         } else {
           await applyImport(imported)
@@ -245,13 +269,33 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
         runningRef.current = false
       }
     },
-    [applyImport, getDocument],
+    [applyImport, getDocument, studio],
   )
 
   const confirmImport = useCallback(async () => {
     if (state.kind !== 'import-confirm') return
     await applyImport(state.pending)
   }, [state, applyImport])
+
+  /**
+   * 저장이 먼저다. `doExport`는 성공 여부를 돌려주므로, 실패한 저장을 성공으로
+   * 읽고 교체하는 일이 없다. 실패하면 열려던 파일을 그대로 쥔 채 창을 돌려놓아
+   * 사람이 다시 고르지 않아도 되게 한다.
+   */
+  const saveThenConfirmImport = useCallback(async () => {
+    if (state.kind !== 'import-confirm') return
+    const pending = state.pending
+    const failure = await doExport()
+    if (failure !== null) {
+      setState({
+        kind: 'import-confirm',
+        pending,
+        saveFailed: `파일로 저장하지 못했습니다 — ${failure} 그대로 열면 지금 작업은 돌아오지 않습니다.`,
+      })
+      return
+    }
+    await applyImport(pending)
+  }, [state, doExport, applyImport])
 
   const api = useMemo<EventBriefIoApi>(
     () => ({
@@ -261,9 +305,10 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
       confirmExportWithWarnings,
       startImport,
       confirmImport,
+      saveThenConfirmImport,
       dismiss,
     }),
-    [state, startExport, confirmExportWithWarnings, startImport, confirmImport, dismiss],
+    [state, startExport, confirmExportWithWarnings, startImport, confirmImport, saveThenConfirmImport, dismiss],
   )
 
   return <IoContext.Provider value={api}>{children}</IoContext.Provider>

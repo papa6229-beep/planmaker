@@ -290,30 +290,38 @@ export function TopToolbar({
           >
             {studioMode ? '기획서 불러오기' : '파일 불러오기'}
           </button>
-          {/* 작업판에서 저장한다는 말은 "만든 이미지를 내놓는다"는 뜻이다.
-              기획서 파일 저장은 가끔 하는 일이라 작업 메뉴로 옮겼다 (§4.3, §5). */}
-          {studioMode && imageSave !== null ? (
+          {/* 두 저장이 나란히 선다 (작업 잃지 않기 Patch).
+              앞선 판은 `이미지 저장`만 바에 두고 작업 파일 저장을 작업 메뉴 안으로
+              보냈다 — "작업판에서 기획서를 다시 만들 일은 없다"고 보았기 때문이다.
+              그 전제가 틀렸다. 만든 이벤트 페이지를 나중에 다시 고치는 일이 있고,
+              그때 필요한 것은 **돌아올 수 있는 유일한 저장**인 작업 파일 쪽이다.
+              돌아올 수 없는 내보내기가 앞에 있고 돌아올 수 있는 저장이 메뉴 안에
+              숨어 있으면, 사람은 이미지만 저장하고 작업을 잃는다. */}
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              setFileName(title.trim() || FALLBACK_FILE_NAME)
+              setNaming(true)
+            }}
+            disabled={busy}
+            title={
+              studioMode
+                ? '제품 이미지 연결과 작업 상태까지 한 파일로 저장합니다 — 다시 열어 이어서 작업할 수 있습니다'
+                : '이름을 정해 .eventbrief 파일로 저장합니다'
+            }
+          >
+            {studioMode ? '작업 파일 저장' : '파일로 저장'}
+          </button>
+          {studioMode && imageSave !== null && (
             <button
               type="button"
               className="btn"
               onClick={imageSave.save}
               disabled={busy || imageSave.state.kind === 'saving'}
-              title="생성한 결과 이미지를 PNG로 저장합니다"
+              title="생성한 결과 이미지를 PNG로 저장합니다 — 이 파일로는 작업을 이어갈 수 없습니다"
             >
               {imageSave.state.kind === 'saving' ? '이미지 저장 중…' : '이미지 저장'}
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                setFileName(title.trim() || FALLBACK_FILE_NAME)
-                setNaming(true)
-              }}
-              disabled={busy}
-              title="이름을 정해 .eventbrief 파일로 저장합니다"
-            >
-              파일로 저장
             </button>
           )}
           {studioMode && (
@@ -331,19 +339,8 @@ export function TopToolbar({
                   버튼이 손가락과 검사에는 여전히 잡힌다. */}
               {workMenu && (
                 <div className="work-menu__panel" aria-label="작업 메뉴 항목">
-                  <button
-                    type="button"
-                    className="work-menu__item"
-                    disabled={busy}
-                    onClick={() => {
-                      setWorkMenu(false)
-                      setFileName(title.trim() || FALLBACK_FILE_NAME)
-                      setNaming(true)
-                    }}
-                    title="제품 이미지 연결과 작업 상태까지 한 파일로 저장합니다"
-                  >
-                    Studio 작업 파일 저장 (.eventbrief)
-                  </button>
+                  {/* 작업 파일 저장은 바로 나갔다. 한 가지 일에 들어가는 문은
+                      하나면 충분하고, 이 메뉴에 남은 것은 되돌릴 수 없는 일뿐이다. */}
                   <button
                     type="button"
                     className="work-menu__item"
@@ -470,6 +467,13 @@ export function TopToolbar({
               작업 {studioWipe.briefs}건과 여기에만 연결된 제품 이미지 {studioWipe.images}장이 지워집니다. 되돌릴 수
               없습니다. 기획서 작성기의 자료는 지워지지 않습니다.
             </p>
+            {/* 지워지는 것 중에 만들어 둔 완성본이 있으면 그것부터 말한다. */}
+            {madeCount > 0 && (
+              <p className="confirm__body confirm__body--loss">
+                지금 작업의 <b>완성본 {madeCount}장</b>도 함께 사라집니다. 남기려면 먼저 <b>작업 파일 저장</b>을
+                눌러 주세요.
+              </p>
+            )}
             <div className="confirm__actions">
               <button type="button" className="btn" onClick={() => setStudioWipe(null)}>취소</button>
               <button

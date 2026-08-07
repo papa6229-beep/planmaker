@@ -1437,10 +1437,9 @@ describe('§18 저장 전 안내', () => {
 
     const NOTE = /합쳐진 완성 이미지가 담기지 않습니다/
     // 작업판에서 위 칸의 `저장`은 만든 이미지를 내놓는 일이다. 작업 파일 저장은
-    // 가끔 하는 일이라 작업 메뉴 안에 있다.
+    // 돌아올 수 있는 유일한 저장이라 상단 바에 있다.
     const openSave = async () => {
-      fireEvent.click(await screen.findByRole('button', { name: '작업 메뉴' }))
-      fireEvent.click(await screen.findByRole('button', { name: /Studio 작업 파일 저장/ }))
+      fireEvent.click(await screen.findByRole('button', { name: '작업 파일 저장' }))
       return await screen.findByRole('dialog', { name: '기획서 파일로 저장' })
     }
 

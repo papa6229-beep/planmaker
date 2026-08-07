@@ -309,30 +309,32 @@ describe('§4 상단은 이미지 만드는 일만 앞에 둔다', () => {
     expect(screen.queryByRole('button', { name: '파일 불러오기' })).toBeNull()
   }, 25000)
 
-  it('moves the occasional actions into 작업 메뉴 without losing them', async () => {
+  it('keeps only the irreversible action in 작업 메뉴', async () => {
+    // 되돌릴 수 없는 일만 메뉴에 남는다 (작업 잃지 않기 Patch). 작업 파일 저장은
+    // 바로 나갔다 — 잃지 않는 길을 메뉴 안에 숨기면 사람은 그것을 찾지 못한다.
     await openStudio()
-    expect(screen.queryByRole('button', { name: /Studio 작업 파일 저장/ })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Studio 작업 초기화' })).toBeNull()
     openMenu()
-    expect(screen.getByRole('button', { name: /Studio 작업 파일 저장/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Studio 작업 초기화' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Studio 작업 파일 저장/ })).toBeNull()
   }, 25000)
 
-  it('still opens the .eventbrief save from the menu', async () => {
+  it('opens the .eventbrief save straight from the bar', async () => {
     // 패키징 자체는 브라우저의 일이다 (jsdom·fake-indexeddb 를 오간 Blob 은
     // 바이트를 돌려주지 않아 ZIP 을 만들 수 없다). 여기서 지키는 것은 배선 —
-    // 메뉴가 기존 저장 흐름을 그대로 연다는 것이다.
+    // 바의 버튼이 기존 저장 흐름을 그대로 연다는 것이다.
     await openStudio()
-    openMenu()
-    fireEvent.click(screen.getByRole('button', { name: /Studio 작업 파일 저장/ }))
+    fireEvent.click(screen.getByRole('button', { name: '작업 파일 저장' }))
     const dialog = await screen.findByRole('dialog', { name: '기획서 파일로 저장' })
     expect((within(dialog).getByLabelText('파일명') as HTMLInputElement).value).toBe('아크웨이브 여름감사제')
     expect(within(dialog).getByText('.eventbrief')).toBeTruthy()
   }, 25000)
 
-  it('offers 이미지 저장 in the bar instead of 파일로 저장', async () => {
+  it('offers both saves in the bar, each named for what it produces', async () => {
     await openStudio()
+    expect(screen.getByRole('button', { name: '작업 파일 저장' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '이미지 저장' })).toBeTruthy()
+    // 작업판에서 "파일로 저장"은 어느 파일인지 말하지 않는 이름이라 쓰지 않는다.
     expect(screen.queryByRole('button', { name: '파일로 저장' })).toBeNull()
   }, 25000)
 })
