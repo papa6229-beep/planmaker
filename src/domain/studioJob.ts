@@ -256,10 +256,24 @@ export function paperCutoutOf(
 }
 
 /** 이 블록의 설정을 그대로 다른 블록으로 (복제, §4). */
-export function withClonedEffects(job: StudioJob, from: string, to: string, now: number): StudioJob {
-  const source = job.effects?.[from]
-  if (source === undefined) return job
-  return { ...job, effects: { ...job.effects, [to]: { ...source } }, updatedAt: now }
+export function withClonedBlock(job: StudioJob, from: string, to: string, now: number): StudioJob {
+  const effects = job.effects?.[from]
+  const product = job.productImages[from]
+  const order = job.blockOrders?.[from]
+  const tone = job.objectTones?.[from]
+  if (effects === undefined && product === undefined && order === undefined && tone === undefined) return job
+  return {
+    ...job,
+    ...(effects === undefined ? {} : { effects: { ...job.effects, [to]: { ...effects } } }),
+    // **연결한 제품 이미지도 따라온다** (복제 설정 Patch). 앞선 판은 효과만
+    // 옮겼다. 그래서 이미지 블록을 복제하면 사본은 연결이 빈 채로 생겼고,
+    // 생성은 "연결되지 않은 자리가 있습니다"로 막혔다 — 사람은 방금 복제한
+    // 것이 왜 비었는지 알 길이 없다.
+    ...(product === undefined ? {} : { productImages: { ...job.productImages, [to]: product } }),
+    ...(order === undefined ? {} : { blockOrders: { ...job.blockOrders, [to]: { ...order } } }),
+    ...(tone === undefined ? {} : { objectTones: { ...job.objectTones, [to]: { ...tone } } }),
+    updatedAt: now,
+  }
 }
 
 /**

@@ -75,6 +75,17 @@ export interface BriefDocumentApi {
   activePageId: string
   addPage: () => void
   duplicatePage: (pageId: string) => void
+  /**
+   * 페이지를 복제하면서 새로 받은 블록 이름들 — 원본 → 사본 (복제 설정 Patch).
+   *
+   * 복제한 페이지의 블록은 **새 이름**을 받는다. 그런데 컷아웃 설정·제품 이미지
+   * 연결·블록 주문은 기획서 문서 밖(작업판)에 블록 이름으로 매달려 있어서, 이름이
+   * 바뀌는 순간 사본은 그 전부를 잃는다 — 실제로 잃었다.
+   *
+   * 그래서 무엇이 무엇의 사본인지 여기서 말해 둔다. 작업판이 그것을 읽고 옮긴다.
+   * 블록 복제(`useBriefEditor`의 `cloneOf`)가 쓰는 것과 같은 모양이다.
+   */
+  pageCloneOf: Record<string, string>
   deletePage: (pageId: string) => void
   /**
    * The document as it was just before the last page deletion, if that is still
@@ -179,6 +190,8 @@ export function BriefDocumentProvider({
    * the whole document — throwing away everything done since (v1 동결 §7).
    */
   const [deletedPage, setDeletedPage] = useState<{ before: BriefDocument; after: BriefDocument } | null>(null)
+  /** 사본 블록 → 원본 블록. 작업판이 읽고 설정을 옮긴다 (복제 설정 Patch). */
+  const [pageCloneOf, setPageCloneOf] = useState<Record<string, string>>({})
 
   const docRef = useRef(doc)
   docRef.current = doc
@@ -361,7 +374,23 @@ export function BriefDocumentProvider({
       pages: doc.pages,
       activePageId: doc.activePageId,
       addPage: () => applyOp(addPage(docRef.current)),
-      duplicatePage: (pageId) => applyOp(duplicatePage(docRef.current, pageId)),
+      duplicatePage: (pageId) => {
+        const before = docRef.current
+        const source = before.pages.find((p) => p.id === pageId)
+        const after = duplicatePage(before, pageId)
+        // 사본은 원본 바로 뒤에 선다. 블록 차례는 그대로이므로 같은 자리끼리
+        // 짝지으면 원본 → 사본이 나온다.
+        const copy = after.pages.find((p) => !before.pages.some((old) => old.id === p.id))
+        if (source !== undefined && copy !== undefined) {
+          const pairs: Record<string, string> = {}
+          source.blocks.forEach((block, i) => {
+            const made = copy.blocks[i]
+            if (made !== undefined) pairs[made.id] = block.id
+          })
+          setPageCloneOf((current) => ({ ...current, ...pairs }))
+        }
+        applyOp(after)
+      },
       deletePage: (pageId) => {
         // Everything the page held — blocks, its length, its reference image —
         // comes back with one 실행 취소, so the snapshot is the whole document.
@@ -370,6 +399,7 @@ export function BriefDocumentProvider({
         setDeletedPage({ before, after })
         applyOp(after)
       },
+      pageCloneOf,
       undoPageDelete: deletedPage === null ? null : restoreDeletedPage,
       movePage: (pageId, delta) => applyOp(movePage(docRef.current, pageId, delta)),
       renamePage: (pageId, title) => applyOp(renamePage(docRef.current, pageId, title)),
@@ -409,7 +439,7 @@ export function BriefDocumentProvider({
         await bindingRef.current.save(current, Date.now())
       },
     }),
-    [doc, applyOp, replaceDocument, importDocument, setReferenceImage, mutateDoc, deletedPage, restoreDeletedPage],
+    [doc, applyOp, replaceDocument, importDocument, setReferenceImage, mutateDoc, deletedPage, restoreDeletedPage, pageCloneOf],
   )
 
   return <BriefDocumentContext.Provider value={api}>{children}</BriefDocumentContext.Provider>

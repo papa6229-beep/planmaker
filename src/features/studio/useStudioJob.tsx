@@ -35,7 +35,7 @@ import {
   sourceChanged as jobSourceChanged,
   unlinkProductImage,
   withBlockEffects,
-  withClonedEffects,
+  withClonedBlock,
   withOnlyBlocks,
   withMethod,
   withPageBackground,
@@ -125,8 +125,13 @@ export interface StudioJobApi {
   /** 이미지별 합성 효과 세기 (§9). 원본 자산은 건드리지 않는다. */
   effectsOf: (blockId: string) => CompositeEffects
   setEffects: (blockId: string, patch: Partial<CompositeEffects>) => void
-  /** 복제한 블록에 원본의 설정을 옮긴다 (§4). */
-  copyEffects: (from: string, to: string) => void
+  /**
+   * 복제한 블록에 원본의 설정을 **전부** 옮긴다 (§4, 복제 설정 Patch).
+   *
+   * 합성 효과만이 아니라 연결한 제품 이미지·블록 주문·블록별 톤까지. 넷 다 기획서
+   * 문서 밖에 있어서, 옮겨 주지 않으면 복제한 블록은 빈 채로 태어난다.
+   */
+  copyBlockSettings: (from: string, to: string) => void
   /** 문서에 없는 블록의 설정을 치운다 (§4). */
   pruneEffects: (liveBlockIds: ReadonlySet<string>) => void
   /** 완성 결과 전체의 그레인 (§9.5). */
@@ -507,8 +512,8 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       setBlockOrder: (blockId, patch) => mutate((j) => withBlockOrder(j, blockId, patch, Date.now())),
       effectsOf: (blockId) => blockEffectsOf(job, blockId),
       setEffects: (blockId, patch) => void mutate((j) => withBlockEffects(j, blockId, patch, Date.now())),
-      copyEffects: (from, to) => {
-        const next = withClonedEffects(job, from, to, Date.now())
+      copyBlockSettings: (from, to) => {
+        const next = withClonedBlock(job, from, to, Date.now())
         if (next !== job) void commit(next)
       },
       pruneEffects: (liveBlockIds) => {

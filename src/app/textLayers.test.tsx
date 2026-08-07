@@ -1645,3 +1645,38 @@ describe('§21 돌아간 상자를 늘린다', () => {
     expect(spunResize(from, to, 'se', 0)).toEqual(to)
   })
 })
+
+// ── §22 페이지를 복제해도 설정이 따라온다 ───────────────────────────────────
+
+describe('§22 페이지 복제', () => {
+  it('컷아웃 설정과 제품 이미지 연결이 사본 페이지로 따라온다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+
+    const before = await loadStudioJob(STUDIO_JOB_ID)
+    // fixture에서 컷아웃이 켜져 있고 제품 이미지가 연결된 블록.
+    expect(before?.effects?.blk_cut?.paperCutout).toBe(true)
+    expect(before?.productImages?.blk_cut).toBe('asset_cut')
+
+    fireEvent.click(await screen.findByRole('button', { name: /1페이지 페이지 메뉴/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '복제' }))
+
+    // 사본 페이지의 블록은 **새 이름**을 받는다. 그 새 이름으로 설정이 서 있어야 한다.
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      const pages = job?.doc.pages ?? []
+      expect(pages.length).toBe(2)
+      const copy = pages[1]!
+      const cutout = copy.blocks.find((b) => b.label === '컷아웃')!
+      expect(cutout.id).not.toBe('blk_cut')
+      expect(job?.effects?.[cutout.id]?.paperCutout).toBe(true)
+      expect(job?.productImages?.[cutout.id]).toBe('asset_cut')
+    }, { timeout: 5000 })
+
+    // 원본 페이지의 설정은 그대로다.
+    const after = await loadStudioJob(STUDIO_JOB_ID)
+    expect(after?.effects?.blk_cut?.paperCutout).toBe(true)
+    expect(after?.productImages?.blk_cut).toBe('asset_cut')
+  })
+})

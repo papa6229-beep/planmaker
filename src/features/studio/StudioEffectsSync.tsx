@@ -8,8 +8,9 @@
  * 화면을 그리지 않는다. 편집기와 작업판을 동시에 볼 수 있는 곳에 서서, 두
  * 가지만 한다.
  *
- *  - **복제**: 새 블록에 원본의 설정을 한 번 복사한다. 한 번뿐인 것이 중요하다 —
- *    매번 맞추면 복사본에서 효과를 끈 순간 원본 값이 다시 덮어쓴다.
+ *  - **복제**: 새 블록에 원본의 설정을 한 번 복사한다. 블록 하나를 복제하든
+ *    페이지를 통째로 복제하든 같다. 한 번뿐인 것이 중요하다 — 매번 맞추면
+ *    복사본에서 효과를 끈 순간 원본 값이 다시 덮어쓴다.
  *  - **삭제**: 문서 어디에도 없는 블록의 설정을 치운다.
  */
 
@@ -21,18 +22,21 @@ import { useStudioJob } from './useStudioJob'
 export function StudioEffectsSync() {
   const studio = useStudioJob()
   const { cloneOf } = useBriefEditor()
-  const { document: doc } = useBriefDocument()
+  const { document: doc, pageCloneOf } = useBriefDocument()
   /** 이미 옮긴 복제. 두 번 옮기지 않기 위한 기억이다. */
   const copied = useRef(new Set<string>())
 
+  // 복제는 두 곳에서 일어난다. 블록 하나를 복제하는 것은 편집기가 알고, 페이지를
+  // 통째로 복제하는 것은 문서가 안다 (복제 설정 Patch). 앞선 판은 앞쪽만 들었고,
+  // 그래서 **페이지를 복제하면 컷아웃 설정도 제품 이미지 연결도 따라오지 않았다.**
   useEffect(() => {
     if (studio === null) return
-    for (const [to, from] of Object.entries(cloneOf)) {
+    for (const [to, from] of Object.entries({ ...cloneOf, ...pageCloneOf })) {
       if (copied.current.has(to)) continue
       copied.current.add(to)
-      studio.copyEffects(from, to)
+      studio.copyBlockSettings(from, to)
     }
-  }, [studio, cloneOf])
+  }, [studio, cloneOf, pageCloneOf])
 
   useEffect(() => {
     if (studio === null) return
