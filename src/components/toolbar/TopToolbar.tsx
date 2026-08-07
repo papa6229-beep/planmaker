@@ -135,6 +135,8 @@ export function TopToolbar({
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const titleRef = useRef<HTMLInputElement | null>(null)
   // 파일로 저장 asks for a name first; `naming` is that small dialog.
+  /** 이 작업에 만들어 둔 완성본이 몇 장인가. 없으면 알릴 것이 없다. */
+  const madeCount = Object.keys(studio?.job.results ?? {}).length
   const [naming, setNaming] = useState(false)
   const [fileName, setFileName] = useState('')
   const title = state.brief.project.title
@@ -576,6 +578,17 @@ export function TopToolbar({
                 <span className="save-dialog__ext">{EVENTBRIEF_EXTENSION}</span>
               </span>
             </label>
+            {/* 파일이 무엇을 담고 무엇을 안 담는지 **저장하기 전에** 말한다
+                (파일 왕복 Patch). 배경과 문구 조각은 담기므로 열어서 이어 작업할
+                수 있지만, 합쳐진 완성본과 결과 줄은 담기지 않는다 — 그 둘까지
+                넣으면 파일이 감당할 크기가 아니다. */}
+            {madeCount > 0 && (
+              <p className="save-dialog__note">
+                이 파일에는 <b>합쳐진 완성 이미지가 담기지 않습니다.</b> 배경·문구 조각과 설정은 그대로
+                담기므로 열어서 이어 작업할 수 있습니다. 완성본이 필요하면 <b>이미지 저장</b>으로 따로 뽑아
+                두세요.
+              </p>
+            )}
             <div className="confirm__actions">
               <button type="button" className="btn" onClick={() => setNaming(false)}>취소</button>
               <button type="button" className="btn btn--primary" onClick={saveFile}>저장</button>

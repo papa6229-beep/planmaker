@@ -1423,3 +1423,33 @@ describe('§17 페이지 전환', () => {
     expect(fetchSpy.mock.calls.length).toBe(calls)
   })
 })
+
+// ── §18 파일에 담기지 않는 것을 저장 전에 말한다 ────────────────────────────
+
+describe('§18 저장 전 안내', () => {
+  it('완성본이 있으면 담기지 않는다고 알리고, 없으면 알리지 않는다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+
+    const NOTE = /합쳐진 완성 이미지가 담기지 않습니다/
+    // 작업판에서 위 칸의 `저장`은 만든 이미지를 내놓는 일이다. 작업 파일 저장은
+    // 가끔 하는 일이라 작업 메뉴 안에 있다.
+    const openSave = async () => {
+      fireEvent.click(await screen.findByRole('button', { name: '작업 메뉴' }))
+      fireEvent.click(await screen.findByRole('button', { name: /Studio 작업 파일 저장/ }))
+      return await screen.findByRole('dialog', { name: '기획서 파일로 저장' })
+    }
+
+    // 아직 만든 것이 없으면 잃을 것도 없다 — 알리지 않는다.
+    let dialog = await openSave()
+    expect(within(dialog).queryByText(NOTE)).toBeNull()
+    fireEvent.click(within(dialog).getByRole('button', { name: '취소' }))
+
+    await generateOnce()
+
+    // 만들어 둔 뒤에는 저장하기 **전에** 말한다.
+    dialog = await openSave()
+    expect(within(dialog).getByText(NOTE)).toBeTruthy()
+  })
+})

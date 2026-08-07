@@ -443,6 +443,19 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
               // 빼면 파일을 다시 연 순간 옮겨 둔 문구와 이미지가 제자리로 튄다.
               textObjects: { ...state.textObjects },
               imageObjects: { ...state.imageObjects },
+              // 아래 넷은 **파일에 적히기만 하고 읽히지 않았다** (파일 왕복 Patch).
+              // 저장한 값이 파일 안에 멀쩡히 들어 있는데 여는 쪽에서 조용히
+              // 버렸다는 뜻이고, 아예 안 담는 것보다 나쁘다 — 저장됐다고 믿게
+              // 해 놓고 잃기 때문이다.
+              keepReferenceBg: { ...state.keepReferenceBg },
+              blockOrders: { ...state.blockOrders },
+              tones: { ...state.tones },
+              objectTones: { ...state.objectTones },
+              // 완성본은 파일에 담기지 않는다. 그런데 지금까지 이 자리는 **열기
+              // 전에 보던 작업의 결과**를 그대로 물려받았다 — 다른 기획서를 열었는데
+              // 앞 기획서의 완성본이 붙어 있는 셈이다. 파일이 말하지 않은 것은
+              // 없는 것으로 연다.
+              results: {},
               ...(state.grain === undefined ? {} : { grain: state.grain }),
               ...(state.method === undefined ? {} : { method: state.method }),
             }
