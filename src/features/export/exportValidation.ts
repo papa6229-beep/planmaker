@@ -24,38 +24,6 @@ export interface ExportValidationResult {
   ok: boolean
 }
 
-export function validateForExport(brief: EventBrief, availableAssetIds: ReadonlySet<string>): ExportValidationResult {
-  const base = validateBrief(brief)
-  const errors: ExportIssue[] = base.errors.map((i) => ({ ...i }))
-  const warnings: ExportIssue[] = base.warnings.map((i) => ({ ...i }))
-
-  // Error: a block points at an image whose binary is missing.
-  for (const block of brief.blocks) {
-    if (block.assetId !== undefined && !availableAssetIds.has(block.assetId)) {
-      errors.push({
-        severity: 'error',
-        code: 'ASSET_BLOB_MISSING',
-        message: `이미지 데이터를 찾을 수 없습니다: ${block.label}`,
-        blockId: block.id,
-      })
-    }
-  }
-
-  // Warning: asset metadata that no block uses (orphan).
-  const usedAssetIds = new Set(brief.blocks.map((b) => b.assetId).filter((id): id is string => id !== undefined))
-  for (const asset of brief.assets) {
-    if (!usedAssetIds.has(asset.id)) {
-      warnings.push({
-        severity: 'warning',
-        code: 'ORPHAN_ASSET',
-        message: `사용되지 않는 이미지 자산이 있습니다: ${asset.fileName}`,
-      })
-    }
-  }
-
-  return { errors, warnings, ok: errors.length === 0 }
-}
-
 /**
  * Multi-page export validation (Phase 7 Step 4). Validates every page (issues
  * are prefixed with the page title) and checks the shared asset pool

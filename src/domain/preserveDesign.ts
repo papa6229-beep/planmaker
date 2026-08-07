@@ -81,12 +81,6 @@ export interface FixedTone {
   temperature: number
 }
 
-/** 플레이트에서 읽은 색 — 숫자뿐이다. 그림은 다음 요청에 실리지 않는다. */
-export interface PlateTone {
-  average: { r: number; g: number; b: number }
-  brightness: number
-}
-
 export interface PlateInput {
   size: { width: number; height: number }
   /** 스타일 레퍼런스. 없으면 색과 결을 스스로 정하게 둔다. */

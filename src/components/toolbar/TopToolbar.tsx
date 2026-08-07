@@ -16,7 +16,7 @@
  * in 내 기획서, and one way in is enough (v1 마감 §5).
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
@@ -30,6 +30,8 @@ import { useStudioJob } from '../../features/studio/useStudioJob'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
 import { countStudioStorage, resetStudioStorage, type StorageCount } from '../../services/storageReset'
 import { useImageSave } from '../../features/studio/useImageSave'
+import { saveHealth, subscribeSaveHealth } from '../../services/saveHealthStore'
+import { saveStatus } from '../../domain/saveHealth'
 
 const TITLE_COALESCE_KEY = 'project-title'
 
@@ -80,6 +82,8 @@ export function TopToolbar({
   // 만든 이미지를 내놓는 일. 작업판 밖에서는 `null`이다.
   const imageSave = useImageSave()
   const studioMode = mode === 'studio'
+  // 저장이 실제로 되고 있는가. provider 밖의 모듈이므로 화면 구조와 무관하다.
+  const status = saveStatus(useSyncExternalStore(subscribeSaveHealth, saveHealth, saveHealth))
   const [workMenu, setWorkMenu] = useState(false)
   const workMenuRef = useRef<HTMLDivElement | null>(null)
 
@@ -205,8 +209,14 @@ export function TopToolbar({
       </div>
 
       <div className="editor-topbar__right">
-        <span className="editor-topbar__status" title="편집 상태는 IndexedDB에 자동저장됩니다">
-          저장: 로컬 자동저장
+        {/* 이 자리는 오래도록 **문구**였다 — 저장이 실패해도 "로컬 자동저장"이
+            그대로 있었다. 이제 상태를 읽는다 (저장 실패 알리기 Patch). */}
+        <span
+          className={`editor-topbar__status${status.failed ? ' editor-topbar__status--failed' : ''}`}
+          title={status.detail}
+          role={status.failed ? 'alert' : undefined}
+        >
+          {status.text}
         </span>
         <span className="editor-topbar__divider" aria-hidden="true" />
 

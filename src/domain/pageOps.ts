@@ -164,11 +164,6 @@ export function setReferenceOpacity(doc: BriefDocument, pageId: string, opacity:
   return updateReference(doc, pageId, { opacity: clamped })
 }
 
-/** Resets a page's reference layer to defaults (also clears the image). */
-export function clearReference(doc: BriefDocument, pageId: string): BriefDocument {
-  return replacePage(doc, pageId, (p) => ({ ...p, reference: createReferenceLayer() }))
-}
-
 // ── Assets a document actually uses ──────────────────────────────────────────
 
 /**

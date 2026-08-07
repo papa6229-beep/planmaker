@@ -37,6 +37,7 @@ import {
   REFINE_MODEL,
   REFINE_REASONING_EFFORT,
   REFINE_SYSTEM_INSTRUCTION,
+  REFINE_CALLS_PER_CLICK,
 } from '../domain/instructionRefine'
 import { GENERATE_IMAGE_PATH } from '../domain/imageGeneration'
 import type { BriefDocument } from '../domain/pageSchema'
@@ -207,7 +208,7 @@ describe('§9 전체 지시 다듬기', () => {
     const imagesBefore = imageCalls().length
     fireEvent.change(aiNoteBox(), { target: { value: '좀 더 예쁘게' } })
     fireEvent.click(refineNoteButton())
-    await waitFor(() => expect(refineCalls()).toHaveLength(1), { timeout: 8000 })
+    await waitFor(() => expect(refineCalls()).toHaveLength(REFINE_CALLS_PER_CLICK), { timeout: 8000 })
     expect(imageCalls()).toHaveLength(imagesBefore)
 
     const body = lastRefineBody()
@@ -320,7 +321,7 @@ describe('§10 대상별 지시 다듬기', () => {
   it('sends every chosen target in a single call, with its own sentence', async () => {
     await twoTargets()
     fireEvent.click(refineTargetsButton())
-    await waitFor(() => expect(refineCalls()).toHaveLength(1), { timeout: 8000 })
+    await waitFor(() => expect(refineCalls()).toHaveLength(REFINE_CALLS_PER_CLICK), { timeout: 8000 })
 
     const body = lastRefineBody()
     expect(body.scope).toBe('targets')
@@ -381,7 +382,7 @@ describe('§10 대상별 지시 다듬기', () => {
     refineReply = () => targetsReply([{ blockId: 'blk_t1', revisedInstruction: '굵게' }])
     const imagesBefore = imageCalls().length
     fireEvent.click(refineTargetsButton())
-    await waitFor(() => expect(refineCalls()).toHaveLength(1), { timeout: 8000 })
+    await waitFor(() => expect(refineCalls()).toHaveLength(REFINE_CALLS_PER_CLICK), { timeout: 8000 })
     await new Promise((r) => setTimeout(r, 200))
     expect(imageCalls()).toHaveLength(imagesBefore)
     expect(screen.queryByRole('dialog', { name: 'AI 부분수정' })).toBeNull()
@@ -434,7 +435,7 @@ describe('§7·§8 무엇을 쓰고 무엇을 흘리지 않는가', () => {
     refineReply = () => overallReply('다듬은 문장')
     fireEvent.change(aiNoteBox(), { target: { value: '좀 더 예쁘게' } })
     fireEvent.click(refineNoteButton())
-    await waitFor(() => expect(refineCalls()).toHaveLength(1), { timeout: 8000 })
+    await waitFor(() => expect(refineCalls()).toHaveLength(REFINE_CALLS_PER_CLICK), { timeout: 8000 })
 
     const last4 = KEY.slice(-4)
     expect(document.body.textContent).not.toContain(KEY)

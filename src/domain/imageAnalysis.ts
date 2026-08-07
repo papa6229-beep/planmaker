@@ -23,7 +23,6 @@ export const OPAQUE_ALPHA = 128
  * 잘면 노이즈가 저마다 자기 칸을 차지한다. 8칸(32단계)은 그 사이다.
  */
 export const PALETTE_LEVELS = 8
-export const MIN_PALETTE = 3
 export const MAX_PALETTE = 5
 
 export interface Rgb {

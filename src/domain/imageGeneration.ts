@@ -37,7 +37,6 @@ export const FIELD_IMAGES = 'images[]'
  * 지금까지처럼 불투명이다 — 기존 요청은 이 필드를 보내지 않으므로 그대로다.
  */
 export const FIELD_BACKGROUND = 'background'
-export type ImageBackground = 'opaque' | 'transparent'
 
 export interface ImageGenerationMetadata {
   model: typeof IMAGE_MODEL

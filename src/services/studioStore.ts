@@ -9,6 +9,7 @@
  */
 
 import Dexie, { type Table } from 'dexie'
+import { watchSave } from './watchSave'
 import { studioLiveAssetIds, type StudioJob } from '../domain/studioJob'
 import { normalizeReferenceLayer } from '../domain/pageSchema'
 
@@ -61,7 +62,7 @@ export async function loadStudioJob(id: string): Promise<StudioJob | null> {
 }
 
 export async function saveStudioJob(job: StudioJob): Promise<void> {
-  await db().jobs.put(job)
+  await watchSave('studio', job.updatedAt, () => db().jobs.put(job))
 }
 
 /**

@@ -14,6 +14,7 @@
  */
 
 import Dexie, { type Table } from 'dexie'
+import { watchSave } from './watchSave'
 import { createId } from '../domain/factory'
 import { migrateToDocument } from '../domain/briefMigration'
 import { isRequestTeam, type RequestTeam } from '../domain/requestTeam'
@@ -137,12 +138,14 @@ export async function loadDocumentById(id: string): Promise<BriefDocument | null
  */
 export async function saveDocumentById(id: string, doc: BriefDocument, now: number): Promise<void> {
   const existing = await db().documents.get(id)
-  await db().documents.put({
-    id,
-    doc: withDocumentId(doc, id),
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-  })
+  await watchSave('brief', now, () =>
+    db().documents.put({
+      id,
+      doc: withDocumentId(doc, id),
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    }),
+  )
 }
 
 /** Creates a new brief row and returns the id it was stored under. */
@@ -195,10 +198,6 @@ export async function listTeamlessDocuments(): Promise<DocumentSummary[]> {
     .filter((row) => !isRequestTeam(row.doc.project.requestTeam))
     .toSorted((a, b) => b.updatedAt - a.updatedAt)
     .map(summarize)
-}
-
-export async function deleteDocumentById(id: string): Promise<void> {
-  await db().documents.delete(id)
 }
 
 /** Every asset id referenced by any stored brief (used by autosave pruning). */

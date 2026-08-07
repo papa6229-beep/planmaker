@@ -14,6 +14,7 @@ import Dexie, { type Table } from 'dexie'
 import type { EventBrief } from '../domain/briefSchema'
 import type { BriefDocument } from '../domain/pageSchema'
 import { migrateToDocument } from '../domain/briefMigration'
+import { watchSave } from './watchSave'
 
 /** A stored image binary plus the metadata needed to rehydrate its Asset. */
 export interface StoredAsset {
@@ -70,7 +71,7 @@ export async function loadBrief(): Promise<EventBrief | null> {
 
 /** Persists the current multi-page document snapshot (Phase 7 Step 4). */
 export async function saveDocument(doc: BriefDocument, now: number): Promise<void> {
-  await db().briefs.put({ key: DOCUMENT_KEY, doc, updatedAt: now })
+  await watchSave('brief', now, () => db().briefs.put({ key: DOCUMENT_KEY, doc, updatedAt: now }))
 }
 
 /**
@@ -88,7 +89,7 @@ export async function loadDocument(): Promise<BriefDocument | null> {
 
 /** Stores (or replaces) an image asset binary. */
 export async function putAsset(asset: StoredAsset): Promise<void> {
-  await db().assets.put(asset)
+  await watchSave('asset', Date.now(), () => db().assets.put(asset))
 }
 
 /** Returns every stored asset binary. */
@@ -129,19 +130,6 @@ export async function putAssets(assets: readonly StoredAsset[]): Promise<void> {
 /** Deletes exactly these assets — used to roll back a failed import. */
 export async function deleteAssets(ids: readonly string[]): Promise<void> {
   if (ids.length > 0) await db().assets.bulkDelete([...ids])
-}
-
-/**
- * Atomically replaces all stored asset blobs.
- *
- * @deprecated Never use this for import: it empties the pool every brief and
- * every delivered snapshot shares. Kept for a future explicit "reset".
- */
-export async function replaceAssets(assets: StoredAsset[]): Promise<void> {
-  await db().transaction('rw', db().assets, async () => {
-    await db().assets.clear()
-    if (assets.length > 0) await db().assets.bulkPut(assets)
-  })
 }
 
 /**

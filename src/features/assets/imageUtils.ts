@@ -24,14 +24,6 @@ export function isAcceptedMime(mime: string): mime is ImageMimeType {
   return ACCEPTED.has(mime)
 }
 
-/** Filename without its extension, for a default product name. */
-export function baseName(fileName: string): string {
-  const slash = Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\'))
-  const name = slash >= 0 ? fileName.slice(slash + 1) : fileName
-  const dot = name.lastIndexOf('.')
-  return dot > 0 ? name.slice(0, dot) : name
-}
-
 export interface ImageSize {
   width: number
   height: number

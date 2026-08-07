@@ -24,7 +24,7 @@
  */
 
 import { getBlockTypeMeta, type BlockType } from './blockTypes'
-import type { BriefBlock, LayoutEmphasis } from './briefSchema'
+import type { BriefBlock } from './briefSchema'
 
 /** The four tools shown to the user. */
 export type SimpleBlockKind = 'text' | 'imageSlot' | 'buttonLink' | 'note'
@@ -120,31 +120,6 @@ export const LINK_URL_TYPE: BlockType = 'button_url'
 export const NOTE_TYPE: BlockType = 'revision_reference'
 
 // ── Emphasis (글 넣기) ───────────────────────────────────────────────────────
-
-/**
- * The three emphasis levels offered for 글 넣기. Stored in
- * `layoutHint.emphasis` only — never by swapping the block type.
- */
-export type SimpleEmphasis = 'high' | 'normal' | 'low'
-
-export const EMPHASIS_CHOICES: { value: SimpleEmphasis; label: string }[] = [
-  { value: 'high', label: '크게 강조' },
-  { value: 'normal', label: '보통' },
-  { value: 'low', label: '작게' },
-]
-
-/** Reads a block's emphasis as one of the three simple levels. */
-export function simpleEmphasisOf(block: BriefBlock): SimpleEmphasis {
-  const e = block.layoutHint.emphasis
-  if (e === 'high' || e === 'very_high') return 'high'
-  if (e === 'low') return 'low'
-  return 'normal'
-}
-
-/** Maps a simple level onto the stored `LayoutEmphasis`. */
-export function toLayoutEmphasis(level: SimpleEmphasis): LayoutEmphasis {
-  return level
-}
 
 // ── Kind detection ──────────────────────────────────────────────────────────
 

@@ -51,6 +51,3 @@ export function clearApiKey(): void {
   }
 }
 
-export function hasApiKey(): boolean {
-  return readApiKey() !== null
-}
