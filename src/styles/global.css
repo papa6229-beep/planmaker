@@ -2492,7 +2492,27 @@ button { font-family: inherit; }
 .paper-tune__title { margin: 0; font-size: 13px; font-weight: 700; }
 .paper-tune__note { margin: 0; color: var(--color-muted); font-size: 11px; line-height: 1.5; }
 .paper-tune__block { display: flex; flex-direction: column; gap: 4px; }
-.paper-tune__label { margin: 0; font-size: 11px; font-weight: 600; }
+.paper-tune__head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+/* 썸네일에 크기를 주지 않으면 제품 원본이 원래 크기로 펼쳐져 아래 슬라이더를
+   화면 밖으로 밀어낸다 — 실제로 그랬다 (컷아웃 구분 Patch 후속). */
+.paper-tune__thumb {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-panel);
+}
+.paper-tune__label {
+  flex: 1 1 auto;
+  overflow: hidden;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .paper-tune__slider { display: flex; flex-direction: column; gap: 2px; }
 .paper-tune__slider-label { font-size: 11px; color: var(--color-muted); }
 .paper-tune__slider input[type='range'] {
