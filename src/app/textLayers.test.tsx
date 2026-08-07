@@ -1453,3 +1453,58 @@ describe('§18 저장 전 안내', () => {
     expect(within(dialog).getByText(NOTE)).toBeTruthy()
   })
 })
+
+// ── §19 재료에서 완성본을 되살린다 ─────────────────────────────────────────
+
+describe('§19 다시 합치기', () => {
+  it('완성본만 잃은 상태에서 남은 재료로 되살아나고, 외부 호출은 0건이다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    const made = await loadStudioJob(STUDIO_JOB_ID)
+    const objects = made?.textObjects?.page_1 ?? []
+    expect(objects.length).toBe(SHEET_IDS.length)
+
+    // 작업 파일을 열었을 때의 모습: 재료는 남고 **완성본만 없다**.
+    await saveStudioJob({ ...made!, results: {} })
+    const calls = fetchSpy.mock.calls.length
+    composed.mockClear()
+
+    const { container: reopened } = renderStudio()
+    await documentReady(reopened)
+
+    // 되살릴 재료가 있으므로 그 자리를 화면이 먼저 말한다.
+    const button = await screen.findByRole('button', { name: /완성본 다시 합치기/ }, { timeout: 5000 })
+    fireEvent.click(button)
+
+    await waitFor(async () => {
+      const now = await loadStudioJob(STUDIO_JOB_ID)
+      expect(now?.results?.page_1).toBeDefined()
+    }, { timeout: 5000 })
+
+    const back = await loadStudioJob(STUDIO_JOB_ID)
+    const result = back!.results!.page_1!
+    // 줄은 처음부터 세운다 — 없는 이력을 지어내지 않는다.
+    expect(result.revisions?.length).toBe(1)
+    expect(result.cursor).toBe(0)
+    expect(result.editCount).toBe(0)
+    expect(result.originalAssetId).toBe(result.assetId)
+    // 고칠 대상 목록도 함께 선다 — 이것이 없으면 부분수정을 시작할 수 없다.
+    expect((result.targets ?? []).length).toBeGreaterThan(0)
+    // 조각은 그대로다. 되살리기가 재료를 건드리지 않는다.
+    expect(back?.textObjects?.page_1?.length).toBe(SHEET_IDS.length)
+
+    // **공짜다.** 합치기는 브라우저가 했고 밖으로 나간 요청은 없다.
+    expect(fetchSpy.mock.calls.length).toBe(calls)
+    expect(composed).toHaveBeenCalled()
+  })
+
+  it('배경이 없으면 되살릴 재료도 없다 — 그 자리를 내밀지 않는다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    expect(screen.queryByRole('button', { name: /완성본 다시 합치기/ })).toBeNull()
+  })
+})

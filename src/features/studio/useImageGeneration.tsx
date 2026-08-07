@@ -220,6 +220,15 @@ export interface ImageGenerationApi {
   retryConversion: () => void
   /** 문구를 옮기거나 크기를 바꾼 뒤 결과를 다시 합친다. 외부 호출 0건. */
   recomposePage: (pageId: string) => Promise<void>
+  /**
+   * 재료에서 완성본을 되살린다 (다시 합치기 Patch). **외부 호출 0건.**
+   *
+   * 작업 파일에는 배경과 조각이 담기고 합쳐진 완성본은 담기지 않는다. 그래서
+   * 파일을 열면 재료는 있고 완성본만 없다 — 그때 이것을 부르면 돌아온다.
+   */
+  rebuildPage: (pageId: string) => Promise<void>
+  /** 지금 페이지에 되살릴 재료가 있는가 — 배경이 있고 완성본이 없을 때다. */
+  canRebuild: boolean
   dismiss: () => void
 
   // ── 부분수정 (부분수정 1단계) ──────────────────────────────────────────────
@@ -343,6 +352,13 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
   const doc = studio === null ? null : getDocument()
   const activePageId = doc?.activePageId ?? ''
   const hasResult = studio !== null && (studio.job.results?.[activePageId] ?? null) !== null
+  /**
+   * 되살릴 재료가 있는가 (다시 합치기 Patch).
+   *
+   * 배경이 있는데 완성본이 없는 자리 — 작업 파일을 열었을 때가 정확히 그 모습이다.
+   */
+  const canRebuild =
+    studio !== null && !hasResult && studio.job.backgrounds?.[activePageId] !== undefined
 
   /** 지금 화면에서 무엇을 보낼지 계산한다. 막을 이유가 있으면 그것을 돌려준다. */
   const planNow = useCallback((): { plan: GenerationPlan } | { blocked: string } => {
@@ -910,9 +926,18 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
    * 문구를 옮기거나 크기를 바꾸거나 하나만 다시 디자인한 뒤에 부른다. 그림은
    * 전부 손에 있으므로 **외부 호출은 0건**이다.
    */
-  const recomposePage = useCallback(
-    async (pageId: string) => {
-      if (studio === null) return
+  /**
+   * 배경과 조각들로 이 페이지를 한 장으로 합친다 (다시 합치기 Patch).
+   *
+   * 합치는 일만 한다 — 결과로 남기는 일은 부르는 쪽이 정한다. 두 부름이 있고,
+   * 둘은 남기는 방식이 다르기 때문이다: 옮기고 나서 다시 합치는 쪽은 **줄에 한
+   * 칸을 더하고**, 파일을 열고 되살리는 쪽은 **줄을 처음부터 세운다**.
+   *
+   * 외부 호출은 0건이다. 그림은 전부 손에 있다.
+   */
+  const composePage = useCallback(
+    async (pageId: string): Promise<{ blob: Blob; size: { width: number; height: number } } | null> => {
+      if (studio === null) return null
       const brief = getDocument()
       const page = brief.pages.find((p) => p.id === pageId)
       // 끌어 옮기는 동안의 값이 아니라 방금 저장된 값을 읽는다.
@@ -924,8 +949,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       // (오브젝트 삭제 Patch).
       const imagesEntry = job.imageObjects?.[pageId]
       const images = imagesEntry ?? []
-      const previous = pageResultOf(job, pageId)
-      if (page === undefined || background === undefined || previous === undefined) return
+      if (page === undefined || background === undefined) return null
 
       // 이미지 오브젝트 목록이 있으면 그 목록이 곧 얹을 목록이고, 그 자리가 곧
       // 얹을 자리다. 없는 것은 이 Patch 이전에 만든 결과뿐이라, 그때는 지금까지
@@ -975,16 +999,44 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       // 그림이 최신 결과를 덮는다. 자기 차례를 적어 두고 끝날 때 확인한다.
       const ticket = (recomposeRef.current += 1)
       const blob = await renderComposite(composite, await collectCompositeSources(composite))
-      if (ticket !== recomposeRef.current) return
-      const assetId = createId('asset')
-      await putAsset({
-        id: assetId,
-        blob,
-        fileName: `design-${pageId}.png`,
-        mimeType: 'image/png',
-        byteSize: blob.size,
-      })
-      if (ticket !== recomposeRef.current) return
+      if (ticket !== recomposeRef.current) return null
+      return { blob, size: composite.size }
+    },
+    [studio, getDocument],
+  )
+
+  /** 합친 그림을 자산으로 남긴다. 부르는 쪽이 그 번호로 결과를 세운다. */
+  const storeComposed = useCallback(async (pageId: string, blob: Blob): Promise<string> => {
+    const assetId = createId('asset')
+    await putAsset({
+      id: assetId,
+      blob,
+      fileName: `design-${pageId}.png`,
+      mimeType: 'image/png',
+      byteSize: blob.size,
+    })
+    return assetId
+  }, [])
+
+  /**
+   * 지금 상태로 결과를 다시 합친다 — 배경, 사진, 그리고 **지금 자리의** 문구
+   * 오브젝트 (텍스트 오브젝트 Patch §4).
+   *
+   * 문구를 옮기거나 크기를 바꾸거나 하나만 다시 디자인한 뒤에 부른다. 그림은
+   * 전부 손에 있으므로 **외부 호출은 0건**이다.
+   *
+   * 결과가 아직 없으면 **아무것도 하지 않는다.** 이 함수는 되돌리기와 슬라이더
+   * 에서도 불리는데, 거기서 없던 완성본이 만들어지면 안 된다 — 되살리는 일은
+   * 사람이 누르는 `rebuildPage`가 맡는다.
+   */
+  const recomposePage = useCallback(
+    async (pageId: string) => {
+      if (studio === null) return
+      const previous = pageResultOf(studio.currentJob(), pageId)
+      if (previous === undefined) return
+      const composed = await composePage(pageId)
+      if (composed === null) return
+      const assetId = await storeComposed(pageId, composed.blob)
       // 지나온 결과는 지우지 않는다 — 줄에 한 칸을 더할 뿐이다 (§3 마지막 줄).
       const kept = revisionsOf(previous).slice(0, cursorOf(previous) + 1)
       const line: ImageRevision[] = [...kept, { assetId, kind: 'edit' }]
@@ -998,7 +1050,61 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         createdAt: Date.now(),
       })
     },
-    [studio, getDocument],
+    [studio, composePage, storeComposed],
+  )
+
+  /**
+   * 완성본을 **재료에서 되살린다** (다시 합치기 Patch).
+   *
+   * 작업 파일에는 합쳐진 완성본이 담기지 않는다. 담기에는 너무 크고, 결과 줄까지
+   * 넣으면 감당이 안 된다. 그런데 **재료는 전부 담긴다** — 배경, 문구 조각,
+   * 이미지 조각, 자리와 크기, 톤, 종이 두께까지.
+   *
+   * 재료가 다 있으면 완성본은 다시 만들 필요가 없다. **브라우저가 다시 합치면
+   * 된다.** 그래서 파일을 열고 이것을 누르면 완성본이 돌아온다 — 유료 재생성이
+   * 아니라 **외부 호출 0건**으로.
+   *
+   * 여기서 세우는 줄은 처음부터다. 지나온 수정 이력은 파일에 없으므로 되살릴
+   * 것이 없고, 없는 이력을 지어내지 않는다.
+   */
+  const rebuildPage = useCallback(
+    async (pageId: string) => {
+      if (studio === null) return
+      const job = studio.currentJob()
+      const background = job.backgrounds?.[pageId]
+      if (background === undefined) return
+      setState({ kind: 'running' })
+      try {
+        const composed = await composePage(pageId)
+        if (composed === null) {
+          setState({ kind: 'failed', message: errorTextFor('save_failed') })
+          return
+        }
+        const assetId = await storeComposed(pageId, composed.blob)
+        await studio.recordResult({
+          pageId,
+          assetId,
+          model: IMAGE_MODEL,
+          quality: IMAGE_QUALITY,
+          // 모델에게 요청했던 크기는 배경이 기억하고 있다. 없으면 합친 크기를
+          // 적는다 — 지어내지 않는다.
+          requestedSize: background.requestedSize ?? sizeLabel(composed.size),
+          workingSize: sizeLabel(composed.size),
+          sourceFingerprint: documentFingerprint(getDocument()),
+          createdAt: Date.now(),
+          originalAssetId: assetId,
+          targets: buildEditTargets(getDocument(), job, pageId),
+          editCount: 0,
+          revisions: [{ assetId, kind: 'initial' } as ImageRevision],
+          cursor: 0,
+        })
+        setView('compare')
+        setState({ kind: 'idle' })
+      } catch {
+        setState({ kind: 'failed', message: errorTextFor('save_failed') })
+      }
+    },
+    [studio, composePage, storeComposed, getDocument],
   )
 
   /** 같은 원본으로 작업본만 다시 만든다. 외부 호출 0건. */
@@ -1545,6 +1651,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             confirm,
             retryConversion,
             recomposePage,
+            rebuildPage,
+            canRebuild,
             editTargets,
             selectedTargetIds,
             toggleTarget,
@@ -1565,6 +1673,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           },
     [
       studio, state, hasResult, hasKey, view, begin, confirm, retryConversion, recomposePage,
+      rebuildPage, canRebuild,
       editTargets, selectedTargetIds, toggleTarget, instructionFor, setInstructionFor,
       canEdit, editBlockedReason, beginEdit, confirmEdit,
       revisions.length, cursor, canGoPrevious, canGoNext, goTo,

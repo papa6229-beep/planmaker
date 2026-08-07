@@ -55,6 +55,27 @@ export function ReadyPanel() {
           실제 제품 이미지가 연결되지 않은 자리가 {missing}개 있습니다. 왼쪽 이미지 블록에 연결해 주세요.
         </p>
       )}
+
+      {/* 작업 파일을 열면 재료(배경·문구 조각·이미지 조각)는 돌아오지만 합쳐진
+          완성본은 담기지 않아 없다. 재료가 다 있으면 다시 만들 이유가 없다 —
+          브라우저가 합치면 되고, 그것은 공짜다 (다시 합치기 Patch). */}
+      {generation.canRebuild && (
+        <div className="ready-panel__rebuild">
+          <p className="ready-panel__rebuild-note">
+            이 페이지의 <b>배경과 조각이 남아 있습니다.</b> 완성본은 작업 파일에 담기지 않지만, 남은 재료로
+            다시 합치면 그대로 돌아옵니다.
+          </p>
+          <button
+            type="button"
+            className="btn btn--primary"
+            disabled={generation.state.kind === 'running'}
+            title="AI를 부르지 않고 남은 재료로 합칩니다"
+            onClick={() => void generation.rebuildPage(page.id)}
+          >
+            {generation.state.kind === 'running' ? '합치는 중…' : '완성본 다시 합치기 (AI 호출 없음)'}
+          </button>
+        </div>
+      )}
     </section>
   )
 }

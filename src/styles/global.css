@@ -2177,6 +2177,16 @@ button { font-family: inherit; }
 .ready-panel__facts dt { color: var(--color-muted); }
 .ready-panel__facts dd { margin: 0; font-weight: 600; }
 .ready-panel__warn { margin: 10px 0 0; font-size: 12px; color: #b45309; }
+/* 재료에서 완성본을 되살리는 자리 (다시 합치기 Patch) */
+.ready-panel__rebuild {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+.ready-panel__rebuild-note { margin: 0; font-size: 12px; line-height: 1.6; color: var(--color-muted); }
 
 /* AI 지시 다듬기 (실작업 UI 마감 §9, §10). */
 .refine { margin-top: 8px; }
