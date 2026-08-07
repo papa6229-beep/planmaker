@@ -17,7 +17,7 @@
  */
 
 import { normalizeEffects, type CompositeEffects } from './compositeEffects'
-import type { GenerationMethod, StudioBackground, StudioJob } from './studioJob'
+import type { BlockOrder, GenerationMethod, StudioBackground, StudioJob } from './studioJob'
 import type { StudioTextObject } from './textObjects'
 
 /**
@@ -33,10 +33,10 @@ import type { StudioTextObject } from './textObjects'
  * 예전 빌드는 "읽을 수 없다"고 분명히 말한다. 잃는 것이 같다면 소리 내는 쪽이
  * 낫다 (§12 마지막 줄).
  */
-export const STUDIO_FILE_VERSION = '0.8.0'
+export const STUDIO_FILE_VERSION = '0.9.0'
 
 /** 이 판이 **읽을 수 있는** 버전. 예전 파일은 그대로 열린다. */
-export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0', '0.4.0', '0.5.0', '0.6.0', '0.7.0', '0.8.0']
+export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0', '0.4.0', '0.5.0', '0.6.0', '0.7.0', '0.8.0', '0.9.0']
 
 /** 파일이 기억하는 "이 작업이 어느 원본에서 시작했는가". */
 export interface StudioFileSource {
@@ -68,6 +68,8 @@ export interface StudioFileState {
   imageObjects?: Record<string, StudioTextObject[]>
   /** 페이지 id → 레퍼런스 배경을 그대로 살릴 것인가 (0.8.0). */
   keepReferenceBg?: Record<string, boolean>
+  /** 블록 id → 그 블록에만 붙는 생성 전 주문 (0.9.0). */
+  blockOrders?: Record<string, BlockOrder>
 }
 
 /** 지금 작업에서 파일에 남길 것만 추린다. */
@@ -90,6 +92,7 @@ export function toStudioFileState(job: StudioJob): StudioFileState {
     textObjects: { ...job.textObjects },
     imageObjects: { ...job.imageObjects },
     keepReferenceBg: { ...job.keepReferenceBg },
+    blockOrders: { ...job.blockOrders },
     ...(job.grain === undefined ? {} : { grain: job.grain }),
     ...(job.method === undefined ? {} : { method: job.method }),
   }
@@ -111,6 +114,9 @@ export function studioFileAssetIds(state: StudioFileState): string[] {
       // 문구만 사라진 결과가 열린다.
       ...Object.values(state.textObjects ?? {}).flatMap((list) => list.map((t) => t.assetId)),
       ...Object.values(state.imageObjects ?? {}).flatMap((list) => list.map((t) => t.assetId)),
+      ...Object.values(state.blockOrders ?? {})
+        .map((o) => o.referenceAssetId)
+        .filter((id): id is string => id !== undefined),
     ]),
   ]
 }
@@ -144,7 +150,14 @@ export function remapStudioFileState(
   for (const [pageId, list] of Object.entries(state.imageObjects ?? {})) {
     imageObjects[pageId] = list.map((t) => ({ ...t, assetId: mapping.get(t.assetId) ?? t.assetId }))
   }
-  return { ...state, productImages, backgrounds, styleRefs, textObjects, imageObjects }
+  const blockOrders: Record<string, BlockOrder> = {}
+  for (const [blockId, order] of Object.entries(state.blockOrders ?? {})) {
+    blockOrders[blockId] =
+      order.referenceAssetId === undefined
+        ? order
+        : { ...order, referenceAssetId: mapping.get(order.referenceAssetId) ?? order.referenceAssetId }
+  }
+  return { ...state, productImages, backgrounds, styleRefs, textObjects, imageObjects, blockOrders }
 }
 
 /** 예전 판 파일에는 없다. 모양이 어긋난 항목은 조용히 버린다 — 자리를 모르는
@@ -182,6 +195,22 @@ function readFlags(raw: unknown): Record<string, boolean> {
   if (!isRecord(raw)) return {}
   const out: Record<string, boolean> = {}
   for (const [pageId, value] of Object.entries(raw)) if (value === true) out[pageId] = true
+  return out
+}
+
+/** 블록별 주문. 모양이 어긋난 항목은 조용히 버린다. */
+function readBlockOrders(raw: unknown): Record<string, BlockOrder> {
+  if (!isRecord(raw)) return {}
+  const out: Record<string, BlockOrder> = {}
+  for (const [blockId, value] of Object.entries(raw)) {
+    if (!isRecord(value)) continue
+    const order: BlockOrder = {}
+    if (typeof value.note === 'string' && value.note.trim().length > 0) order.note = value.note
+    if (typeof value.referenceAssetId === 'string' && value.referenceAssetId.length > 0) {
+      order.referenceAssetId = value.referenceAssetId
+    }
+    if (order.note !== undefined || order.referenceAssetId !== undefined) out[blockId] = order
+  }
   return out
 }
 
@@ -269,6 +298,7 @@ export function parseStudioFileState(raw: unknown): StudioFileState | null {
     textObjects: readTextObjects(raw.textObjects),
     imageObjects: readTextObjects(raw.imageObjects),
     keepReferenceBg: readFlags(raw.keepReferenceBg),
+    blockOrders: readBlockOrders(raw.blockOrders),
     effects: readEffects(raw.effects),
     ...(typeof raw.grain === 'number' ? { grain: Math.min(1, Math.max(0, raw.grain)) } : {}),
     ...(raw.method === 'background_composite' || raw.method === 'full_ai' ? { method: raw.method } : {}),

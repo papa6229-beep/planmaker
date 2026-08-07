@@ -124,6 +124,14 @@ export interface StudioJob {
    * 없거나 거짓이면 지금까지처럼 색감과 결만 참고한다.
    */
   keepReferenceBg?: Record<string, boolean>
+  /**
+   * 블록 id → 생성 **전에** 그 블록에만 붙이는 주문 (블록별 주문 Patch).
+   *
+   * 완성 뒤의 부분수정과 목적이 다르다. 저쪽은 이미 만들어진 것을 고치는 일이고,
+   * 이쪽은 처음 만들 때 "이 문구는 이런 느낌으로"라고 미리 말해 두는 일이다.
+   * 그래서 고르지 않은 블록을 고정할 이유도 없다 — 아직 아무것도 없다.
+   */
+  blockOrders?: Record<string, BlockOrder>
   /** 완성 결과 전체에 얹는 그레인 (§9.5). */
   grain?: number
   /** 이 작업이 고른 생성 방식 (§6). */
@@ -410,6 +418,10 @@ export function studioLiveAssetIds(job: StudioJob): string[] {
       ...Object.values(job.backgrounds ?? {}).map((b) => b.assetId),
       // 스타일 레퍼런스도 같다. 기획서 문서는 이 그림을 모른다.
       ...Object.values(job.styleRefs ?? {}),
+      // 블록별 참고 그림도 같다. 기획서 문서는 이 그림을 모른다.
+      ...Object.values(job.blockOrders ?? {})
+        .map((o) => o.referenceAssetId)
+        .filter((id): id is string => id !== undefined),
       // 꾸며진 문구 오브젝트도 같다. 합쳐진 결과 안에만 있는 것이 아니라 따로
       // 남아 있고, 옮기거나 다시 디자인할 때마다 이 그림을 다시 그린다.
       ...Object.values(job.textObjects ?? {}).flatMap((list) => list.map((t) => t.assetId)),
@@ -439,6 +451,34 @@ export function keepReferenceBgOf(job: StudioJob | null, pageId: string): boolea
 
 export function withKeepReferenceBg(job: StudioJob, pageId: string, keep: boolean, now: number): StudioJob {
   return { ...job, keepReferenceBg: { ...job.keepReferenceBg, [pageId]: keep }, updatedAt: now }
+}
+
+/** 그 블록 하나에만 붙는 주문. 둘 다 없으면 지금까지와 같은 주문이 나간다. */
+export interface BlockOrder {
+  /** 작업자가 적은 말. 비어 있으면 없는 것으로 본다. */
+  note?: string
+  /** 이 블록만 참고할 그림. 말로 설명하기 어려운 모양을 위해서다. */
+  referenceAssetId?: string
+}
+
+export function blockOrderOf(job: StudioJob | null, blockId: string): BlockOrder {
+  return job?.blockOrders?.[blockId] ?? {}
+}
+
+export function withBlockOrder(
+  job: StudioJob,
+  blockId: string,
+  patch: BlockOrder,
+  now: number,
+): StudioJob {
+  const next: BlockOrder = { ...blockOrderOf(job, blockId), ...patch }
+  // 빈 값은 지운다 — 없는 것과 빈 문자열이 다른 뜻이 되면 안 된다.
+  if ((next.note ?? '').trim().length === 0) delete next.note
+  if (next.referenceAssetId === undefined || next.referenceAssetId.length === 0) delete next.referenceAssetId
+  const orders = { ...job.blockOrders }
+  if (next.note === undefined && next.referenceAssetId === undefined) delete orders[blockId]
+  else orders[blockId] = next
+  return { ...job, blockOrders: orders, updatedAt: now }
 }
 
 export function imageObjectsOf(job: StudioJob | null, pageId: string): StudioTextObject[] {

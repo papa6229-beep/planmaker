@@ -138,6 +138,8 @@ interface GenerationPlan {
   textBlocks?: TextLayerBlock[]
   /** 블록 id → 그 문구를 주문할 판 크기. 블록과 같은 모양이다 (2차 Patch). */
   textSizes?: Record<string, string>
+  /** 블록 id → 그 블록에만 붙는 주문과 참고 그림 (블록별 주문 Patch). */
+  blockOrders?: Record<string, { note?: string; referenceAssetId?: string }>
   /**
    * 문구 오브젝트 하나만 다시 디자인하는 길 (텍스트 오브젝트 Patch §3).
    *
@@ -361,6 +363,10 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         // 화면이 실제로 끊는 그 줄. 모델에게 그대로 지키라고 보낸다.
         lines: text.lines,
       }))
+      // 블록마다 붙여 둔 주문과 참고 그림 (블록별 주문 Patch).
+      const blockOrders = Object.fromEntries(
+        textBlocks.map((block) => [block.blockId, studio.blockOrderOf(block.blockId)]),
+      )
       // 문구마다 **블록과 같은 모양의 판**을 요청한다. 세로로 긴 페이지 판을
       // 그대로 쓰면 한 줄짜리 문구가 여러 줄로 쌓여 돌아온다 (2차 Patch).
       const textSizes: Record<string, string> = {}
@@ -392,7 +398,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           inputs: plateInputs,
           fingerprint,
           plate,
-          ...(textBlocks.length === 0 ? {} : { textBlocks, textSizes }),
+          ...(textBlocks.length === 0 ? {} : { textBlocks, textSizes, blockOrders }),
           // 배경 한 번 + 문구·버튼 하나당 한 번. 확인창이 이 수를 그대로 말한다.
           calls: 1 + textBlocks.length,
         },
@@ -1087,10 +1093,6 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           //    요청에 실리지 않고, 여기서 뽑은 숫자만 실린다.
           const tones = await measureRegions(plan, plateAssetId)
           const styleRefId = studio.styleReferenceOf(plan.pageId)
-          const inputs = planTextLayerInputs({
-            ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
-            ...(plateAssetId === undefined ? {} : { backgroundAssetId: plateAssetId }),
-          })
           const note = getDocument().project.aiNote?.trim() ?? ''
           const fixed = preserveParts(
             getDocument().pages.find((p) => p.id === plan.pageId) ?? getDocument().pages[0]!,
@@ -1104,10 +1106,17 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           const problems: string[] = []
           for (const [index, block] of textBlocks.entries()) {
             const withTone: TextLayerBlock = { ...block, tone: tones[index] ?? null }
+            // 첨부와 주문은 블록마다 다르다 — 이 블록에만 붙여 둔 참고 그림이
+            // 있으면 그 요청에만 실린다 (블록별 주문 Patch).
+            const order = plan.blockOrders?.[block.blockId] ?? {}
             const answer = await requestLayer(
               plan,
               key,
-              inputs,
+              planTextLayerInputs({
+                ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
+                ...(plateAssetId === undefined ? {} : { backgroundAssetId: plateAssetId }),
+                ...(order.referenceAssetId === undefined ? {} : { blockReferenceAssetId: order.referenceAssetId }),
+              }),
               buildTextLayerPrompt({
                 size: plan.working,
                 ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
@@ -1116,6 +1125,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
                 siblings: textBlocks,
                 fixed,
                 ...(note.length === 0 ? {} : { note }),
+                ...(order.note === undefined ? {} : { blockNote: order.note }),
+                ...(order.referenceAssetId === undefined ? {} : { blockReference: true }),
               }),
               plan.textSizes?.[block.blockId],
             )

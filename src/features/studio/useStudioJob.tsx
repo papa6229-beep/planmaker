@@ -21,6 +21,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   blockEffectsOf,
+  blockOrderOf,
+  withBlockOrder,
   createStudioJob,
   linkProductImage,
   methodOf,
@@ -48,6 +50,7 @@ import {
   withSource,
   withWorkingDoc,
   withoutPageBackground,
+  type BlockOrder,
   type GenerationMethod,
   type StudioBackground,
   type StudioJob,
@@ -106,6 +109,14 @@ export interface StudioJobApi {
    */
   keepReferenceBackgroundOf: (pageId: string) => boolean
   setKeepReferenceBackground: (pageId: string, keep: boolean) => Promise<void>
+  /**
+   * 블록 하나에만 붙는 **생성 전** 주문 (블록별 주문 Patch).
+   *
+   * 완성 뒤의 부분수정과 목적이 다르다. 저쪽은 이미 만들어진 것을 고치는 일이고,
+   * 이쪽은 처음 만들 때 "이 문구는 이런 느낌으로"라고 미리 말해 두는 일이다.
+   */
+  blockOrderOf: (blockId: string) => BlockOrder
+  setBlockOrder: (blockId: string, patch: BlockOrder) => Promise<void>
   /** 이미지별 합성 효과 세기 (§9). 원본 자산은 건드리지 않는다. */
   effectsOf: (blockId: string) => CompositeEffects
   setEffects: (blockId: string, patch: Partial<CompositeEffects>) => void
@@ -375,6 +386,8 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       keepReferenceBackgroundOf: (pageId) => keepReferenceBgOf(job, pageId),
       setKeepReferenceBackground: (pageId, keep) =>
         mutate((j) => withKeepReferenceBg(j, pageId, keep, Date.now())),
+      blockOrderOf: (blockId) => blockOrderOf(job, blockId),
+      setBlockOrder: (blockId, patch) => mutate((j) => withBlockOrder(j, blockId, patch, Date.now())),
       effectsOf: (blockId) => blockEffectsOf(job, blockId),
       setEffects: (blockId, patch) => void mutate((j) => withBlockEffects(j, blockId, patch, Date.now())),
       copyEffects: (from, to) => {

@@ -38,6 +38,7 @@ import { BackgroundTools } from '../components/studio/BackgroundTools'
 import { StyleReferenceTools } from '../components/studio/StyleReferenceTools'
 import { BackgroundDialog } from '../components/studio/BackgroundDialog'
 import { CompositeEffectsPanel } from '../components/studio/CompositeEffectsPanel'
+import { BlockOrderPanel } from '../components/studio/BlockOrderPanel'
 import { BackgroundCompositeProvider } from '../features/studio/useBackgroundComposite'
 import { StudioEffectsSync } from '../features/studio/StudioEffectsSync'
 import { GenerateImageDialog } from '../components/studio/GenerateImageDialog'
@@ -267,6 +268,9 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
                 있는지에 따라 흐름은 스스로 갈린다. */}
             {/* 고른 블록의 배치 — 맞춤 방식과 레이어 순서 (§3.1, §4). */}
             <BlockLayerTools />
+            {/* 생성 **전**에 이 블록에만 붙이는 주문 (블록별 주문 Patch). 완성
+                뒤의 부분수정과 목적이 다르므로 자리도 따로 둔다. */}
+            <BlockOrderPanel />
             <CompositeEffectsPanel />
             {generation !== null && generation.hasResult ? <EditPanel /> : <ReadyPanel />}
           </div>

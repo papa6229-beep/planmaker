@@ -124,6 +124,10 @@ export interface TextLayerInput {
   /** 사진이 이미 놓인 자리 — 좌표뿐이다. */
   fixed: readonly FixedObject[]
   note?: string
+  /** 이 블록에만 붙는 작업자 주문 (블록별 주문 Patch). */
+  blockNote?: string
+  /** 이 블록만 참고할 그림이 붙어 있는가. 있으면 주문이 그 그림을 가리킨다. */
+  blockReference?: boolean
 }
 
 /**
@@ -154,6 +158,8 @@ export function planPlateInputs(input: PlateInput): GenerationInputImage[] {
 export function planTextLayerInputs(input: {
   styleReferenceAssetId?: string | undefined
   backgroundAssetId?: string | undefined
+  /** 이 블록만 참고할 그림 (블록별 주문 Patch). */
+  blockReferenceAssetId?: string | undefined
 }): GenerationInputImage[] {
   const images = styleInput(
     input.styleReferenceAssetId,
@@ -166,6 +172,15 @@ export function planTextLayerInputs(input: {
       assetId: input.backgroundAssetId,
       fileName: 'background-plate.png',
       label: '1단계에서 생성된 배경 — 이 배경 위에서 글씨가 읽히도록 색과 대비를 정하기 위한 자료입니다.',
+    })
+  }
+  if (input.blockReferenceAssetId !== undefined) {
+    images.push({
+      index: images.length + 1,
+      role: 'page_reference',
+      assetId: input.blockReferenceAssetId,
+      fileName: 'block-reference.png',
+      label: '이 문구만을 위한 참고 그림 — 이런 모양·구성으로 만들어 달라는 뜻입니다.',
     })
   }
   return images
@@ -358,8 +373,19 @@ export function buildTextLayerPrompt(input: TextLayerInput): string {
     )
   }
 
+  if (input.blockReference === true) {
+    lines.push(
+      '- 이 문구만을 위한 참고 그림: **이 문구를 어떤 모양·구성으로 만들지**에 대한 자료입니다. 라벨 위의 글자, 상자 위의 글자처럼 짜임새를 그대로 따라 주세요. 그림 속 문구가 아니라 위에 적은 원문을 씁니다.',
+    )
+  }
+
+  const blockNote = (input.blockNote ?? '').trim()
+  if (blockNote.length > 0) {
+    lines.push('', '## 이 문구에 대한 작업자의 주문', blockNote, '페이지 전체 지시보다 이 주문이 우선합니다.')
+  }
+
   const trimmed = (note ?? '').trim()
-  if (trimmed.length > 0) lines.push('', '## 작업자의 추가 지시', trimmed)
+  if (trimmed.length > 0) lines.push('', '## 작업자의 추가 지시 (페이지 전체)', trimmed)
 
   lines.push(
     '',

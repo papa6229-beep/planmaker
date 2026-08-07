@@ -814,3 +814,64 @@ describe('§8 여럿을 골라 함께 옮기고 늘린다', () => {
     expect(fetchSpy.mock.calls.length).toBe(calls)
   })
 })
+
+// ── §9 블록별 사전 주문 ─────────────────────────────────────────────────────
+
+describe('§9 블록마다 미리 주문한다', () => {
+  it('그 블록의 요청에만 주문과 참고 그림이 실린다', async () => {
+    await seedJob()
+    // 문구 하나에만 주문과 참고 그림을 붙여 둔다.
+    await putAsset(storedAsset('asset_ref', 9))
+    const seeded = await loadStudioJob(STUDIO_JOB_ID)
+    await saveStudioJob({
+      ...seeded!,
+      blockOrders: { blk_t2: { note: '둥근 라벨 위에 굵게', referenceAssetId: 'asset_ref' } },
+    })
+
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    const [, ...texts] = bodies()
+    // 붙여 둔 블록의 요청에만 그 그림과 그 주문이 실린다.
+    const mine = texts[SHEET_IDS.indexOf('blk_t2')]!
+    expect(namesOf(mine)).toEqual(['1-background-plate.png', '2-block-reference.png'])
+    expect(promptOf(mine)).toContain('둥근 라벨 위에 굵게')
+    expect(promptOf(mine)).toContain('이 문구만을 위한 참고 그림')
+    expect(promptOf(mine)).toContain('페이지 전체 지시보다 이 주문이 우선합니다')
+
+    // 나머지 요청에는 없다.
+    for (const [i, form] of texts.entries()) {
+      if (SHEET_IDS[i] === 'blk_t2') continue
+      expect(namesOf(form!)).toEqual(['1-background-plate.png'])
+      expect(promptOf(form!)).not.toContain('둥근 라벨 위에 굵게')
+    }
+
+    // 호출 수는 그대로다 — 주문을 붙인다고 더 나가지 않는다.
+    expect(fetchSpy).toHaveBeenCalledTimes(CALLS)
+  })
+
+  it('주문이 작업 파일에 남고, 빈 값은 지워지며, 예전 파일은 빈 값으로 읽힌다', async () => {
+    const mod = await load('domain/studioFile')
+    const studioJob = await load('domain/studioJob')
+    let job = studioJob.withBlockOrder(
+      createStudioJob(sampleDoc(), 1_000, STUDIO_JOB_ID),
+      'blk_t1',
+      { note: '굵게', referenceAssetId: 'asset_ref' },
+      2_000,
+    )
+    const parsed = mod.parseStudioFileState(JSON.parse(JSON.stringify(mod.toStudioFileState(job))))
+    expect(parsed?.blockOrders?.blk_t1).toEqual({ note: '굵게', referenceAssetId: 'asset_ref' })
+    // 참고 그림도 파일에 담기고 재번호를 따라간다.
+    expect(mod.studioFileAssetIds(parsed!)).toContain('asset_ref')
+    const remapped = mod.remapStudioFileState(parsed!, new Map([['asset_ref', 'asset_ref_2']]))
+    expect(remapped.blockOrders?.blk_t1?.referenceAssetId).toBe('asset_ref_2')
+
+    // 비우면 지워진다 — 없는 것과 빈 문자열이 다른 뜻이 되면 안 된다.
+    job = studioJob.withBlockOrder(job, 'blk_t1', { note: '   ', referenceAssetId: '' }, 3_000)
+    expect(studioJob.blockOrderOf(job, 'blk_t1')).toEqual({})
+
+    const old = mod.parseStudioFileState({ version: '0.8.0', source: null, productImages: {} })
+    expect(old?.blockOrders ?? {}).toEqual({})
+  })
+})
