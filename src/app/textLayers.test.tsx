@@ -687,6 +687,49 @@ describe('§6 부분수정은 고른 것만 건드린다', () => {
       expect(String((call[1].body as FormData).get('prompt'))).toContain('문구 **한 개**만 새로 디자인')
     }
   })
+
+  it('고치는 요청도 첫 생성과 같은 재료를 본다 — 레퍼런스·배경·그 자리의 색', async () => {
+    await seedJob()
+    // 이 블록에만 참고 그림을 붙여 둔다 — 고칠 때도 같은 그림을 본다.
+    await putAsset(storedAsset('asset_ref', 9))
+    const seeded = await loadStudioJob(STUDIO_JOB_ID)
+    await saveStudioJob({ ...seeded!, blockOrders: { blk_t1: { referenceAssetId: 'asset_ref' } } })
+
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+    const madeCalls = fetchSpy.mock.calls.length
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: new RegExp(CONTENTS.blk_t1!) }))
+    fireEvent.change(await screen.findByLabelText(/여름 감사제 40% 수정 지시/), {
+      target: { value: '배경과 어울리는 색으로' },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'AI 부분수정 실행' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(
+      // eslint-disable-next-line testing-library/no-node-access
+      Array.from(dialog.querySelectorAll('button')).find((b) => /실행|시작|계속/.test(b.textContent ?? ''))!,
+    )
+    await waitFor(() => expect(fetchSpy.mock.calls.length).toBe(madeCalls + 1), { timeout: 10000 })
+
+    const form = bodies()[madeCalls]!
+    // 앞선 판은 여기서 **한 장도** 보내지 않았다. 이제 지금 그림과 생성된 배경,
+    // 그리고 이 블록의 참고 그림이 함께 간다. (이 fixture에는 스타일
+    // 레퍼런스가 없어 그 자리는 비어 있다.)
+    expect(namesOf(form)).toEqual(['1-current-text.png', '2-background-plate.png', '3-block-reference.png'])
+
+    const prompt = promptOf(form)
+    // 그 자리에 실제로 깔려 있는 색이 숫자로 간다 (`analyzeRegions` 대역값).
+    expect(prompt).toContain('실제로 깔려 있는 색')
+    expect(prompt).toContain('R120 G90 B60')
+    // 배경 그림이 무엇인지 말해 준다. 첫 생성과 같은 근거다.
+    expect(prompt).toContain('놓여 있는 배경')
+    expect(prompt).toContain('이 문구만을 위한 참고 그림')
+    // 자리는 페이지 기준의 백분율이다 — 블록 크기로 나누던 예전 값이 아니다.
+    expect(prompt).toContain('실제 페이지에서의 자리')
+    // 줄 나눔은 그대로 지킨다. 고치다가 한 줄이 두 줄이 되지 않게.
+    expect(prompt).toContain('줄 나눔 — 정확히 1줄입니다')
+  })
 })
 
 // ── §7 기울이기 ─────────────────────────────────────────────────────────────

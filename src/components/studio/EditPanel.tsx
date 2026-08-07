@@ -9,9 +9,89 @@
  * 보여 주면, 누를 수 없는 버튼 앞에서 이유를 찾게 된다.
  */
 
+import { useRef } from 'react'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
 import { useInstructionRefine } from '../../features/studio/useInstructionRefine'
+import { useStudioJob } from '../../features/studio/useStudioJob'
+import { useAssets } from '../../features/assets/useAssets'
 import { REFINE_COST_NOTE } from '../../domain/instructionRefine'
+import { ACCEPTED_MIME_TYPES } from '../../features/assets/imageUtils'
+import type { EditTarget } from '../../domain/editTargets'
+
+const IMAGE_ACCEPT = ACCEPTED_MIME_TYPES.join(',')
+
+/**
+ * 이 대상에만 붙는 참고 그림 (부분수정 재료 Patch).
+ *
+ * 생성 전 `이 블록의 디자인 주문`과 **같은 그림**이다 — 블록 하나에 참고 그림도
+ * 하나다. 두 벌로 나누면 "생성 때 쓴 그림"과 "고칠 때 쓴 그림"이 갈라져, 어느 쪽을
+ * 보고 만든 것인지 나중에 아무도 말할 수 없게 된다.
+ *
+ * 문구·버튼 대상에만 나온다. 이미지·컷아웃과 배경은 이 길로 가지 않는다.
+ */
+function TargetReference({ target, busy }: { target: EditTarget; busy: boolean }) {
+  const studio = useStudioJob()
+  const { storeImage, getUrl } = useAssets()
+  const fileRef = useRef<HTMLInputElement | null>(null)
+  const blockId = target.blockId
+  if (studio === null || blockId === undefined || target.kind !== 'text') return null
+
+  const order = studio.blockOrderOf(blockId)
+  const url = getUrl(order.referenceAssetId)
+
+  const pick = async (file: File) => {
+    const asset = await storeImage(file)
+    if (asset === null) return
+    await studio.setBlockOrder(blockId, { referenceAssetId: asset.id })
+  }
+
+  return (
+    <div className="edit-card__reference">
+      <p className="edit-card__label edit-card__label--sub">참고 그림 (이 블록에만)</p>
+      {url === undefined ? (
+        <p className="edit-card__hint">
+          없음 — 말로 설명하기 어려운 모양은 그림 한 장이 정확합니다.
+        </p>
+      ) : (
+        <div className="edit-card__thumb">
+          <img src={url} alt={`${target.label} 참고 그림`} />
+        </div>
+      )}
+      <div className="edit-card__ref-actions">
+        <button
+          type="button"
+          className="btn"
+          disabled={busy}
+          onClick={() => fileRef.current?.click()}
+        >
+          {order.referenceAssetId === undefined ? '참고 그림 추가' : '교체'}
+        </button>
+        {order.referenceAssetId !== undefined && (
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            onClick={() => void studio.setBlockOrder(blockId, { referenceAssetId: '' })}
+          >
+            제거
+          </button>
+        )}
+      </div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept={IMAGE_ACCEPT}
+        className="block-order__file"
+        aria-label={`${target.label} 참고 그림 파일`}
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) void pick(file)
+          e.target.value = ''
+        }}
+      />
+    </div>
+  )
+}
 
 export function EditPanel() {
   const generation = useImageGeneration()
@@ -27,8 +107,9 @@ export function EditPanel() {
         <h2 className="edit-panel__title">AI 부분수정</h2>
         <p className="edit-panel__hint">
           고칠 대상을 고르고 원하는 바를 문장으로 적어 주세요. 문구·버튼만 고르면 <b>고른 것만</b> 하나씩 새로
-          만들고 나머지는 손대지 않습니다. 이미지·컷아웃이 섞이면 한 장짜리 이미지를 다시 그리는 방식이라 주변이
-          조금 달라질 수 있습니다.
+          만들고 나머지는 손대지 않습니다. 이때 <b>스타일 레퍼런스·완성된 배경·그 자리의 색</b>을 함께 보내므로
+          “배경과 어울리게”가 실제로 통합니다. 이미지·컷아웃이 섞이면 한 장짜리 이미지를 다시 그리는 방식이라
+          주변이 조금 달라질 수 있습니다.
         </p>
       </header>
 
@@ -76,6 +157,7 @@ export function EditPanel() {
             disabled={busy}
             onChange={(e) => generation.setInstructionFor(t.targetId, e.target.value)}
           />
+          <TargetReference target={t} busy={busy} />
           {/* 다듬은 문장은 내 문장을 덮지 않고 그 아래에 놓인다. 어느 대상의
               제안인지 카드가 이미 말하므로 여기서 이름을 다시 붙이지 않는다. */}
           {refine?.proposalFor(t.targetId) != null && (

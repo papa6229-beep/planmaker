@@ -2448,6 +2448,18 @@ button { font-family: inherit; }
 .block-order__actions .btn { flex: 1 1 auto; }
 .block-order__file { display: none; }
 
+/* 부분수정 카드 안의 참고 그림 (부분수정 재료 Patch) */
+.edit-card__reference { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.edit-card__hint { margin: 0; color: var(--color-muted); font-size: 11px; line-height: 1.5; }
+.edit-card__thumb {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+.edit-card__thumb img { display: block; width: 100%; }
+.edit-card__ref-actions { display: flex; gap: 6px; }
+.edit-card__ref-actions .btn { flex: 1 1 auto; }
+
 /* ── 디자인 스타일 레퍼런스 (스타일 레퍼런스 Patch) ─────────────────────── */
 .style-ref {
   display: flex;

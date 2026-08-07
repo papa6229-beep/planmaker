@@ -91,7 +91,7 @@ import { collectCompositeSources } from '../../services/compositeSources'
 import { createId } from '../../domain/factory'
 import type { BriefPage } from '../../domain/pageSchema'
 import type { LayoutRect } from '../../domain/imageLayout'
-import { buildTextEditPrompt } from '../../domain/preserveDesign'
+import { buildTextEditPrompt, planTextEditInputs } from '../../domain/preserveDesign'
 
 /** 중앙 패널이 무엇을 보여 주는가. 참고 이미지 보기와는 아무 관계가 없다. */
 export type StudioCenterView = 'brief' | 'compare'
@@ -146,7 +146,31 @@ interface GenerationPlan {
    * 이 값이 있으면 통이미지를 다시 그리지 않는다. 나가는 것은 그 문구의 지금
    * 디자인 한 장이고, 돌아온 그림은 같은 자리에 갈아 끼워진다.
    */
-  textEdits?: { blockId: string; assetId: string; rect: LayoutRect; content: string; instruction: string; size: string }[]
+  textEdits?: {
+    blockId: string
+    assetId: string
+    rect: LayoutRect
+    content: string
+    instruction: string
+    size: string
+    /** 기획서 화면이 이 문구를 끊는 줄. 고쳐도 줄 수는 그대로다. */
+    lines: readonly string[]
+    /** 이 블록에 붙여 둔 주문·참고 그림 (부분수정 재료 Patch). */
+    blockNote?: string
+    referenceAssetId?: string
+  }[]
+  /**
+   * 부분수정 요청이 함께 볼 것 (부분수정 재료 Patch).
+   *
+   * 첫 생성이 보는 것과 같다 — 페이지 크기, 스타일 레퍼런스, 실제로 깔려 있는
+   * 배경, 사진이 이미 놓인 자리. 이 값이 없으면 예전처럼 지금 그림 한 장만 간다.
+   */
+  textEditContext?: {
+    pageSize: { width: number; height: number }
+    styleReferenceAssetId?: string
+    backgroundAssetId?: string
+    fixed: readonly { rect: LayoutRect }[]
+  }
   /** 이 계획이 외부로 나가는 횟수. 확인창이 이 값을 그대로 말한다. */
   calls: number
 }
@@ -456,7 +480,12 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       if (plan.kind === 'edit') {
         // 편집은 지금 이미지를 다시 보내는 일이다. 모델은 지난 호출을 기억하지
         // 않으므로, 고칠 대상과 지켜야 할 것을 매번 이 그림과 함께 보낸다.
-        for (const input of plan.inputs) {
+        //
+        // **넘겨받은 목록을 쓴다** (부분수정 재료 Patch). 앞선 판은 여기서만
+        // `plan.inputs`를 읽었는데, 문구 하나씩 고치는 길은 요청마다 목록이 달라
+        // 계획에 담을 수가 없다 — 그 길의 `plan.inputs`는 빈 배열이었고, 그래서
+        // 고치는 요청은 그림을 **한 장도** 보내지 않은 채 나갔다.
+        for (const input of inputs) {
           const asset = input.assetId === undefined ? undefined : await getAsset(input.assetId)
           if (asset === undefined) continue
           // 이름이 곧 역할이다 — 서버 로그와 검사에서 무엇을 보냈는지 읽힌다.
@@ -583,6 +612,44 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         })
         const blob = await renderComposite(composite, await collectCompositeSources(composite))
         return await analyzeRegions(blob, blocks.map((b) => b.rect), composite.size)
+      } catch {
+        return empty
+      }
+    },
+    [studio, getDocument],
+  )
+
+  /**
+   * 부분수정할 자리 **아래에 실제로 깔려 있는 색**을 잰다 (부분수정 재료 Patch).
+   *
+   * `measureRegions`와 같은 일이지만 재는 자리가 다르다. 저쪽은 아직 만들지 않은
+   * 문구의 자리를 미리 재고, 이쪽은 이미 놓여 있는 문구의 자리를 다시 잰다.
+   *
+   * 외부 호출은 0건이다. 여기서 만든 합성 페이지는 요청에 실리지 않는다 — 나가는
+   * 것은 이 함수가 돌려주는 숫자뿐이다.
+   */
+  const measureEditTones = useCallback(
+    async (pageId: string, rects: readonly LayoutRect[]): Promise<(TextLayerTone | null)[]> => {
+      const empty = rects.map(() => null)
+      if (studio === null || rects.length === 0) return empty
+      const background = studio.backgroundOf(pageId)
+      if (background === undefined) return empty
+      try {
+        const brief = getDocument()
+        const page = brief.pages.find((p) => p.id === pageId)
+        if (page === undefined) return empty
+        const fixed = preserveParts(page, studio.job.productImages, (id) => studio.effectsOf(id).paperCutout).fixed
+        const composite = planLocalComposite({
+          page,
+          background: { assetId: background.assetId, source: background.source },
+          productImages: studio.job.productImages,
+          effects: studio.job.effects ?? {},
+          grain: studio.grain,
+          onlyBlockIds: fixed.map((f) => f.blockId),
+          includeTexts: false,
+        })
+        const blob = await renderComposite(composite, await collectCompositeSources(composite))
+        return await analyzeRegions(blob, rects, composite.size)
       } catch {
         return empty
       }
@@ -1007,24 +1074,38 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         if (plan.textEdits !== undefined && studio !== null) {
           const problems: string[] = []
           let changed = 0
-          for (const edit of plan.textEdits) {
+          const context = plan.textEditContext
+          // 고칠 자리마다 그 아래에 실제로 깔려 있는 색. 외부 호출 0건이다.
+          const tones = await measureEditTones(plan.pageId, plan.textEdits.map((e) => e.rect))
+          for (const [index, edit] of plan.textEdits.entries()) {
             const answer = await requestLayer(
               plan,
               key,
-              [
-                {
-                  index: 1,
-                  role: 'page_layout',
-                  assetId: edit.assetId,
-                  fileName: 'current-text.png',
-                  label: '지금의 문구 디자인 — 이것을 고칩니다.',
-                },
-              ],
+              planTextEditInputs({
+                currentAssetId: edit.assetId,
+                ...(context?.styleReferenceAssetId === undefined
+                  ? {}
+                  : { styleReferenceAssetId: context.styleReferenceAssetId }),
+                ...(context?.backgroundAssetId === undefined
+                  ? {}
+                  : { backgroundAssetId: context.backgroundAssetId }),
+                ...(edit.referenceAssetId === undefined
+                  ? {}
+                  : { blockReferenceAssetId: edit.referenceAssetId }),
+              }),
               buildTextEditPrompt({
                 size: { width: edit.rect.width, height: edit.rect.height },
+                pageSize: context?.pageSize,
                 content: edit.content,
                 instruction: edit.instruction,
                 rect: edit.rect,
+                lines: edit.lines,
+                tone: tones[index] ?? null,
+                styleReference: context?.styleReferenceAssetId !== undefined,
+                background: context?.backgroundAssetId !== undefined,
+                blockReference: edit.referenceAssetId !== undefined,
+                blockNote: edit.blockNote,
+                fixed: context?.fixed,
               }),
               edit.size,
             )
@@ -1158,7 +1239,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         runningRef.current = false
       }
     },
-    [requestLayer, finishFromPaid, studio, getDocument, recomposePage, storePlate, measureRegions, drawTextLayer, platePrompt],
+    [requestLayer, finishFromPaid, studio, getDocument, recomposePage, storePlate, measureRegions, measureEditTones, drawTextLayer, platePrompt],
   )
 
   const confirm = useCallback(
@@ -1246,18 +1327,36 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       object: objects.find((o) => o.blockId === item.target.blockId),
     }))
     if (picked.length > 0 && picked.every((p) => p.object !== undefined)) {
+      // 첫 생성이 보는 것을 그대로 챙긴다 (부분수정 재료 Patch). 새로 계산할 것이
+      // 없다 — 스타일 레퍼런스도, 배경도, 블록 주문도 이미 저장되어 있다.
+      const pageSize = { width: page.canvasWidth, height: page.canvasHeight }
+      const styleRefId = studio.styleReferenceOf(currentResult.pageId)
+      const background = studio.backgroundOf(currentResult.pageId)
+      const fixed = preserveParts(page, studio.job.productImages, (id) => studio.effectsOf(id).paperCutout).fixed
+
       const textEdits = picked.map(({ item, object }) => {
         const canvas = textLayerCanvas(object!.rect)
         const resolved = resolveGptImageSize(canvas.width, canvas.height)
+        const content = item.target.content ?? ''
+        const block = page.blocks.find((b) => b.id === object!.blockId)
+        const order = studio.blockOrderOf(object!.blockId)
+        const note = (order.note ?? '').trim()
         return {
           blockId: object!.blockId,
           assetId: object!.assetId,
           rect: object!.rect,
-          content: item.target.content ?? '',
+          content,
           instruction: item.instruction,
           size: resolved.ok ? resolved.size : size.size,
+          // 자리와 크기가 그대로이므로 줄 나눔도 그대로다. 기획서 화면이 끊는
+          // 그 줄을 다시 보낸다 — 고치다가 한 줄이 두 줄이 되지 않게.
+          lines:
+            block === undefined ? [] : planLines(content, block.position, drawsBareText(block)),
+          ...(note.length === 0 ? {} : { blockNote: note }),
+          ...(order.referenceAssetId === undefined ? {} : { referenceAssetId: order.referenceAssetId }),
         }
       })
+      const first = textEdits[0]!
       return {
         plan: {
           kind: 'edit',
@@ -1267,16 +1366,29 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           calls: textEdits.length,
           pageId: currentResult.pageId,
           prompt: buildTextEditPrompt({
-            size: { width: page.canvasWidth, height: page.canvasHeight },
-            content: textEdits[0]!.content,
-            instruction: textEdits[0]!.instruction,
-            rect: textEdits[0]!.rect,
+            size: { width: first.rect.width, height: first.rect.height },
+            pageSize,
+            content: first.content,
+            instruction: first.instruction,
+            rect: first.rect,
+            lines: first.lines,
+            styleReference: styleRefId !== undefined,
+            background: background !== undefined,
+            blockReference: first.referenceAssetId !== undefined,
+            blockNote: first.blockNote,
+            fixed,
           }),
           size: size.size,
           working,
           inputs: [],
           fingerprint: currentResult.sourceFingerprint,
           textEdits,
+          textEditContext: {
+            pageSize,
+            ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
+            ...(background === undefined ? {} : { backgroundAssetId: background.assetId }),
+            fixed: fixed.map((f) => ({ rect: f.rect })),
+          },
         },
       }
     }
