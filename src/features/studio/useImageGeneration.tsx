@@ -47,6 +47,7 @@ import {
   planPlateInputs,
   planTextLayerInputs,
   type FixedObject,
+  type FixedTone,
   type PlateInput,
   type PreserveTextEntry,
 } from '../../domain/preserveDesign'
@@ -62,6 +63,7 @@ import { removeKeyBackground } from '../../services/textLayerKey'
 import { sliceTextLayer } from '../../services/textLayerSplit'
 import { trimToContent } from '../../services/trimToContent'
 import { analyzeRegions } from '../../services/regionTone'
+import { analyzeImageBlob } from '../../services/imageAnalysisRunner'
 import type { StudioTextObject } from '../../domain/textObjects'
 import { planLocalComposite } from '../../domain/composite'
 import { getBlockTypeMeta } from '../../domain/blockTypes'
@@ -127,6 +129,13 @@ interface GenerationPlan {
    * 그 위 자리별 색을 인용하기 때문이다. 둘 다 첫 번째 그림을 받은 뒤에야
    * 손에 들어온다.
    */
+  /**
+   * 배경 주문의 재료 (배경 색맞춤 Patch).
+   *
+   * 프롬프트를 계획에서 굳히지 않는 이유는, 그 주문이 **그 자리에 놓일 사진의
+   * 색**을 인용하기 때문이다. 색은 자산을 읽어야 나오고 그것은 비동기다.
+   */
+  plate?: PlateInput
   textBlocks?: TextLayerBlock[]
   /** 블록 id → 그 문구를 주문할 판 크기. 블록과 같은 모양이다 (2차 Patch). */
   textSizes?: Record<string, string>
@@ -335,7 +344,10 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         fixed: parts.fixed,
         ...(note.length === 0 ? {} : { note }),
       }
-      const plate: PlateInput = shared
+      const plate: PlateInput = {
+        ...shared,
+        ...(studio.keepReferenceBackgroundOf(page.id) ? { keepReferenceBackground: true } : {}),
+      }
       // 문구·버튼은 **블록마다 한 장**이다 (블록별 문구 Patch). 한 장을 받아
       // 나중에 가르는 자리가 아예 없으므로, 두 문구가 섞이거나 한 문구가
       // 쪼개질 길이 없다.
@@ -380,6 +392,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           working,
           inputs: plateInputs,
           fingerprint,
+          plate,
           ...(textBlocks.length === 0 ? {} : { textBlocks, textSizes }),
           // 배경 한 번 + 문구·버튼 하나당 한 번. 확인창이 이 수를 그대로 말한다.
           calls: 1 + textBlocks.length,
@@ -930,12 +943,49 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     [collectImages],
   )
 
+  /**
+   * 배경 주문을 요청 직전에 마무리한다 (배경 색맞춤 Patch).
+   *
+   * 그 자리에 놓일 사진이 어떤 색인지 브라우저가 읽어 주문에 얹는다. 배경이
+   * 지금까지 그 자리에 무엇이 놓일지 모르는 채로 만들어지던 자리다. 나가는 것은
+   * 숫자뿐이고, 그림은 여전히 나가지 않는다. 외부 호출은 0건이다.
+   */
+  const platePrompt = useCallback(async (plan: GenerationPlan): Promise<string> => {
+    const plate = plan.plate
+    if (plate === undefined || plate.fixed.length === 0) return plan.prompt
+    try {
+      const toned: FixedTone[] = []
+      const kept: (typeof plate.fixed)[number][] = []
+      for (const item of plate.fixed) {
+        const asset = await getAsset(item.assetId)
+        const analysis = asset === undefined ? null : await analyzeImageBlob(asset.blob)
+        kept.push(item)
+        if (analysis === null) continue
+        toned[kept.length - 1] = {
+          palette: analysis.palette.map((p) => p.hex),
+          average: analysis.average,
+          brightness: analysis.brightness,
+          contrast: analysis.contrast,
+          saturation: analysis.saturation,
+          temperature: analysis.temperature,
+        }
+      }
+      return buildPlatePrompt({
+        ...plate,
+        fixed: kept.map((item, i) => ({ ...item, tone: toned[i] ?? null })),
+      })
+    } catch {
+      // 색을 못 읽는 것이 배경을 못 만드는 이유는 아니다. 계획의 주문 그대로 간다.
+      return plan.prompt
+    }
+  }, [])
+
   const run = useCallback(
     async (plan: GenerationPlan, key: string) => {
       runningRef.current = true
       setState({ kind: 'running' })
       try {
-        const first = await requestLayer(plan, key, plan.inputs, plan.prompt)
+        const first = await requestLayer(plan, key, plan.inputs, await platePrompt(plan))
         if (!('blob' in first)) {
           setState({ kind: 'failed', message: errorTextFor(first.code) })
           return
@@ -1058,7 +1108,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         runningRef.current = false
       }
     },
-    [requestLayer, finishFromPaid, studio, getDocument, recomposePage, storePlate, measureRegions, drawTextLayer],
+    [requestLayer, finishFromPaid, studio, getDocument, recomposePage, storePlate, measureRegions, drawTextLayer, platePrompt],
   )
 
   const confirm = useCallback(

@@ -36,6 +36,8 @@ import {
   withStyleReference,
   withoutStyleReference,
   styleReferenceOf,
+  keepReferenceBgOf,
+  withKeepReferenceBg,
   imageObjectsOf,
   withImageObject,
   withImageObjects,
@@ -96,6 +98,14 @@ export interface StudioJobApi {
   styleReferenceOf: (pageId: string) => string | undefined
   setStyleReference: (pageId: string, assetId: string) => Promise<void>
   removeStyleReference: (pageId: string) => Promise<void>
+  /**
+   * 레퍼런스의 배경 구성을 그대로 살릴 것인가 (배경 색맞춤 Patch).
+   *
+   * 꺼 두면 지금까지처럼 색감과 결만 참고한다. 어느 쪽이든 레퍼런스를 그대로
+   * 복제하라는 뜻은 아니다.
+   */
+  keepReferenceBackgroundOf: (pageId: string) => boolean
+  setKeepReferenceBackground: (pageId: string, keep: boolean) => Promise<void>
   /** 이미지별 합성 효과 세기 (§9). 원본 자산은 건드리지 않는다. */
   effectsOf: (blockId: string) => CompositeEffects
   setEffects: (blockId: string, patch: Partial<CompositeEffects>) => void
@@ -346,6 +356,9 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       styleReferenceOf: (pageId) => styleReferenceOf(job, pageId),
       setStyleReference: (pageId, assetId) => mutate((j) => withStyleReference(j, pageId, assetId, Date.now())),
       removeStyleReference: (pageId) => mutate((j) => withoutStyleReference(j, pageId, Date.now())),
+      keepReferenceBackgroundOf: (pageId) => keepReferenceBgOf(job, pageId),
+      setKeepReferenceBackground: (pageId, keep) =>
+        mutate((j) => withKeepReferenceBg(j, pageId, keep, Date.now())),
       effectsOf: (blockId) => blockEffectsOf(job, blockId),
       setEffects: (blockId, patch) => void mutate((j) => withBlockEffects(j, blockId, patch, Date.now())),
       copyEffects: (from, to) => {

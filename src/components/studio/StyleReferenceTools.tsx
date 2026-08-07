@@ -71,6 +71,22 @@ export function StyleReferenceTools() {
         )}
       </div>
 
+      {/* 레퍼런스가 있을 때만 묻는다 — 없는 레퍼런스의 배경을 살릴 수는 없다.
+          기본은 꺼짐: 색감과 결만 참고하고 구성은 새로 잡는다 (배경 색맞춤 Patch). */}
+      {assetId !== undefined && (
+        <label className="style-ref__keep">
+          <input
+            type="checkbox"
+            checked={studio.keepReferenceBackgroundOf(activePageId)}
+            onChange={(e) => void studio.setKeepReferenceBackground(activePageId, e.target.checked)}
+          />
+          <span>
+            이 레퍼런스의 <b>배경 구성까지</b> 살리기
+            <small>꺼 두면 색감·질감만 참고합니다.</small>
+          </span>
+        </label>
+      )}
+
       <input
         ref={fileRef}
         type="file"

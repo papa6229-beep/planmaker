@@ -56,6 +56,29 @@ export interface FixedObject {
   rect: LayoutRect
   layer: number
   cutout: boolean
+  /**
+   * 이 사진이 어떤 색인가 — **숫자뿐이다** (배경 색맞춤 Patch).
+   *
+   * 배경은 지금까지 그 자리에 무엇이 놓일지 모르는 채로 만들어졌다. 어울리는
+   * 배경이 나올 근거가 없었다는 뜻이다. 그림은 여전히 나가지 않고, 브라우저가
+   * 읽은 이 값만 나간다.
+   */
+  tone?: FixedTone | null
+}
+
+/** 사진 한 장에서 읽은 색. `imageAnalysis`가 재는 값의 일부다. */
+export interface FixedTone {
+  /** 많이 쓰인 순서의 대표색 (소문자 16진수). */
+  palette: readonly string[]
+  average: { r: number; g: number; b: number }
+  /** 0=어두움, 1=밝음. */
+  brightness: number
+  /** 0=평평함, 1=명암 차가 큼. */
+  contrast: number
+  /** 0=무채색, 1=쨍함. */
+  saturation: number
+  /** -1=차가움, +1=따뜻함. */
+  temperature: number
 }
 
 /** 플레이트에서 읽은 색 — 숫자뿐이다. 그림은 다음 요청에 실리지 않는다. */
@@ -72,6 +95,14 @@ export interface PlateInput {
   fixed: readonly FixedObject[]
   /** 작업자가 추가로 적은 말. */
   note?: string
+  /**
+   * 레퍼런스의 **배경 구성 자체**를 최대한 살릴 것인가 (배경 색맞춤 Patch).
+   *
+   * 기본은 거짓 — 색감과 결만 참고하고 구성은 새로 잡는다. 참이면 같은 배경을
+   * 다시 만들어 달라고 말한다. 어느 쪽이든 레퍼런스를 그대로 복제하라는 뜻은
+   * 아니다.
+   */
+  keepReferenceBackground?: boolean
 }
 
 /**
@@ -180,18 +211,34 @@ export function buildPlatePrompt(input: PlateInput): string {
 
   if (fixed.length > 0) {
     lines.push('', '## 비워 둘 자리 (나중에 실물 사진이 그대로 놓입니다)')
-    for (const item of fixed) lines.push(`- ${region(item.rect, size)}`)
+    for (const item of fixed) {
+      lines.push(`- ${item.cutout ? '오려 붙인 컷아웃' : '사진'} · ${region(item.rect, size)}`)
+      // 그림은 나가지 않는다. 브라우저가 읽은 숫자만 간다 — 그래야 배경이 그
+      // 자리에 무엇이 놓일지 알고도, 원본은 밖으로 나가지 않는다.
+      if (item.tone == null) continue
+      const tone = item.tone
+      lines.push(
+        `  그 자리에 놓일 것의 색: 대표색 ${tone.palette.slice(0, 4).join(' ')} · 평균색 R${String(Math.round(tone.average.r))} G${String(Math.round(tone.average.g))} B${String(Math.round(tone.average.b))}`,
+        `  밝기 ${tone.brightness.toFixed(2)} · 대비 ${tone.contrast.toFixed(2)} · 채도 ${tone.saturation.toFixed(2)} · 색온도 ${tone.temperature.toFixed(2)} (-1 차가움, +1 따뜻함)`,
+      )
+    }
     lines.push(
       '이 자리에 **인물·제품·로고·실루엣을 새로 만들지 않습니다.**',
       '흰 패널, 흰 카드, 액자, 테두리 상자, 빈 사각형처럼 "자리를 표시하는 판"도 만들지 않습니다.',
       '배경과 장식이 그 자리를 자연스럽게 지나가게만 해 주세요. 그 위에 실제 사진이 놓입니다.',
+      '',
+      '위에 적은 색은 **그 자리에 실제로 놓일 사진의 색**입니다. 그 사진이 배경 위에서 살도록,',
+      '같은 색으로 묻히지 않게 하고 인접한 자리의 색·밝기·대비를 잡아 주세요.',
+      '오려 붙인 컷아웃은 흰 종이 테두리를 두르고 놓이므로, 그 둘레가 배경과 붙지 않게 해 주세요.',
     )
   }
 
   lines.push(
     '',
     '## 스타일 레퍼런스에 대하여',
-    '색감·질감·그래픽 언어를 참고하기 위한 자료입니다. 같은 이미지를 복제하지 않습니다.',
+    input.keepReferenceBackground === true
+      ? '이 레퍼런스의 **배경 구성을 최대한 그대로 살려** 주세요 — 같은 색, 같은 질감, 같은 장식의 결로. 다만 위의 "비워 둘 자리"는 지켜 주세요.'
+      : '색감·질감·그래픽 언어를 참고하기 위한 자료입니다. 같은 이미지를 복제하지 않습니다.',
   )
 
   const trimmed = (note ?? '').trim()

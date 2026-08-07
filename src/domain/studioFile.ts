@@ -33,10 +33,10 @@ import type { StudioTextObject } from './textObjects'
  * 예전 빌드는 "읽을 수 없다"고 분명히 말한다. 잃는 것이 같다면 소리 내는 쪽이
  * 낫다 (§12 마지막 줄).
  */
-export const STUDIO_FILE_VERSION = '0.7.0'
+export const STUDIO_FILE_VERSION = '0.8.0'
 
 /** 이 판이 **읽을 수 있는** 버전. 예전 파일은 그대로 열린다. */
-export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0', '0.4.0', '0.5.0', '0.6.0', '0.7.0']
+export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0', '0.4.0', '0.5.0', '0.6.0', '0.7.0', '0.8.0']
 
 /** 파일이 기억하는 "이 작업이 어느 원본에서 시작했는가". */
 export interface StudioFileSource {
@@ -66,6 +66,8 @@ export interface StudioFileState {
   textObjects?: Record<string, StudioTextObject[]>
   /** 페이지 id → 이미지 편집 오브젝트 (0.7.0). */
   imageObjects?: Record<string, StudioTextObject[]>
+  /** 페이지 id → 레퍼런스 배경을 그대로 살릴 것인가 (0.8.0). */
+  keepReferenceBg?: Record<string, boolean>
 }
 
 /** 지금 작업에서 파일에 남길 것만 추린다. */
@@ -87,6 +89,7 @@ export function toStudioFileState(job: StudioJob): StudioFileState {
     styleRefs: { ...job.styleRefs },
     textObjects: { ...job.textObjects },
     imageObjects: { ...job.imageObjects },
+    keepReferenceBg: { ...job.keepReferenceBg },
     ...(job.grain === undefined ? {} : { grain: job.grain }),
     ...(job.method === undefined ? {} : { method: job.method }),
   }
@@ -168,6 +171,14 @@ function readTextObjects(raw: unknown): Record<string, StudioTextObject[]> {
     }
     out[pageId] = kept
   }
+  return out
+}
+
+/** 페이지별 참·거짓 스위치. 참인 것만 남긴다 — 모르는 값은 꺼진 것으로 읽는다. */
+function readFlags(raw: unknown): Record<string, boolean> {
+  if (!isRecord(raw)) return {}
+  const out: Record<string, boolean> = {}
+  for (const [pageId, value] of Object.entries(raw)) if (value === true) out[pageId] = true
   return out
 }
 
@@ -254,6 +265,7 @@ export function parseStudioFileState(raw: unknown): StudioFileState | null {
     styleRefs,
     textObjects: readTextObjects(raw.textObjects),
     imageObjects: readTextObjects(raw.imageObjects),
+    keepReferenceBg: readFlags(raw.keepReferenceBg),
     effects: readEffects(raw.effects),
     ...(typeof raw.grain === 'number' ? { grain: Math.min(1, Math.max(0, raw.grain)) } : {}),
     ...(raw.method === 'background_composite' || raw.method === 'full_ai' ? { method: raw.method } : {}),

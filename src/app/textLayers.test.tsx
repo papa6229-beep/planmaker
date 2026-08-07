@@ -53,7 +53,17 @@ vi.mock('../services/paperCutoutShape', () => ({
 }))
 vi.mock('../services/imageAnalysisRunner', () => ({
   ANALYSIS_MAX_SIDE: 256,
-  analyzeImageBlob: async () => null,
+  analyzeImageBlob: async () => ({
+    palette: [{ hex: '#f2c9d8', share: 0.5 }, { hex: '#3a2b2f', share: 0.3 }],
+    average: { r: 210, g: 170, b: 185 },
+    brightness: 0.72,
+    contrast: 0.48,
+    saturation: 0.31,
+    temperature: 0.26,
+    opaqueRatio: 0.6,
+    bounds: { x: 0, y: 0, width: 10, height: 10 },
+    light: { x: 0, y: 0, confidence: 'low' },
+  }),
 }))
 vi.mock('../services/textLayerKey', () => ({
   removeKeyBackground: async (blob: Blob) => ({ blob, opaqueRatio: 0.2 }),
@@ -551,5 +561,68 @@ describe('§4 이미지와 문구가 한 줄에 선다', () => {
 
     // 순서를 바꾸는 데 외부로 나간 요청은 없다.
     expect(fetchSpy.mock.calls.length).toBe(calls)
+  })
+})
+
+// ── §5 배경이 사진 색을 알고 만들어진다 ──────────────────────────────────────
+
+describe('§5 배경 주문이 그 자리에 놓일 사진의 색을 안다', () => {
+  it('색은 숫자로만 실리고, 그림·자산 번호는 나가지 않는다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    const plate = promptOf(bodies()[0]!)
+    // 그 자리에 무엇이 놓이는지, 그리고 어떤 색인지.
+    expect(plate).toContain('오려 붙인 컷아웃')
+    expect(plate).toContain('그 자리에 놓일 것의 색')
+    expect(plate).toContain('#f2c9d8')
+    expect(plate).toContain('R210')
+    expect(plate).toContain('밝기 0.72')
+    expect(plate).toContain('대비 0.48')
+    expect(plate).toContain('채도 0.31')
+    expect(plate).toContain('색온도 0.26')
+    expect(plate).toContain('그 사진이 배경 위에서 살도록')
+
+    // 그림도 자산 번호도 파일명도 나가지 않는다.
+    expect(namesOf(bodies()[0]!)).toEqual([])
+    for (const banned of ['asset_photo', 'asset_cut', '.png', 'data:', 'base64']) {
+      expect(plate).not.toContain(banned)
+    }
+    // 배경을 만드는 데 든 호출은 여전히 한 번이다.
+    expect(fetchSpy).toHaveBeenCalledTimes(CALLS)
+  })
+
+  it('레퍼런스 배경 그대로 스위치가 주문을 바꾸고, 작업 파일에 남는다', async () => {
+    const { buildPlatePrompt } = await load('domain/preserveDesign')
+    const fixed = [
+      { blockId: 'b', assetId: 'a', rect: PHOTO_RECT, layer: 0, cutout: false },
+    ]
+    const size = { width: 840, height: 1200 }
+
+    const off = buildPlatePrompt({ size, styleReferenceAssetId: 'asset_style', fixed })
+    expect(off).toContain('복제하지 않습니다')
+    expect(off).not.toContain('배경 구성을 최대한 그대로')
+
+    const on = buildPlatePrompt({ size, styleReferenceAssetId: 'asset_style', fixed, keepReferenceBackground: true })
+    expect(on).toContain('배경 구성을 최대한 그대로')
+    // 켜더라도 비워 둘 자리는 여전히 지킨다.
+    expect(on).toContain('비워 둘 자리')
+
+    // 작업 파일 왕복에서 스위치가 남는다.
+    const mod = await load('domain/studioFile')
+    const studioJob = await load('domain/studioJob')
+    const job = studioJob.withKeepReferenceBg(
+      createStudioJob(sampleDoc(), 1_000, STUDIO_JOB_ID),
+      'page_1',
+      true,
+      2_000,
+    )
+    const parsed = mod.parseStudioFileState(JSON.parse(JSON.stringify(mod.toStudioFileState(job))))
+    expect(parsed?.keepReferenceBg?.page_1).toBe(true)
+    // 예전 파일에는 없다 — 없으면 꺼진 것으로 읽는다.
+    const old = mod.parseStudioFileState({ version: '0.7.0', source: null, productImages: {} })
+    expect(old?.keepReferenceBg ?? {}).toEqual({})
   })
 })

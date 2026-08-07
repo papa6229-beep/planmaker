@@ -118,6 +118,12 @@ export interface StudioJob {
    * 일이 기획서를 고친 일이 되면 안 된다.
    */
   imageObjects?: Record<string, StudioTextObject[]>
+  /**
+   * 페이지 id → 레퍼런스의 배경 구성을 그대로 살릴 것인가 (배경 색맞춤 Patch).
+   *
+   * 없거나 거짓이면 지금까지처럼 색감과 결만 참고한다.
+   */
+  keepReferenceBg?: Record<string, boolean>
   /** 완성 결과 전체에 얹는 그레인 (§9.5). */
   grain?: number
   /** 이 작업이 고른 생성 방식 (§6). */
@@ -426,6 +432,15 @@ export function sourceChanged(job: StudioJob): boolean {
 // ── 꾸며진 문구 오브젝트 (텍스트 오브젝트 Patch §1) ──────────────────────────
 
 /** 이 페이지의 이미지 오브젝트. 없으면 빈 배열 — 예전 판 작업이 그렇다. */
+/** 이 페이지가 레퍼런스 배경을 그대로 살리기로 했는가. */
+export function keepReferenceBgOf(job: StudioJob | null, pageId: string): boolean {
+  return job?.keepReferenceBg?.[pageId] === true
+}
+
+export function withKeepReferenceBg(job: StudioJob, pageId: string, keep: boolean, now: number): StudioJob {
+  return { ...job, keepReferenceBg: { ...job.keepReferenceBg, [pageId]: keep }, updatedAt: now }
+}
+
 export function imageObjectsOf(job: StudioJob | null, pageId: string): StudioTextObject[] {
   return job?.imageObjects?.[pageId] ?? []
 }

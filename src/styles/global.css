@@ -2429,6 +2429,18 @@ button { font-family: inherit; }
 .style-ref__actions { display: flex; gap: 6px; }
 .style-ref__actions .btn { flex: 1 1 auto; }
 .style-ref__file { display: none; }
+.style-ref__keep {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text);
+  cursor: pointer;
+}
+.style-ref__keep input { margin: 2px 0 0; cursor: pointer; }
+.style-ref__keep small { display: block; color: var(--color-muted); font-size: 11px; }
 
 /* ── 결과 위의 편집 오브젝트 (블록 연결 Patch §2) ────────────────────────── */
 .compare__stage { position: relative; display: block; }
