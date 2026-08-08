@@ -159,6 +159,21 @@ export function unspillKeyEdges(
 
   const CLEAR = -1
   const UNSET = -2
+  /**
+   * 이미 정리가 끝난 픽셀인가 (자주색 테두리 Patch 3).
+   *
+   * 알파가 0도 255도 아닌 픽셀은 **이 손질이 이미 지나갔거나** 모델이 일부러
+   * 반투명하게 그린 자리다. 어느 쪽이든 다시 계산할 것이 없다.
+   *
+   * 이 판정이 없으면 누를 때마다 숫자가 달라진다. 캔버스는 알파를 곱해 두었다가
+   * 읽을 때 되나누므로, PNG 로 넣었다 뺄 때마다 반투명 픽셀의 색이 조금씩 흔들린다.
+   * 그 흔들림이 매번 새로운 "고칠 것"으로 읽혀, 손질이 끝나지 않고 그림만 계속
+   * 달라졌다.
+   */
+  const settled = (index: number): boolean => {
+    const a = data[index * 4 + 3] ?? 0
+    return a !== 0 && a !== 255
+  }
   /** 이 픽셀의 원래 색을 어디에 물을 것인가. 아직 모르면 `UNSET`. */
   const source = new Int32Array(total).fill(UNSET)
   const ring = new Int8Array(total)
@@ -189,6 +204,11 @@ export function unspillKeyEdges(
         if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue
         const at = ny * width + nx
         if (source[at] !== UNSET || (data[at * 4 + 3] ?? 0) === 0) continue
+        // 이미 정리된 픽셀은 겹의 벽이 된다 — 표시만 하고 고치지 않는다.
+        if (settled(at)) {
+          source[at] = CLEAR
+          continue
+        }
         source[at] = CLEAR
         ring[at] = step
         edges.push(at)
@@ -213,6 +233,7 @@ export function unspillKeyEdges(
   const outer: number[] = []
   for (let i = 0; i < total; i += 1) {
     if ((data[i * 4 + 3] ?? 0) !== 0) continue
+    if (source[i] !== CLEAR) continue
     const x = i % width
     const y = (i - x) / width
     for (const [dx, dy] of NEIGHBOURS) {

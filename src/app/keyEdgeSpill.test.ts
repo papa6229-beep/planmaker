@@ -234,14 +234,51 @@ describe('§26-2 지워진 자리에 맞닿은 겹만 고친다', () => {
     expect(pixel(s, 4, 4)).toEqual([10, 200, 40, 255])
   })
 
-  it('한 번 더 돌려도 더 깎이지 않는다', () => {
-    // 이미 만든 완성본에 뒤늦게 적용할 수 있으려면, 두 번 걸려도 같은 그림이어야
-    // 한다. 그러지 않으면 다시 합칠 때마다 글자가 조금씩 얇아진다.
+  it('두 번째부터는 고칠 것이 없다 — 눌러도 그림이 달라지지 않는다', () => {
+    /**
+     * 실제로 여기서 샜다. 누를 때마다 "몇만 픽셀을 다듬었다"가 나오는데 화면은
+     * 그대로였다. 손질이 끝나지 않고 그림만 계속 달라지고 있었던 것이다.
+     *
+     * 알파가 0도 255도 아닌 픽셀은 이미 정리가 끝난 자리다. 그 표시를 읽지 않으면,
+     * 캔버스가 알파를 곱했다 되나누며 남기는 미세한 색 흔들림이 매번 새로운
+     * "고칠 것"으로 읽힌다.
+     */
+    const s = whiteBlockOnKey()
+    keyOutBackground(s, KEY)
+    expect(unspillKeyEdges(s, KEY)).toBeGreaterThan(0)
+    const once = [...s.data]
+
+    expect(unspillKeyEdges(s, KEY)).toBe(0)
+    expect([...s.data]).toEqual(once)
+    expect(unspillKeyEdges(s, KEY)).toBe(0)
+  })
+
+  it('색이 조금 흔들려도 정리된 자리는 다시 건드리지 않는다', () => {
+    /**
+     * 앞의 검사만으로는 부족하다. 여기 만든 그림은 PNG 로 나갔다 들어오지 않아
+     * 흔들릴 일이 없고, 실제로 새던 자리는 **그 왕복**이었다. 캔버스는 알파를
+     * 곱해 두었다가 읽을 때 되나누므로 반투명 픽셀일수록 색이 크게 흔들린다.
+     *
+     * 그래서 흔들림을 직접 흉내 낸다. 반투명해진 자리의 색을 몇 칸 밀어 놓고도
+     * 손질이 그 자리를 다시 계산하지 않아야 한다.
+     */
     const s = whiteBlockOnKey()
     keyOutBackground(s, KEY)
     unspillKeyEdges(s, KEY)
-    const once = [...s.data]
-    unspillKeyEdges(s, KEY)
-    expect([...s.data]).toEqual(once)
+
+    let nudged = 0
+    for (let i = 0; i < s.width * s.height; i += 1) {
+      const a = s.data[i * 4 + 3] ?? 0
+      if (a === 0 || a === 255) continue
+      s.data[i * 4] = Math.max(0, (s.data[i * 4] ?? 0) - 4)
+      s.data[i * 4 + 1] = Math.max(0, (s.data[i * 4 + 1] ?? 0) - 6)
+      nudged += 1
+    }
+    expect(nudged).toBeGreaterThan(0)
+
+    const before = [...s.data]
+    // 실패하면 누를 때마다 숫자가 나오고 그림이 계속 달라진다.
+    expect(unspillKeyEdges(s, KEY)).toBe(0)
+    expect([...s.data]).toEqual(before)
   })
 })
