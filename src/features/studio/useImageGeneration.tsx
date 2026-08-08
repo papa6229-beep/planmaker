@@ -236,6 +236,14 @@ export interface ImageGenerationApi {
    * 않고 조각 자체를 고친 뒤 다시 합친다.
    */
   tidyEdges: (pageId: string) => Promise<void>
+  /**
+   * 마지막으로 다듬은 결과. 누르기 전에는 `null`.
+   *
+   * 아무것도 고칠 것이 없을 때 **조용히 끝나던 것**이 이 값을 만든 이유다. 사람은
+   * 눌렀는데 화면이 그대로면 기능이 고장 났다고 읽지, "고칠 것이 없었다"고 읽지
+   * 않는다 — 그 둘은 다른 사실이고 다르게 말해야 한다.
+   */
+  tidyReport: { pieces: number; changed: number; pixels: number } | null
   /** 다듬을 문구 조각이 이 페이지에 있는가. */
   canTidyEdges: boolean
   dismiss: () => void
@@ -377,6 +385,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
    */
   const canTidyEdges =
     studio !== null && hasResult && (studio.job.textObjects?.[activePageId]?.length ?? 0) > 0
+  const [tidyReport, setTidyReport] = useState<{ pieces: number; changed: number; pixels: number } | null>(null)
 
   /** 지금 화면에서 무엇을 보낼지 계산한다. 막을 이유가 있으면 그것을 돌려준다. */
   const planNow = useCallback((): { plan: GenerationPlan } | { blocked: string } => {
@@ -1160,9 +1169,11 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       if (studio === null) return
       const objects = studio.currentJob().textObjects?.[pageId] ?? []
       if (objects.length === 0) return
+      setTidyReport(null)
       setState({ kind: 'running' })
       try {
         let changed = 0
+        let pixels = 0
         for (const object of objects) {
           // 조각마다 따로 감싼다. 한 조각을 읽지 못했다고 나머지까지 손대지 않고
           // 끝내면, 사람은 눌렀는데 대부분이 그대로인 화면을 보게 된다.
@@ -1172,8 +1183,9 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             const cleaned = await cleanKeyEdges(stored.blob)
             // `null`은 고칠 것이 없었다는 뜻이다. 같은 그림을 다시 쓰지 않는다.
             if (cleaned === null) continue
-            await putAsset({ ...stored, blob: cleaned, byteSize: cleaned.size })
+            await putAsset({ ...stored, blob: cleaned.blob, byteSize: cleaned.blob.size })
             changed += 1
+            pixels += cleaned.pixels
           } catch {
             // 이 조각은 그대로 둔다.
           }
@@ -1181,6 +1193,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         // 한 조각도 달라지지 않았으면 다시 합칠 이유가 없다 — 합치면 결과 그림만
         // 새로 쓰이고 화면은 똑같다.
         if (changed > 0) await recomposePage(pageId)
+        setTidyReport({ pieces: objects.length, changed, pixels })
         setState({ kind: 'idle' })
       } catch {
         setState({ kind: 'failed', message: errorTextFor('save_failed') })
@@ -1743,6 +1756,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             canRebuild,
             tidyEdges,
             canTidyEdges,
+            tidyReport,
             editTargets,
             selectedTargetIds,
             toggleTarget,
@@ -1763,7 +1777,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           },
     [
       studio, state, hasResult, hasKey, view, begin, confirm, retryConversion, recomposePage,
-      rebuildPage, canRebuild, tidyEdges, canTidyEdges,
+      rebuildPage, canRebuild, tidyEdges, canTidyEdges, tidyReport,
       editTargets, selectedTargetIds, toggleTarget, instructionFor, setInstructionFor,
       canEdit, editBlockedReason, beginEdit, confirmEdit,
       revisions.length, cursor, canGoPrevious, canGoNext, goTo,

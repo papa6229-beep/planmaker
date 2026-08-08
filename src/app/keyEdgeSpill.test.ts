@@ -22,8 +22,8 @@
 
 import { describe, it, expect } from 'vitest'
 import {
+  keyEdgeAlpha,
   keyOutBackground,
-  unmixFromKey,
   unspillKeyEdges,
   KEY_EDGE_DEPTH,
   TEXT_KEY_COLOR,
@@ -70,29 +70,26 @@ function pixel(s: Sheet, x: number, y: number): [number, number, number, number]
   return [s.data[at]!, s.data[at + 1]!, s.data[at + 2]!, s.data[at + 3]!]
 }
 
-describe('§26-1 섞인 색을 되돌리는 계산', () => {
-  it('흰색과 마젠타의 섞임은 정확히 흰색으로 풀린다', () => {
-    // 이 줄이 문제의 핵심이다. 반쯤 섞인 (255,128,255)는 지금 화면에 남는 그
-    // 진분홍이고, 되돌리면 덮인 만큼의 투명도를 지닌 **흰색**이어야 한다.
-    for (const t of [0.25, 0.5, 0.75, 0.9]) {
-      const out = unmixFromKey(mixed([255, 255, 255], t), KEY)
-      expect(out.alpha).toBeCloseTo(t, 2)
-      expect([out.r, out.g, out.b]).toEqual([255, 255, 255])
+describe('§26-1 섞인 정도를 안쪽 색에 견주어 잰다', () => {
+  it('어떤 색이든 섞인 만큼이 그대로 나온다', () => {
+    // 원래 색을 알면 나눗셈 한 번이다. 흰색만이 아니라 **색 있는 글자에서도**
+    // 맞아야 한다 — 앞선 판이 무너진 자리가 여기였다.
+    for (const fg of [[255, 255, 255], [0, 0, 0], [247, 120, 150], [40, 160, 220]] as [number, number, number][]) {
+      for (const t of [0.25, 0.5, 0.75]) {
+        const alpha = keyEdgeAlpha(mixed(fg, t), { r: fg[0], g: fg[1], b: fg[2] }, KEY)
+        expect(alpha).toBeCloseTo(t, 1)
+      }
     }
   })
 
-  it('어두운 글자도 제 색으로 풀린다', () => {
-    const out = unmixFromKey(mixed([0, 0, 0], 0.5), KEY)
-    expect(out.alpha).toBeCloseTo(0.5, 2)
-    expect([out.r, out.g, out.b]).toEqual([0, 0, 0])
+  it('키 색 자체는 0, 안 섞인 색은 1', () => {
+    expect(keyEdgeAlpha({ r: 255, g: 0, b: 255 }, { r: 255, g: 255, b: 255 }, KEY)).toBe(0)
+    expect(keyEdgeAlpha({ r: 255, g: 255, b: 255 }, { r: 255, g: 255, b: 255 }, KEY)).toBe(1)
   })
 
-  it('키 색 자체는 완전히 투명해지고, 키가 섞이지 않은 색은 그대로다', () => {
-    expect(unmixFromKey({ r: 255, g: 0, b: 255 }, KEY).alpha).toBe(0)
-    // 순수 초록은 마젠타의 어느 채널과도 겹치지 않는다 — 손댈 것이 없다.
-    const green = unmixFromKey({ r: 0, g: 255, b: 0 }, KEY)
-    expect(green.alpha).toBe(1)
-    expect([green.r, green.g, green.b]).toEqual([0, 255, 0])
+  it('안쪽 색이 키 색과 구별되지 않으면 손대지 않는다', () => {
+    // 나눌 수가 없다. 지어내는 대신 그대로 둔다.
+    expect(keyEdgeAlpha({ r: 255, g: 10, b: 255 }, { r: 255, g: 0, b: 255 }, KEY)).toBe(1)
   })
 })
 
@@ -134,6 +131,42 @@ describe('§26-2 지워진 자리에 맞닿은 겹만 고친다', () => {
     const [r, g, b, a] = pixel(s, 10, 4)
     expect([r, g, b]).toEqual([255, 255, 255])
     expect(a).toBeCloseTo(128, -1)
+  })
+
+  it('색 있는 글자도 제 색으로 풀린다 — 흰색만 맞던 자리다', () => {
+    /**
+     * 분홍 사각형의 가장자리. 앞선 판은 원래 색을 모르는 채 풀어서 이 자리를
+     * 연두색으로 만들었다. 안쪽 색을 물어보면 분홍 그대로다.
+     *
+     * 섞임을 0.75로 잡은 데는 이유가 있다. 분홍은 마젠타와 가까워서 반쯤 섞이면
+     * 허용치 안에 들어 **지워져 버린다** — 남아서 띠가 되는 것은 더 진하게 덮인
+     * 쪽뿐이다. 흰색이 유독 문제였던 까닭이 여기서도 보인다.
+     */
+    const pink: [number, number, number] = [247, 120, 150]
+    const s = sheet(20, 20, [255, 0, 255])
+    for (let y = 5; y < 15; y += 1) {
+      for (let x = 5; x < 15; x += 1) put(s, x, y, { r: pink[0], g: pink[1], b: pink[2] })
+    }
+    for (let i = 4; i <= 15; i += 1) {
+      for (const [x, y] of [[i, 4], [i, 15], [4, i], [15, i]] as [number, number][]) {
+        put(s, x, y, mixed(pink, 0.75))
+      }
+    }
+    keyOutBackground(s, KEY)
+    unspillKeyEdges(s, KEY)
+
+    const [r, g, b, a] = pixel(s, 10, 4)
+    expect([r, g, b]).toEqual(pink)
+    expect(a).toBeCloseTo(191, -1)
+  })
+
+  it('물어볼 안쪽이 없는 얇은 획은 그대로 둔다', () => {
+    // 겹 두께보다 얇으면 전부가 가장자리다. 지어내는 대신 손대지 않는다.
+    const s = sheet(9, 9, [255, 0, 255])
+    for (let x = 1; x < 8; x += 1) put(s, x, 4, { r: 255, g: 255, b: 255 })
+    keyOutBackground(s, KEY)
+    expect(unspillKeyEdges(s, KEY)).toBe(0)
+    expect(pixel(s, 4, 4)).toEqual([255, 255, 255, 255])
   })
 
   it('글자 속은 건드리지 않는다 — 디자인이 쓴 분홍이 살아남는다', () => {

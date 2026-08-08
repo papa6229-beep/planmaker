@@ -91,45 +91,31 @@ export function keyOutBackground(
 }
 
 /**
- * 한 픽셀이 키 색과 섞였다면, 얼마나 섞였는가 (자주색 테두리 Patch).
+ * 가장자리 픽셀이 얼마나 글자에 덮였는가 (자주색 테두리 Patch).
  *
- * 가장자리 픽셀은 `C = α·F + (1−α)·K` 한 번의 섞임이다 — `F`는 원래 색, `K`는 키
- * 색, `α`는 글자가 덮은 정도. 우리는 `C`와 `K`를 알고 `F`와 `α`를 모른다.
+ * 가장자리는 `C = α·F + (1−α)·K` 한 번의 섞임이다 — `F`는 원래 색, `K`는 키 색.
+ * 그래서 `C`가 `K`에서 떨어진 거리는 `F`가 떨어진 거리의 **정확히 α배**다. 원래
+ * 색을 알면 나눗셈 한 번으로 α가 나온다.
  *
- * 그런데 `F`의 각 채널이 0~255 안에 있어야 한다는 사실만으로 `α`의 **아래 한계**가
- * 나온다. 그 한계를 그대로 답으로 쓰면, 되돌린 `F`는 채널 하나가 정확히 0이나
- * 255에 닿는 색이 된다 — 즉 "키 색이 조금도 남지 않은" 가장 순한 색이다.
+ * 원래 색을 어떻게 아는가가 요점이다. 앞선 판은 그것을 몰라도 되는 방법을 썼다 —
+ * `F`의 각 채널이 0~255여야 한다는 조건만으로 α의 아래 한계를 구하는 것. 흰
+ * 글자에서는 정확했지만 **색 있는 글자에서 무너졌다.** 분홍 글자의 가장자리가
+ * 연두색으로 풀렸다. 조건이 주는 한계는 "키가 조금도 안 남은 가장 순한 색"이고,
+ * 그 색이 원래 색이라는 보장은 어디에도 없기 때문이다.
  *
- * 마젠타 키(255,0,255)와 흰 글자에서 이것이 정확히 맞아떨어진다. 반쯤 섞인
- * `(255,128,255)`는 `α=0.5`, `F=흰색`으로 풀린다 — 지금 화면에 남는 그 분홍 띠가
- * **연한 흰색 가장자리**가 된다.
+ * 그래서 원래 색을 **이웃에게 묻는다**. 가장자리 바로 안쪽의 픽셀은 배경과 섞이지
+ * 않았고, 외곽선이든 글자든 그 가장자리는 바로 그 색의 가장자리다.
  */
-export function unmixFromKey(
+export function keyEdgeAlpha(
   color: { r: number; g: number; b: number },
+  foreground: { r: number; g: number; b: number },
   key: KeyColor,
-): { r: number; g: number; b: number; alpha: number } {
-  const channels: [number, number][] = [
-    [color.r, key.r],
-    [color.g, key.g],
-    [color.b, key.b],
-  ]
-  let alpha = 0
-  for (const [c, k] of channels) {
-    // F ≥ 0 이려면
-    if (k > 0) alpha = Math.max(alpha, 1 - c / k)
-    // F ≤ 255 이려면
-    if (k < 255) alpha = Math.max(alpha, (c - k) / (255 - k))
-  }
-  alpha = Math.min(1, Math.max(0, alpha))
-  if (alpha <= 0) return { r: 0, g: 0, b: 0, alpha: 0 }
-  const back = ([c, k]: [number, number]): number =>
-    Math.min(255, Math.max(0, Math.round((c - (1 - alpha) * k) / alpha)))
-  return {
-    r: back(channels[0]!),
-    g: back(channels[1]!),
-    b: back(channels[2]!),
-    alpha,
-  }
+): number {
+  const span = Math.hypot(foreground.r - key.r, foreground.g - key.g, foreground.b - key.b)
+  // 안쪽 색 자체가 키 색과 구별되지 않으면 나눌 수가 없다. 손대지 않는다.
+  if (span < 1) return 1
+  const reach = Math.hypot(color.r - key.r, color.g - key.g, color.b - key.b)
+  return Math.min(1, Math.max(0, reach / span))
 }
 
 /** 네 이웃. 대각선까지 세면 겹이 뭉툭해져 글자가 굵기를 잃는다. */
@@ -149,16 +135,18 @@ const NEIGHBOURS: [number, number][] = [
  * 그 두 채널이 가득 찬 채 남기 때문이다 — 남는 색이 곧 진분홍이다.
  *
  * 고치는 자리를 **가장자리로 한정**하는 것이 요점이다. 그림 전체에 되돌리기를
- * 걸면 디자인이 일부러 쓴 분홍(하트, 분홍 외곽선)까지 흰색으로 펴진다. 지워진
- * 픽셀에 닿은 겹만이 배경과 섞였을 수 있는 자리다.
+ * 걸면 디자인이 일부러 쓴 분홍(하트, 분홍 외곽선)까지 펴진다. 지워진 픽셀에 닿은
+ * 겹만이 배경과 섞였을 수 있는 자리다.
  *
- * 값을 치른 그림을 고치는 일이므로 **되돌릴 수 있게** 만들지 않는다 — 부르는 쪽이
- * 원본을 그대로 쥐고 있고, 여기서 나오는 것은 언제나 새 버퍼가 아니라 제자리
- * 수정이다. 몇 픽셀을 고쳤는지 돌려준다.
+ * 겹마다 **바로 안쪽의 색을 함께 물고 나온다.** 그 색이 이 가장자리의 원래 색이다 —
+ * 흰 외곽선의 가장자리는 흰색이고, 분홍 하트의 가장자리는 분홍이다. 그래서 색 있는
+ * 요소가 배경에 닿아 있어도 제 색으로 풀린다. 앞선 판은 원래 색을 모르는 채 풀어서
+ * 흰 글자에서만 맞았다.
  *
- * 한계를 적어 둔다. 진한 분홍 요소가 배경에 직접 닿아 있으면, 그 가장자리는
- * 원래 색이 아니라 더 옅고 따뜻한 색으로 풀린다 — 섞이기 전 색이 무엇이었는지
- * 알 방법이 원리상 없기 때문이다. 자주색 띠보다 눈에 덜 띄지만 정확하지도 않다.
+ * 안쪽이 없는 조각 — 겹 두께보다 얇은 획 — 은 손대지 않는다. 물어볼 데가 없으면
+ * 지어내지 않는 쪽이 낫다.
+ *
+ * 몇 픽셀을 고쳤는지 돌려준다. 부르는 쪽이 "정말 달라졌는가"를 그 값으로 안다.
  */
 export function unspillKeyEdges(
   pixels: PixelBuffer,
@@ -166,15 +154,30 @@ export function unspillKeyEdges(
   depth: number = KEY_EDGE_DEPTH,
 ): number {
   const { data, width, height } = pixels
+  const total = width * height
   if (width <= 0 || height <= 0 || depth <= 0) return 0
 
-  // 겹을 먼저 **전부 찾아 두고** 나서 고친다. 고치면서 찾으면 방금 반투명해진
-  // 픽셀이 다음 겹의 기준이 되어 겹이 안쪽으로 번진다.
-  const ring = new Int8Array(width * height)
+  const CLEAR = -1
+  const UNSET = -2
+  /** 이 픽셀의 원래 색을 어디에 물을 것인가. 아직 모르면 `UNSET`. */
+  const source = new Int32Array(total).fill(UNSET)
+  const ring = new Int8Array(total)
+
+  // 지워진 픽셀에서 시작한다. 그 자리는 물을 곳이 없다는 표시만 달고 넘어간다.
   let frontier: number[] = []
-  for (let i = 0; i < width * height; i += 1) {
-    if ((data[i * 4 + 3] ?? 0) === 0) frontier.push(i)
+  for (let i = 0; i < total; i += 1) {
+    if ((data[i * 4 + 3] ?? 0) === 0) {
+      source[i] = CLEAR
+      frontier.push(i)
+    }
   }
+  if (frontier.length === 0) return 0
+
+  /**
+   * 겹을 먼저 **전부 찾아 두고** 나서 고친다. 고치면서 찾으면 방금 반투명해진
+   * 픽셀이 다음 겹의 기준이 되어 겹이 안쪽으로 번진다.
+   */
+  const edges: number[] = []
   for (let step = 1; step <= depth; step += 1) {
     const next: number[] = []
     for (const index of frontier) {
@@ -185,30 +188,67 @@ export function unspillKeyEdges(
         const ny = y + dy
         if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue
         const at = ny * width + nx
-        if (ring[at] !== 0 || (data[at * 4 + 3] ?? 0) === 0) continue
+        if (source[at] !== UNSET || (data[at * 4 + 3] ?? 0) === 0) continue
+        source[at] = CLEAR
         ring[at] = step
+        edges.push(at)
         next.push(at)
       }
     }
     frontier = next
     if (frontier.length === 0) break
   }
+  if (edges.length === 0) return 0
+
+  /**
+   * 이제 반대로 — 겹이 아닌 불투명 픽셀(안쪽)에서 바깥으로 퍼뜨려, 겹마다 가장
+   * 가까운 안쪽 색을 물려 준다. 이것이 그 가장자리의 원래 색이다.
+   */
+  let inner: number[] = []
+  for (let i = 0; i < total; i += 1) {
+    if (ring[i] === 0 && (data[i * 4 + 3] ?? 0) !== 0) {
+      source[i] = i
+      inner.push(i)
+    }
+  }
+  while (inner.length > 0) {
+    const next: number[] = []
+    for (const index of inner) {
+      const x = index % width
+      const y = (index - x) / width
+      for (const [dx, dy] of NEIGHBOURS) {
+        const nx = x + dx
+        const ny = y + dy
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue
+        const at = ny * width + nx
+        if (ring[at] === 0 || source[at] !== CLEAR) continue
+        source[at] = source[index]!
+        next.push(at)
+      }
+    }
+    inner = next
+  }
 
   let fixed = 0
-  for (let i = 0; i < width * height; i += 1) {
-    if (ring[i] === 0) continue
-    const at = i * 4
-    const unmixed = unmixFromKey(
+  for (const index of edges) {
+    const from = source[index]!
+    // 물어볼 안쪽이 없는 조각은 그대로 둔다.
+    if (from < 0) continue
+    const at = index * 4
+    const fat = from * 4
+    const foreground = { r: data[fat] ?? 0, g: data[fat + 1] ?? 0, b: data[fat + 2] ?? 0 }
+    const alpha = keyEdgeAlpha(
       { r: data[at] ?? 0, g: data[at + 1] ?? 0, b: data[at + 2] ?? 0 },
+      foreground,
       key,
     )
-    // 이미 키 색이 섞이지 않은 픽셀은 `alpha`가 1로 나온다. 건드릴 것이 없다.
-    if (unmixed.alpha >= 1) continue
-    data[at] = unmixed.r
-    data[at + 1] = unmixed.g
-    data[at + 2] = unmixed.b
+    // 키가 섞이지 않은 픽셀은 안쪽 색만큼 멀리 있다. 건드릴 것이 없다.
+    if (alpha >= 1) continue
+    data[at] = foreground.r
+    data[at + 1] = foreground.g
+    data[at + 2] = foreground.b
     // 원래 알파와 곱한다. 이미 반투명한 픽셀을 불투명하게 되돌리지 않기 위해서다.
-    data[at + 3] = Math.round((data[at + 3] ?? 255) * unmixed.alpha)
+    data[at + 3] = Math.round((data[at + 3] ?? 255) * alpha)
     fixed += 1
   }
   return fixed

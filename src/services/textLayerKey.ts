@@ -32,13 +32,6 @@ async function toBitmap(blob: Blob): Promise<CanvasImageSource & { width: number
 }
 
 /**
- * 배경을 지운 문구 레이어. 실패하면 `null`.
- *
- * 던지지 않는 이유는 이 그림이 **이미 값을 치른** 것이기 때문이다. 여기서
- * 터지면 배경과 사진까지 함께 잃는다 — 못 지웠다는 사실만 알리고, 나머지는
- * 부르는 쪽이 정한다.
- */
-/**
  * 이미 배경을 지운 문구 조각의 가장자리만 다시 다듬는다 (자주색 테두리 Patch).
  *
  * 앞선 판으로 만든 완성본에는 자주색 띠가 그대로 남아 있다. 그 띠는 **지워진
@@ -47,7 +40,7 @@ async function toBitmap(blob: Blob): Promise<CanvasImageSource & { width: number
  *
  * 고칠 것이 없으면 `null`. 부르는 쪽은 그때 저장을 건너뛴다.
  */
-export async function cleanKeyEdges(blob: Blob): Promise<Blob | null> {
+export async function cleanKeyEdges(blob: Blob): Promise<{ blob: Blob; pixels: number } | null> {
   try {
     const bitmap = await toBitmap(blob)
     const width = Math.max(1, Math.round(bitmap.width))
@@ -68,12 +61,20 @@ export async function cleanKeyEdges(blob: Blob): Promise<Blob | null> {
     )
     if (fixed === 0) return null
     ctx.putImageData(pixels, 0, 0)
-    return await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+    const out = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+    return out === null ? null : { blob: out, pixels: fixed }
   } catch {
     return null
   }
 }
 
+/**
+ * 배경을 지운 문구 레이어. 실패하면 `null`.
+ *
+ * 던지지 않는 이유는 이 그림이 **이미 값을 치른** 것이기 때문이다. 여기서
+ * 터지면 배경과 사진까지 함께 잃는다 — 못 지웠다는 사실만 알리고, 나머지는
+ * 부르는 쪽이 정한다.
+ */
 export async function removeKeyBackground(blob: Blob): Promise<KeyedLayer | null> {
   try {
     const bitmap = await toBitmap(blob)

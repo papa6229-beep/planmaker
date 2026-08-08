@@ -78,13 +78,16 @@ vi.mock('../services/imageAnalysisRunner', () => ({
 const tidied: number[] = []
 /** 다듬은 조각을 알아보는 표식 — 저장된 크기로 확인한다. */
 const TIDIED_BYTES = 77
+/** 켜면 `cleanKeyEdges`가 "고칠 것이 없다"로 답한다. */
+let tidyNothing = false
 vi.mock('../services/textLayerKey', () => ({
   removeKeyBackground: async (blob: Blob) => ({ blob, opaqueRatio: 0.2 }),
   cleanKeyEdges: async (blob: Blob) => {
     tidied.push(blob.size)
+    if (tidyNothing) return null
     // 저장소를 오간 Blob 은 이 환경에서 바이트를 돌려주지 않는다. 그래서 원본을
     // 읽지 않고, 알아볼 수 있는 크기의 새 조각을 돌려준다.
-    return new Blob(['x'.repeat(TIDIED_BYTES)], { type: 'image/png' })
+    return { blob: new Blob(['x'.repeat(TIDIED_BYTES)], { type: 'image/png' }), pixels: 12 }
   },
 }))
 // 캔버스가 필요한 두 서비스. 규칙은 §1 순수 검사에서 숫자로 재고, 여기서는 흐름만
@@ -1733,6 +1736,26 @@ describe('§23 가장자리 다듬기', () => {
     await waitFor(() => expect(composed).toHaveBeenCalled(), { timeout: 8000 })
     // 값을 치르는 일은 하나도 하지 않았다.
     expect(fetchSpy.mock.calls.length).toBe(calls)
+
+    // 무슨 일이 있었는지 말한다. 조용히 끝나면 사람은 고장 났다고 읽는다.
+    expect(
+      await screen.findByText(new RegExp(`${objects.length}장 중 ${objects.length}장`), {}, { timeout: 8000 }),
+    ).toBeTruthy()
+  }, 40000)
+
+  it('고칠 것이 없으면 없다고 말한다 — 조용히 끝나지 않는다', async () => {
+    tidyNothing = true
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    await openFold(/글자 가장자리/)
+    fireEvent.click(await screen.findByRole('button', { name: '가장자리 다듬기' }))
+
+    // 화면이 그대로인 것과 기능이 고장 난 것은 다른 사실이다.
+    expect(await screen.findByText(/다듬을 가장자리를 찾지 못했습니다/, {}, { timeout: 8000 })).toBeTruthy()
+    tidyNothing = false
   }, 40000)
 
   it('완성본이 없으면 그 자리를 내밀지 않는다', async () => {

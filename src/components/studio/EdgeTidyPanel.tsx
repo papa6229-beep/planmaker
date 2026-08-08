@@ -24,6 +24,7 @@ export function EdgeTidyPanel() {
   if (generation === null || !generation.canTidyEdges) return null
 
   const busy = generation.state.kind === 'running'
+  const report = generation.tidyReport
   return (
     <PanelFold id="edge-tidy" title="글자 가장자리" note="흰 글자 둘레에 자주색 띠가 보일 때">
       <p className="edge-tidy__note">
@@ -39,6 +40,15 @@ export function EdgeTidyPanel() {
       >
         {busy ? '다듬는 중…' : '가장자리 다듬기'}
       </button>
+      {/* 무슨 일이 있었는지 말한다. 아무것도 고칠 것이 없었던 것과 기능이 고장 난
+          것은 다른 사실인데, 화면이 그대로면 사람에게는 둘이 똑같아 보인다. */}
+      {report !== null && (
+        <p className="edge-tidy__report" role="status">
+          {report.changed === 0
+            ? `문구 조각 ${report.pieces}장을 살펴봤지만 다듬을 가장자리를 찾지 못했습니다. 남아 있는 색이 임시 배경에서 온 것이 아닐 수 있습니다.`
+            : `문구 조각 ${report.pieces}장 중 ${report.changed}장에서 가장자리 ${report.pixels.toLocaleString()}픽셀을 다듬었습니다.`}
+        </p>
+      )}
     </PanelFold>
   )
 }
