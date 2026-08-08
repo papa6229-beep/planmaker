@@ -335,19 +335,40 @@ function drawGrain(ctx: CanvasRenderingContext2D, width: number, height: number,
  * 실패는 그대로 던진다. 여기서 삼키면 호출부가 "결과가 있다"고 믿은 채 빈 그림을
  * 저장하게 된다.
  */
-export async function renderComposite(plan: CompositePlan, sources: CompositeSources): Promise<Blob> {
+export interface RenderCompositeOptions {
+  /**
+   * 몇 배로 그릴 것인가 (임의 크기 합성 Patch).
+   *
+   * 계획의 모든 자리는 기획서 캔버스(가로 840)의 좌표다. 그 좌표계를 바꾸지 않고
+   * **그리는 면만 키운다** — 캔버스를 배수만큼 잡고 붓에 같은 배수를 걸면, 계획을
+   * 한 줄도 고치지 않은 채 더 큰 그림이 나온다.
+   *
+   * 얻는 것은 단순한 확대가 아니다. 문구 조각은 모델에게 1400px 안팎으로 받아
+   * 840 캔버스에 줄여 붙이고 있었다 — 그 버리던 해상도가 그대로 살아난다.
+   */
+  scale?: number
+}
+
+export async function renderComposite(
+  plan: CompositePlan,
+  sources: CompositeSources,
+  options: RenderCompositeOptions = {},
+): Promise<Blob> {
+  const scale = Math.max(0.05, options.scale ?? 1)
   const canvas = document.createElement('canvas')
-  canvas.width = plan.size.width
-  canvas.height = plan.size.height
+  canvas.width = Math.max(1, Math.round(plan.size.width * scale))
+  canvas.height = Math.max(1, Math.round(plan.size.height * scale))
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('캔버스를 만들 수 없습니다.')
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
+  // 여기서부터 붓은 기획서 좌표로 움직인다. 아래 코드는 배수를 모른다.
+  if (scale !== 1) ctx.scale(canvas.width / plan.size.width, canvas.height / plan.size.height)
 
   // 배경이 없으면 흰 바탕이다 — 투명 PNG를 쇼핑몰에 올리면 테마에 따라 글씨가
   // 사라진다.
   ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillRect(0, 0, plan.size.width, plan.size.height)
 
   let backgroundTone: { r: number; g: number; b: number } | null = null
   if (plan.background !== undefined) {
@@ -358,8 +379,8 @@ export async function renderComposite(plan: CompositePlan, sources: CompositeSou
       const fit = fitSourceRect('cover', { width: source.width, height: source.height }, {
         x: 0,
         y: 0,
-        width: canvas.width,
-        height: canvas.height,
+        width: plan.size.width,
+        height: plan.size.height,
       })
       if (fit !== null) {
         ctx.drawImage(
@@ -465,7 +486,9 @@ export async function renderComposite(plan: CompositePlan, sources: CompositeSou
     ctx.putImageData(pixels, 0, 0)
   }
 
-  drawGrain(ctx, canvas.width, canvas.height, plan.grain)
+  // 그레인은 **기획서 좌표**로 그린다. 장치 픽셀로 그리면 크게 뽑을수록 결이
+  // 촘촘해져, 같은 그림인데 배수마다 질감이 달라진다.
+  drawGrain(ctx, plan.size.width, plan.size.height, plan.grain)
 
   const out = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
   if (!out) throw new Error('합성 결과 이미지를 만들지 못했습니다.')

@@ -25,7 +25,16 @@ export interface CollectedCompositeSources {
   boxes: Map<string, ContentBox>
 }
 
-export async function collectCompositeSources(plan: CompositePlan): Promise<CollectedCompositeSources> {
+export interface CollectOptions {
+  /** 몇 배로 그릴 것인가. 종이 모양을 그 배수만큼 촘촘히 만든다. */
+  scale?: number
+}
+
+export async function collectCompositeSources(
+  plan: CompositePlan,
+  options: CollectOptions = {},
+): Promise<CollectedCompositeSources> {
+  const paperScale = Math.max(1, options.scale ?? 1)
   const blobs = new Map<string, Blob>()
   const analyses = new Map<string, ImageAnalysis>()
   const papers = new Map<string, PaperCanvas>()
@@ -50,7 +59,7 @@ export async function collectCompositeSources(plan: CompositePlan): Promise<Coll
     // 종이는 켠 자리만 만든다. 씨앗은 미리보기와 같은 자산 번호라 두 화면의
     // 외곽선이 같고, 두께는 그 블록이 고른 값이다 (한방 생성 Patch §3).
     if (!layer.effects.paperCutout) continue
-    const shape = await buildPaperCanvas(blob, box, layer.assetId, layer.effects.paperWeight)
+    const shape = await buildPaperCanvas(blob, box, layer.assetId, layer.effects.paperWeight, paperScale)
     if (shape !== null) papers.set(layer.blockId, shape)
   }
 

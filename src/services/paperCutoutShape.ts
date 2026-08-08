@@ -89,6 +89,18 @@ export async function buildPaperCanvas(
   box: ContentBox,
   seed: string,
   weight: number = DEFAULT_PAPER_WEIGHT,
+  /**
+   * 결과를 몇 배로 뽑는가 (임의 크기 합성 Patch).
+   *
+   * 훑는 한도는 840 캔버스에 맞춘 값이다. 더 크게 뽑을 때 그 한도를 그대로 두면
+   * 384짜리 테두리를 늘려 붙이게 되어, 그림만 선명해지고 종이 가장자리는 뭉개진다 —
+   * 한 장 안에서 해상도가 어긋나는 쪽이 전체가 조금 무른 것보다 눈에 띈다.
+   *
+   * 한도가 아니라 **배수**를 받는 이유는 부르는 쪽에 있다. 그쪽이 한도를 알려면
+   * 이 파일에서 상수를 가져가야 하는데, 이 파일은 검사에서 통째로 흉내 내는
+   * 자리라 그 import 하나가 흉내에 없으면 모듈이 통째로 못 열린다.
+   */
+  scale: number = 1,
 ): Promise<PaperCanvas | null> {
   try {
     const bitmap = await toBitmap(blob)
@@ -97,9 +109,10 @@ export async function buildPaperCanvas(
     // 알파 경계 안쪽만 잘라 낸다 — 블록을 채우는 그 부분이다.
     const cropW = Math.max(1, bitmap.width * box.width)
     const cropH = Math.max(1, bitmap.height * box.height)
-    const scale = Math.min(1, PAPER_WORK_MAX / Math.max(cropW, cropH))
-    const w = Math.max(1, Math.round(cropW * scale))
-    const h = Math.max(1, Math.round(cropH * scale))
+    const workMax = PAPER_WORK_MAX * Math.max(1, scale)
+    const shrink = Math.min(1, workMax / Math.max(cropW, cropH))
+    const w = Math.max(1, Math.round(cropW * shrink))
+    const h = Math.max(1, Math.round(cropH * shrink))
 
     const source = document.createElement('canvas')
     source.width = w
