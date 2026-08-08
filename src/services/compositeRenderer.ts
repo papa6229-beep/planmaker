@@ -376,12 +376,28 @@ export async function renderComposite(
     if (blob !== undefined) {
       const source = await toSource(blob)
       // 배경은 언제나 캔버스를 채운다 (§5 기본값 `채우기`).
-      const fit = fitSourceRect('cover', { width: source.width, height: source.height }, {
-        x: 0,
-        y: 0,
-        width: plan.size.width,
-        height: plan.size.height,
-      })
+      //
+      // 다만 **어디를 채울지**는 계획이 정할 수 있다 (배너 Patch §3). 배너는 원본
+      // 배경을 그대로 잘라 쓰는데, `cover`가 고르는 가운데가 하필 하트·풍선이
+      // 몰린 자리면 글자가 묻힌다. 잘라 쓸 자리를 받으면 그 자리를 그대로 편다.
+      const crop = plan.backgroundCrop
+      const fit =
+        crop === undefined
+          ? fitSourceRect('cover', { width: source.width, height: source.height }, {
+              x: 0,
+              y: 0,
+              width: plan.size.width,
+              height: plan.size.height,
+            })
+          : {
+              source: {
+                x: Math.max(0, Math.min(source.width, crop.x)),
+                y: Math.max(0, Math.min(source.height, crop.y)),
+                width: Math.max(1, Math.min(source.width - crop.x, crop.width)),
+                height: Math.max(1, Math.min(source.height - crop.y, crop.height)),
+              },
+              dest: { x: 0, y: 0, width: plan.size.width, height: plan.size.height },
+            }
       if (fit !== null) {
         ctx.drawImage(
           source,

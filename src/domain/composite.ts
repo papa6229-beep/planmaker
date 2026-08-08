@@ -61,6 +61,14 @@ export interface CompositePlan {
   /** 이 페이지의 배경. 없으면 흰 바탕이다. */
   background?: StudioBackground
   /**
+   * 배경의 **이 자리만** 잘라 쓴다 (배너 Patch §3). 배경 이미지의 좌표다.
+   *
+   * 없으면 지금까지처럼 가운데를 채워 쓴다. 배너는 원본 배경을 그대로 잘라 쓰는데,
+   * 가운데가 하필 하트·풍선이 몰린 자리면 글자가 묻힌다. 어디를 자를지는
+   * `quietRegion`이 고르고, 그 답이 여기로 온다.
+   */
+  backgroundCrop?: LayoutRect
+  /**
    * 맨 앞에 얹는 한 장 (한방 생성 Patch 2 §4).
    *
    * AI가 만든 전경 문구 레이어다. 배경이 투명하므로 아래의 배경과 사진이 그대로
@@ -98,6 +106,8 @@ export interface CompositePlan {
 export interface CompositePlanInput {
   page: BriefPage
   background?: StudioBackground | undefined
+  /** 배경에서 잘라 쓸 자리 (배너 Patch §3). 없으면 가운데를 채워 쓴다. */
+  backgroundCrop?: LayoutRect | undefined
   /** 맨 앞에 얹을 전경 레이어 (한방 생성 Patch 2 §4). */
   foreground?: { assetId: string } | undefined
   /** 얹을 문구 오브젝트들 (텍스트 오브젝트 Patch §4). 차례는 `order`가 정한다. */
@@ -199,6 +209,7 @@ export function planLocalComposite(input: CompositePlanInput): CompositePlan {
   return {
     size,
     ...(input.background === undefined ? {} : { background: input.background }),
+    ...(input.backgroundCrop === undefined ? {} : { backgroundCrop: input.backgroundCrop }),
     ...(input.foreground === undefined ? {} : { foreground: input.foreground }),
     ...(input.textObjects === undefined ? {} : { textObjects: input.textObjects }),
     layers,
