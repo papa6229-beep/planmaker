@@ -37,6 +37,19 @@ import { DEFAULT_REFERENCE_OPACITY, type BriefPage } from './pageSchema'
 /** 한 자리에 여럿이 들어올 때 비워 두는 틈 — 자리의 흐름 방향 길이 대비. */
 const SLOT_GAP = 0.06
 
+/**
+ * 자리를 이만큼도 못 채우면 그 자리에 어울리지 않는다 (배너 Patch §2-2).
+ *
+ * 앞선 판은 자리를 얻은 블록에게 **자리 전체**를 주었다. 그러면 세로로 긴 가차
+ * 기계가 가로로 긴 상자를 받아 옆으로 찌그러진다. 비율을 지켜 넣으면 찌그러지지는
+ * 않지만, 이번에는 204×56 자리에 39×56짜리 조각이 덩그러니 남는다.
+ *
+ * 그때가 **배경으로 내려갈 때**다. 앞선 판은 배경 강등을 "자리가 모자랄 때"로만
+ * 적었는데, 이벤트3에서 가차 기계가 배경이 된 진짜 이유는 자리가 없어서가 아니라
+ * **모양이 안 맞아서**였다. 자리는 왼쪽에 있었다.
+ */
+export const MIN_SLOT_FILL = 0.25
+
 export interface BannerPlacement {
   blockId: string
   slotId: string
@@ -66,20 +79,59 @@ export interface BannerFit {
   unplaced: readonly string[]
 }
 
-function rectInSlot(slot: BannerSlot, index: number, count: number, width: number, height: number): LayoutRect {
+/** 자리 하나가 통째로 차지하는 칸. 여럿이 들어오면 이것을 나눈다. */
+function slotCell(slot: BannerSlot, index: number, count: number, width: number, height: number): LayoutRect {
   const x = slot.area.x * width
   const y = slot.area.y * height
   const w = slot.area.width * width
   const h = slot.area.height * height
-  if (count <= 1) return round({ x, y, width: w, height: h }, width, height)
+  if (count <= 1) return { x, y, width: w, height: h }
 
   const span = slot.flow === 'row' ? w : h
   const gapTotal = span * SLOT_GAP
   const gap = gapTotal / (count - 1)
   const each = (span - gapTotal) / count
   return slot.flow === 'row'
-    ? round({ x: x + index * (each + gap), y, width: each, height: h }, width, height)
-    : round({ x, y: y + index * (each + gap), width: w, height: each }, width, height)
+    ? { x: x + index * (each + gap), y, width: each, height: h }
+    : { x, y: y + index * (each + gap), width: w, height: each }
+}
+
+/**
+ * 칸 안에 **제 비율을 지켜** 넣고 가운데로 모은다.
+ *
+ * 칸을 통째로 주면 조각이 늘어나거나 찌그러진다. 배너에 들어가는 것은 이미 만들어
+ * 놓은 그림 조각이라 — 제목도 버튼도 상품 사진도 — 늘리면 그 그림이 망가진다.
+ */
+function containIn(cell: LayoutRect, aspect: number): LayoutRect {
+  if (!(aspect > 0)) return cell
+  let w = cell.width
+  let h = w / aspect
+  if (h > cell.height) {
+    h = cell.height
+    w = h * aspect
+  }
+  return { x: cell.x + (cell.width - w) / 2, y: cell.y + (cell.height - h) / 2, width: w, height: h }
+}
+
+/**
+ * 이 블록이 이 칸에서 가질 비율. 눕히는 것이 나으면 눕힌 비율을 준다.
+ *
+ * 세로로 긴 글자를 가로로 긴 칸에 그대로 넣으면 손가락만 한 폭이 남는다. 눕히면
+ * 칸을 거의 다 쓴다 — 이벤트3의 `ADULT ONLY - R19`가 1020×70에서 그렇게 되었다.
+ */
+function aspectIn(block: BriefBlock, cell: LayoutRect): { aspect: number; rotated: boolean } {
+  const own = block.position.width / Math.max(1, block.position.height)
+  if (!(own > 0)) return { aspect: 1, rotated: false }
+  const canRotate = bannerRoleOf(block.type).concessions.includes('rotate')
+  const cellAspect = cell.width / Math.max(1, cell.height)
+  // 눕혀야 이득인 경우만 눕힌다 — 칸이 가로로 길고 블록이 세로로 길 때.
+  if (canRotate && cellAspect > 1 && own < 1) return { aspect: 1 / own, rotated: true }
+  return { aspect: own, rotated: false }
+}
+
+function fillOf(cell: LayoutRect, box: LayoutRect): number {
+  const area = cell.width * cell.height
+  return area > 0 ? (box.width * box.height) / area : 0
 }
 
 /** 배너 좌표는 픽셀이다. 소수점이 남으면 편집기에서 1px씩 어긋나 보인다. */
@@ -92,18 +144,6 @@ function round(rect: LayoutRect, width: number, height: number): LayoutRect {
     width: w,
     height: h,
   }
-}
-
-/**
- * 눕혔는가.
- *
- * 원본에서 세로로 길던 것이 가로로 긴 자리에 들어가면, 글자를 다시 가로로 짜야
- * 한다. 이벤트3의 `ADULT ONLY - R19`가 1020×70에서 그렇게 되었다. 자리가 정하는
- * 일이라 자동으로 그렇게 되지만, **그렇게 되었다는 것을 사람이 알아야** 세로로
- * 짜인 글자를 그대로 늘여 놓는 일이 없다.
- */
-function laidFlat(block: BriefBlock, rect: LayoutRect): boolean {
-  return block.position.height > block.position.width && rect.width > rect.height
 }
 
 /**
@@ -123,15 +163,23 @@ export function fitBanner(blocks: readonly BriefBlock[], spec: BannerSpec): Bann
   }
 
   // 자리마다 누가 들어왔는지. 몇 번째로 들어왔는지가 그 안의 위치를 정한다.
-  const taken = new Map<string, string[]>(spec.slots.map((slot) => [slot.id, []]))
+  const taken = new Map<string, { id: string; rotated: boolean }[]>(spec.slots.map((slot) => [slot.id, []]))
 
   for (const block of bannerOrder(blocks)) {
-    const { purpose } = bannerRoleOf(block.type)
+    const role = bannerRoleOf(block.type)
     const slot = spec.slots.find(
-      (candidate) => candidate.accepts.includes(purpose) && taken.get(candidate.id)!.length < candidate.capacity,
+      (candidate) => candidate.accepts.includes(role.purpose) && taken.get(candidate.id)!.length < candidate.capacity,
     )
     if (slot !== undefined) {
-      taken.get(slot.id)!.push(block.id)
+      // 자리를 얻었다고 끝이 아니다. **모양이 맞는지**를 여기서 본다. 칸 전체를
+      // 혼자 쓴다고 쳐도 이만큼도 못 채우면, 그 자리는 이 블록의 자리가 아니다.
+      const whole = slotCell(slot, 0, 1, spec.width, spec.height)
+      const { aspect, rotated } = aspectIn(block, whole)
+      if (fillOf(whole, containIn(whole, aspect)) < MIN_SLOT_FILL && role.concessions.includes('demote')) {
+        background.push(block.id)
+        continue
+      }
+      taken.get(slot.id)!.push({ id: block.id, rotated })
       continue
     }
 
@@ -158,15 +206,16 @@ export function fitBanner(blocks: readonly BriefBlock[], spec: BannerSpec): Bann
 
   const byId = new Map(blocks.map((block) => [block.id, block]))
   for (const slot of spec.slots) {
-    const ids = taken.get(slot.id)!
-    for (const [index, id] of ids.entries()) {
-      const block = byId.get(id)!
-      const rect = rectInSlot(slot, index, ids.length, spec.width, spec.height)
+    const seats = taken.get(slot.id)!
+    for (const [index, seat] of seats.entries()) {
+      const block = byId.get(seat.id)!
+      const cell = slotCell(slot, index, seats.length, spec.width, spec.height)
+      const own = block.position.width / Math.max(1, block.position.height)
       placements.push({
-        blockId: id,
+        blockId: seat.id,
         slotId: slot.id,
-        rect,
-        applied: laidFlat(block, rect) ? ['rotate'] : [],
+        rect: round(containIn(cell, seat.rotated ? 1 / own : own), spec.width, spec.height),
+        applied: seat.rotated ? ['rotate'] : [],
       })
     }
   }

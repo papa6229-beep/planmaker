@@ -165,7 +165,54 @@ describe('§32-2 자리를 못 얻으면', () => {
   })
 })
 
-describe('§32-3 눕힌 것을 기록한다', () => {
+describe('§32-3 모양을 지킨다', () => {
+  const ratio = (r: { width: number; height: number }) => r.width / r.height
+
+  it('조각은 자리 안에서 제 비율을 지킨다', () => {
+    // 자리를 통째로 주면 늘어난다. 배너에 들어가는 것은 이미 만들어 놓은 그림
+    // 조각이라 — 제목도 버튼도 상품 사진도 — 늘리면 그 그림이 망가진다.
+    const source = block('main_headline', 'title', { width: 520, height: 150 })
+    const fit = fitBanner([source], SPEC)
+    expect(ratio(fit.placements[0]!.rect)).toBeCloseTo(ratio(source.position), 1)
+  })
+
+  it('자리를 나눠 써도 비율은 그대로다', () => {
+    const a = block('price', 'a', { width: 260, height: 60 })
+    const b = block('price', 'b', { width: 120, height: 120 })
+    const fit = fitBanner([a, b], SPEC)
+    for (const p of fit.placements) {
+      const src = p.blockId === 'a' ? a : b
+      expect(ratio(p.rect)).toBeCloseTo(ratio(src.position), 1)
+    }
+  })
+
+  it('모양이 안 맞으면 자리를 얻고도 배경으로 내려간다', () => {
+    // 이벤트3의 가차 기계. 앞선 판은 "자리가 모자랄 때"만 배경으로 내렸는데,
+    // 실제로 배경이 된 이유는 자리가 없어서가 아니라 **모양이 안 맞아서**였다 —
+    // 자리는 왼쪽에 있었다. 세로로 긴 기계를 70px 띠에 비율 지켜 넣으면 손가락만
+    // 한 조각이 남는다.
+    const fit = fitBanner([block('main_product_image', 'gacha', { width: 330, height: 470 })], SPEC)
+    expect(fit.background).toEqual(['gacha'])
+    expect(fit.placements).toEqual([])
+  })
+
+  it('눕힐 수 있는 것은 눕혀서 자리를 채운다', () => {
+    // `ADULT ONLY · R19`. 그대로 넣으면 폭이 10px도 안 되지만, 눕히면 칸을 거의
+    // 다 쓴다. 눕히지 못했다면 이것도 버려졌을 것이다.
+    const fit = fitBanner([block('free_text', 'r19', { width: 40, height: 230 })], SPEC)
+    const placed = fit.placements[0]!
+    expect(placed.applied).toEqual(['rotate'])
+    expect(placed.rect.width).toBeGreaterThan(placed.rect.height)
+    expect(fit.background).toEqual([])
+  })
+
+  it('가로로 긴 것을 괜히 눕히지는 않는다', () => {
+    const fit = fitBanner([block('free_text', 'wide', { width: 400, height: 60 })], SPEC)
+    expect(fit.placements[0]!.applied).toEqual([])
+  })
+})
+
+describe('§32-3-2 눕힌 것을 기록한다', () => {
   it('세로로 길던 것이 가로 자리에 들어가면 눕혔다고 적는다', () => {
     // `ADULT ONLY - R19`가 1020×70에서 가로로 누웠다. 자리가 정하는 일이지만,
     // 그렇게 되었다는 것을 알아야 세로로 짜인 글자를 그대로 늘여 놓지 않는다.
