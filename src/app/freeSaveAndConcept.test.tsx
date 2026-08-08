@@ -13,7 +13,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
-import { render, screen, within, waitFor } from '@testing-library/react'
+import { render, screen, within, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
@@ -36,6 +36,20 @@ import { createBlock, createEmptyProject } from '../domain/factory'
 import { readEventDocument } from '../services/eventBriefImport'
 import { validateDocumentForExport } from '../features/export/exportValidation'
 import type { BriefDocument } from '../domain/pageSchema'
+import { resetFoldsForTests } from '../components/studio/PanelFold'
+
+/**
+ * 접힌 칸을 편다 (왼쪽 정리 Patch).
+ *
+ * 메모 칸들은 기본이 접힘이다 — 펼쳐진 셋의 높이가 `무엇을 넣을까요?`를 화면 밖으로
+ * 밀어냈기 때문이다. 접힌 칸은 내용을 **아예 그리지 않으므로**, 안을 만지려면 먼저
+ * 펴야 한다. 이미 펴져 있으면 그대로 둔다.
+ */
+function openFoldNamed(title: string): void {
+  const head = screen.queryAllByRole('button').find((b) => (b.textContent ?? '').includes(title))
+  if (head !== undefined && head.getAttribute('aria-expanded') === 'false') fireEvent.click(head)
+}
+
 
 vi.mock('../services/previewRenderer', () => ({
   renderPreviewPng: async () => new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }),
@@ -104,6 +118,7 @@ async function saveToFile(user: ReturnType<typeof userEvent.setup>, name?: strin
 }
 
 beforeEach(async () => {
+  resetFoldsForTests()
   resetAssetStoreForTests()
   await clearAll()
   resetRequestStoreForTests()
@@ -127,7 +142,7 @@ describe('§2 어떤 형태의 기획서도 그대로 저장된다', () => {
     const user = userEvent.setup()
     renderShell()
     await user.click(screen.getByRole('button', { name: /빈 화면에서 시작/ }))
-    await user.type(screen.getByLabelText('원하는 분위기·컨셉'), '밝고 경쾌한 여름 할인 분위기')
+    await user.type((openFoldNamed('원하는 분위기·컨셉'), screen.getByLabelText('원하는 분위기·컨셉')), '밝고 경쾌한 여름 할인 분위기')
 
     const { doc } = await saveToFile(user)
     expect(doc.project.concept).toBe('밝고 경쾌한 여름 할인 분위기')
@@ -198,7 +213,7 @@ describe('§2 어떤 형태의 기획서도 그대로 저장된다', () => {
     renderShell()
     await user.click(screen.getByRole('button', { name: /빈 화면에서 시작/ }))
     await user.type(screen.getByLabelText('기획서 제목'), '컨셉만 있는 기획서')
-    await user.type(screen.getByLabelText('원하는 분위기·컨셉'), '조용하고 단정하게')
+    await user.type((openFoldNamed('원하는 분위기·컨셉'), screen.getByLabelText('원하는 분위기·컨셉')), '조용하고 단정하게')
     await user.click(screen.getByRole('button', { name: '전달하기' }))
 
     await waitFor(() => expect(screen.getByText(/전달되었습니다/)).toBeTruthy())
@@ -222,25 +237,32 @@ describe('§3 파일 저장·불러오기는 화면에 그대로 보인다', () 
 })
 
 describe('§4 원하는 분위기·컨셉', () => {
-  it('is always visible in the left column, under the three tools', async () => {
+  it('접힌 채 도구 아래에 있고, 펴면 입력창이 나온다', async () => {
+    /**
+     * 앞선 판은 이 칸이 늘 펼쳐져 있었다. 컨셉·전달사항·팀 메모 셋이 모두 펼쳐진
+     * 높이가 **`무엇을 넣을까요?`를 화면 밖으로 밀어냈다** — 기획서를 쓰는 첫 걸음이
+     * 스크롤해야 보이는 자리에 있었던 것이다. 메모는 가끔 적고 블록은 늘 놓으므로,
+     * 늘 하는 일이 위에 온다.
+     */
     const user = userEvent.setup()
     renderShell()
     await user.click(screen.getByRole('button', { name: /빈 화면에서 시작/ }))
 
     const left = document.querySelector('.side-left') as HTMLElement
-    const field = left.querySelector('.concept') as HTMLElement
-    const input = within(field).getByLabelText('원하는 분위기·컨셉')
-    expect(input.tagName).toBe('TEXTAREA')
-    expect(input.getAttribute('placeholder')).toContain('예:')
-    // The tools come first, the direction under them.
-    expect(left.querySelector('.simple-tools')!.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING)
+    const head = screen.getAllByRole('button').find((b) => (b.textContent ?? '').includes('원하는 분위기·컨셉'))!
+    // 기본은 접힘이다.
+    expect(head.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByLabelText('원하는 분위기·컨셉')).toBeNull()
+
+    // 도구가 먼저, 그 아래가 이 칸이다.
+    const fold = head.closest('.fold') as HTMLElement
+    expect(left.querySelector('.simple-tools')!.compareDocumentPosition(fold) & Node.DOCUMENT_POSITION_FOLLOWING)
       .toBeTruthy()
 
-    // The old center entry point is gone, so there is only one place to type it.
-    // (디자인팀에게 전달할 말 is a different field with its own id — 전체 컨셉
-    // itself still has exactly one home.)
-    expect(screen.queryByRole('button', { name: /전체 컨셉/ })).toBeNull()
-    expect(document.querySelectorAll('#concept-input')).toHaveLength(1)
+    fireEvent.click(head)
+    const input = screen.getByLabelText('원하는 분위기·컨셉')
+    expect(input.tagName).toBe('TEXTAREA')
+    expect(input.getAttribute('placeholder')).toContain('예:')
   })
 
   it('autosaves what is typed, and never becomes a block on the canvas', async () => {
@@ -252,7 +274,7 @@ describe('§4 원하는 분위기·컨셉', () => {
     const user = userEvent.setup()
     renderShell(binding)
 
-    const input = await screen.findByLabelText('원하는 분위기·컨셉')
+    const input = await (openFoldNamed('원하는 분위기·컨셉'), screen.findByLabelText('원하는 분위기·컨셉'))
     await user.type(input, '민트와 흰색 중심')
 
     expect(canvas().querySelectorAll('.block-card')).toHaveLength(0)
@@ -275,7 +297,7 @@ describe('§4 원하는 분위기·컨셉', () => {
     })
 
     await waitFor(() =>
-      expect((screen.getByLabelText('원하는 분위기·컨셉') as HTMLTextAreaElement).value).toBe('차분하고 고급스럽게'),
+      expect(((openFoldNamed('원하는 분위기·컨셉'), screen.getByLabelText('원하는 분위기·컨셉')) as HTMLTextAreaElement).value).toBe('차분하고 고급스럽게'),
     )
     // The blocks that were already there are untouched.
     expect(screen.getByText('기존 문구')).toBeTruthy()
@@ -297,7 +319,7 @@ describe('§4 원하는 분위기·컨셉', () => {
       </MemoryRouter>,
     )
 
-    const input = await screen.findByLabelText('원하는 분위기·컨셉')
+    const input = await (openFoldNamed('원하는 분위기·컨셉'), screen.findByLabelText('원하는 분위기·컨셉'))
     await user.type(input, '여름 밤 느낌')
     await waitFor(async () => expect((await loadDocumentById(a))!.project.concept).toBe('여름 밤 느낌'), {
       timeout: 6000,
@@ -307,11 +329,11 @@ describe('§4 원하는 분위기·컨셉', () => {
     const library = () => screen.getByRole('complementary', { name: '내 기획서' })
     await user.click(await within(library()).findByRole('button', { name: /나 기획서/ }))
     await waitFor(() => expect(screen.getByText('B 문구')).toBeTruthy())
-    expect((screen.getByLabelText('원하는 분위기·컨셉') as HTMLTextAreaElement).value).toBe('')
+    expect(((openFoldNamed('원하는 분위기·컨셉'), screen.getByLabelText('원하는 분위기·컨셉')) as HTMLTextAreaElement).value).toBe('')
 
     await user.click(await within(library()).findByRole('button', { name: /가 기획서/ }))
     await waitFor(() => expect(screen.getByText('A 문구')).toBeTruthy())
-    expect((screen.getByLabelText('원하는 분위기·컨셉') as HTMLTextAreaElement).value).toBe('여름 밤 느낌')
+    expect(((openFoldNamed('원하는 분위기·컨셉'), screen.getByLabelText('원하는 분위기·컨셉')) as HTMLTextAreaElement).value).toBe('여름 밤 느낌')
   })
 
   it('is carried into a copy of the brief', async () => {
@@ -344,7 +366,7 @@ describe('§4 원하는 분위기·컨셉', () => {
     await user.click(screen.getByRole('button', { name: /빈 화면에서 시작/ }))
     await user.clear(screen.getByLabelText('기획서 제목'))
     await user.type(screen.getByLabelText('기획서 제목'), '컨셉 왕복')
-    await user.type(screen.getByLabelText('원하는 분위기·컨셉'), '밝고 경쾌한 여름 할인 분위기, 민트와 흰색 중심')
+    await user.type((openFoldNamed('원하는 분위기·컨셉'), screen.getByLabelText('원하는 분위기·컨셉')), '밝고 경쾌한 여름 할인 분위기, 민트와 흰색 중심')
 
     const { doc } = await saveToFile(user)
     expect(doc.project.title).toBe('컨셉 왕복')
@@ -357,7 +379,7 @@ describe('§4 원하는 분위기·컨셉', () => {
     const user = userEvent.setup()
     renderShell()
     await user.click(screen.getByRole('button', { name: /빈 화면에서 시작/ }))
-    await user.type(screen.getByLabelText('원하는 분위기·컨셉'), '민트와 흰색 중심')
+    await user.type((openFoldNamed('원하는 분위기·컨셉'), screen.getByLabelText('원하는 분위기·컨셉')), '민트와 흰색 중심')
 
     await user.click(screen.getByRole('button', { name: 'AI 요약' }))
     const dialog = screen.getByRole('dialog', { name: 'AI 요약 미리보기' })

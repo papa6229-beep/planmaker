@@ -23,6 +23,16 @@ import { useState, type ReactNode } from 'react'
 /** 칸 이름 → 열려 있는가. 화면을 떠났다 돌아와도 이 세션 동안은 그대로다. */
 const opened = new Map<string, boolean>()
 
+/**
+ * 검사 이음매 — 한 검사가 펴 둔 칸이 다음 검사로 새지 않게 한다.
+ *
+ * 열림 상태는 일부러 화면 밖에 둔다(페이지를 오가도 접힘이 유지되게). 그 대가로
+ * 한 파일 안의 검사들이 그 상태를 나눠 갖는다.
+ */
+export function resetFoldsForTests(): void {
+  opened.clear()
+}
+
 export function PanelFold({
   id,
   title,

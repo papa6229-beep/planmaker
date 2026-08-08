@@ -11,7 +11,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
-import { render, screen, within, waitFor } from '@testing-library/react'
+import { render, screen, within, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AppRoutes } from './AppRoutes'
@@ -43,6 +43,19 @@ import { packageEventDocument } from '../services/eventBriefExport'
 import { readEventDocument } from '../services/eventBriefImport'
 import { resolveAssetCollisions } from '../services/importAssets'
 import type { BriefDocument } from '../domain/pageSchema'
+
+/**
+ * 접힌 칸을 편다 (왼쪽 정리 Patch).
+ *
+ * 메모 칸들은 기본이 접힘이다 — 펼쳐진 셋의 높이가 `무엇을 넣을까요?`를 화면 밖으로
+ * 밀어냈기 때문이다. 접힌 칸은 내용을 **아예 그리지 않으므로**, 안을 만지려면 먼저
+ * 펴야 한다. 이미 펴져 있으면 그대로 둔다.
+ */
+function openFoldNamed(title: string): void {
+  const head = screen.queryAllByRole('button').find((b) => (b.textContent ?? '').includes(title))
+  if (head !== undefined && head.getAttribute('aria-expanded') === 'false') fireEvent.click(head)
+}
+
 
 vi.mock('../features/assets/imageUtils', async () => {
   const actual = await vi.importActual<typeof import('../features/assets/imageUtils')>('../features/assets/imageUtils')
@@ -485,8 +498,8 @@ describe('§6 덮어쓰기 확인은 문서 전체를 본다', () => {
       load: () => loadDocumentById(id),
       save: (d: BriefDocument) => saveDocumentById(id, d, Date.now()),
     })
-    await waitFor(() => expect(screen.getByLabelText('원하는 분위기·컨셉')).toBeTruthy())
-    await user.type(screen.getByLabelText('원하는 분위기·컨셉'), '지우면 안 되는 컨셉')
+    await waitFor(() => expect((openFoldNamed('원하는 분위기·컨셉'), screen.getByLabelText('원하는 분위기·컨셉'))).toBeTruthy())
+    await user.type((openFoldNamed('원하는 분위기·컨셉'), screen.getByLabelText('원하는 분위기·컨셉')), '지우면 안 되는 컨셉')
 
     const incoming = createEmptyDocument(createEmptyProject('불러온 기획서'))
     incoming.pages[0]!.blocks = [createBlock('free_text', { id: 'blk_i', content: '불러온 문구' })]
@@ -497,7 +510,7 @@ describe('§6 덮어쓰기 확인은 문서 전체를 본다', () => {
     })
     // Cancelling leaves the concept exactly where it was.
     await user.click(screen.getByRole('button', { name: '취소' }))
-    expect((screen.getByLabelText('원하는 분위기·컨셉') as HTMLTextAreaElement).value).toBe('지우면 안 되는 컨셉')
+    expect(((openFoldNamed('원하는 분위기·컨셉'), screen.getByLabelText('원하는 분위기·컨셉')) as HTMLTextAreaElement).value).toBe('지우면 안 되는 컨셉')
   })
 
   it('opens straight into a brief nobody has touched', async () => {
@@ -571,10 +584,10 @@ describe('§7 실행 취소 순서', () => {
     await user.click(screen.getByRole('button', { name: '페이지 삭제' }))
     await waitFor(() => expect(screen.queryByRole('button', { name: '2페이지' })).toBeNull())
 
-    await user.type(screen.getByLabelText('원하는 분위기·컨셉'), '컨셉 한 줄')
+    await user.type((openFoldNamed('원하는 분위기·컨셉'), screen.getByLabelText('원하는 분위기·컨셉')), '컨셉 한 줄')
     await user.click(screen.getByRole('button', { name: '실행 취소' }))
     // The page does not come back and take the concept with it.
     expect(screen.queryByRole('button', { name: '2페이지' })).toBeNull()
-    expect((screen.getByLabelText('원하는 분위기·컨셉') as HTMLTextAreaElement).value).toBe('컨셉 한 줄')
+    expect(((openFoldNamed('원하는 분위기·컨셉'), screen.getByLabelText('원하는 분위기·컨셉')) as HTMLTextAreaElement).value).toBe('컨셉 한 줄')
   })
 })

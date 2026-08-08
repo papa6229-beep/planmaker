@@ -13,16 +13,24 @@
  */
 
 import { useBriefDocument } from '../../features/document/useBriefDocument'
+import { PanelFold } from '../studio/PanelFold'
 
 export function ConceptField() {
   const { concept, setConcept } = useBriefDocument()
 
   return (
-    <section className="concept">
-      <label className="concept__title" htmlFor="concept-input">원하는 분위기·컨셉</label>
-      <p className="concept__hint">기획서 전체에 적용할 느낌을 자유롭게 적어주세요.</p>
+    <PanelFold
+      id="concept"
+      title="원하는 분위기·컨셉"
+      note="기획서 전체에 적용할 느낌"
+      marked={concept.trim().length > 0}
+    >
+      <label className="concept__hint" htmlFor="concept-input">
+        기획서 전체에 적용할 느낌을 자유롭게 적어주세요.
+      </label>
       <textarea
         id="concept-input"
+        aria-label="원하는 분위기·컨셉"
         className="concept__input"
         rows={4}
         placeholder="예: 밝고 경쾌한 여름 할인 분위기, 민트와 흰색 중심"
@@ -30,6 +38,6 @@ export function ConceptField() {
         onChange={(e) => setConcept(e.target.value)}
       />
       <p className="concept__note">이미지에 인쇄되지 않습니다. AI와 디자인팀에게 전달되는 방향입니다.</p>
-    </section>
+    </PanelFold>
   )
 }

@@ -8,7 +8,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
-import { render, screen, within, waitFor } from '@testing-library/react'
+import { render, screen, within, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
@@ -32,6 +32,19 @@ import { packageEventDocument } from '../services/eventBriefExport'
 import { readEventDocument } from '../services/eventBriefImport'
 import { createWorkRequest } from '../domain/workRequest'
 import type { BriefDocument } from '../domain/pageSchema'
+
+/**
+ * 접힌 칸을 편다 (왼쪽 정리 Patch).
+ *
+ * 메모 칸들은 기본이 접힘이다 — 펼쳐진 셋의 높이가 `무엇을 넣을까요?`를 화면 밖으로
+ * 밀어냈기 때문이다. 접힌 칸은 내용을 **아예 그리지 않으므로**, 안을 만지려면 먼저
+ * 펴야 한다. 이미 펴져 있으면 그대로 둔다.
+ */
+function openFoldNamed(title: string): void {
+  const head = screen.queryAllByRole('button').find((b) => (b.textContent ?? '').includes(title))
+  if (head !== undefined && head.getAttribute('aria-expanded') === 'false') fireEvent.click(head)
+}
+
 
 vi.mock('../services/previewRenderer', () => ({
   renderPreviewPng: async () => new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }),
@@ -76,7 +89,7 @@ describe('§10.8 전체 컨셉', () => {
       </MemoryRouter>,
     )
 
-    await user.type(await screen.findByLabelText('원하는 분위기·컨셉'), '여름 바다처럼 시원하고 밝게')
+    await user.type(await (openFoldNamed('원하는 분위기·컨셉'), screen.findByLabelText('원하는 분위기·컨셉')), '여름 바다처럼 시원하고 밝게')
 
     // It never becomes a canvas block.
     const canvas = screen.getByRole('region', { name: '기획 캔버스' })
@@ -105,7 +118,7 @@ describe('§10.8 전체 컨셉', () => {
       </MemoryRouter>,
     )
 
-    await user.type(await screen.findByLabelText('원하는 분위기·컨셉'), '시원하고 밝게')
+    await user.type(await (openFoldNamed('원하는 분위기·컨셉'), screen.findByLabelText('원하는 분위기·컨셉')), '시원하고 밝게')
 
     await user.click(screen.getByRole('button', { name: 'AI 요약' }))
     const dialog = screen.getByRole('dialog', { name: 'AI 요약 미리보기' })

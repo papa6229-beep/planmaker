@@ -13,6 +13,7 @@
  */
 
 import { useBriefDocument } from '../../features/document/useBriefDocument'
+import { PanelFold } from '../studio/PanelFold'
 import { useInstructionRefine } from '../../features/studio/useInstructionRefine'
 import { REFINE_COST_NOTE } from '../../domain/instructionRefine'
 
@@ -21,19 +22,24 @@ export function DesignerNoteField() {
   const { designerNote, setDesignerNote } = useBriefDocument()
 
   return (
-    <section className="concept">
-      <label className="concept__title" htmlFor="designer-note-input">디자인팀에게 전달할 말</label>
-      <p className="concept__hint">작업하는 사람이 알아야 할 부탁을 적어주세요.</p>
+    <PanelFold
+      id="designer-note"
+      title="디자인팀에게 전달할 말"
+      note="원하는 분위기·컨셉·부탁"
+      marked={designerNote.trim().length > 0}
+    >
+      <p className="concept__hint">원하는 분위기와 컨셉, 작업하는 사람이 알아야 할 부탁을 적어주세요.</p>
       <textarea
         id="designer-note-input"
+        aria-label="디자인팀에게 전달할 말"
         className="concept__input"
         rows={3}
-        placeholder="예: 이 문구는 반드시 강조해 주세요 / 제품이 너무 작아 보이지 않게 해 주세요"
+        placeholder="예: 단정하고 신뢰감 있게 / 이 문구는 반드시 강조해 주세요 / 제품이 너무 작아 보이지 않게"
         value={designerNote}
         onChange={(e) => setDesignerNote(e.target.value)}
       />
       <p className="concept__note">이미지에 인쇄되지 않습니다. 디자인팀에게 그대로 전달됩니다.</p>
-    </section>
+    </PanelFold>
   )
 }
 
@@ -51,11 +57,16 @@ export function TeamNoteField() {
   const { teamNote, setTeamNote } = useBriefDocument()
 
   return (
-    <section className="concept">
-      <label className="concept__title" htmlFor="team-note-input">팀 내부 메모</label>
+    <PanelFold
+      id="team-note"
+      title="팀 내부 메모"
+      note="우리 팀만 봅니다"
+      marked={teamNote.trim().length > 0}
+    >
       <p className="concept__hint">팀장이 팀원에게 남기는 수정 사항을 적어주세요.</p>
       <textarea
         id="team-note-input"
+        aria-label="팀 내부 메모"
         className="concept__input"
         rows={3}
         placeholder="예: 가격 문구를 8월 기준으로 고쳐 주세요 / 상단 배너는 지난 건 그대로 씁니다"
@@ -65,7 +76,7 @@ export function TeamNoteField() {
       <p className="concept__note">
         <b>우리 팀만 봅니다.</b> 이미지에 인쇄되지 않고, 디자인팀 전달사항이나 AI 지시에도 실리지 않습니다.
       </p>
-    </section>
+    </PanelFold>
   )
 }
 

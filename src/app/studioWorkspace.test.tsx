@@ -35,6 +35,19 @@ import { imageZipFileName, isPartialSave, pageImageFileName, planImageSave } fro
 import { zipSavedImages } from '../services/imageSave'
 import type { BriefDocument } from '../domain/pageSchema'
 
+/**
+ * 접힌 칸을 편다 (왼쪽 정리 Patch).
+ *
+ * 메모 칸들은 기본이 접힘이다 — 펼쳐진 셋의 높이가 `무엇을 넣을까요?`를 화면 밖으로
+ * 밀어냈기 때문이다. 접힌 칸은 내용을 **아예 그리지 않으므로**, 안을 만지려면 먼저
+ * 펴야 한다. 이미 펴져 있으면 그대로 둔다.
+ */
+function openFoldNamed(title: string): void {
+  const head = screen.queryAllByRole('button').find((b) => (b.textContent ?? '').includes(title))
+  if (head !== undefined && head.getAttribute('aria-expanded') === 'false') fireEvent.click(head)
+}
+
+
 vi.mock('../features/assets/imageUtils', async () => {
   const actual = await vi.importActual<typeof import('../features/assets/imageUtils')>('../features/assets/imageUtils')
   return { ...actual, readImageSize: async () => ({ width: 640, height: 640 }) }
@@ -210,7 +223,7 @@ describe('§2 작업판 좌측은 편집할 것 하나만 남긴다', () => {
 
   it('keeps the concept field on the writer surface', async () => {
     await openWriter()
-    expect(screen.getByLabelText('원하는 분위기·컨셉')).toBeTruthy()
+    expect((openFoldNamed('원하는 분위기·컨셉'), screen.getByLabelText('원하는 분위기·컨셉'))).toBeTruthy()
   }, 25000)
 
   it('keeps the concept in the document and in the generation request', async () => {
