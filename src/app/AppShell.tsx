@@ -62,7 +62,8 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 function KeyboardShortcuts() {
-  const { selectedIds, primaryId, deleteSelected, duplicateBlock, undo, redo } = useBriefEditor()
+  const { selectedIds, primaryId, deleteSelected, duplicateBlock, copySelected, pasteCopied, undo, redo } =
+    useBriefEditor()
   const { stepIn, stepOut, resetTo100 } = useCanvasView()
 
   useEffect(() => {
@@ -103,6 +104,24 @@ function KeyboardShortcuts() {
         return
       }
 
+      // 복사 · 붙여넣기 (복사·붙여넣기 Patch).
+      //
+      // 글자를 치는 중에는 지나간다 — 브라우저의 글자 복사가 먼저다. 블록을
+      // 복사하는 것과 글자를 복사하는 것은 다른 일이고, 여기서 가로채면 사람이
+      // 방금 고른 문장을 복사하지 못한다.
+      if (mod && (e.key === 'c' || e.key === 'C')) {
+        if (inText || selectedIds.length === 0) return
+        e.preventDefault()
+        copySelected()
+        return
+      }
+      if (mod && (e.key === 'v' || e.key === 'V')) {
+        if (inText) return
+        // 붙일 것이 없으면 막지 않는다 — 브라우저가 할 일이 있을 수 있다.
+        if (pasteCopied() > 0) e.preventDefault()
+        return
+      }
+
       // Duplicate the primary block.
       if (mod && (e.key === 'd' || e.key === 'D')) {
         if (inText || primaryId === null) return
@@ -121,7 +140,7 @@ function KeyboardShortcuts() {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedIds, primaryId, deleteSelected, duplicateBlock, undo, redo, stepIn, stepOut, resetTo100])
+  }, [selectedIds, primaryId, deleteSelected, duplicateBlock, copySelected, pasteCopied, undo, redo, stepIn, stepOut, resetTo100])
 
   return null
 }

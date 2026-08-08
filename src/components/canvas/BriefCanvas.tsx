@@ -17,6 +17,10 @@ import { useStudioJob } from '../../features/studio/useStudioJob'
 import { useCanvasView } from '../../features/editor/useCanvasView'
 import { findLinkPartner, isPairedLinkUrl, linkUrlOf } from '../../domain/simpleBlocks'
 import { autoScrollStep, heightForPointer } from '../../features/editor/heightDrag'
+import { blocksInRect, marqueeRect, type Rect } from '../../features/editor/canvasGeometry'
+
+/** 이보다 작게 움직인 것은 끌기가 아니라 손 떨림이다. */
+const MARQUEE_MIN_PX = 4
 import type { ReferenceLayer } from '../../domain/pageSchema'
 import { BriefBlockCard } from './BriefBlockCard'
 
@@ -39,7 +43,9 @@ function overlayStyle(ref: ReferenceLayer, canvasWidth: number): CSSProperties {
 }
 
 export function BriefCanvas() {
-  const { state, selectBlock, setCanvasHeight, endInteraction } = useBriefEditor()
+  const { state, selectBlock, selectMany, setCanvasHeight, endInteraction } = useBriefEditor()
+  /** 지금 그리고 있는 선택 범위. 끌지 않는 동안에는 `null`이다. */
+  const [marquee, setMarquee] = useState<Rect | null>(null)
   const { uploadFiles, getUrl } = useAssets()
   const { activeReference, activePageId } = useBriefDocument()
   // 작업판에서만 배경이 있다. 작성기에는 provider 자체가 없어 언제나 `null`이므로
@@ -109,8 +115,37 @@ export function BriefCanvas() {
           }}
           role="presentation"
           onPointerDown={(e) => {
-            // Clicking the empty sheet clears the selection.
-            if (e.target === e.currentTarget) selectBlock(null)
+            // 빈 자리를 누르면 선택이 풀린다. 그대로 끌면 범위 선택이 된다
+            // (범위 선택 Patch) — 누르는 순간에는 둘을 구별할 수 없으므로,
+            // 먼저 풀고 끌기 시작한 뒤에야 고르기로 넘어간다.
+            if (e.target !== e.currentTarget || e.button !== 0) return
+            selectBlock(null)
+            const sheet = sheetRef.current
+            if (sheet === null) return
+            const box = sheet.getBoundingClientRect()
+            const at = (ev: { clientX: number; clientY: number }) => ({
+              x: (ev.clientX - box.left) / zoom,
+              y: (ev.clientY - box.top) / zoom,
+            })
+            const from = at(e)
+            let drew = false
+
+            const onMove = (ev: PointerEvent) => {
+              const area = marqueeRect(from, at(ev))
+              // 손이 떨린 정도는 끌기가 아니다.
+              if (!drew && area.width < MARQUEE_MIN_PX && area.height < MARQUEE_MIN_PX) return
+              drew = true
+              setMarquee(area)
+            }
+            const onUp = (ev: PointerEvent) => {
+              window.removeEventListener('pointermove', onMove)
+              window.removeEventListener('pointerup', onUp)
+              setMarquee(null)
+              if (!drew) return
+              selectMany(blocksInRect(blocks, marqueeRect(from, at(ev))))
+            }
+            window.addEventListener('pointermove', onMove)
+            window.addEventListener('pointerup', onUp)
           }}
           onDragOver={(e) => {
             if (!hasFiles(e)) return
@@ -122,6 +157,15 @@ export function BriefCanvas() {
           }}
           onDrop={onDrop}
         >
+          {/* 지금 끌고 있는 선택 범위 (범위 선택 Patch). 눌러도 아무 일 없는
+              장식이라, 손가락이 블록에 닿지 않도록 통과시킨다. */}
+          {marquee !== null && (
+            <div
+              className="canvas__marquee"
+              aria-hidden="true"
+              style={{ left: marquee.x, top: marquee.y, width: marquee.width, height: marquee.height }}
+            />
+          )}
           {/* 언제나 맨 뒤다. 블록 순서 도구는 이 레이어에 닿지 않는다 (§4). */}
           {backgroundUrl !== undefined && (
             <img

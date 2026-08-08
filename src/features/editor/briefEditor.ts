@@ -87,14 +87,34 @@ export type EditorAction =
   | { type: 'ADD_BUTTON_LINK'; label: string }
   | { type: 'SET_BLOCK_LINK'; blockId: string; url: string }
   | { type: 'SELECT_BLOCK'; blockId: string | null; additive?: boolean }
+  /** 범위로 골라 한 번에 여럿을 고른다 (범위 선택 Patch). */
+  | { type: 'SELECT_MANY'; blockIds: readonly string[] }
   | { type: 'DELETE_BLOCK'; blockId: string }
   | { type: 'DELETE_SELECTED' }
   | { type: 'UPDATE_BLOCK'; blockId: string; patch: BlockPatch; coalesceKey?: string }
   | { type: 'COMMIT_TEXT'; blockId: string; content: string; rect?: Rect }
   | { type: 'MOVE_BLOCK'; blockId: string; x: number; y: number; coalesceKey?: string }
+  /**
+   * 고른 것 **전부**를 같은 만큼 옮긴다 (여러 개 한 번에 Patch).
+   *
+   * 앞선 판은 `MOVE_BLOCK` 하나뿐이었다. 여러 개를 골라 놓고 끌어도 잡은 것만
+   * 움직였고, 나머지는 제자리에 남았다 — 열 개를 옮기려면 열 번 끌어야 했다.
+   *
+   * 자리는 **묶음 전체를 하나로 보고** 잡는다. 하나씩 잡으면 벽에 닿은 것만 멈춰
+   * 서로의 간격이 무너진다.
+   */
+  | { type: 'MOVE_SELECTED'; dx: number; dy: number; coalesceKey?: string }
   | { type: 'RESIZE_BLOCK'; blockId: string; rect: Rect; coalesceKey?: string }
   | { type: 'DUPLICATE_BLOCK'; blockId: string }
   | { type: 'DUPLICATE_SELECTED' }
+  /**
+   * 다른 데서 복사해 온 블록을 이 페이지에 놓는다 (복사·붙여넣기 Patch).
+   *
+   * 복제와 다른 점은 **출처가 지금 이 페이지가 아니라는 것**이다. 그래서 받는
+   * 블록을 그대로 쓰지 않고 새 번호를 주며, 묶음도 새로 맺는다 — 다른 페이지의
+   * 묶음 번호를 그대로 들여오면 두 페이지가 한 묶음인 것처럼 얽힌다.
+   */
+  | { type: 'PASTE_BLOCKS'; blocks: readonly BriefBlock[] }
   | { type: 'GROUP_SELECTED' }
   | { type: 'UNGROUP_SELECTED' }
   | { type: 'ASSIGN_IMAGE'; blockId: string; asset: Asset; image?: Partial<BlockImageMeta> }
@@ -318,6 +338,46 @@ function moveBlock(state: EditorState, blockId: string, x: number, y: number): E
 }
 
 /**
+ * 고른 것 전부를 같은 만큼 옮긴다 (여러 개 한 번에 Patch).
+ *
+ * 묶음에 든 것과 버튼·링크의 짝까지 함께 데려간다 — 화면에서 한 덩어리로 보이는
+ * 것은 함께 움직여야 한다.
+ */
+function moveSelected(state: EditorState, dx: number, dy: number): EditorState {
+  const ids = withLinkPartners(state.brief.blocks, new Set(state.selectedIds))
+  if (ids.size === 0) return state
+  // 묶음에 속한 것을 고르면 그 묶음 전체가 따라온다.
+  const groups = new Set(
+    state.brief.blocks.filter((b) => ids.has(b.id) && b.groupId !== undefined).map((b) => b.groupId!),
+  )
+  const moving = state.brief.blocks.filter(
+    (b) => ids.has(b.id) || (b.groupId !== undefined && groups.has(b.groupId)),
+  )
+  if (moving.length === 0) return state
+
+  // 벽 판정은 **한 덩어리로** 한다. 하나씩 재면 벽에 닿은 것만 멈춰 간격이 무너진다.
+  const bound = state.freePlacement === true ? freeDelta : boundedDelta
+  const moved = bound(
+    moving.map((b) => b.position),
+    dx,
+    dy,
+    state.brief.project.canvasWidth,
+    state.brief.project.canvasHeight,
+  )
+  if (moved.dx === 0 && moved.dy === 0) return state
+
+  const movingIds = new Set(moving.map((b) => b.id))
+  return withBlocks(
+    state,
+    state.brief.blocks.map((b) =>
+      movingIds.has(b.id)
+        ? { ...b, position: { ...b.position, x: b.position.x + moved.dx, y: b.position.y + moved.dy } }
+        : b,
+    ),
+  )
+}
+
+/**
  * Keeps `layoutHint.emphasis` equal to the emphasis the block's size actually
  * produces on screen (§2.2). The block type is never changed — a big block is
  * emphatic wording, not a headline; deciding the role stays the AI's job.
@@ -436,18 +496,22 @@ function duplicateBlock(state: EditorState, blockId: string): EditorState {
  * Grouping among the selected set is preserved (group ids are remapped), and
  * the clones become the new selection. Used by the multi-select 복제 action.
  */
-function duplicateSelected(state: EditorState): EditorState {
-  // Include the URL half of any selected 버튼·링크 so the copy is a full pair.
-  const ids = withLinkPartners(state.brief.blocks, new Set(state.selectedIds))
-  if (ids.size === 0) return state
+/**
+ * 블록 몇 개를 이 페이지에 새 번호로 놓는다 (복사·붙여넣기 Patch).
+ *
+ * 복제와 붙여넣기가 같은 길을 쓴다. 둘은 **출처만** 다르다 — 복제는 지금 고른
+ * 것에서, 붙여넣기는 다른 데서 복사해 온 것에서. 그 뒤에 할 일(새 번호, 비켜
+ * 놓기, 묶음 다시 맺기, 짝 데려오기)은 한 글자도 다르지 않아, 나누어 적으면
+ * 언젠가 한쪽에만 고쳐진다.
+ */
+function placeCopies(state: EditorState, sources: readonly BriefBlock[]): EditorState {
   const canvasW = state.brief.project.canvasWidth
   const canvasH = state.brief.project.canvasHeight
   const groupMap = new Map<string, string>()
   const cloneOf: Record<string, string> = {}
   const clones: BriefBlock[] = []
 
-  for (const src of state.brief.blocks) {
-    if (!ids.has(src.id)) continue
+  for (const src of sources) {
     const offset = clampPosition(
       { ...src.position, x: src.position.x + DUPLICATE_OFFSET, y: src.position.y + DUPLICATE_OFFSET },
       canvasW,
@@ -485,6 +549,25 @@ function duplicateSelected(state: EditorState): EditorState {
     selectedIds: (selectable.length > 0 ? selectable : clones).map((c) => c.id),
     cloneOf,
   }
+}
+
+function duplicateSelected(state: EditorState): EditorState {
+  // Include the URL half of any selected 버튼·링크 so the copy is a full pair.
+  const ids = withLinkPartners(state.brief.blocks, new Set(state.selectedIds))
+  if (ids.size === 0) return state
+  return placeCopies(state, state.brief.blocks.filter((b) => ids.has(b.id)))
+}
+
+/**
+ * 복사해 온 블록을 놓는다.
+ *
+ * 받은 것을 그대로 믿지 않는다. 다른 페이지·다른 기획서에서 온 값이라 번호가
+ * 이미 여기 있을 수 있고, 그러면 두 블록이 한 번호를 나눠 갖는다 — `placeCopies`가
+ * 새 번호를 주므로 그 일은 일어나지 않는다.
+ */
+function pasteBlocks(state: EditorState, blocks: readonly BriefBlock[]): EditorState {
+  if (blocks.length === 0) return state
+  return placeCopies(state, blocks)
 }
 
 function deleteBlocks(state: EditorState, ids: Set<string>): EditorState {
@@ -698,12 +781,24 @@ export function briefReducer(state: EditorState, action: EditorAction): EditorSt
       return commitText(state, action.blockId, action.content, action.rect)
     case 'MOVE_BLOCK':
       return moveBlock(state, action.blockId, action.x, action.y)
+    case 'SELECT_MANY': {
+      // 숨은 주소 반쪽은 고르지 않는다 — 카드가 없어 손댈 것이 없고, 하나짜리
+      // 버튼·링크가 둘을 고른 것처럼 보이게 만든다.
+      const pick = action.blockIds.filter(
+        (id) => !isPairedLinkUrl(state.brief.blocks, state.brief.blocks.find((b) => b.id === id)!),
+      )
+      return { ...state, selectedIds: pick }
+    }
+    case 'MOVE_SELECTED':
+      return moveSelected(state, action.dx, action.dy)
     case 'RESIZE_BLOCK':
       return resizeBlock(state, action.blockId, action.rect)
     case 'DUPLICATE_BLOCK':
       return duplicateBlock(state, action.blockId)
     case 'DUPLICATE_SELECTED':
       return duplicateSelected(state)
+    case 'PASTE_BLOCKS':
+      return pasteBlocks(state, action.blocks)
     case 'GROUP_SELECTED':
       return groupSelected(state)
     case 'UNGROUP_SELECTED':

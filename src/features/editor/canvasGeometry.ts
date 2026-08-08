@@ -169,3 +169,41 @@ export function resizeRect(
 
   return { x, y, width, height }
 }
+
+/**
+ * 두 점이 만드는 사각형 (범위 선택 Patch).
+ *
+ * 어느 방향으로 끌든 같은 사각형이 나와야 한다 — 오른쪽 아래로만 끌게 하면
+ * 위쪽에 있는 것을 고를 때 손이 한 번 더 간다.
+ */
+export function marqueeRect(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): Rect {
+  return {
+    x: Math.min(from.x, to.x),
+    y: Math.min(from.y, to.y),
+    width: Math.abs(to.x - from.x),
+    height: Math.abs(to.y - from.y),
+  }
+}
+
+/**
+ * 범위에 **닿은** 블록들.
+ *
+ * 완전히 품은 것만 고르지 않는다. 큰 블록을 고르려면 그보다 큰 사각형을 그려야
+ * 하는데, 화면을 꽉 채운 배경 블록에서는 그릴 자리가 없다.
+ */
+export function blocksInRect(
+  blocks: readonly { id: string; position: Rect }[],
+  area: Rect,
+): string[] {
+  const right = area.x + area.width
+  const bottom = area.y + area.height
+  return blocks
+    .filter((b) => {
+      const p = b.position
+      return p.x < right && p.x + p.width > area.x && p.y < bottom && p.y + p.height > area.y
+    })
+    .map((b) => b.id)
+}

@@ -21,10 +21,20 @@ import {
   createInitialHistoryState,
   historyReducer,
 } from './history'
-import type { TextAlign } from '../../domain/simpleBlocks'
+import { isPairedLinkUrl, withLinkPartners, type TextAlign } from '../../domain/simpleBlocks'
 import type { ImageFit } from '../../domain/imageLayout'
 import type { LayerMove } from '../../domain/layerOrder'
 import type { Rect } from './canvasGeometry'
+
+/**
+ * 복사판 (복사·붙여넣기 Patch).
+ *
+ * 화면 밖의 모듈 하나에 둔다. 편집기는 페이지를 옮길 때마다 새로 만들어지므로,
+ * 이것이 편집기 안에 있으면 페이지를 옮기는 순간 비워진다 — 그런데 "다른 페이지에
+ * 붙여넣기"가 이 기능의 절반이다.
+ */
+let clipboard: BriefBlock[] = []
+
 
 export interface BriefEditorApi {
   state: EditorState
@@ -49,9 +59,25 @@ export interface BriefEditorApi {
    */
   commitText: (blockId: string, content: string, rect?: Rect) => void
   moveBlock: (blockId: string, x: number, y: number, coalesceKey?: string) => void
+  /** 범위로 골라 한 번에 여럿을 고른다 (범위 선택 Patch). */
+  selectMany: (blockIds: readonly string[]) => void
+  /** 고른 것 전부를 같은 만큼 옮긴다 (여러 개 한 번에 Patch). */
+  moveSelected: (dx: number, dy: number, coalesceKey?: string) => void
   resizeBlock: (blockId: string, rect: Rect, coalesceKey?: string) => void
   duplicateBlock: (blockId: string) => void
   duplicateSelected: () => void
+  /**
+   * 고른 것을 복사판에 담는다 (복사·붙여넣기 Patch).
+   *
+   * 담는 자리는 화면 밖의 모듈 하나다. 편집기는 페이지를 옮길 때마다 새로
+   * 만들어지므로, 복사판이 편집기 안에 있으면 페이지를 옮기는 순간 비워진다 —
+   * "다른 페이지에 붙여넣기"가 이 기능의 절반이다.
+   */
+  copySelected: () => number
+  /** 복사판에 담긴 것을 이 페이지에 놓는다. 놓은 개수를 돌려준다. */
+  pasteCopied: () => number
+  /** 복사판에 담긴 것이 있는가. */
+  hasCopied: () => boolean
   groupSelected: () => void
   ungroupSelected: () => void
   assignImage: (blockId: string, asset: Asset, image?: Partial<BlockImageMeta>) => void
@@ -121,6 +147,27 @@ export function BriefEditorProvider({
         dispatch(coalesceKey === undefined
           ? { type: 'RESIZE_BLOCK', blockId, rect }
           : { type: 'RESIZE_BLOCK', blockId, rect, coalesceKey }),
+      selectMany: (blockIds) => dispatch({ type: 'SELECT_MANY', blockIds }),
+      moveSelected: (dx, dy, coalesceKey) =>
+        dispatch(coalesceKey === undefined
+          ? { type: 'MOVE_SELECTED', dx, dy }
+          : { type: 'MOVE_SELECTED', dx, dy, coalesceKey }),
+      copySelected: () => {
+        const ids = new Set(state.selectedIds)
+        if (ids.size === 0) return 0
+        // 버튼·링크는 짝까지 함께 담는다. 반쪽만 붙여넣으면 주소 없는 버튼이 생긴다.
+        const withPairs = withLinkPartners(state.brief.blocks, ids)
+        clipboard = state.brief.blocks.filter((b) => withPairs.has(b.id)).map((b) => structuredClone(b))
+        // 담은 뒤 원본을 고쳐도 복사판은 그대로다 — 붙여넣기가 "복사한 그때"를
+        // 내놓지 않으면 사람은 무엇을 붙였는지 알 수 없다.
+        return clipboard.filter((b) => !isPairedLinkUrl(state.brief.blocks, b)).length
+      },
+      pasteCopied: () => {
+        if (clipboard.length === 0) return 0
+        dispatch({ type: 'PASTE_BLOCKS', blocks: clipboard })
+        return clipboard.length
+      },
+      hasCopied: () => clipboard.length > 0,
       duplicateBlock: (blockId) => dispatch({ type: 'DUPLICATE_BLOCK', blockId }),
       duplicateSelected: () => dispatch({ type: 'DUPLICATE_SELECTED' }),
       groupSelected: () => dispatch({ type: 'GROUP_SELECTED' }),

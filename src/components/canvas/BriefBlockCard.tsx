@@ -125,7 +125,7 @@ function LinkIcon() {
 
 export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeight, paired = false, linkUrl }: Props) {
   const {
-    state, moveBlock, resizeBlock, selectBlock, endInteraction, commitText,
+    state, moveBlock, moveSelected, resizeBlock, selectBlock, endInteraction, commitText,
     deleteBlock, duplicateBlock, removeBlockAsset, setBlockLink, setTextAlign,
     reorderBlock, freePlacement,
   } = useBriefEditor()
@@ -360,8 +360,20 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
     }
     if (!selected) selectBlock(block.id)
 
+    /**
+     * 여럿을 골라 두고 끌면 **고른 것 전부**가 따라온다 (여러 개 한 번에 Patch).
+     *
+     * 앞선 판은 잡은 것 하나만 움직였다. 열 개를 옮기려면 열 번 끌어야 했고,
+     * 그러는 동안 서로의 간격이 조금씩 어긋났다.
+     *
+     * 고른 것이 하나면 지금까지의 길로 간다 — 그쪽은 "이 자리로"를 주고, 여럿은
+     * "이만큼"을 준다. 하나짜리에 뺄셈을 끼워 넣을 이유가 없다.
+     */
+    const together = selected && state.selectedIds.length > 1
     e.preventDefault()
     drag.current = { startX: e.clientX, startY: e.clientY, origX: block.position.x, origY: block.position.y, moved: false }
+    let lastDx = 0
+    let lastDy = 0
 
     const onMove = (ev: PointerEvent) => {
       const d = drag.current
@@ -372,6 +384,14 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
       d.moved = true
       const dx = (ev.clientX - d.startX) / scale
       const dy = (ev.clientY - d.startY) / scale
+      if (together) {
+        // 묶음 이동은 **직전 자리에서의 차이**로 준다. 시작점에서의 차이를 그대로
+        // 주면 매번 처음부터 다시 더해져 손가락보다 빨리 달아난다.
+        moveSelected(dx - lastDx, dy - lastDy, `move-many:${block.id}`)
+        lastDx = dx
+        lastDy = dy
+        return
+      }
       moveBlock(block.id, d.origX + dx, d.origY + dy, `move:${block.id}`)
     }
     const onUp = () => {
