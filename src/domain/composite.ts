@@ -37,6 +37,14 @@ export interface CompositeLayerPlan {
   /** 앞뒤 차례. 클수록 앞이다 — 문구 오브젝트와 **같은 체계**의 번호다. */
   order: number
   /**
+   * 이 겹 하나의 진하기 0..1 (배너 Patch §4). 없으면 1 — 지금까지와 같다.
+   *
+   * 톤으로는 안 되는 일이 있다. 배너에서 배경으로 내린 히어로는 **뒤에 비쳐야**
+   * 하는데, 밝기를 아무리 올려도 불투명한 그림은 뒤를 가린다. 실제로 그랬다 —
+   * 눌러 놓은 가차 기계가 그대로 글자를 덮었다.
+   */
+  opacity?: number
+  /**
    * 이 오브젝트에만 거는 톤 (블록별 톤 Patch).
    *
    * 페이지 전체 톤과 다른 값이다. 이것이 먼저 걸리고, 다 그린 뒤에 전체 톤이
@@ -149,6 +157,8 @@ export interface CompositePlanInput {
   angleOverrides?: Readonly<Record<string, number>>
   /** 블록 id → 그 오브젝트에만 거는 톤 (블록별 톤 Patch). */
   objectTones?: Readonly<Record<string, ToneAdjust>>
+  /** 블록 id → 그 겹 하나의 진하기 0..1 (배너 Patch §4). */
+  opacities?: Readonly<Record<string, number>>
 }
 
 const DEFAULT_PLAN_GRAIN = 0.08
@@ -187,6 +197,7 @@ export function planLocalComposite(input: CompositePlanInput): CompositePlan {
         order: input.orderOverrides?.[block.id] ?? index,
         ...(input.angleOverrides?.[block.id] === undefined ? {} : { angle: input.angleOverrides[block.id] }),
         ...(input.objectTones?.[block.id] === undefined ? {} : { tone: input.objectTones[block.id] }),
+        ...(input.opacities?.[block.id] === undefined ? {} : { opacity: input.opacities[block.id] }),
       })
       continue
     }

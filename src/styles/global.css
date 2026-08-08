@@ -2618,6 +2618,7 @@ button { font-family: inherit; }
 .fold__body { padding: 0 10px 10px; }
 /* 접히는 칸 안에서는 바깥 테두리와 배경을 한 번 더 두르지 않는다. */
 .fold__body > .tone,
+.fold__body > .banner,
 .fold__body > .paper-tune,
 .fold__body > .block-order,
 .fold__body > .effects,
@@ -2854,3 +2855,58 @@ button { font-family: inherit; }
 .result-object__handle--ne { right: -5px; top: -5px; cursor: nesw-resize; }
 .result-object__handle--sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
 .result-object__handle--se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+
+/* ── 배너 뽑기 (배너 Patch §4) ──────────────────────────────────────────── */
+.banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-panel);
+}
+.banner__note { margin: 0; color: var(--color-muted); font-size: 11px; line-height: 1.5; }
+.banner__specs { display: flex; flex-wrap: wrap; gap: 6px; }
+.banner__make { font-size: 12px; }
+.banner__status { margin: 0; font-size: 11px; color: var(--color-muted); }
+.banner__status--bad { color: var(--color-danger, #b91c1c); }
+.banner__result { display: flex; flex-direction: column; gap: 8px; }
+.banner__size { margin: 0; font-size: 11px; font-weight: 600; }
+.banner__siblings { font-weight: 400; color: var(--color-muted); }
+/* 실제 크기로 본다. 줄여 보여 주면 글자가 읽히는지를 볼 수 없고, 얇은 띠
+   배너에서 중요한 것은 그것뿐이다. 좁은 패널에서는 가로로 민다. */
+.banner__preview {
+  overflow-x: auto;
+  padding: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background:
+    repeating-conic-gradient(#e9edf3 0% 25%, #f7f9fc 0% 50%) 50% / 12px 12px;
+}
+.banner__preview img { display: block; max-width: none; }
+.banner__edges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.banner__edges-title { font-size: 11px; color: var(--color-muted); }
+.banner__edge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  font: inherit;
+  font-size: 11px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface, #fff);
+  cursor: pointer;
+}
+.banner__swatch {
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+}
+.banner__notes { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 3px; }
+.banner__notes-item { font-size: 11px; color: var(--color-muted); line-height: 1.5; }
+/* 사람이 봐야 하는 둘 — 자리를 못 얻음, 조각이 없음. */
+.banner__notes-item.is-warn { color: var(--color-danger, #b91c1c); font-weight: 600; }
+.banner__actions { display: flex; gap: 6px; }

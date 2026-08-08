@@ -46,6 +46,15 @@ import type { ToneAdjust } from './toneAdjust'
  */
 export const DEMOTED_TONE: ToneAdjust = { brightness: 0.35, contrast: -0.45, saturation: -0.35, temperature: 0 }
 
+/**
+ * 배경으로 내려간 조각의 진하기.
+ *
+ * 톤만으로는 안 된다는 것을 브라우저에서 봤다. 밝기를 올려도 불투명한 그림은
+ * 뒤를 가리고, 눌러 놓은 가차 기계가 그대로 제목을 덮었다. 배경으로 내린다는
+ * 것은 **뒤에 비친다**는 뜻이므로 진하기를 함께 내린다.
+ */
+export const DEMOTED_OPACITY = 0.22
+
 /** 완성본이 남긴 조각들. 저장 파일에서 그대로 나온다. */
 export interface BannerPieces {
   background?: StudioBackground | undefined
@@ -112,9 +121,13 @@ export function buildBanner(
   const productImages: Record<string, string> = { ...pieces.productImages }
   for (const [blockId, piece] of imagePieces) productImages[blockId] = piece.assetId
 
-  // 배경으로 내려간 것은 눌러서 깐다.
+  // 배경으로 내려간 것은 눌러서, 그리고 비치게 깐다.
   const objectTones: Record<string, ToneAdjust> = { ...pieces.objectTones }
-  for (const blockId of fit.background) objectTones[blockId] = DEMOTED_TONE
+  const opacities: Record<string, number> = {}
+  for (const blockId of fit.background) {
+    objectTones[blockId] = DEMOTED_TONE
+    opacities[blockId] = DEMOTED_OPACITY
+  }
 
   const plan = planLocalComposite({
     page,
@@ -124,6 +137,7 @@ export function buildBanner(
     productImages,
     effects: pieces.effects,
     objectTones,
+    opacities,
     ...(pieces.grain === undefined ? {} : { grain: pieces.grain }),
     ...(pieces.tone === undefined ? {} : { tone: pieces.tone }),
     // 글자는 조각이 그린다. 여기서 또 그리면 같은 문구가 두 번 나온다.

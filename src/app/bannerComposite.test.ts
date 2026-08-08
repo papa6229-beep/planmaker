@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { DEMOTED_TONE, buildBanner, readableSlots, type BannerPieces } from '../domain/bannerComposite'
+import { DEMOTED_OPACITY, DEMOTED_TONE, buildBanner, readableSlots, type BannerPieces } from '../domain/bannerComposite'
 import { BANNER_1020x70 } from '../domain/bannerSpec'
 import { createBlock } from '../domain/factory'
 import type { BriefBlock } from '../domain/briefSchema'
@@ -142,12 +142,23 @@ describe('§33-3 배경과 강등', () => {
     expect(buildBanner(source, SPEC, BARE).plan.backgroundCrop).toBeUndefined()
   })
 
-  it('배경으로 내려간 조각은 눌러서 깐다', () => {
-    // 이벤트3의 가차 기계. 그대로 깔면 글자가 그 위에서 안 읽힌다.
+  it('배경으로 내려간 조각은 눌러서, 그리고 비치게 깐다', () => {
+    // 이벤트3의 가차 기계. 브라우저에서 실제로 본 것 — 톤만 눌러서는 안 된다.
+    // 밝기를 올려도 불투명한 그림은 뒤를 가리고, 눌러 놓은 기계가 그대로 제목을
+    // 덮었다. 배경으로 내린다는 것은 **뒤에 비친다**는 뜻이다.
     const gacha = page([imageBlock('gacha', 'asset-gacha', { width: 330, height: 470 })])
     const { plan, fit } = buildBanner(gacha, SPEC, BARE)
     expect(fit.background).toEqual(['gacha'])
-    expect(plan.layers.find((l) => l.blockId === 'gacha')!.tone).toEqual(DEMOTED_TONE)
+    const layer = plan.layers.find((l) => l.blockId === 'gacha')!
+    expect(layer.tone).toEqual(DEMOTED_TONE)
+    expect(layer.opacity).toBe(DEMOTED_OPACITY)
+    expect(DEMOTED_OPACITY).toBeLessThan(0.5)
+  })
+
+  it('자리를 얻은 조각은 진하기를 건드리지 않는다', () => {
+    // 배경으로 내린 것에만 거는 값이다. 앞에 선 제품까지 비치면 아무것도 안 보인다.
+    const { plan } = buildBanner(page([imageBlock('photo', 'asset-photo')]), SPEC, BARE)
+    expect(plan.layers.find((l) => l.blockId === 'photo')!.opacity).toBeUndefined()
   })
 
   it('글자가 놓일 자리를 배경 고르기에 넘길 수 있다', () => {

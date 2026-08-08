@@ -43,6 +43,7 @@ import { CompositeEffectsPanel } from '../components/studio/CompositeEffectsPane
 import { BlockOrderPanel } from '../components/studio/BlockOrderPanel'
 import { ToneAdjustPanel } from '../components/studio/ToneAdjustPanel'
 import { PaperTunePanel } from '../components/studio/PaperTunePanel'
+import { BannerPanel } from '../components/studio/BannerPanel'
 import { BackgroundCompositeProvider } from '../features/studio/useBackgroundComposite'
 import { StudioEffectsSync } from '../features/studio/StudioEffectsSync'
 import { GenerateImageDialog } from '../components/studio/GenerateImageDialog'
@@ -321,6 +322,8 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
                 <ToneAdjustPanel />
                 {/* 완성된 배경 위에서 종이 테두리를 다듬는다 (완성 후 컷아웃 Patch). */}
                 <PaperTunePanel />
+                {/* 같은 조각을 배너 규격에 다시 놓는다 (배너 Patch §4). */}
+                <BannerPanel />
               </>
             ) : (
               <>

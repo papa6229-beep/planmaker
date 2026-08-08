@@ -259,6 +259,9 @@ async function drawLayer(
 
   // ── 원본 (§9 첫 줄: 그대로 얹는다) ────────────────────────────────────────
   ctx.save()
+  // 이 겹 하나의 진하기 (배너 Patch §4). 배경으로 내린 히어로가 뒤에 비쳐야
+  // 하는 자리에서 쓴다 — 밝기를 올리는 것만으로는 뒤를 가리는 것이 그대로다.
+  if (layer.opacity !== undefined) ctx.globalAlpha = Math.max(0, Math.min(1, layer.opacity))
   // 캔버스 밖으로 걸친 부분은 여기서 잘린다 — 최종 결과는 캔버스 안쪽뿐이다.
   ctx.beginPath()
   ctx.rect(layer.crop.dx, layer.crop.dy, layer.crop.dWidth, layer.crop.dHeight)

@@ -15,6 +15,7 @@ import { useBriefDocument } from '../document/useBriefDocument'
 import { useStudioJob } from './useStudioJob'
 import { imageZipFileName, isPartialSave, planImageSave, type ImageSavePlan } from '../../domain/imageSaveFile'
 import { collectSavedImages, zipSavedImages } from '../../services/imageSave'
+import { downloadBlob } from '../../services/downloadFile'
 
 export type ImageSaveState =
   | { kind: 'idle' }
@@ -34,19 +35,6 @@ export interface ImageSaveApi {
   dismiss: () => void
 }
 
-function download(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = fileName
-  document.body.appendChild(a)
-  a.click()
-  setTimeout(() => {
-    a.remove()
-    URL.revokeObjectURL(url)
-  }, 10_000)
-}
-
 export function useImageSave(): ImageSaveApi | null {
   const studio = useStudioJob()
   const { getDocument } = useBriefDocument()
@@ -57,8 +45,8 @@ export function useImageSave(): ImageSaveApi | null {
       setState({ kind: 'saving' })
       try {
         const files = await collectSavedImages(plan)
-        if (files.length === 1) download(files[0]!.blob, files[0]!.fileName)
-        else download(await zipSavedImages(files), imageZipFileName(title))
+        if (files.length === 1) downloadBlob(files[0]!.blob, files[0]!.fileName)
+        else downloadBlob(await zipSavedImages(files), imageZipFileName(title))
         setState({ kind: 'saved', count: files.length })
       } catch {
         setState({ kind: 'failed', message: '이미지를 저장하지 못했습니다. 다시 시도해 주세요.' })

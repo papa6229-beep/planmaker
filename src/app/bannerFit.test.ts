@@ -274,6 +274,15 @@ describe('§32-4 배너 기획서가 나온다', () => {
     expect(banner.blocks[0]!.id).toBe('e')
     expect(banner.blocks[0]!.position).toEqual({ x: 0, y: 0, width: 1020, height: 70 })
   })
+
+  it('배경으로 내려간 것은 화면을 **채운다**', () => {
+    // 기본값인 `맞추기`로 두면 세로로 긴 히어로가 70px 높이에 맞춰 손톱만 하게
+    // 줄어 가운데 박힌다 — 브라우저에서 실제로 그랬다. 배경으로 내린다는 것은
+    // 화면을 덮는다는 뜻이지 작게 놓는다는 뜻이 아니다.
+    const gacha = block('main_product_image', 'gacha', { width: 330, height: 470 })
+    const { page: banner } = buildBannerPage(page([gacha]), SPEC)
+    expect(banner.blocks[0]!.image?.fit).toBe('cover')
+  })
 })
 
 describe('§32-5 규격이 스스로 말하는 것', () => {

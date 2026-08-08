@@ -238,9 +238,17 @@ export function buildBannerPage(page: BriefPage, spec: BannerSpec): { page: Brie
 
   const behind: BriefBlock[] = fit.background.flatMap((id) => {
     const block = byId.get(id)
-    return block === undefined
-      ? []
-      : [{ ...block, position: { x: 0, y: 0, width: spec.width, height: spec.height } }]
+    if (block === undefined) return []
+    return [
+      {
+        ...block,
+        position: { x: 0, y: 0, width: spec.width, height: spec.height },
+        // **채우기**로 바꾼다. 기본값인 `맞추기`로 두면 세로로 긴 히어로가 70px
+        // 높이에 맞춰 손톱만 하게 줄어 가운데 박힌다 — 브라우저에서 실제로 그랬다.
+        // 배경으로 내린다는 것은 화면을 덮는다는 뜻이지 작게 놓는다는 뜻이 아니다.
+        image: { ...block.image, fit: 'cover' },
+      },
+    ]
   })
   const front: BriefBlock[] = fit.placements.flatMap((placement) => {
     const block = byId.get(placement.blockId)
