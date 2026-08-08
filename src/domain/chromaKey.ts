@@ -30,12 +30,28 @@ export const TEXT_KEY_COLOR: KeyColor = { r: 255, g: 0, b: 255 }
 export const TEXT_KEY_HEX = '#FF00FF'
 
 /**
- * 키 색으로 볼 거리 (RGB 유클리드).
+ * **바깥에서 이어져 들어온** 픽셀을 배경으로 볼 거리 (RGB 유클리드).
  *
- * 모델이 만든 단색은 완벽히 균일하지 않고, 글자 가장자리는 배경과 섞인다. 너무
- * 좁으면 테두리에 색 띠가 남고, 너무 넓으면 글자의 밝은 분홍까지 먹는다.
+ * 앞선 판은 이 값 하나로 그림 전체를 훑었고, 값이 110이었다. 그 자가 파스텔·핑크
+ * 디자인의 한복판을 지나간다 — 분홍 외곽선(250,100,220)이 거리 106, 자홍빛
+ * 보라(220,60,230)가 74다. 분홍 획은 안쪽이 진하고 가장자리로 갈수록 연해지므로
+ * 그러데이션이 이 경계선을 넘나들며 **획을 군데군데 뚫어 놓았다.** 그것이 손검수
+ * 에서 본 울퉁불퉁한 외곽선이었다.
+ *
+ * 이제 이 값은 **가장자리에서 이어진 자리에만** 쓴다. 종이를 테두리부터 뜯어
+ * 들어오는 것과 같아서, 글자에 막히면 거기서 멈춘다. 글자 안쪽의 분홍은 바깥과
+ * 이어져 있지 않으므로 아무리 분홍이어도 닿지 않는다.
  */
-export const TEXT_KEY_TOLERANCE = 110
+export const TEXT_KEY_TOLERANCE = 60
+
+/**
+ * 어디에 있든 배경으로 볼 거리 — 훨씬 좁다.
+ *
+ * `0`·`6`·`ㅇ` 안에 갇힌 임시 바탕은 바깥과 이어져 있지 않아 뜯어 들어갈 수 없다.
+ * 그 자리는 모델이 칠한 단색 그대로라 좁은 자로도 잡힌다. 디자인이 쓰는 어떤
+ * 분홍도 이 안에는 들어오지 않는다.
+ */
+export const TEXT_KEY_ENCLOSED_TOLERANCE = 36
 
 /** 이 알파 아래는 없는 픽셀로 센다 (`photoBox`와 같은 기준). */
 const ALPHA_FLOOR = 8
@@ -47,7 +63,7 @@ const ALPHA_FLOOR = 8
  * 겹쳐 두세 겹까지 섞인 색이 이어진다. 너무 얕으면 띠가 남고, 너무 깊으면 글자
  * 안쪽의 디자인 색까지 건드린다.
  */
-export const KEY_EDGE_DEPTH = 2
+export const KEY_EDGE_DEPTH = 3
 
 export interface PixelBuffer {
   data: Uint8ClampedArray
@@ -62,26 +78,78 @@ function distance(data: Uint8ClampedArray, at: number, key: KeyColor): number {
   return Math.sqrt(dr * dr + dg * dg + db * db)
 }
 
+/** 네 이웃. 대각선까지 세면 겹이 뭉툭해져 글자가 굵기를 잃는다. */
+const NEIGHBOURS: [number, number][] = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+]
+
 /**
- * 키 색인 픽셀을 전부 지운다. 지운 뒤 남은 불투명 비율을 돌려준다.
+ * 임시 바탕을 지운다. 지운 뒤 남은 불투명 비율을 돌려준다.
  *
- * 픽셀을 **제자리에서** 고친다 — 페이지 한 장 크기의 버퍼를 한 벌 더 만들 이유가
- * 없다. 돌려주는 비율은 부르는 쪽이 "정말 지워졌는가"를 판정하는 데 쓴다:
- * 모델이 단색 배경을 무시했다면 이 값이 거의 1로 남는다.
+ * 두 갈래로 지운다.
+ *
+ *  - **바깥에서 이어진 것**: 테두리에서 시작해 비슷한 색을 따라 뜯어 들어간다.
+ *    글자에 막히면 멈추므로, 글자 안쪽 색은 얼마나 키 색을 닮았든 닿지 않는다.
+ *  - **갇힌 것**: `0`·`ㅇ` 안의 바탕은 뜯어 들어갈 수 없다. 그 자리는 모델이 칠한
+ *    단색 그대로라, 훨씬 좁은 자로 따로 잡는다.
+ *
+ * 앞선 판은 갈래 없이 넓은 자 하나로 그림 전체를 훑었다. 갇힌 바탕을 잡기 위한
+ * 선택이었지만, 그 자가 디자인의 분홍까지 함께 잘라 외곽선을 갉아 놓았다. 갈래를
+ * 나누면 두 가지를 한꺼번에 얻는다 — 갇힌 바탕은 그대로 지우고, 디자인 색은
+ * 살린다.
+ *
+ * 픽셀을 **제자리에서** 고친다. 돌려주는 비율은 부르는 쪽이 "모델이 단색 배경을
+ * 지켰는가"를 판정하는 데 쓴다: 무시했다면 이 값이 거의 1로 남는다.
  */
 export function keyOutBackground(
   pixels: PixelBuffer,
   key: KeyColor = TEXT_KEY_COLOR,
   tolerance: number = TEXT_KEY_TOLERANCE,
+  enclosedTolerance: number = TEXT_KEY_ENCLOSED_TOLERANCE,
 ): number {
   const { data, width, height } = pixels
   if (width <= 0 || height <= 0) return 0
-
   const total = width * height
+
+  // ── 바깥에서 뜯어 들어간다 ─────────────────────────────────────────────────
+  const seen = new Uint8Array(total)
+  const stack: number[] = []
+  const consider = (index: number): void => {
+    if (seen[index] === 1) return
+    seen[index] = 1
+    if (distance(data, index * 4, key) > tolerance) return
+    data[index * 4 + 3] = 0
+    stack.push(index)
+  }
+  for (let x = 0; x < width; x += 1) {
+    consider(x)
+    consider((height - 1) * width + x)
+  }
+  for (let y = 0; y < height; y += 1) {
+    consider(y * width)
+    consider(y * width + width - 1)
+  }
+  while (stack.length > 0) {
+    const index = stack.pop()!
+    const x = index % width
+    const y = (index - x) / width
+    for (const [dx, dy] of NEIGHBOURS) {
+      const nx = x + dx
+      const ny = y + dy
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue
+      consider(ny * width + nx)
+    }
+  }
+
+  // ── 갇힌 바탕과 남은 비율 ─────────────────────────────────────────────────
   let opaque = 0
   for (let i = 0; i < total; i += 1) {
     const at = i * 4
-    if (distance(data, at, key) <= tolerance) {
+    if ((data[at + 3] ?? 0) === 0) continue
+    if (distance(data, at, key) <= enclosedTolerance) {
       data[at + 3] = 0
       continue
     }
@@ -117,14 +185,6 @@ export function keyEdgeAlpha(
   const reach = Math.hypot(color.r - key.r, color.g - key.g, color.b - key.b)
   return Math.min(1, Math.max(0, reach / span))
 }
-
-/** 네 이웃. 대각선까지 세면 겹이 뭉툭해져 글자가 굵기를 잃는다. */
-const NEIGHBOURS: [number, number][] = [
-  [1, 0],
-  [-1, 0],
-  [0, 1],
-  [0, -1],
-]
 
 /**
  * 지워진 자리에 맞닿은 겹만 골라 키 색을 되돌린다 (자주색 테두리 Patch).
