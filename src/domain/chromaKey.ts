@@ -198,7 +198,34 @@ export function unspillKeyEdges(
     frontier = next
     if (frontier.length === 0) break
   }
-  if (edges.length === 0) return 0
+  /**
+   * 바깥으로도 한 겹 (자주색 테두리 Patch 2).
+   *
+   * `keyOutBackground`의 판정은 **0 아니면 255**다. 허용치 안에 든 픽셀은 얼마나
+   * 덮였든 통째로 지워지므로, 모델이 그린 안티앨리어싱이 잘려나가고 1비트짜리
+   * 하드 엣지만 남는다. 그 하드 엣지를 상자 크기로 줄여 붙이면 가장자리가
+   * 계단처럼 보인다 — 글자마다, 크기와 상관없이.
+   *
+   * 지워진 픽셀 중 **글자에 닿은 한 겹**은 배경이 아니라 덮이다 만 자리다. 그
+   * 자리에 원래의 부분 투명도를 돌려주면 가장자리가 다시 부드러워진다. 진짜
+   * 배경은 키 색 그대로라 계산이 0을 주므로 저절로 투명하게 남는다.
+   */
+  const outer: number[] = []
+  for (let i = 0; i < total; i += 1) {
+    if ((data[i * 4 + 3] ?? 0) !== 0) continue
+    const x = i % width
+    const y = (i - x) / width
+    for (const [dx, dy] of NEIGHBOURS) {
+      const nx = x + dx
+      const ny = y + dy
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue
+      if ((data[(ny * width + nx) * 4 + 3] ?? 0) !== 0) {
+        outer.push(i)
+        break
+      }
+    }
+  }
+  if (edges.length === 0 && outer.length === 0) return 0
 
   /**
    * 이제 반대로 — 겹이 아닌 불투명 픽셀(안쪽)에서 바깥으로 퍼뜨려, 겹마다 가장
@@ -229,6 +256,24 @@ export function unspillKeyEdges(
     inner = next
   }
 
+  /** 바깥 겹은 맞닿은 불투명 픽셀의 안쪽 색을 물려받는다. */
+  for (const index of outer) {
+    const x = index % width
+    const y = (index - x) / width
+    for (const [dx, dy] of NEIGHBOURS) {
+      const nx = x + dx
+      const ny = y + dy
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue
+      const at = ny * width + nx
+      if ((data[at * 4 + 3] ?? 0) === 0) continue
+      const from = source[at]!
+      if (from >= 0) {
+        source[index] = from
+        break
+      }
+    }
+  }
+
   let fixed = 0
   for (const index of edges) {
     const from = source[index]!
@@ -249,6 +294,27 @@ export function unspillKeyEdges(
     data[at + 2] = foreground.b
     // 원래 알파와 곱한다. 이미 반투명한 픽셀을 불투명하게 되돌리지 않기 위해서다.
     data[at + 3] = Math.round((data[at + 3] ?? 255) * alpha)
+    fixed += 1
+  }
+
+  for (const index of outer) {
+    const from = source[index]!
+    if (from < 0) continue
+    const at = index * 4
+    const fat = from * 4
+    const foreground = { r: data[fat] ?? 0, g: data[fat + 1] ?? 0, b: data[fat + 2] ?? 0 }
+    const alpha = keyEdgeAlpha(
+      { r: data[at] ?? 0, g: data[at + 1] ?? 0, b: data[at + 2] ?? 0 },
+      foreground,
+      key,
+    )
+    // 진짜 배경은 키 색 그대로라 0이 나온다. 투명한 채로 둔다.
+    if (alpha <= 0) continue
+    data[at] = foreground.r
+    data[at + 1] = foreground.g
+    data[at + 2] = foreground.b
+    // 지워진 자리이므로 **곱하지 않고 정한다** — 곱하면 0에 0을 곱해 그대로다.
+    data[at + 3] = Math.round(255 * alpha)
     fixed += 1
   }
   return fixed
