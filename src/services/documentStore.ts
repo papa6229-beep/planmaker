@@ -38,6 +38,8 @@ export interface DocumentSummary {
   pageCount: number
   /** 작성팀 as stored on the document; absent means 팀 미지정 (v1 마감 §12). */
   requestTeam?: string
+  /** 이 기획서를 만든 사람 (작업자 기록 Patch). 게이트에서 받은 이름이다. */
+  author?: string
 }
 
 /** Marks that the one-time import of the legacy single-autosave row is done. */
@@ -102,6 +104,9 @@ function summarize(row: DocumentRow): DocumentSummary {
     updatedAt: row.updatedAt,
     pageCount: row.doc.pages.length,
     ...(row.doc.project.requestTeam === undefined ? {} : { requestTeam: row.doc.project.requestTeam }),
+    // 누가 만졌는가 (작업자 기록 Patch). 목록 한 줄에서 바로 보이라고 여기 싣는다 —
+    // 문서를 통째로 열어야 알 수 있으면 아무도 확인하지 않는다.
+    ...(row.doc.project.author === undefined ? {} : { author: row.doc.project.author }),
   }
 }
 

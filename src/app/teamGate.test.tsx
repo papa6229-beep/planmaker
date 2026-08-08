@@ -25,7 +25,7 @@ import {
 } from '../services/documentStore'
 import { clearAllRequests, resetRequestStoreForTests } from '../services/requestStore'
 import { clearAllStudioJobs, resetStudioStoreForTests, saveStudioJob, STUDIO_JOB_ID } from '../services/studioStore'
-import { clearSelectedTeam, selectedTeam, selectTeam } from '../features/team/teamSession'
+import { clearSelectedTeam, selectedMember, selectedTeam, selectTeam } from '../features/team/teamSession'
 import { createStudioJob, linkProductImage } from '../domain/studioJob'
 import { createEmptyDocument } from '../domain/pageSchema'
 import { createBlock, createEmptyProject } from '../domain/factory'
@@ -104,9 +104,20 @@ describe('§4 팀 선택 게이트', () => {
     expect(screen.getByRole('button', { name: 'CS팀' })).toBeTruthy()
   })
 
+  it('작업자 이름을 적기 전에는 팀을 고를 수 없다', async () => {
+    // 나중에 채우게 하면 대개 비어 있는 채로 남는다 (작업자 기록 Patch).
+    renderWriter('/')
+    await waitFor(() => expect(gateTitle()).toBeTruthy())
+    expect((screen.getByRole('button', { name: '마케팅팀' }) as HTMLButtonElement).disabled).toBe(true)
+
+    fireEvent.change(screen.getByLabelText('작업자 이름'), { target: { value: '김하늘' } })
+    expect((screen.getByRole('button', { name: '마케팅팀' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
   it('starts exactly one empty brief for the team that was chosen', async () => {
     renderWriter('/')
     await waitFor(() => expect(gateTitle()).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('작업자 이름'), { target: { value: '김하늘' } })
 
     const button = screen.getByRole('button', { name: '마케팅팀' })
     fireEvent.click(button)
@@ -117,6 +128,9 @@ describe('§4 팀 선택 게이트', () => {
     expect(docs).toHaveLength(1)
     expect(docs[0]!.requestTeam).toBe('marketing')
     expect(selectedTeam()).toBe('marketing')
+    // 누가 만들었는지가 기획서와 목록에 함께 남는다.
+    expect(docs[0]!.author).toBe('김하늘')
+    expect(selectedMember()).toBe('김하늘')
   })
 
   it("shows only the chosen team's briefs — no other team, and no team-less material", async () => {

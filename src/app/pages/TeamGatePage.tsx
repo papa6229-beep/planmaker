@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDocuments } from '../../features/documents/useDocuments'
-import { selectTeam } from '../../features/team/teamSession'
+import { MEMBER_NAME_MAX, selectMember, selectTeam } from '../../features/team/teamSession'
 import { isRequestTeam, REQUEST_TEAMS, teamLabel, type RequestTeam } from '../../domain/requestTeam'
 import { countWriterStorage, resetWriterStorage, type StorageCount } from '../../services/storageReset'
 import { readEventDocument } from '../../services/eventBriefImport'
@@ -28,6 +28,13 @@ export function TeamGatePage() {
   // 한 번 누른 팀 선택이 문서를 두 건 만들지 않도록 잠근다.
   const startingRef = useRef(false)
   const [busy, setBusy] = useState(false)
+  /**
+   * 작업자 이름 (작업자 기록 Patch).
+   *
+   * 팀만으로는 나중에 "누가 했는지"를 알 수 없다. 한 팀에서 여럿이 쓰기 때문이다.
+   * 비워 두면 시작하지 않는다 — 나중에 채우게 하면 대개 비어 있는 채로 남는다.
+   */
+  const [member, setMember] = useState('')
   const [failed, setFailed] = useState(false)
   const [counts, setCounts] = useState<StorageCount | null>(null)
   const [confirming, setConfirming] = useState(false)
@@ -56,6 +63,7 @@ export function TeamGatePage() {
     setBusy(true)
     try {
       selectTeam(team)
+      selectMember(member)
       const id = await createNew(team)
       navigate(`/briefs/${id}`, { replace: true })
     } catch {
@@ -151,19 +159,40 @@ export function TeamGatePage() {
           팀을 고르면 빈 기획서 한 건으로 시작합니다. 그 팀의 지난 기획서는 편집 화면 오른쪽 목록에서 다시 열 수 있습니다.
         </p>
 
+        <label className="team-gate__member">
+          <span className="team-gate__member-label">작업자 이름</span>
+          <input
+            className="field__input"
+            aria-label="작업자 이름"
+            value={member}
+            maxLength={MEMBER_NAME_MAX}
+            placeholder="예: 김하늘"
+            autoComplete="off"
+            disabled={busy}
+            onChange={(e) => setMember(e.target.value)}
+          />
+          <span className="team-gate__member-hint">
+            기획서에 <b>누가 작업했는지</b>가 남습니다. 팀 목록에서 함께 보입니다.
+          </span>
+        </label>
+
         <div className="team-gate__teams">
           {REQUEST_TEAMS.map((team) => (
             <button
               key={team.value}
               type="button"
               className="btn btn--primary team-gate__team"
-              disabled={busy}
+              disabled={busy || member.trim().length === 0}
+              title={member.trim().length === 0 ? '작업자 이름을 먼저 입력해 주세요' : undefined}
               onClick={() => void start(team.value)}
             >
               {team.label}
             </button>
           ))}
         </div>
+        {member.trim().length === 0 && (
+          <p className="team-gate__lead">작업자 이름을 입력하면 팀을 고를 수 있습니다.</p>
+        )}
 
         {failed && <p className="team-gate__error">기획서를 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.</p>}
 

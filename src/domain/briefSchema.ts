@@ -75,6 +75,15 @@ export interface Project {
    * copy, kept apart from the planner's note, and never printed (§6-2).
    */
   aiNote?: string
+  /**
+   * 팀 안에서 주고받는 말 — 팀장이 팀원에게 남기는 수정 사항 (팀 메모 Patch).
+   *
+   * 앞의 둘과 **받는 사람이 다르다.** `designerNote`는 디자인팀 작업자에게,
+   * `aiNote`는 이미지 AI에게 간다. 이것은 같은 팀 안에서만 읽는 말이라, 파일을
+   * 따라 작업판까지 가더라도 생성 요청에는 실리지 않는다 — 실리면 팀 내부의
+   * 지적이 그림에 반영되려 한다.
+   */
+  teamNote?: string
 }
 
 // ── Layout hints & position ──────────────────────────────────────────────────

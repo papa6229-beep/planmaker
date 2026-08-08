@@ -339,9 +339,21 @@ export function buildPublishingInfo(brief: EventBrief): PublishingInfo {
 }
 
 /** Assembles the full `brief.json` payload with derived views (WORK_PLAN §13). */
+/**
+ * 이 파일은 기획서 밖으로 나간다 — 디자인팀에게, 그리고 AI에게.
+ *
+ * 그래서 **팀 안에서만 읽는 말은 여기서 걷어 낸다** (팀 메모 Patch). `designSummary`가
+ * 그것을 지시로 세우지 않는 것만으로는 부족하다. 이 파일은 `project`를 통째로
+ * 싣기 때문에, 새 칸을 더하면 아무도 세우지 않아도 저절로 따라 나간다.
+ *
+ * 나가지 않는 것과 남지 않는 것은 다르다 — 값은 기획서에 그대로 남아 저장되고
+ * 파일을 따라 팀원에게 간다. 여기서 빠지는 것은 **밖으로 나가는 사본** 하나다.
+ */
 export function buildBriefFile(brief: EventBrief, context: SummaryContext = {}): BriefFile {
+  const { teamNote: _teamNote, ...project } = brief.project
   return {
     ...brief,
+    project,
     designSummary: buildDesignSummary(brief, context),
     publishing: buildPublishingInfo(brief),
   }

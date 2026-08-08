@@ -111,6 +111,13 @@ export interface BriefDocumentApi {
   /** 디자인팀에게 전달할 말 — the planner's request to whoever makes the image. */
   designerNote: string
   setDesignerNote: (note: string) => void
+  /**
+   * 팀 안에서 주고받는 말 (팀 메모 Patch). 팀장이 팀원에게 남기는 수정 사항이다.
+   *
+   * 받는 사람이 앞의 것과 다르다 — 디자인팀에게도, AI에게도 가지 않는다.
+   */
+  teamNote: string
+  setTeamNote: (note: string) => void
   /** AI에게 추가로 전달할 말 — the studio worker's own instruction (§6-2). */
   aiNote: string
   setAiNote: (note: string) => void
@@ -421,6 +428,8 @@ export function BriefDocumentProvider({
       setConcept: (next) => mutateDoc((d) => ({ ...d, project: { ...d.project, concept: next } })),
       designerNote: doc.project.designerNote ?? '',
       setDesignerNote: (next) => mutateDoc((d) => ({ ...d, project: { ...d.project, designerNote: next } })),
+      teamNote: doc.project.teamNote ?? '',
+      setTeamNote: (next) => mutateDoc((d) => ({ ...d, project: { ...d.project, teamNote: next } })),
       aiNote: doc.project.aiNote ?? '',
       setAiNote: (next) => mutateDoc((d) => ({ ...d, project: { ...d.project, aiNote: next } })),
       requestTeam: doc.project.requestTeam,

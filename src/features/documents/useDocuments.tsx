@@ -29,6 +29,7 @@ import { createEmptyDocument } from '../../domain/pageSchema'
 import { createEmptyProject } from '../../domain/factory'
 import { DEFAULT_BRIEF_TITLE } from '../editor/briefEditor'
 import type { RequestTeam } from '../../domain/requestTeam'
+import { selectedMember } from '../team/teamSession'
 
 export interface DocumentsApi {
   /** Saved briefs, most recently edited first. */
@@ -79,6 +80,10 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
     const project = createEmptyProject(DEFAULT_BRIEF_TITLE)
     // 팀은 게이트에서 한 번 정해지고, 그 뒤로는 기획서가 스스로 지닌다.
     if (team !== undefined) project.requestTeam = team
+    // 작업자도 같다 (작업자 기록 Patch). 만든 사람의 이름이 기획서에 남아,
+    // 나중에 목록에서 "누가 했는지"를 볼 수 있다.
+    const member = selectedMember()
+    if (member !== null) project.author = member
     const doc = createEmptyDocument(project)
     const id = await createDocument(doc, Date.now())
     await refresh()

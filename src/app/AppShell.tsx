@@ -32,7 +32,7 @@ import { ReferenceTools } from '../components/reference/ReferenceTools'
 import { ReferenceViewControls } from '../components/reference/ReferenceViewControls'
 import { StartChoice } from '../components/start/StartChoice'
 import { ConceptField } from '../components/concept/ConceptField'
-import { AiNoteField, DesignerNoteField } from '../components/concept/HandoffNotes'
+import { AiNoteField, DesignerNoteField, TeamNoteField } from '../components/concept/HandoffNotes'
 import { GenerationRequestPreview } from '../components/studio/GenerationRequestPreview'
 import { ReadyPanel } from '../components/studio/ReadyPanel'
 import { BlockLayerTools } from '../components/studio/BlockLayerTools'
@@ -271,6 +271,9 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
           {/* 작성기는 디자인팀에게 남길 말만, 작업판은 그 말을 읽고 AI 지시를
               따로 적는다 (첫 사용 흐름 §6). */}
           {mode === 'studio' ? <AiNoteField /> : <DesignerNoteField />}
+          {/* 팀 안에서만 읽는 쪽지 (팀 메모 Patch). 작업판에는 두지 않는다 —
+              디자인팀 작업자는 남의 팀 내부 대화를 볼 이유가 없다. */}
+          {mode !== 'studio' && <TeamNoteField />}
         </div>
         <div className="workspace__center">
           <PageTabs />

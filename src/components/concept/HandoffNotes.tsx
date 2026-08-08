@@ -38,6 +38,38 @@ export function DesignerNoteField() {
 }
 
 /**
+ * 팀 안에서만 읽는 말 (팀 메모 Patch).
+ *
+ * 팀장이 팀원에게 남기는 수정 사항이다. 앞의 것과 **받는 사람이 다르다** —
+ * 디자인팀에게 가는 부탁도, AI에게 주는 지시도 아니라 같은 팀끼리 보는 쪽지다.
+ * 그래서 생성 요청에도, 이미지에도 실리지 않는다.
+ *
+ * 기획서의 일부이므로 자동저장되고 파일을 따라간다. 그러지 않으면 지적을 받은
+ * 팀원이 파일을 열었을 때 그 지적이 없다.
+ */
+export function TeamNoteField() {
+  const { teamNote, setTeamNote } = useBriefDocument()
+
+  return (
+    <section className="concept">
+      <label className="concept__title" htmlFor="team-note-input">팀 내부 메모</label>
+      <p className="concept__hint">팀장이 팀원에게 남기는 수정 사항을 적어주세요.</p>
+      <textarea
+        id="team-note-input"
+        className="concept__input"
+        rows={3}
+        placeholder="예: 가격 문구를 8월 기준으로 고쳐 주세요 / 상단 배너는 지난 건 그대로 씁니다"
+        value={teamNote}
+        onChange={(e) => setTeamNote(e.target.value)}
+      />
+      <p className="concept__note">
+        <b>우리 팀만 봅니다.</b> 이미지에 인쇄되지 않고, 디자인팀 전달사항이나 AI 지시에도 실리지 않습니다.
+      </p>
+    </section>
+  )
+}
+
+/**
  * 작업판에서만: 기획서가 지니고 온 부탁을 읽고, AI에게 줄 지시를 따로 적는다.
  *
  * 작성자가 남긴 말은 기획서 원문이므로 지우지도 고치지도 않는다. 다만 남긴 말이

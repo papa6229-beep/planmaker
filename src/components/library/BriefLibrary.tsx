@@ -275,6 +275,9 @@ export function BriefLibrary() {
                         <span className="library__dates">
                           작성 {day(d.createdAt)} · 수정 {day(d.updatedAt)}
                           {delivered ? ` · 전달 ${delivered.slice(0, 10)}` : ''}
+                          {/* 누가 만졌는가 (작업자 기록 Patch). 이름이 없는 것은
+                              이 기능이 생기기 전에 만든 기획서다. */}
+                          {d.author === undefined ? '' : ` · 작업자 ${d.author}`}
                         </span>
                       </button>
                       <details className="library__menu">

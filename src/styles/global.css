@@ -149,6 +149,11 @@ button { font-family: inherit; }
   gap: 8px;
   flex-wrap: wrap;
 }
+/* 게이트에서 받는 작업자 이름 (작업자 기록 Patch). */
+.team-gate__member { display: flex; flex-direction: column; gap: 6px; margin: 0 0 16px; text-align: left; }
+.team-gate__member-label { font-size: 13px; font-weight: 700; }
+.team-gate__member-hint { font-size: 12px; color: var(--color-muted); line-height: 1.6; }
+
 /* 범위 선택 사각형 (범위 선택 Patch). 끌고 있는 동안에만 있다. */
 .canvas__marquee {
   position: absolute;
