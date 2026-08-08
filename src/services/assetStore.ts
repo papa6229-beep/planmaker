@@ -142,16 +142,6 @@ export async function clearBriefSnapshots(): Promise<void> {
   await db().briefs.clear()
 }
 
-/**
- * Empties the legacy single-brief snapshot rows, leaving image blobs alone.
- *
- * The old autosave row is imported into the library exactly once; a reset that
- * left it in place would hand that one brief back on the next start.
- */
-export async function clearBriefSnapshots(): Promise<void> {
-  await db().briefs.clear()
-}
-
 /** Clears everything (used by tests and a future "reset" action). */
 export async function clearAll(): Promise<void> {
   await db().transaction('rw', db().briefs, db().assets, async () => {
