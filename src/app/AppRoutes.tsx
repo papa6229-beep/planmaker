@@ -37,7 +37,12 @@ import { AppSurfaceProvider } from './AppSurfaceContext'
  */
 const WRITER_HOME = '/'
 
-/** Where the design team lands: the image studio work surface. */
+/**
+ * 내부(디자인팀) 빌드의 첫 자리 — 작업판이다.
+ *
+ * 작성기의 첫 자리와 **다른 상수**를 쓴다. 두 표면이 같은 상수를 쓰면 한쪽을
+ * 옮길 때 다른 쪽이 자기 자신으로 되도는 길이 생긴다.
+ */
 const STUDIO_HOME = '/studio'
 
 function WriterRoutes() {
