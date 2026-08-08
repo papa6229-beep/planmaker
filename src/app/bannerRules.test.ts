@@ -99,7 +99,22 @@ describe('§31-3 물러나는 방법', () => {
     // 줄바꿈은 바꾼다 — 제목은 2줄이 되기도 1줄이 되기도 했다.
     expect(nextConcession('main_headline')).toBe('reflow')
     // 더 물러날 데가 없어도 `null`이지 `drop`이 아니다.
-    expect(nextConcession('main_headline', ['reflow'])).toBeNull()
+    expect(nextConcession('main_headline', ['reflow', 'shorten'])).toBeNull()
+  })
+
+  it('제목은 빼는 대신 줄인다', () => {
+    // "너무 길면 의미만 맞게 줄일 때도 있다." 줄바꿈과는 다른 일이다 — 줄바꿈은
+    // 같은 글자를 다르게 접는 것이고, 이것은 글자를 덜어내는 것이다.
+    expect(nextConcession('main_headline', ['reflow'])).toBe('shorten')
+    // 줄바꿈을 먼저 해 본다. 덜어내는 것이 접는 것보다 아프다.
+    expect(CONCESSION_ORDER.indexOf('shorten')).toBeGreaterThan(CONCESSION_ORDER.indexOf('reflow'))
+  })
+
+  it('제품 이미지는 제목 다음이다 — 가격보다 앞', () => {
+    // 작은 규격에서 넣는 차례가 제목 → 제품 이미지 → 남는 것이다. 밀리면 글자만
+    // 남은 배너가 나온다.
+    const order = bannerOrder([block('price'), block('product_group_image'), block('main_headline')])
+    expect(order.map((b) => b.type)).toEqual(['main_headline', 'product_group_image', 'price'])
   })
 
   it('상품 뭉치는 빼기 전에 개수를 줄인다', () => {

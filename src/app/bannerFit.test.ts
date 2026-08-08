@@ -73,10 +73,22 @@ describe('§32-1 어느 자리로 가는가', () => {
     expect(slotOf(fit, 'won')).toBe('lead')
   })
 
-  it('받아 주는 자리가 없으면 빠진다', () => {
-    // 1020×70 두 장 다 로고가 없었다. 로고를 받는 자리를 만들지 않았으므로 빠진다.
-    const fit = fitBanner([block('logo', 'logo')], SPEC)
-    expect(fit.dropped).toEqual([{ blockId: 'logo', reason: 'no-slot' }])
+  it('로고는 자리가 남을 때만 들어간다', () => {
+    // "협업 이벤트면 로고를 넣는다"가 아니다. 제목과 제품을 넣고 남으면 들어간다.
+    // 혼자면 남는 자리를 얻고 —
+    expect(slotOf(fitBanner([block('logo', 'logo')], SPEC), 'logo')).toBe('body')
+    // 앞의 것들이 자리를 다 채우면 포기한다.
+    const crowded = fitBanner(
+      [
+        block('logo', 'logo'),
+        block('product_group_image', 'p1'),
+        block('product_group_image', 'p2'),
+        block('price', 'w1'),
+        block('price', 'w2'),
+      ],
+      SPEC,
+    )
+    expect(crowded.dropped).toEqual([{ blockId: 'logo', reason: 'no-slot' }])
   })
 
   it('배너에 가지 않는 것은 자리를 다투지도 않는다', () => {
@@ -109,19 +121,26 @@ describe('§32-2 자리를 못 얻으면', () => {
     expect(fit.dropped).toEqual([])
   })
 
-  it('기간은 그냥 빠진다', () => {
-    // 있거나 없거나 둘 중 하나였다. 줄바꿈을 바꾼다고 들어갈 것이 아니다.
-    const fit = fitBanner(
+  it('기간은 남는 자리가 있으면 들어가고, 없으면 그냥 빠진다', () => {
+    // 기간도 "남는 자리에 우겨넣는" 쪽이다. 줄바꿈을 바꾼다고 들어갈 것이 아니라
+    // 자리가 있느냐 없느냐다.
+    expect(slotOf(fitBanner([block('period', 'when')], SPEC), 'when')).toBe('head')
+
+    const crowded = fitBanner(
       [
         block('main_headline', 'title'),
-        block('cta_button', 'cta'),
+        block('cta_button', 'cta1'),
+        block('cta_button', 'cta2'),
+        block('price', 'won1'),
+        block('price', 'won2'),
+        block('gift', 'gift1'),
+        block('winner_count', 'few'),
         block('sub_headline', 'sub'),
-        block('free_text', 'free'),
         block('period', 'when'),
       ],
       SPEC,
     )
-    expect(fit.dropped).toEqual([{ blockId: 'when', reason: 'no-slot' }])
+    expect(crowded.dropped).toEqual([{ blockId: 'when', reason: 'no-slot' }])
   })
 
   it('제목은 빠지지 않는다 — 대신 그렇다고 말한다', () => {

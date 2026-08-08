@@ -102,9 +102,19 @@ export const BANNER_1020x70: BannerSpec = {
       flow: 'column',
     },
     {
+      /**
+       * 남는 자리.
+       *
+       * 이 크기의 배너는 제목과 제품을 넣고 나면 자리가 별로 없다. 그러고 남는
+       * 곳에 필요하다 싶은 것을 우겨넣는다 — 로고, 기간, 추가 이미지. 그래서 이
+       * 자리만 `chrome`과 `detail`까지 받는다.
+       *
+       * 로고가 여기 오는 것이 요점이다. "협업 이벤트면 로고를 넣는다"가 아니라,
+       * 앞의 것들이 다 들어가고도 자리가 남아야 들어간다. 아니면 포기한다.
+       */
       id: 'body',
       area: { x: 0.575, y: 0.12, width: 0.21, height: 0.76 },
-      accepts: ['benefit', 'imagery'],
+      accepts: ['benefit', 'imagery', 'chrome', 'detail'],
       capacity: 2,
       flow: 'row',
     },

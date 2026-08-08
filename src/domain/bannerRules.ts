@@ -31,6 +31,19 @@
  *    줄일 수가 없었고, 얇은 띠 두 장에서 잘리지도 빠지지도 않고 **확대해 흐리게
  *    깔렸다.**
  *
+ * ## 작은 규격에서 실제로 넣는 차례
+ *
+ * 얇고 긴 띠와 가장 작은 사각형은 만드는 사람도 다 넣으려 하지 않는다. 차례가
+ * 이렇다고 확인받았다.
+ *
+ *  1. **메인 제목.** 너무 길면 의미만 맞게 **줄여서** 넣는다.
+ *  2. **제품 이미지.**
+ *  3. 그러고 **남는 자리에** 필요하다 싶은 것 — 로고, 기간, 추가 이미지.
+ *
+ * 로고가 세 번째 줄에 있다는 것이 요점이다. "협업 이벤트면 로고를 넣는다" 같은
+ * 규칙이 아니라, 자리가 남으면 들어가고 아니면 포기한다. 포기할 것은 포기하는
+ * 것이 이 크기의 배너다.
+ *
  * 순수 모듈이다. 캔버스도 DOM도 모른다.
  */
 
@@ -73,6 +86,15 @@ export type Concession =
   | 'recolumn'
   /** 눕힌다 — 세로쓰기 `ADULT ONLY - R19`가 1020×70에서 가로로 누웠다. */
   | 'rotate'
+  /**
+   * 문구를 줄인다 — **의미만 맞게.**
+   *
+   * 줄바꿈과는 다른 일이다. 줄바꿈은 같은 글자를 다르게 접는 것이고, 이것은 글자를
+   * 덜어내는 것이다. 그래서 여기서 자동으로 하지 않는다 — 무엇을 덜어도 뜻이
+   * 남는지는 광고 문구를 쓴 사람만 안다. 배너 기획서에 "이 자리에는 길다"고
+   * 표시해 두면, 편집기에서 사람이 고친다.
+   */
+  | 'shorten'
   /** 이름표만 벗는다 — 얇은 띠에서 사은품은 사진만 남았다. */
   | 'unlabel'
   /** 개수를 줄인다 — 상품 뭉치 8→5. 줄였다는 표시(`⋮`)는 함께 간다. */
@@ -91,6 +113,7 @@ export const CONCESSION_ORDER: readonly Concession[] = [
   'reflow',
   'recolumn',
   'rotate',
+  'shorten',
   'unlabel',
   'thin',
   'demote',
@@ -119,13 +142,13 @@ export interface BannerRole {
 export const BANNER_ROLES: Record<BlockType, BannerRole> = {
   // ── 글자 ────────────────────────────────────────────────────────────────
   /** 열다섯 장 전부. 줄바꿈만 바꾸고 빼지 않는다. */
-  main_headline: { purpose: 'title', importance: 100, concessions: ['reflow'] },
+  main_headline: { purpose: 'title', importance: 100, concessions: ['reflow', 'shorten'] },
   /** `GIFT EVENT`, `BANANAMALL RANDOMBOX` — 큰 것에는 남고 얇은 띠에서는 빠졌다. */
-  sub_headline: { purpose: 'detail', importance: 40, concessions: ['reflow', 'drop'] },
+  sub_headline: { purpose: 'detail', importance: 40, concessions: ['reflow', 'shorten', 'drop'] },
   /** `1등상부터 7등상까지…` 설명문. 500×387·800×250에만 있었다. */
-  body_text: { purpose: 'detail', importance: 25, concessions: ['reflow', 'drop'] },
+  body_text: { purpose: 'detail', importance: 25, concessions: ['reflow', 'shorten', 'drop'] },
   /** `단 한 개만 구매해도 **누구나 증정!**` — 얇은 띠에서도 자주 남았다. */
-  emphasis_text: { purpose: 'benefit', importance: 55, concessions: ['reflow', 'rotate', 'drop'] },
+  emphasis_text: { purpose: 'benefit', importance: 55, concessions: ['reflow', 'rotate', 'shorten', 'drop'] },
   /** 이벤트1은 840×640에 넣었고 이벤트2·3은 어디에도 넣지 않았다. 기본은 잘 빠지는 쪽. */
   period: { purpose: 'detail', importance: 30, concessions: ['drop'] },
   /** `1회뽑기 14,900원` — 70px 띠에서 **맨 앞자리**를 차지했다. */
@@ -133,16 +156,26 @@ export const BANNER_ROLES: Record<BlockType, BannerRole> = {
   discount_rate: { purpose: 'benefit', importance: 70, concessions: ['reflow', 'drop'] },
   /** 열다섯 장 어디에도 없었다. 배너에 가지 않는다. */
   caution_text: { purpose: 'none', importance: 0, concessions: [] },
-  free_text: { purpose: 'detail', importance: 35, concessions: ['reflow', 'rotate', 'drop'] },
+  free_text: { purpose: 'detail', importance: 35, concessions: ['reflow', 'rotate', 'shorten', 'drop'] },
 
   // ── 그림 ────────────────────────────────────────────────────────────────
-  /** 로고 줄은 840×640·500×387에만 남았다. */
+  /**
+   * 로고 줄은 840×640·500×387에만 남았다. 얇은 띠에서는 이벤트1에만 있었다.
+   *
+   * "협업 이벤트면 넣는다"가 아니다 — 제목과 제품을 넣고 **자리가 남으면** 들어간다.
+   * 그래서 중요도가 낮고, 물러날 방법도 빠지는 것뿐이다.
+   */
   logo: { purpose: 'chrome', importance: 25, concessions: ['drop'] },
   /** 한 대뿐인 히어로는 개수를 줄일 수 없다. 얇은 띠에서는 배경이 된다. */
   main_product_image: { purpose: 'imagery', importance: 75, concessions: ['demote', 'drop'] },
   sub_product_image: { purpose: 'imagery', importance: 45, concessions: ['thin', 'demote', 'drop'] },
-  /** 뭉치는 개수부터 줄인다 — 8→5. */
-  product_group_image: { purpose: 'imagery', importance: 70, concessions: ['thin', 'demote', 'drop'] },
+  /**
+   * 뭉치는 개수부터 줄인다 — 8→5.
+   *
+   * 작은 규격에서 넣는 차례가 제목 → **제품 이미지** → 남는 것이므로, 가격·혜택보다
+   * 앞선다. 밀리면 글자만 남은 배너가 나온다.
+   */
+  product_group_image: { purpose: 'imagery', importance: 74, concessions: ['thin', 'demote', 'drop'] },
   /** 참고용이라 완성본에도 나가지 않는다. */
   background_reference_image: { purpose: 'none', importance: 0, concessions: [] },
   existing_full_image: { purpose: 'none', importance: 0, concessions: [] },
@@ -160,7 +193,7 @@ export const BANNER_ROLES: Record<BlockType, BannerRole> = {
   /** 사은품의 이름표. `unlabel`이 벗기는 것이 이것이다. */
   product_name: { purpose: 'detail', importance: 30, concessions: ['drop'] },
   /** 원래는 늘 들어간다. 넣을지 말지는 규격이 아니라 사람이 정한다. */
-  cta_button: { purpose: 'action', importance: 95, concessions: ['reflow'] },
+  cta_button: { purpose: 'action', importance: 95, concessions: ['reflow', 'shorten'] },
   /** `위 품목 구매시` 같은 구분 머리말. 열다섯 장 어디에도 없었다. */
   divider_section_title: { purpose: 'detail', importance: 20, concessions: ['drop'] },
   group_container: { purpose: 'none', importance: 0, concessions: [] },
