@@ -59,7 +59,7 @@ import {
   type TextLayerBlock,
   type TextLayerTone,
 } from '../../domain/textLayers'
-import { cleanKeyEdges, removeKeyBackground } from '../../services/textLayerKey'
+import { removeKeyBackground } from '../../services/textLayerKey'
 import { trimToContent } from '../../services/trimToContent'
 import { analyzeRegions } from '../../services/regionTone'
 import { analyzeImageBlob } from '../../services/imageAnalysisRunner'
@@ -229,23 +229,6 @@ export interface ImageGenerationApi {
   rebuildPage: (pageId: string) => Promise<void>
   /** 지금 페이지에 되살릴 재료가 있는가 — 배경이 있고 완성본이 없을 때다. */
   canRebuild: boolean
-  /**
-   * 문구 조각의 가장자리를 다시 다듬는다 (자주색 테두리 Patch). **외부 호출 0건.**
-   *
-   * 앞선 판으로 만든 완성본에는 흰 글자 둘레에 자주색 띠가 남아 있다. 새로 만들지
-   * 않고 조각 자체를 고친 뒤 다시 합친다.
-   */
-  tidyEdges: (pageId: string) => Promise<void>
-  /**
-   * 마지막으로 다듬은 결과. 누르기 전에는 `null`.
-   *
-   * 아무것도 고칠 것이 없을 때 **조용히 끝나던 것**이 이 값을 만든 이유다. 사람은
-   * 눌렀는데 화면이 그대로면 기능이 고장 났다고 읽지, "고칠 것이 없었다"고 읽지
-   * 않는다 — 그 둘은 다른 사실이고 다르게 말해야 한다.
-   */
-  tidyReport: { pieces: number; changed: number; pixels: number } | null
-  /** 다듬을 문구 조각이 이 페이지에 있는가. */
-  canTidyEdges: boolean
   dismiss: () => void
 
   // ── 부분수정 (부분수정 1단계) ──────────────────────────────────────────────
@@ -377,15 +360,6 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
   const canRebuild =
     studio !== null && !hasResult && studio.job.backgrounds?.[activePageId] !== undefined
 
-  /**
-   * 다듬을 조각이 있는가 (자주색 테두리 Patch).
-   *
-   * 마젠타를 지나온 것은 문구 조각뿐이다. 이미지·컷아웃은 그 길을 지나지 않아
-   * 띠가 생길 일이 없고, 그래서 대상도 아니다.
-   */
-  const canTidyEdges =
-    studio !== null && hasResult && (studio.job.textObjects?.[activePageId]?.length ?? 0) > 0
-  const [tidyReport, setTidyReport] = useState<{ pieces: number; changed: number; pixels: number } | null>(null)
 
   /** 지금 화면에서 무엇을 보낼지 계산한다. 막을 이유가 있으면 그것을 돌려준다. */
   const planNow = useCallback((): { plan: GenerationPlan } | { blocked: string } => {
@@ -1156,52 +1130,6 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     [studio, composePage, storeComposed, getDocument],
   )
 
-  /**
-   * 문구 조각의 가장자리를 다시 다듬고 결과를 다시 합친다 (자주색 테두리 Patch).
-   *
-   * 조각을 **같은 번호에 덮어쓴다**. 새 번호를 주면 결과·되돌리기·파일이 가리키는
-   * 곳을 전부 따라 고쳐야 하고, 하나라도 놓치면 그 자리가 빈 그림이 된다. 덮어쓰기가
-   * 안전한 이유는 이 손질이 **두 번 걸어도 같은 결과**이기 때문이다 — 되돌릴 것이
-   * 없으므로 되돌릴 길도 필요 없다.
-   */
-  const tidyEdges = useCallback(
-    async (pageId: string) => {
-      if (studio === null) return
-      const objects = studio.currentJob().textObjects?.[pageId] ?? []
-      if (objects.length === 0) return
-      setTidyReport(null)
-      setState({ kind: 'running' })
-      try {
-        let changed = 0
-        let pixels = 0
-        for (const object of objects) {
-          // 조각마다 따로 감싼다. 한 조각을 읽지 못했다고 나머지까지 손대지 않고
-          // 끝내면, 사람은 눌렀는데 대부분이 그대로인 화면을 보게 된다.
-          try {
-            const stored = await getAsset(object.assetId)
-            if (stored === undefined) continue
-            const cleaned = await cleanKeyEdges(stored.blob)
-            // `null`은 고칠 것이 없었다는 뜻이다. 같은 그림을 다시 쓰지 않는다.
-            if (cleaned === null) continue
-            await putAsset({ ...stored, blob: cleaned.blob, byteSize: cleaned.blob.size })
-            changed += 1
-            pixels += cleaned.pixels
-          } catch {
-            // 이 조각은 그대로 둔다.
-          }
-        }
-        // 한 조각도 달라지지 않았으면 다시 합칠 이유가 없다 — 합치면 결과 그림만
-        // 새로 쓰이고 화면은 똑같다.
-        if (changed > 0) await recomposePage(pageId)
-        setTidyReport({ pieces: objects.length, changed, pixels })
-        setState({ kind: 'idle' })
-      } catch {
-        setState({ kind: 'failed', message: errorTextFor('save_failed') })
-      }
-    },
-    [studio, recomposePage],
-  )
-
   /** 같은 원본으로 작업본만 다시 만든다. 외부 호출 0건. */
   const retryConversion = useCallback(() => {
     if (paidRef.current === null) return
@@ -1754,9 +1682,6 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             recomposePage,
             rebuildPage,
             canRebuild,
-            tidyEdges,
-            canTidyEdges,
-            tidyReport,
             editTargets,
             selectedTargetIds,
             toggleTarget,
@@ -1777,7 +1702,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           },
     [
       studio, state, hasResult, hasKey, view, begin, confirm, retryConversion, recomposePage,
-      rebuildPage, canRebuild, tidyEdges, canTidyEdges, tidyReport,
+      rebuildPage, canRebuild,
       editTargets, selectedTargetIds, toggleTarget, instructionFor, setInstructionFor,
       canEdit, editBlockedReason, beginEdit, confirmEdit,
       revisions.length, cursor, canGoPrevious, canGoNext, goTo,

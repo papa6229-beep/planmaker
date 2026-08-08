@@ -16,7 +16,7 @@ import { AppShell } from './AppShell'
 import { StudioJobProvider, useStudioJob } from '../features/studio/useStudioJob'
 import { createBlock, createEmptyProject } from '../domain/factory'
 import { createEmptyDocument } from '../domain/pageSchema'
-import { clearAll, getAllAssets, getAsset, putAsset, resetAssetStoreForTests, type StoredAsset } from '../services/assetStore'
+import { clearAll, getAllAssets, putAsset, resetAssetStoreForTests, type StoredAsset } from '../services/assetStore'
 import { clearAllDocuments, resetDocumentStoreForTests } from '../services/documentStore'
 import { clearAllRequests, resetRequestStoreForTests } from '../services/requestStore'
 import {
@@ -70,25 +70,8 @@ vi.mock('../services/imageAnalysisRunner', () => ({
     light: { x: 0, y: 0, confidence: 'low' },
   }),
 }))
-/**
- * 캔버스가 없으므로 두 함수 다 흉내다. `cleanKeyEdges`는 **어느 조각을 몇 번
- * 건드렸는지**를 남긴다 — 규칙 자체는 §26 순수 검사가 픽셀로 재고, 여기서는
- * 빠짐없이 도는지와 외부를 부르지 않는지를 본다.
- */
-const tidied: number[] = []
-/** 다듬은 조각을 알아보는 표식 — 저장된 크기로 확인한다. */
-const TIDIED_BYTES = 77
-/** 켜면 `cleanKeyEdges`가 "고칠 것이 없다"로 답한다. */
-let tidyNothing = false
 vi.mock('../services/textLayerKey', () => ({
   removeKeyBackground: async (blob: Blob) => ({ blob, opaqueRatio: 0.2 }),
-  cleanKeyEdges: async (blob: Blob) => {
-    tidied.push(blob.size)
-    if (tidyNothing) return null
-    // 저장소를 오간 Blob 은 이 환경에서 바이트를 돌려주지 않는다. 그래서 원본을
-    // 읽지 않고, 알아볼 수 있는 크기의 새 조각을 돌려준다.
-    return { blob: new Blob(['x'.repeat(TIDIED_BYTES)], { type: 'image/png' }), pixels: 12 }
-  },
 }))
 // 캔버스가 필요한 두 서비스. 규칙은 §1 순수 검사에서 숫자로 재고, 여기서는 흐름만
 // 본다. `failFor`가 켜진 요청 하나만 "글자를 못 찾았다"로 만든다.
@@ -1697,72 +1680,3 @@ describe('§22 페이지 복제', () => {
   })
 })
 
-// ── §23 만들어 둔 완성본의 자주색 띠를 지운다 ───────────────────────────────
-
-describe('§23 가장자리 다듬기', () => {
-  it('문구 조각을 빠짐없이 고쳐 같은 번호에 덮어쓰고, 다시 합치되 외부는 부르지 않는다', async () => {
-    await seedJob()
-    const { container } = renderStudio()
-    await documentReady(container)
-    await generateOnce()
-
-    const before = await loadStudioJob(STUDIO_JOB_ID)
-    const objects = before?.textObjects?.page_1 ?? []
-    // 이 기획서의 문구는 셋과 버튼 하나 — 전부 마젠타를 지나온 조각이다.
-    expect(objects.length).toBeGreaterThan(1)
-    const ids = objects.map((o) => o.assetId)
-
-    const calls = fetchSpy.mock.calls.length
-    tidied.length = 0
-    composed.mockClear()
-
-    await openFold(/글자 가장자리/)
-    fireEvent.click(await screen.findByRole('button', { name: '가장자리 다듬기' }))
-
-    // 조각 하나도 빠뜨리지 않는다.
-    await waitFor(() => expect(tidied).toHaveLength(objects.length), { timeout: 8000 })
-
-    // 같은 번호에 덮어쓴다. 새 번호를 주면 결과·되돌리기·파일이 가리키는 곳을
-    // 전부 따라 고쳐야 하고, 하나라도 놓치면 그 자리가 빈 그림이 된다.
-    await waitFor(async () => {
-      const after = await loadStudioJob(STUDIO_JOB_ID)
-      expect((after?.textObjects?.page_1 ?? []).map((o) => o.assetId)).toEqual(ids)
-    }, { timeout: 8000 })
-    for (const id of ids) {
-      expect((await getAsset(id))?.byteSize).toBe(TIDIED_BYTES)
-    }
-
-    // 고친 조각으로 다시 합친다.
-    await waitFor(() => expect(composed).toHaveBeenCalled(), { timeout: 8000 })
-    // 값을 치르는 일은 하나도 하지 않았다.
-    expect(fetchSpy.mock.calls.length).toBe(calls)
-
-    // 무슨 일이 있었는지 말한다. 조용히 끝나면 사람은 고장 났다고 읽는다.
-    expect(
-      await screen.findByText(new RegExp(`${objects.length}장 중 ${objects.length}장`), {}, { timeout: 8000 }),
-    ).toBeTruthy()
-  }, 40000)
-
-  it('고칠 것이 없으면 없다고 말한다 — 조용히 끝나지 않는다', async () => {
-    tidyNothing = true
-    await seedJob()
-    const { container } = renderStudio()
-    await documentReady(container)
-    await generateOnce()
-
-    await openFold(/글자 가장자리/)
-    fireEvent.click(await screen.findByRole('button', { name: '가장자리 다듬기' }))
-
-    // 화면이 그대로인 것과 기능이 고장 난 것은 다른 사실이다.
-    expect(await screen.findByText(/다듬을 가장자리를 찾지 못했습니다/, {}, { timeout: 8000 })).toBeTruthy()
-    tidyNothing = false
-  }, 40000)
-
-  it('완성본이 없으면 그 자리를 내밀지 않는다', async () => {
-    await seedJob()
-    const { container } = renderStudio()
-    await documentReady(container)
-    // 아직 만들지 않았다 — 다듬을 조각이 없다.
-    expect(screen.queryByRole('button', { name: /글자 가장자리/ })).toBeNull()
-  }, 30000)
-})

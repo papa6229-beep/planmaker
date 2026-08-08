@@ -32,43 +32,6 @@ async function toBitmap(blob: Blob): Promise<CanvasImageSource & { width: number
 }
 
 /**
- * 이미 배경을 지운 문구 조각의 가장자리만 다시 다듬는다 (자주색 테두리 Patch).
- *
- * 앞선 판으로 만든 완성본에는 자주색 띠가 그대로 남아 있다. 그 띠는 **지워진
- * 픽셀에 맞닿은 불투명 픽셀**이라는 사실만으로 찾을 수 있으므로, 마젠타가 이미
- * 사라진 그림에서도 똑같이 고칠 수 있다 — 다시 만들 필요가 없다.
- *
- * 고칠 것이 없으면 `null`. 부르는 쪽은 그때 저장을 건너뛴다.
- */
-export async function cleanKeyEdges(blob: Blob): Promise<{ blob: Blob; pixels: number } | null> {
-  try {
-    const bitmap = await toBitmap(blob)
-    const width = Math.max(1, Math.round(bitmap.width))
-    const height = Math.max(1, Math.round(bitmap.height))
-
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const ctx = canvas.getContext('2d', { willReadFrequently: true })
-    if (!ctx) return null
-    ctx.clearRect(0, 0, width, height)
-    ctx.drawImage(bitmap, 0, 0, width, height)
-
-    const pixels = ctx.getImageData(0, 0, width, height)
-    const fixed = unspillKeyEdges(
-      { data: pixels.data, width: pixels.width, height: pixels.height },
-      TEXT_KEY_COLOR,
-    )
-    if (fixed === 0) return null
-    ctx.putImageData(pixels, 0, 0)
-    const out = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
-    return out === null ? null : { blob: out, pixels: fixed }
-  } catch {
-    return null
-  }
-}
-
-/**
  * 배경을 지운 문구 레이어. 실패하면 `null`.
  *
  * 던지지 않는 이유는 이 그림이 **이미 값을 치른** 것이기 때문이다. 여기서

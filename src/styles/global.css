@@ -2207,16 +2207,6 @@ button { font-family: inherit; }
 }
 .ready-panel__rebuild-note { margin: 0; font-size: 12px; line-height: 1.6; color: var(--color-muted); }
 
-/* 완성본의 자주색 띠를 지우는 자리 (자주색 테두리 Patch). */
-.edge-tidy__note { margin: 0 0 8px; font-size: 12px; line-height: 1.6; color: var(--color-muted); }
-.edge-tidy__report {
-  margin: 8px 0 0;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm, 6px);
-  background: var(--color-panel-muted);
-  font-size: 12px;
-  line-height: 1.6;
-}
 
 /* AI 지시 다듬기 (실작업 UI 마감 §9, §10). */
 .refine { margin-top: 8px; }
