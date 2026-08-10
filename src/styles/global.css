@@ -3089,3 +3089,7 @@ button { font-family: inherit; }
 .key-remember small { color: var(--color-muted); }
 .work-list__save { margin-left: auto; }
 .work-list__save-all { font-size: 11px; }
+.work-list__blink { display: flex; align-items: center; gap: 6px; }
+.work-list__blink-strength { display: flex; align-items: center; gap: 4px; font-size: 10px; color: var(--color-muted); }
+.work-list__blink-strength input { width: 80px; }
+.work-list__note { font-size: 11px; color: var(--color-muted); }
