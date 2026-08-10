@@ -13,7 +13,16 @@ import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
 import { AppSurfaceProvider } from './AppSurfaceContext'
 import { DocumentsProvider } from '../features/documents/useDocuments'
-import { autoScrollStep, heightForPointer, EDGE_ZONE, MAX_SCROLL_STEP } from '../features/editor/heightDrag'
+import {
+  autoScrollStep,
+  heightForPointer,
+  heightKeyDelta,
+  EDGE_ZONE,
+  MAX_SCROLL_STEP,
+  HEIGHT_STEP,
+  HEIGHT_STEP_BIG,
+  HEIGHT_STEP_PAGE,
+} from '../features/editor/heightDrag'
 import { clearAll, resetAssetStoreForTests } from '../services/assetStore'
 import { clearAllDocuments, resetDocumentStoreForTests } from '../services/documentStore'
 import { clearAllStudioJobs, resetStudioStoreForTests } from '../services/studioStore'
@@ -42,6 +51,41 @@ describe('§11 가장자리 자동 스크롤과 좌표 환산', () => {
   it('keeps scrolling at full speed when the pointer leaves the work area', () => {
     expect(autoScrollStep(BOTTOM + 200, TOP, BOTTOM)).toBe(MAX_SCROLL_STEP)
     expect(autoScrollStep(TOP - 200, TOP, BOTTOM)).toBe(-MAX_SCROLL_STEP)
+  })
+
+  /**
+   * 손잡이는 페이지 끝에 붙어 있어, 그것을 보려고 스크롤한 뒤 잡으면 잡는 순간
+   * 이미 아래 가장자리 안이다. 잡은 자리를 문턱으로 삼지 않으면 누르자마자 최고
+   * 속도로 흘러내린다 — 손검수에서 "컨트롤이 상당히 어려워"로 걸린 자리다.
+   */
+  it('does not scroll just because the grab point was already inside the edge', () => {
+    const grabbed = BOTTOM - 10
+    expect(autoScrollStep(grabbed, TOP, BOTTOM, grabbed)).toBe(0)
+    // 잡은 자리를 넘겨 주지 않으면 예전처럼 곧바로 흘러내린다.
+    expect(autoScrollStep(grabbed, TOP, BOTTOM)).toBeGreaterThan(0)
+
+    // 아래로 밀면 그때부터, 그것도 천천히 움직인다.
+    const nudged = autoScrollStep(grabbed + 8, TOP, BOTTOM, grabbed)
+    expect(nudged).toBeGreaterThan(0)
+    expect(nudged).toBeLessThan(MAX_SCROLL_STEP / 4)
+    // 깊이 밀면 여전히 최고 속도까지 간다.
+    expect(autoScrollStep(grabbed + 400, TOP, BOTTOM, grabbed)).toBe(MAX_SCROLL_STEP)
+  })
+
+  it('ramps gently near the threshold instead of jumping to half speed', () => {
+    // 문턱을 갓 넘은 자리는 최고 속도의 1/8보다 느려야 한다.
+    expect(autoScrollStep(BOTTOM - EDGE_ZONE + 8, TOP, BOTTOM)).toBeLessThan(MAX_SCROLL_STEP / 8)
+  })
+
+  it('reads arrow and page keys as page-length steps', () => {
+    expect(heightKeyDelta('ArrowDown', false)).toBe(HEIGHT_STEP)
+    expect(heightKeyDelta('ArrowUp', false)).toBe(-HEIGHT_STEP)
+    expect(heightKeyDelta('ArrowDown', true)).toBe(HEIGHT_STEP_BIG)
+    expect(heightKeyDelta('PageDown', false)).toBe(HEIGHT_STEP_PAGE)
+    expect(heightKeyDelta('PageUp', true)).toBe(-HEIGHT_STEP_PAGE)
+    // 모르는 키는 0이다 — 호출부가 기본 동작을 막지 않게.
+    expect(heightKeyDelta('Enter', false)).toBe(0)
+    expect(heightKeyDelta('a', true)).toBe(0)
   })
 
   it('converts screen position into document height at any zoom', () => {
@@ -164,6 +208,47 @@ describe('§3 손잡이 한 번으로 긴 페이지 늘이기', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '실행 취소' }))
     await waitFor(() => expect(sheetHeight()).toBe(1000))
+  })
+
+  /**
+   * 끌기만으로는 원하는 길이에 못 선다 (길이 조절 Patch). 마지막 몇 px은 화살표로,
+   * 아는 값은 숫자 칸으로 — 세 길이 같은 값을 가리켜야 한다.
+   */
+  it('nudges the page with arrow keys on the handle', async () => {
+    await openEditor()
+    expect(sheetHeight()).toBe(1000)
+
+    fireEvent.keyDown(handle(), { key: 'ArrowDown' })
+    expect(sheetHeight()).toBe(1010)
+    fireEvent.keyUp(handle(), { key: 'ArrowDown' })
+
+    fireEvent.keyDown(handle(), { key: 'ArrowUp', shiftKey: true })
+    expect(sheetHeight()).toBe(910)
+    fireEvent.keyUp(handle(), { key: 'ArrowUp', shiftKey: true })
+
+    fireEvent.keyDown(handle(), { key: 'PageDown' })
+    expect(sheetHeight()).toBe(1310)
+    fireEvent.keyUp(handle(), { key: 'PageDown' })
+
+    // 한 번 누른 것은 실행 취소 한 걸음이다.
+    fireEvent.click(screen.getByRole('button', { name: '실행 취소' }))
+    await waitFor(() => expect(sheetHeight()).toBe(910))
+  })
+
+  it('takes an exact length from the number field, and only on commit', async () => {
+    await openEditor()
+    const field = screen.getByRole('spinbutton', { name: '페이지 길이 (px)' })
+    expect((field as HTMLInputElement).value).toBe('1000')
+
+    // 적는 동안에는 반영하지 않는다 — `1`이 최소 길이로 눌려 붙으면 이어 적을 수 없다.
+    fireEvent.change(field, { target: { value: '1' } })
+    expect(sheetHeight()).toBe(1000)
+    fireEvent.change(field, { target: { value: '1750' } })
+    expect(sheetHeight()).toBe(1000)
+
+    fireEvent.blur(field)
+    await waitFor(() => expect(sheetHeight()).toBe(1750))
+    await waitFor(() => expect((field as HTMLInputElement).value).toBe('1750'))
   })
 
   it('stops the drag on Escape and on pointercancel', async () => {

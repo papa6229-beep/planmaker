@@ -12,6 +12,10 @@
  *
  * 고른 블록이 문구·버튼일 때만 나온다. 이미지·컷아웃은 원본을 그대로 얹으므로
  * AI에게 주문할 것이 없다.
+ *
+ * 이 칸은 **펴진 채로** 시작한다. 접어 두었더니 제목 한 줄만 남아, 기획서를
+ * 불러온 작업자가 기능이 통째로 사라진 줄 알았다 — "왜 없어진 거야?" 생성 전에
+ * 한 번은 보여야 하는 칸이다. 접으면 그 상태는 이 세션 동안 유지된다.
  */
 
 import { useRef } from 'react'
@@ -49,6 +53,7 @@ export function BlockOrderPanel() {
       title="이 문구 디자인 주문"
       note="주문 적기 · 참고 그림"
       marked={(order.note ?? '').trim().length > 0 || order.referenceAssetId !== undefined}
+      defaultOpen
     >
     <section className="block-order" aria-label="이 블록의 디자인 주문">
       <p className="block-order__hint">

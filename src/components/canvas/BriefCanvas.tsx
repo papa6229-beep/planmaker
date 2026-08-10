@@ -16,7 +16,7 @@ import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { useCanvasView } from '../../features/editor/useCanvasView'
 import { findLinkPartner, isPairedLinkUrl, linkUrlOf } from '../../domain/simpleBlocks'
-import { autoScrollStep, heightForPointer } from '../../features/editor/heightDrag'
+import { autoScrollStep, heightForPointer, heightKeyDelta } from '../../features/editor/heightDrag'
 import { blocksInRect, marqueeRect, type Rect } from '../../features/editor/canvasGeometry'
 
 /** 이보다 작게 움직인 것은 끌기가 아니라 손 떨림이다. */
@@ -69,6 +69,14 @@ export function BriefCanvas() {
   const [dragOver, setDragOver] = useState(false)
   /** Everything one height drag needs to be stopped from anywhere. */
   const heightDrag = useRef<{ stop: () => void } | null>(null)
+  /**
+   * 길이 칸에 **적는 중인** 글자 (길이 조절 Patch).
+   *
+   * 값을 곧바로 반영하면 `1000`을 고치려고 지우는 순간 `1`이 최소 길이로 눌려
+   * 붙어 버려 이어 적을 수가 없다. 그래서 적는 동안은 글자 그대로 두고, Enter나
+   * 칸을 떠날 때 한 번만 반영한다. 반영하지 않는 동안에는 `null`이다.
+   */
+  const [heightDraft, setHeightDraft] = useState<string | null>(null)
 
   // A drag that outlives the canvas would keep a timer running against a
   // detached element, so leaving the screen ends it like letting go does.
@@ -206,74 +214,114 @@ export function BriefCanvas() {
           ))}
         </div>
 
-        {/* Page length. Only this page changes; the 840px width is fixed. */}
-        <button
-          type="button"
-          className="canvas__height-handle"
-          style={{ top: canvasHeight * zoom }}
-          aria-label="페이지 길이 조절"
-          title="아래위로 끌어 페이지 길이를 조절합니다"
-          onPointerDown={(e) => {
-            if (e.button !== 0) return
-            e.preventDefault()
-            heightDrag.current?.stop()
+        {/* Page length. Only this page changes; the 840px width is fixed.
+            끌기·자판·숫자 세 길이 같은 값을 가리킨다 (길이 조절 Patch) — 끌기는
+            빠르고, 화살표는 마지막 몇 px을 맞추고, 숫자는 아는 길이를 바로 적는다. */}
+        <div className="canvas__height-bar" style={{ top: canvasHeight * zoom }}>
+          <button
+            type="button"
+            className="canvas__height-handle"
+            aria-label="페이지 길이 조절"
+            title="끌어서 조절 · ↑↓ 10px (Shift 100px) · PageUp/Down 400px"
+            onKeyDown={(e) => {
+              const delta = heightKeyDelta(e.key, e.shiftKey)
+              if (delta === 0) return
+              e.preventDefault()
+              setCanvasHeight(canvasHeight + delta, 'canvas-height-key')
+            }}
+            onKeyUp={(e) => {
+              // 한 번 누른 것은 실행 취소 한 걸음이다. 누르고 있는 동안만 뭉친다.
+              if (heightKeyDelta(e.key, e.shiftKey) !== 0) endInteraction()
+            }}
+            onPointerDown={(e) => {
+              if (e.button !== 0) return
+              e.preventDefault()
+              heightDrag.current?.stop()
 
-            const sheet = sheetRef.current
-            const scroller = canvasRef.current
-            if (!sheet || !scroller) return
-            // Where the pointer sits relative to the page's end, so the grab
-            // point is kept for the whole drag.
-            const grabOffset = heightForPointer(e.clientY, sheet.getBoundingClientRect().top, zoom, 0) - canvasHeight
-            let pointerY = e.clientY
+              const sheet = sheetRef.current
+              const scroller = canvasRef.current
+              if (!sheet || !scroller) return
+              // Where the pointer sits relative to the page's end, so the grab
+              // point is kept for the whole drag.
+              const grabOffset = heightForPointer(e.clientY, sheet.getBoundingClientRect().top, zoom, 0) - canvasHeight
+              const grabY = e.clientY
+              let pointerY = e.clientY
 
-            /**
-             * Height is read from where the pointer *is* in document space, not
-             * from how far it has moved. The sheet's screen position is re-read
-             * every time, so when the work area scrolls under a still pointer
-             * the page keeps growing — which is what makes one grab enough for a
-             * page many screens long.
-             */
-            const applyHeight = () => {
-              const top = sheetRef.current?.getBoundingClientRect().top
-              if (top === undefined) return
-              setCanvasHeight(heightForPointer(pointerY, top, zoom, grabOffset), 'canvas-height')
-            }
+              /**
+               * Height is read from where the pointer *is* in document space, not
+               * from how far it has moved. The sheet's screen position is re-read
+               * every time, so when the work area scrolls under a still pointer
+               * the page keeps growing — which is what makes one grab enough for a
+               * page many screens long.
+               */
+              const applyHeight = () => {
+                const top = sheetRef.current?.getBoundingClientRect().top
+                if (top === undefined) return
+                setCanvasHeight(heightForPointer(pointerY, top, zoom, grabOffset), 'canvas-height')
+              }
 
-            const timer = window.setInterval(() => {
-              const box = scroller.getBoundingClientRect()
-              const step = autoScrollStep(pointerY, box.top, box.bottom)
-              if (step !== 0) scroller.scrollTop += step
-              // Even with no scrolling left to do, re-applying is harmless: the
-              // clamp decides, and a page that cannot grow simply stops.
-              if (step !== 0) applyHeight()
-            }, 16)
+              const timer = window.setInterval(() => {
+                const box = scroller.getBoundingClientRect()
+                // 잡은 자리를 함께 넘긴다 — 손잡이는 페이지 끝에 붙어 있어 잡는
+                // 순간 이미 아래 가장자리 안인 일이 흔하다.
+                const step = autoScrollStep(pointerY, box.top, box.bottom, grabY)
+                if (step !== 0) scroller.scrollTop += step
+                // Even with no scrolling left to do, re-applying is harmless: the
+                // clamp decides, and a page that cannot grow simply stops.
+                if (step !== 0) applyHeight()
+              }, 16)
 
-            const onMove = (ev: PointerEvent) => {
-              pointerY = ev.clientY
-              applyHeight()
-            }
-            const stop = () => {
-              window.clearInterval(timer)
-              window.removeEventListener('pointermove', onMove)
-              window.removeEventListener('pointerup', stop)
-              window.removeEventListener('pointercancel', stop)
-              window.removeEventListener('keydown', onKey)
-              heightDrag.current = null
-              endInteraction()
-            }
-            const onKey = (ev: KeyboardEvent) => {
-              if (ev.key === 'Escape') stop()
-            }
+              const onMove = (ev: PointerEvent) => {
+                pointerY = ev.clientY
+                applyHeight()
+              }
+              const stop = () => {
+                window.clearInterval(timer)
+                window.removeEventListener('pointermove', onMove)
+                window.removeEventListener('pointerup', stop)
+                window.removeEventListener('pointercancel', stop)
+                window.removeEventListener('keydown', onKey)
+                heightDrag.current = null
+                endInteraction()
+              }
+              const onKey = (ev: KeyboardEvent) => {
+                if (ev.key === 'Escape') stop()
+              }
 
-            heightDrag.current = { stop }
-            window.addEventListener('pointermove', onMove)
-            window.addEventListener('pointerup', stop)
-            window.addEventListener('pointercancel', stop)
-            window.addEventListener('keydown', onKey)
-          }}
-        >
-          ↕ 페이지 길이 조절 · {Math.round(canvasHeight)}px
-        </button>
+              heightDrag.current = { stop }
+              window.addEventListener('pointermove', onMove)
+              window.addEventListener('pointerup', stop)
+              window.addEventListener('pointercancel', stop)
+              window.addEventListener('keydown', onKey)
+            }}
+          >
+            ↕ 페이지 길이 조절
+          </button>
+          <label className="canvas__height-field">
+            <input
+              type="number"
+              aria-label="페이지 길이 (px)"
+              value={heightDraft ?? String(Math.round(canvasHeight))}
+              onChange={(e) => setHeightDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  e.currentTarget.blur()
+                }
+                // 적던 것을 버리고 지금 길이로 돌아온다.
+                if (e.key === 'Escape') setHeightDraft(null)
+              }}
+              onBlur={() => {
+                const asked = Number(heightDraft)
+                setHeightDraft(null)
+                if (heightDraft === null || heightDraft.trim() === '' || !Number.isFinite(asked)) return
+                setCanvasHeight(asked)
+                endInteraction()
+              }}
+            />
+            <span aria-hidden="true">px</span>
+          </label>
+        </div>
       </div>
     </section>
   )

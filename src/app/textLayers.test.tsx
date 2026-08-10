@@ -28,6 +28,7 @@ import {
 } from '../services/studioStore'
 import { createStudioJob, withSource } from '../domain/studioJob'
 import { normalizeEffects } from '../domain/compositeEffects'
+import { resetFoldsForTests } from '../components/studio/PanelFold'
 import type { BriefDocument } from '../domain/pageSchema'
 import type { LayoutRect } from '../domain/imageLayout'
 
@@ -1387,6 +1388,28 @@ describe('§16 완성본이 가운데를 다 쓴다', () => {
     expect(screen.getByRole('region', { name: 'AI 부분수정' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /이 문구 디자인 주문/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /합성 효과/ })).toBeNull()
+  })
+})
+
+describe('§16-B 생성 전 블록별 주문은 펴진 채로 있다', () => {
+  /**
+   * 접어 두었더니 제목 한 줄만 남아, 기획서를 불러온 작업자가 기능이 통째로
+   * 사라진 줄 알았다 — "왜 없어진 거야?" 블록을 고르면 접기를 누르지 않고도
+   * 적을 칸이 바로 나와야 한다.
+   */
+  it('문구 블록을 고르면 주문 칸과 참고 그림이 곧바로 나온다', async () => {
+    resetFoldsForTests()
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+
+    // 순서는 sampleDoc 그대로 — 사진 · 컷아웃 · 문구 셋 · 버튼.
+    const cards = container.querySelectorAll<HTMLElement>('.canvas__sheet .block-card')
+    fireEvent.pointerDown(cards[2]!, { button: 0 })
+
+    // 접기를 누르지 않았는데도 적을 칸이 있다.
+    expect(await screen.findByLabelText('큰 문구 디자인 주문')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '참고 그림 추가' })).toBeTruthy()
   })
 })
 
