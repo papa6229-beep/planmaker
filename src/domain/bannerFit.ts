@@ -27,7 +27,6 @@
  * 순수 모듈이다. 캔버스도 DOM도 모른다.
  */
 
-import { createId } from './factory'
 import { bannerOrder, bannerRoleOf, goesToBanner, nextConcession, type Concession } from './bannerRules'
 import type { BannerSlot, BannerSpec } from './bannerSpec'
 import type { BriefBlock } from './briefSchema'
@@ -49,6 +48,29 @@ const SLOT_GAP = 0.06
  * **모양이 안 맞아서**였다. 자리는 왼쪽에 있었다.
  */
 export const MIN_SLOT_FILL = 0.25
+
+/**
+ * 이 배너 페이지의 번호 (배너 Patch §5).
+ *
+ * 원본 페이지와 규격에서 **정해진 값**이 나온다. 그래야 같은 규격을 다시 뽑을 때
+ * 새 페이지가 생기지 않고 제자리에서 바뀐다.
+ */
+export const BANNER_PAGE_PREFIX = 'banner_'
+
+export function bannerPageId(sourcePageId: string, specId: string): string {
+  return `${BANNER_PAGE_PREFIX}${sourcePageId}_${specId}`
+}
+
+/**
+ * 배너 안에서 이 블록이 쓸 번호.
+ *
+ * **원본과 같은 번호를 쓰면 안 된다.** 합성 효과·블록별 톤·연결한 제품 이미지가
+ * 전부 블록 번호로 매달려 있어서, 번호가 같으면 배너에 건 톤이 메인 이벤트
+ * 페이지까지 바꾼다. 페이지 복제가 같은 문제를 겪고 새 번호를 받는 길로 풀었다.
+ */
+export function bannerBlockId(pageId: string, blockId: string): string {
+  return `${pageId}__${blockId}`
+}
 
 export interface BannerPlacement {
   blockId: string
@@ -257,7 +279,10 @@ export function buildBannerPage(page: BriefPage, spec: BannerSpec): { page: Brie
 
   return {
     page: {
-      id: createId(),
+      // **정해진 번호**를 쓴다. 무작위 번호를 주면 작업이 기억하는 번호와 달라져,
+      // 같은 배너를 두고 문서와 작업이 서로를 못 찾는다 — 실제로 그랬다. 같은
+      // 규격을 다시 뽑을 때 제자리에서 바뀌는 것도 이 번호 덕이다.
+      id: bannerPageId(page.id, spec.id),
       title: `${page.title} · ${spec.width}×${spec.height}`,
       blocks: [...behind, ...front],
       canvasWidth: spec.width,

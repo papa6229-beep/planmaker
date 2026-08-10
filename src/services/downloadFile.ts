@@ -21,9 +21,3 @@ export function downloadBlob(blob: Blob, fileName: string): void {
     URL.revokeObjectURL(url)
   }, 10_000)
 }
-
-/** 파일 이름에 쓸 수 없는 글자를 눕힌다. 빈 이름은 만들지 않는다. */
-export function safeFileStem(raw: string, fallback: string): string {
-  const clean = raw.replaceAll(/[\\/:*?"<>|]/g, ' ').trim().replaceAll(/\s+/g, ' ')
-  return clean.length > 0 ? clean.slice(0, 60) : fallback
-}

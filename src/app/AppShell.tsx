@@ -44,6 +44,7 @@ import { BlockOrderPanel } from '../components/studio/BlockOrderPanel'
 import { ToneAdjustPanel } from '../components/studio/ToneAdjustPanel'
 import { PaperTunePanel } from '../components/studio/PaperTunePanel'
 import { BannerPanel } from '../components/studio/BannerPanel'
+import { BannerTabs } from '../components/studio/BannerTabs'
 import { BackgroundCompositeProvider } from '../features/studio/useBackgroundComposite'
 import { StudioEffectsSync } from '../features/studio/StudioEffectsSync'
 import { GenerateImageDialog } from '../components/studio/GenerateImageDialog'
@@ -279,6 +280,8 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
         </div>
         <div className="workspace__center">
           <PageTabs />
+          {/* 만들어 둔 배너로 건너가는 줄 (배너 Patch §5). 없으면 나오지 않는다. */}
+          {mode === 'studio' && <BannerTabs />}
           {statusPanel}
           {/* 작업판에서 결과가 생기면, 중앙이 무엇을 보여 줄지 고를 수 있다.
               결과가 없을 때는 고를 것이 없으므로 나타나지도 않는다. */}
@@ -315,6 +318,10 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
             {/* 생성 방식을 고르는 자리는 없다 (한방 생성 Patch §1). 상단
                 `이미지 생성하기` 하나가 메인 실행이고, 종이 컷아웃이 켜져
                 있는지에 따라 흐름은 스스로 갈린다. */}
+            {/* 배너 패널은 양쪽에 선다 (배너 Patch §5). 만드는 도중 가운데가
+                잠깐 기획서로 돌아가는데, 그때 패널이 사라지면 방금 만든 배너의
+                안내(무엇을 버렸는지)도 함께 사라진다. */}
+            <BannerPanel />
             {compare ? (
               <>
                 <EditPanel />
@@ -322,8 +329,6 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
                 <ToneAdjustPanel />
                 {/* 완성된 배경 위에서 종이 테두리를 다듬는다 (완성 후 컷아웃 Patch). */}
                 <PaperTunePanel />
-                {/* 같은 조각을 배너 규격에 다시 놓는다 (배너 Patch §4). */}
-                <BannerPanel />
               </>
             ) : (
               <>

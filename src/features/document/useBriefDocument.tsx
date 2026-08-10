@@ -32,6 +32,7 @@ import { useAssets } from '../assets/useAssets'
 import { briefToDocument, pageAsEventBrief } from '../../domain/briefMigration'
 import {
   addPage,
+  putPage,
   deletePage,
   duplicatePage,
   getActivePage,
@@ -74,6 +75,13 @@ export interface BriefDocumentApi {
   pages: BriefPage[]
   activePageId: string
   addPage: () => void
+  /**
+   * 이미 만들어 둔 페이지를 그대로 붙이고 활성으로 만든다 (배너 Patch §5).
+   *
+   * 배너가 지나는 길이다. `addPage`는 빈 페이지를 만들어서 크기도 블록도 정해진
+   * 채로 오는 것을 넣을 수 없다.
+   */
+  putBannerPage: (page: BriefPage) => void
   duplicatePage: (pageId: string) => void
   /**
    * 페이지를 복제하면서 새로 받은 블록 이름들 — 원본 → 사본 (복제 설정 Patch).
@@ -381,6 +389,7 @@ export function BriefDocumentProvider({
       pages: doc.pages,
       activePageId: doc.activePageId,
       addPage: () => applyOp(addPage(docRef.current)),
+      putBannerPage: (page) => applyOp(putPage(docRef.current, page)),
       duplicatePage: (pageId) => {
         const before = docRef.current
         const source = before.pages.find((p) => p.id === pageId)

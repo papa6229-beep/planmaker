@@ -134,6 +134,16 @@ export interface StudioJobApi {
   copyBlockSettings: (from: string, to: string) => void
   /** 문서에 없는 블록의 설정을 치운다 (§4). */
   pruneEffects: (liveBlockIds: ReadonlySet<string>) => void
+  /**
+   * 이 페이지가 어느 배너 규격인가. 배너가 아니면 `null` (배너 Patch §5).
+   *
+   * 페이지 탭이 이것을 보고 배너를 감춘다 — 페이지 탭은 "이벤트 페이지가 몇
+   * 장인가"를 뜻하는 자리라, 거기에 배너가 끼면 뜻이 흐려진다.
+   */
+  bannerSpecOf: (pageId: string) => string | null
+  /** 만들어 둔 배너 페이지들. 만든 차례대로. */
+  bannerPageIds: string[]
+  markBannerPage: (pageId: string, specId: string) => Promise<void>
   /** 완성 결과 전체의 그레인 (§9.5). */
   grain: number
   setGrain: (value: number) => void
@@ -521,6 +531,12 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
         const next = withOnlyBlocks(job, liveBlockIds, Date.now())
         if (next !== job) void commit(next)
       },
+      bannerSpecOf: (pageId) => job.bannerPages?.[pageId] ?? null,
+      bannerPageIds: Object.keys(job.bannerPages ?? {}),
+      // **가장 최근 작업 위에** 얹는다. 렌더 시점의 `job`을 통째로 다시 쓰면,
+      // 그 사이에 적힌 조각과 결과가 함께 지워진다 — 실제로 지웠다.
+      markBannerPage: (pageId, specId) =>
+        mutate((j) => ({ ...j, bannerPages: { ...j.bannerPages, [pageId]: specId }, updatedAt: Date.now() })),
       grain: job.grain ?? DEFAULT_GRAIN,
       setGrain: (value) =>
         void commit({ ...job, grain: Math.min(1, Math.max(0, value)), updatedAt: Date.now() }),

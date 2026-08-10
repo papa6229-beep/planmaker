@@ -25,6 +25,7 @@
  */
 
 import type { LayoutHint } from './briefSchema'
+import { BANNER_PAGE_PREFIX } from './bannerFit'
 import type { BriefDocument, BriefPage } from './pageSchema'
 
 /** Stable stringify: object keys are sorted so key order can never matter. */
@@ -88,6 +89,16 @@ function pageContent(page: BriefPage, groupKey: (groupId: string) => string) {
  * Reduces a brief to the content that decides whether it changed. Two briefs
  * with the same fingerprint are the same piece of work.
  */
+/**
+ * 이 페이지가 배너인가.
+ *
+ * 번호로 안다. 작업(`StudioJob.bannerPages`)이 정본이지만 이 모듈은 순수하고
+ * 작업을 모른다 — 그래서 `bannerPageId`가 붙이는 머리말을 여기서도 읽는다.
+ */
+function isBannerPage(pageId: string): boolean {
+  return pageId.startsWith(BANNER_PAGE_PREFIX)
+}
+
 export function documentFingerprint(doc: BriefDocument): string {
   const { project } = doc
   const groups = new Map<string, string>()
@@ -118,7 +129,13 @@ export function documentFingerprint(doc: BriefDocument): string {
         author: project.author,
         eventType: project.eventType,
       },
-      pages: doc.pages.map((page) => pageContent(page, groupKey)),
+      // 배너 페이지는 세지 않는다 (배너 Patch §5).
+      //
+      // 이 지문이 답하는 물음은 "**기획서**가 달라졌는가"이고, 그 답으로 완성본이
+      // 오래되었는지를 판정한다. 배너는 완성본에서 파생된 결과물이지 기획서가
+      // 아니다. 세면 배너 하나를 뽑았을 뿐인데 **메인 이벤트 페이지의 완성본까지**
+      // 오래된 것으로 표시된다 — 실제로 그랬다.
+      pages: doc.pages.filter((page) => !isBannerPage(page.id)).map((page) => pageContent(page, groupKey)),
       assets: doc.assets,
     }),
   )

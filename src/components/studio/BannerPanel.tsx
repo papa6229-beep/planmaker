@@ -1,16 +1,13 @@
 /**
- * 완성본에서 배너를 뽑는다 (배너 Patch §4).
+ * 완성본에서 배너를 뽑는다 (배너 Patch §5).
  *
- * 완성본이 있을 때만 나온다. 만든 적 없는 완성본에서 배너를 지어낼 수는 없다.
+ * 여기서는 **만들기만** 한다. 만들고 나면 그 배너는 페이지가 되고, 가운데 화면이
+ * 완성본과 똑같이 그것을 연다 — 확대해서 보고, 조각을 끌어 옮기고, 크기를 바꾸고,
+ * 지운다. 그래서 이 패널에 미리보기가 없다. 가운데가 곧 미리보기다.
  *
- * 화면이 하는 일의 절반은 **무엇을 버렸는지 말하는 것**이다. 배너는 버리는 일이고,
- * 무엇을 버렸는지 말하지 않으면 사람이 그 배너를 믿고 그대로 내보낸다. 넷을 나눠
- * 적고, 그중 둘(자리를 못 얻음·조각이 없음)은 색을 달리해 **사람이 봐야 한다**고
- * 말한다.
- *
- * 미리보기는 실제 크기로 보여 준다. 1020×70은 패널보다 넓어 가로로 밀리지만,
- * 줄여서 보여 주면 글자가 읽히는지를 볼 수 없다 — 그것이 이 배너에서 유일하게
- * 중요한 것이다.
+ * 자동 배치는 **초안**이다. 완벽할 필요가 없고, 그래서 이 패널이 하는 나머지 절반은
+ * **무엇을 버렸는지 말하는 것**이다. 배너는 버리는 일이고, 말하지 않으면 사람이
+ * 그 배너를 믿고 그대로 내보낸다.
  */
 
 import { useBannerMaker, sideLabel, type BannerNote } from '../../features/studio/useBannerMaker'
@@ -31,7 +28,11 @@ const NEEDS_EYES = new Set<BannerNote['kind']>(['unplaced', 'missing'])
 export function BannerPanel() {
   const banner = useBannerMaker()
   const generation = useImageGeneration()
-  if (banner === null || generation === null || !generation.hasResult) return null
+  // 만드는 동안·만든 뒤에는 결과 유무와 상관없이 남는다. 만드는 도중 가운데가
+  // 잠깐 다른 페이지를 가리키는데, 그때 사라지면 방금 만든 배너의 안내가 함께
+  // 사라진다 — 무엇을 버렸는지가 그 안내에만 있다.
+  if (banner === null || generation === null) return null
+  if (!generation.hasResult && banner.state.kind === 'idle') return null
 
   const busy = banner.state.kind === 'working' || generation.state.kind === 'running'
   const result = banner.state.kind === 'done' ? banner.state.result : null
@@ -41,7 +42,8 @@ export function BannerPanel() {
     <PanelFold id="banner" title="배너 뽑기" note="완성본 조각을 다시 놓습니다" marked={warnings.length > 0}>
       <section className="banner" aria-label="배너 뽑기">
         <p className="banner__note">
-          완성본에 쓴 조각을 배너 규격에 다시 놓습니다. 새로 그리지 않으므로 AI 호출이 없습니다.
+          완성본에 쓴 조각을 배너 규격에 다시 놓습니다. 새로 그리지 않으므로 AI 호출이 없습니다. 만든 뒤에는
+          가운데에서 조각을 끌어 옮기고 크기를 바꿀 수 있습니다.
         </p>
 
         <div className="banner__specs">
@@ -53,7 +55,7 @@ export function BannerPanel() {
               disabled={busy}
               onClick={() => banner.make(spec.id)}
             >
-              {spec.width}×{spec.height} 만들기
+              {spec.width}×{spec.height} {banner.viewingSpecId === spec.id ? '다시 만들기' : '만들기'}
             </button>
           ))}
         </div>
@@ -72,10 +74,6 @@ export function BannerPanel() {
                 </span>
               )}
             </p>
-
-            <div className="banner__preview">
-              <img src={result.url} alt={`${result.spec.width}×${result.spec.height} 배너 미리보기`} />
-            </div>
 
             {result.edges.length > 0 && (
               <div className="banner__edges">
@@ -96,7 +94,7 @@ export function BannerPanel() {
             )}
 
             {result.centerFallback && (
-              <p className="banner__status">배경에서 잔잔한 자리를 고르지 못해 가운데를 썼습니다.</p>
+              <p className="banner__status">배경에서 잔잔한 자리를 고르지 못해 원본 배경을 그대로 썼습니다.</p>
             )}
 
             {result.notes.length > 0 && (
@@ -112,14 +110,9 @@ export function BannerPanel() {
               </ul>
             )}
 
-            <div className="banner__actions">
-              <button type="button" className="btn btn--primary" onClick={banner.save}>
-                PNG 저장
-              </button>
-              <button type="button" className="btn" onClick={banner.dismiss}>
-                닫기
-              </button>
-            </div>
+            <p className="banner__note">
+              저장은 위의 <b>이미지 저장</b>으로 합니다 — 배너도 한 장의 완성본입니다.
+            </p>
           </div>
         )}
       </section>

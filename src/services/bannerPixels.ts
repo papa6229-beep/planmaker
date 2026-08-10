@@ -98,3 +98,37 @@ export async function readEdgeColors(
     return []
   }
 }
+
+/**
+ * 배경의 한 자리만 잘라 **배너 크기의 새 그림**으로 만든다 (배너 Patch §5).
+ *
+ * 계획에 크롭을 실어 보내는 길도 있지만, 배너가 페이지가 되면서 그 길로는 부족해졌다.
+ * 사람이 조각을 옮긴 뒤 다시 합칠 때 그 경로는 크롭을 모르기 때문이다 — 손대는 순간
+ * 배경이 가운데로 돌아가 버린다.
+ *
+ * 잘라서 한 장으로 구워 두면 그런 자리가 아예 없다. 그 뒤로는 그냥 배경 한 장이다.
+ */
+export async function cropBackground(
+  blob: Blob,
+  rect: Rect,
+  size: { width: number; height: number },
+): Promise<Blob | null> {
+  try {
+    const bitmap = await toBitmap(blob)
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(size.width))
+    canvas.height = Math.max(1, Math.round(size.height))
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    const sx = Math.max(0, Math.min(bitmap.width - 1, rect.x))
+    const sy = Math.max(0, Math.min(bitmap.height - 1, rect.y))
+    const sw = Math.max(1, Math.min(bitmap.width - sx, rect.width))
+    const sh = Math.max(1, Math.min(bitmap.height - sy, rect.height))
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
+    return await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+  } catch {
+    return null
+  }
+}

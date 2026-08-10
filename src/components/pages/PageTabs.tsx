@@ -7,11 +7,20 @@
  */
 
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useStudioJob } from '../../features/studio/useStudioJob'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
 
 export function PageTabs() {
-  const { pages, activePageId, addPage, duplicatePage, deletePage, movePage, renamePage, switchPage } =
+  const { pages: allPages, activePageId, addPage, duplicatePage, deletePage, movePage, renamePage, switchPage } =
     useBriefDocument()
+  const studio = useStudioJob()
+  /**
+   * 배너는 페이지로 살지만 여기 나오지 않는다 (배너 Patch §5).
+   *
+   * 이 탭이 뜻하는 것은 "이벤트 페이지가 몇 장인가"이고, 이벤트 페이지가 두 장인
+   * 경우는 없다. 배너 다섯이 끼면 그 뜻이 흐려진다 — 배너는 `BannerTabs`가 맡는다.
+   */
+  const pages = allPages.filter((page) => studio?.bannerSpecOf(page.id) == null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [confirmingId, setConfirming] = useState<string | null>(null)

@@ -16,7 +16,9 @@
 import { describe, it, expect } from 'vitest'
 import { DEMOTED_OPACITY, DEMOTED_TONE, buildBanner, readableSlots, type BannerPieces } from '../domain/bannerComposite'
 import { BANNER_1020x70 } from '../domain/bannerSpec'
-import { createBlock } from '../domain/factory'
+import { bannerPageId } from '../domain/bannerFit'
+import { documentFingerprint } from '../domain/documentFingerprint'
+import { createBlock, createEmptyProject } from '../domain/factory'
 import type { BriefBlock } from '../domain/briefSchema'
 import type { BlockType } from '../domain/blockTypes'
 import type { BriefPage } from '../domain/pageSchema'
@@ -170,5 +172,36 @@ describe('§33-3 배경과 강등', () => {
       expect(slot.x + slot.width).toBeLessThanOrEqual(1)
       expect(slot.y + slot.height).toBeLessThanOrEqual(1)
     }
+  })
+})
+
+/**
+ * 배너는 기획서가 아니다 (배너 Patch §5).
+ *
+ * 문서 지문이 답하는 물음은 "**기획서**가 달라졌는가"이고, 그 답으로 완성본이
+ * 오래되었는지를 판정한다. 배너는 완성본에서 파생된 결과물이지 기획서가 아니다.
+ * 세면 배너 하나를 뽑았을 뿐인데 **메인 이벤트 페이지의 완성본까지** 오래된 것으로
+ * 표시된다 — 실제로 화면에 그 경고가 떴다.
+ */
+describe('§33-4 배너 페이지는 기획서 지문에 들어가지 않는다', () => {
+  function docOf(pages: BriefPage[]): Parameters<typeof documentFingerprint>[0] {
+    return { schemaVersion: '2.0.0', project: createEmptyProject('지문'), pages, activePageId: pages[0]!.id, assets: [] }
+  }
+  const eventPage = page([block('main_headline', 'title')])
+  const banner = (): BriefPage => ({
+    ...page([block('main_headline', 'title')]),
+    id: bannerPageId(eventPage.id, '1020x70'),
+    canvasWidth: 1020,
+    canvasHeight: 70,
+  })
+
+  it('배너를 더해도 지문이 그대로다', () => {
+    expect(documentFingerprint(docOf([eventPage, banner()]))).toBe(documentFingerprint(docOf([eventPage])))
+  })
+
+  it('이벤트 페이지를 더하면 지문이 달라진다', () => {
+    // 배너만 빼는 것이지 페이지를 세지 않는 것이 아니다.
+    const second: BriefPage = { ...page([block('cta_button', 'cta')]), id: 'page_2' }
+    expect(documentFingerprint(docOf([eventPage, second]))).not.toBe(documentFingerprint(docOf([eventPage])))
   })
 })

@@ -22,9 +22,10 @@ import { AppRoutes } from './AppRoutes'
 import { clearAll, putAsset, resetAssetStoreForTests, type StoredAsset } from '../services/assetStore'
 import { clearAllDocuments, resetDocumentStoreForTests } from '../services/documentStore'
 import { clearAllRequests, resetRequestStoreForTests } from '../services/requestStore'
-import { clearAllStudioJobs, resetStudioStoreForTests, saveStudioJob, STUDIO_JOB_ID } from '../services/studioStore'
+import { clearAllStudioJobs, loadStudioJob, resetStudioStoreForTests, saveStudioJob, STUDIO_JOB_ID } from '../services/studioStore'
 import { createStudioJob, withSource, type StudioJob } from '../domain/studioJob'
 import { createEmptyDocument, type BriefDocument } from '../domain/pageSchema'
+import { documentFingerprint } from '../domain/documentFingerprint'
 import { createBlock, createEmptyProject } from '../domain/factory'
 import { resetFoldsForTests } from '../components/studio/PanelFold'
 import type { CompositePlan } from '../domain/composite'
@@ -49,6 +50,7 @@ vi.mock('../services/compositeSources', () => ({
 // 화소를 읽는 두 자리는 캔버스가 필요하다. 규칙 자체는 각자의 검사가 붙든다.
 vi.mock('../services/bannerPixels', () => ({
   pickQuietRegion: async () => ({ x: 0, y: 640, width: 840, height: 58 }),
+  cropBackground: async () => new Blob([new Uint8Array([137, 80, 78, 71, 5])], { type: 'image/png' }),
   readEdgeColors: async () => [{ side: 'left', hex: '#354151' }, { side: 'right', hex: '#354151' }],
 }))
 vi.mock('../features/assets/imageUtils', async () => {
@@ -98,11 +100,14 @@ function finishedJob(): StudioJob {
   const doc = sampleDoc()
   const pageId = doc.pages[0]!.id
   const job = withSource(createStudioJob(doc, 1, STUDIO_JOB_ID), doc, 1, 'a.eventbrief')
+  // 진짜 지문을 쓴다. 가짜를 쓰면 처음부터 낡은 것이라 "배너 때문에 낡았는가"를
+  // 물을 수가 없다.
+  const fingerprint = documentFingerprint(doc)
   return {
     ...job,
     productImages: { blk_prod: 'asset_prod', blk_logo: 'asset_logo' },
     backgrounds: { [pageId]: { assetId: 'asset_bg', source: 'ai' } },
-    results: { [pageId]: { pageId, assetId: 'asset_result', model: 'gpt-image-2', quality: 'medium', requestedSize: '832x1104', sourceFingerprint: 'fp', createdAt: 1 } },
+    results: { [pageId]: { pageId, assetId: 'asset_result', model: 'gpt-image-2', quality: 'medium', requestedSize: '832x1104', sourceFingerprint: fingerprint, createdAt: 1 } },
     textObjects: {
       [pageId]: [
         { blockId: 'blk_title', assetId: 'asset_title', rect: { x: 60, y: 100, width: 520, height: 150 }, layer: 8 },
@@ -174,7 +179,11 @@ async function makeBanner(): Promise<void> {
   await showResult()
   fireEvent.click(screen.getByRole('button', { name: /배너 뽑기/ }))
   fireEvent.click(within(bannerPanel()).getByRole('button', { name: '1020×70 만들기' }))
-  await waitFor(() => expect(rendered.length).toBeGreaterThan(0), { timeout: 8000 })
+  // 그려진 것만으로는 이르다 — 안내가 화면에 오를 때까지 기다린다.
+  await waitFor(() => {
+    expect(rendered.length).toBeGreaterThan(0)
+    expect(within(bannerPanel()).queryByText(/끝단 색/)).not.toBeNull()
+  }, { timeout: 8000 })
 }
 
 describe('§35-1 완성본이 있어야 나온다', () => {
@@ -220,10 +229,14 @@ describe('§35-2 배너는 규격대로 그려진다', () => {
     }
   })
 
-  it('배경에서 고른 자리가 계획에 실린다', async () => {
-    // 실패하면 잔잔한 자리를 골라 놓고 늘 가운데를 그린다.
+  it('잘라 구운 배경을 쓴다 — 원본 배경이 아니다', async () => {
+    // 계획에 크롭을 실어 보내면 사람이 조각을 옮긴 뒤 다시 합칠 때 그 경로가
+    // 크롭을 몰라 배경이 가운데로 돌아간다. 잘라서 한 장으로 구워 두면 그런
+    // 자리가 아예 없다.
     await makeBanner()
-    expect(rendered.at(-1)!.backgroundCrop).toEqual({ x: 0, y: 640, width: 840, height: 58 })
+    const used = rendered.at(-1)!.background?.assetId
+    expect(used).toBeDefined()
+    expect(used).not.toBe('asset_bg')
   })
 })
 
@@ -276,8 +289,47 @@ describe('§35-4 버린 것을 말한다', () => {
     expect(within(bannerPanel()).getByText(/840×78/)).toBeTruthy()
   })
 
-  it('미리보기를 실제 크기로 보여 준다', async () => {
+  it('저장은 완성본과 같은 길로 간다고 알려 준다', async () => {
+    // 배너도 한 장의 완성본이다. 저장 버튼을 두 개 두면 어느 것이 무엇을 내놓는지
+    // 사람이 매번 헷갈린다.
     await makeBanner()
-    expect(within(bannerPanel()).getByAltText('1020×70 배너 미리보기')).toBeTruthy()
+    expect(within(bannerPanel()).getByText(/이미지 저장/)).toBeTruthy()
   })
+})
+
+describe('§35-5 배너는 페이지가 된다', () => {
+  it('만들면 그 배너 페이지로 넘어간다', async () => {
+    // 페이지가 되어야 완성본 화면의 편집이 통째로 따라온다 — 끌어 옮기기, 크기
+    // 조절, 앞뒤, 삭제, 확대.
+    await makeBanner()
+    await waitFor(async () => {
+      const job = (await loadStudioJob(STUDIO_JOB_ID))!
+      const bannerId = Object.keys(job.bannerPages ?? {})[0]
+      expect(bannerId).toBeDefined()
+      expect(job.doc.pages.some((p) => p.id === bannerId)).toBe(true)
+    }, { timeout: 9000 })
+  }, 15_000)
+
+  it('배너 줄에 나오고, 페이지 탭에는 나오지 않는다', async () => {
+    // 페이지 탭이 뜻하는 것은 "이벤트 페이지가 몇 장인가"다. 배너가 끼면 흐려진다.
+    await makeBanner()
+    const strip = await screen.findByRole('group', { name: '만든 배너' }, { timeout: 9000 })
+    expect(within(strip).getByRole('button', { name: '1020×70' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /배너 1020×70/ })).toBeNull()
+  }, 15_000)
+
+  it('배너의 블록은 원본과 다른 번호를 받는다', async () => {
+    // 같은 번호를 쓰면 배너 조각 하나를 어둡게 눌렀을 뿐인데 메인 이벤트 페이지의
+    // 같은 조각도 함께 어두워진다 — 효과·톤·제품 이미지가 전부 블록 번호에 매달려
+    // 있기 때문이다.
+    await makeBanner()
+    await waitFor(async () => {
+      const job = (await loadStudioJob(STUDIO_JOB_ID))!
+      const bannerId = Object.keys(job.bannerPages ?? {})[0]!
+      const ids = new Set((job.textObjects?.[bannerId] ?? []).map((o) => o.blockId))
+      expect(ids.size).toBeGreaterThan(0)
+      expect([...ids].every((id) => id.startsWith(bannerId))).toBe(true)
+      expect(ids.has('blk_title')).toBe(false)
+    }, { timeout: 9000 })
+  }, 15_000)
 })
