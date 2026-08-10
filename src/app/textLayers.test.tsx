@@ -1418,7 +1418,11 @@ describe('§17 페이지 전환', () => {
     expect(screen.getByLabelText('축소')).toBeTruthy()
 
     // 1페이지로 돌아오면 만들어 둔 결과가 그대로다.
-    fireEvent.click(screen.getByRole('button', { name: '1페이지' }))
+    // 작업 목록에도 같은 이름의 칩이 선다 (작업 목록 Patch). 여기서 누르려는 것은
+    // 페이지 탭이므로 그 안에서 찾는다.
+    fireEvent.click(
+      within(screen.getByRole('group', { name: '기획 페이지' })).getByRole('button', { name: '1페이지' }),
+    )
     await waitFor(() => {
       // 완성본을 보는 동안에는 중앙 보기 줄이 아예 없다 (기획서 탭 감추기 Patch).
       // 그래서 "완성본으로 넘어갔는가"는 그 화면의 제목으로 묻는다.

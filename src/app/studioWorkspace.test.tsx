@@ -343,10 +343,13 @@ describe('§4 상단은 이미지 만드는 일만 앞에 둔다', () => {
     expect(within(dialog).getByText('.eventbrief')).toBeTruthy()
   }, 25000)
 
-  it('offers both saves in the bar, each named for what it produces', async () => {
+  it('상단 바에는 작업 전부를 담는 저장 하나만 있다', async () => {
+    // 이미지 저장은 **지금 고른 것 하나**를 내놓는다. 고르는 자리인 `작업 목록`
+    // 옆으로 내려갔다 (작업 목록 Patch). 한 가지 일에 들어가는 문은 하나면 충분하다.
     await openStudio()
     expect(screen.getByRole('button', { name: '작업 파일 저장' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: '이미지 저장' })).toBeTruthy()
+    const bar = document.querySelector('.editor-topbar') as HTMLElement
+    expect(bar.textContent).not.toContain('이미지 저장')
     // 작업판에서 "파일로 저장"은 어느 파일인지 말하지 않는 이름이라 쓰지 않는다.
     expect(screen.queryByRole('button', { name: '파일로 저장' })).toBeNull()
   }, 25000)
@@ -372,10 +375,13 @@ describe('§5 이미지 저장은 진짜 결과를 내놓는다', () => {
     expect(plan.totalPages).toBe(2)
   })
 
-  it('says so and saves nothing when there is no result yet', async () => {
+  it('만든 것이 없으면 저장 버튼도 없다', async () => {
+    // 앞선 판은 버튼을 두고 눌렀을 때 "저장할 이미지가 없습니다"라고 말했다.
+    // 이제 저장은 작업 목록 옆에 있고, 목록이 비어 있으면 줄 자체가 없다 —
+    // 없는 것을 눌러 보고 안 되는 것보다 애초에 없는 편이 낫다.
     await openStudio()
-    fireEvent.click(screen.getByRole('button', { name: '이미지 저장' }))
-    await waitFor(() => expect(screen.getByRole('alertdialog', { name: '저장할 이미지 없음' })).toBeTruthy())
+    expect(screen.queryByRole('button', { name: '이 이미지 저장' })).toBeNull()
+    expect(screen.queryByRole('group', { name: '작업 목록' })).toBeNull()
     expect(downloads).toHaveLength(0)
     expect(calls).toHaveLength(0)
   }, 25000)
@@ -385,7 +391,7 @@ describe('§5 이미지 저장은 진짜 결과를 내놓는다', () => {
     await openStudio()
     await generateHere()
     const before = calls.length
-    fireEvent.click(screen.getByRole('button', { name: '이미지 저장' }))
+    fireEvent.click(screen.getByRole('button', { name: '이 이미지 저장' }))
     await waitFor(() => expect(downloads).toHaveLength(1), { timeout: 8000 })
     expect(downloads[0]!.fileName).toBe('아크웨이브_여름감사제_page-01.png')
     expect(downloads[0]!.fileName.endsWith('.eventbrief')).toBe(false)
@@ -409,7 +415,7 @@ describe('§5 이미지 저장은 진짜 결과를 내놓는다', () => {
   it('asks first when only some pages have results', async () => {
     await openStudio()
     await generateHere()
-    fireEvent.click(screen.getByRole('button', { name: '이미지 저장' }))
+    fireEvent.click(screen.getByRole('button', { name: '이 이미지 저장' }))
     const dialog = await screen.findByRole('dialog', { name: '일부 페이지만 저장' })
     expect(dialog.textContent).toContain('2페이지 중 생성 결과가 있는 1페이지만 저장합니다')
     fireEvent.click(within(dialog).getByRole('button', { name: '취소' }))
@@ -432,7 +438,7 @@ describe('§5 이미지 저장은 진짜 결과를 내놓는다', () => {
     expect(isPartialSave(plan)).toBe(false)
 
     // 전부 있으면 묻지 않는다 — 바로 한 묶음으로 나간다.
-    fireEvent.click(screen.getByRole('button', { name: '이미지 저장' }))
+    fireEvent.click(screen.getByRole('button', { name: '이 이미지 저장' }))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '일부 페이지만 저장' })).toBeNull())
     expect(calls.every((c) => !c.url.includes('openai'))).toBe(true)
   }, 30000)

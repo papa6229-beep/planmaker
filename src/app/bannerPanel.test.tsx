@@ -218,6 +218,19 @@ describe('§35-0 완성본을 보는 동안 기획서 탭이 없다', () => {
   })
 })
 
+describe('§35-0b 작업 목록', () => {
+  it('배너를 뽑기 전에도 이벤트 페이지 하나로 서 있다', async () => {
+    // 목록이 배너가 생겨야만 나오면, 배너를 안 쓰는 사람은 저장 버튼을 영영 못 본다.
+    await openStudio()
+    await showResult()
+    const strip = screen.getByRole('group', { name: '작업 목록' })
+    expect(within(strip).getByText('이벤트 페이지')).toBeTruthy()
+    expect(within(strip).queryByText('배너')).toBeNull()
+    expect(within(strip).getByRole('button', { name: '이 이미지 저장' })).toBeTruthy()
+  })
+
+})
+
 describe('§35-1 완성본이 있어야 나온다', () => {
   it('결과가 없으면 배너 자리도 없다', async () => {
     // 만든 적 없는 완성본에서 배너를 지어낼 수는 없다.
@@ -367,11 +380,14 @@ describe('§35-5 배너는 페이지가 된다', () => {
     }, { timeout: 9000 })
   }, 15_000)
 
-  it('배너 줄에 나오고, 페이지 탭에는 나오지 않는다', async () => {
+  it('작업 목록에 나오고, 페이지 탭에는 나오지 않는다', async () => {
     // 페이지 탭이 뜻하는 것은 "이벤트 페이지가 몇 장인가"다. 배너가 끼면 흐려진다.
     await makeBanner()
-    const strip = await screen.findByRole('group', { name: '완성본과 배너' }, { timeout: 9000 })
+    const strip = await screen.findByRole('group', { name: '작업 목록' }, { timeout: 9000 })
     expect(within(strip).getByRole('button', { name: '1020×70' })).toBeTruthy()
+    // 이벤트 페이지와 배너가 이름 붙은 두 무리로 갈린다 (작업 목록 Patch).
+    expect(within(strip).getByText('이벤트 페이지')).toBeTruthy()
+    expect(within(strip).getByText('배너')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /배너 1020×70/ })).toBeNull()
   }, 15_000)
 
@@ -380,7 +396,7 @@ describe('§35-5 배너는 페이지가 된다', () => {
     // 합치기 전 화면을 보고, 거기서 `1페이지`를 누르고, 다시 `완성본`을 눌러야
     // 제자리로 왔다 — 세 번 눌러 두 번 엉뚱한 화면을 지나는 길이었다.
     await makeBanner()
-    const strip = await screen.findByRole('group', { name: '완성본과 배너' }, { timeout: 9000 })
+    const strip = await screen.findByRole('group', { name: '작업 목록' }, { timeout: 9000 })
     const job = (await loadStudioJob(STUDIO_JOB_ID))!
     const bannerId = Object.keys(job.bannerPages ?? {})[0]!
     const source = job.doc.pages.find((p) => !p.id.startsWith('banner_'))!
@@ -432,7 +448,7 @@ describe('§35-7 배너 저장과 이어받기', () => {
     // 손검수: "저대로 이미지 저장하면 840×640, 원본 이벤트 이미지, 그리고 다른
     // 사이즈 작업 완료한 배너가 압축파일로 저장되던데?"
     await makeBanner()
-    fireEvent.click(screen.getByRole('button', { name: '이미지 저장' }))
+    fireEvent.click(screen.getByRole('button', { name: '이 이미지 저장' }))
     await waitFor(() => expect(downloaded).toHaveLength(1), { timeout: 3500 })
     // 이름도 페이지 번호가 아니라 크기다 — 폴더에서 찾는 것은 언제나 크기다.
     expect(downloaded[0]).toContain('1020x70')
@@ -441,12 +457,12 @@ describe('§35-7 배너 저장과 이어받기', () => {
 
   it('이벤트 페이지에서 저장하면 배너가 딸려 나가지 않는다', async () => {
     await makeBanner()
-    const strip = await screen.findByRole('group', { name: '완성본과 배너' }, { timeout: 9000 })
+    const strip = await screen.findByRole('group', { name: '작업 목록' }, { timeout: 9000 })
     const job = (await loadStudioJob(STUDIO_JOB_ID))!
     const source = job.doc.pages.find((p) => !p.id.startsWith('banner_'))!
     fireEvent.click(within(strip).getByRole('button', { name: source.title }))
-    await waitFor(() => expect(screen.getByRole('button', { name: '이미지 저장' })).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: '이미지 저장' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '이 이미지 저장' })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: '이 이미지 저장' }))
     await waitFor(() => expect(downloaded).toHaveLength(1), { timeout: 3500 })
     expect(downloaded[0]).toContain('page-01')
   }, 20_000)
@@ -595,6 +611,17 @@ describe('§35-6 조각 서랍', () => {
     const panel = await screen.findByRole('region', { name: 'AI 부분수정' }, { timeout: 3500 })
     expect(within(panel).getByText(/문구 조각/)).toBeTruthy()
     expect(within(panel).getByText(/원본 이벤트 페이지에도 옆 조각에도 영향이 없습니다/)).toBeTruthy()
+  }, 15_000)
+
+  it('값을 치른 결과가 하나뿐이면 결과 줄이 없다', async () => {
+    // 손검수: "결과 1/1 이전결과 다음결과 최초 생성본으로 복원, 이게 뭐였지?
+    // 어떤 버튼도 활성화 되지 않는데." 배너는 AI 없이 만드니 늘 한 칸이고, 그때
+    // 꺼진 버튼 넷은 소음이다.
+    const drawer = await openDrawer()
+    fireEvent.click(within(drawer).getByRole('button', { name: /문구 1/ }))
+    const panel = await screen.findByRole('region', { name: 'AI 부분수정' }, { timeout: 3500 })
+    expect(within(panel).queryByRole('button', { name: '최초 생성본으로 복원' })).toBeNull()
+    expect(within(panel).queryByText(/결과 1 \/ 1/)).toBeNull()
   }, 15_000)
 
   it('부분수정 목록에 이미지 조각과 전체 배경은 없다', async () => {

@@ -3046,3 +3046,39 @@ button { font-family: inherit; }
 .banner__preset-drop { flex: 0 0 26px; }
 /* 형제 크기 버튼은 프리셋과 한눈에 갈려야 한다 — 같은 모양이면 열 개가 한 줄로 선다. */
 .banner__make--sibling { font-size: 11px; opacity: 0.9; }
+
+/* ── 작업 목록 (작업 목록 Patch) ─────────────────────────────────────────── */
+/*
+ * 이벤트 페이지와 배너를 눈으로 가른다. 앞선 판은 한 이름 아래 셋을 나란히 세웠고,
+ * 작업자가 "구분감이 좀 약하지?"라고 했다 — 셋은 같은 종류가 아니다.
+ */
+.work-list {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 4px 0 8px;
+}
+.work-list__group { display: flex; align-items: center; gap: 4px; }
+.work-list__label {
+  font-size: 10px;
+  color: var(--color-muted);
+  padding-right: 2px;
+}
+.work-list__item {
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface, #fff);
+  cursor: pointer;
+}
+.work-list__item.is-active {
+  border-color: var(--color-accent, #4f46e5);
+  color: var(--color-accent, #4f46e5);
+  font-weight: 700;
+}
+/* 원본은 뽑아 낸 것과 모양이 달라야 한다. */
+.work-list__item--event { border-style: dashed; }
+.work-list__save { margin-left: auto; font-size: 11px; }

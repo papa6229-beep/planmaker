@@ -265,7 +265,7 @@ describe('§23-3 그냥 열기는 사람이 고른 뒤에만 일어난다', () =
 })
 
 describe('§23-4 돌아올 수 있는 저장이 상단 바에 있다', () => {
-  it('작업판 상단 바에 작업 파일 저장과 이미지 저장이 나란히 있다', async () => {
+  it('작업판 상단 바에 작업 파일 저장이 있다', async () => {
     await saveStudioJob(jobWithResult(true))
     await putAsset(storedAsset('asset_cut', 20))
     render(
@@ -276,8 +276,11 @@ describe('§23-4 돌아올 수 있는 저장이 상단 바에 있다', () => {
     await waitFor(() => expect(document.querySelector('.canvas__sheet')).not.toBeNull(), { timeout: 8000 })
 
     // 실패하면 돌아올 수 있는 유일한 저장이 다시 메뉴 안으로 숨은 것이다.
+    //
+    // 이미지 저장은 이 바에 없다 (작업 목록 Patch). 그쪽이 내놓는 것은 **지금 고른
+    // 것 하나**라, 고르는 자리인 `작업 목록` 옆으로 내려갔다. 여기 남은 저장은
+    // 목록의 한 줄이 아니라 작업 전부를 담는다.
     const bar = document.querySelector('.editor-topbar') as HTMLElement
     expect(bar.textContent).toContain('작업 파일 저장')
-    expect(bar.textContent).toContain('이미지 저장')
   }, 30000)
 })

@@ -368,7 +368,11 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
     expect(revisionsOf(r)).toHaveLength(1)
     expect(cursorOf(r)).toBe(0)
     expect(revisionsOf(r)[0]?.kind).toBe('initial')
-    expect(panel().textContent).toContain('결과 1 / 1')
+    // 칸이 하나뿐일 때는 줄이 화면에 없다 (작업 목록 Patch). 오갈 데가 없는데
+    // 꺼진 버튼 넷이 서 있으면 무엇을 하라는 자리인지 아무도 모른다 — 손검수에서
+    // "이게 뭐였지? 어떤 버튼도 활성화 되지 않는데"로 걸렸다.
+    expect(panel().textContent).not.toContain('결과 1 / 1')
+    expect(within(panel()).queryByRole('button', { name: '이전 결과' })).toBeNull()
   }, 25000)
 
   it('grows to three revisions after two edits', async () => {
@@ -418,10 +422,11 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
     await generateFirst()
     const prev = () => within(panel()).getByRole('button', { name: '이전 결과' }) as HTMLButtonElement
     const next = () => within(panel()).getByRole('button', { name: '다음 결과' }) as HTMLButtonElement
-    expect(prev().disabled).toBe(true)
-    expect(next().disabled).toBe(true)
+    // 한 칸일 때는 줄이 없다. 고치고 나서 나타난다.
+    expect(within(panel()).queryByRole('button', { name: '이전 결과' })).toBeNull()
 
     await editOnce(/문구 1/, '간결한 폰트로')
+    expect(panel().textContent).toContain('결과 2 / 2')
     expect(prev().disabled).toBe(false)
     expect(next().disabled).toBe(true)
 

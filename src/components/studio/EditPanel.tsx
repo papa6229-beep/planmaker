@@ -258,7 +258,12 @@ export function EditPanel() {
         </button>
       </div>
 
-      {/* 결과의 줄. 앞뒤로 오가도 외부 호출은 없고 그림도 새로 만들지 않는다. */}
+      {/* 결과의 줄. 앞뒤로 오가도 외부 호출은 없고 그림도 새로 만들지 않는다.
+          **칸이 하나뿐이면 나오지 않는다.** 이 줄에 서는 것은 값을 치른 결과뿐이라
+          — 최초 생성본과 AI 부분수정 — 아직 한 번도 고치지 않았으면 오갈 데가
+          없다. 그때는 꺼진 버튼 넷이 서 있을 뿐이고, 작업자가 "이게 뭐였지? 어떤
+          버튼도 활성화 되지 않는데"라고 물었다. 없는 편이 낫다. */}
+      {generation.revisionCount > 1 && (
       <div className="edit-panel__history">
         <span className="edit-panel__position">
           결과 {generation.revisionPosition} / {generation.revisionCount}
@@ -291,6 +296,7 @@ export function EditPanel() {
           최초 생성본으로 복원
         </button>
       </div>
+      )}
     </section>
   )
 }

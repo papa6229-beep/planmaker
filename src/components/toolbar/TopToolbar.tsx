@@ -29,7 +29,6 @@ import { clearSelectedTeam, selectedTeam } from '../../features/team/teamSession
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
 import { countStudioStorage, resetStudioStorage, type StorageCount } from '../../services/storageReset'
-import { useImageSave } from '../../features/studio/useImageSave'
 import { saveHealth, subscribeSaveHealth } from '../../services/saveHealthStore'
 import { saveStatus } from '../../domain/saveHealth'
 
@@ -80,7 +79,6 @@ export function TopToolbar({
   const [keyPanel, setKeyPanel] = useState(false)
   const [keyDraft, setKeyDraft] = useState('')
   // 만든 이미지를 내놓는 일. 작업판 밖에서는 `null`이다.
-  const imageSave = useImageSave()
   const studioMode = mode === 'studio'
   // 저장이 실제로 되고 있는가. provider 밖의 모듈이므로 화면 구조와 무관하다.
   const status = saveStatus(useSyncExternalStore(subscribeSaveHealth, saveHealth, saveHealth))
@@ -300,13 +298,13 @@ export function TopToolbar({
           >
             {studioMode ? '기획서 불러오기' : '파일 불러오기'}
           </button>
-          {/* 두 저장이 나란히 선다 (작업 잃지 않기 Patch).
-              앞선 판은 `이미지 저장`만 바에 두고 작업 파일 저장을 작업 메뉴 안으로
-              보냈다 — "작업판에서 기획서를 다시 만들 일은 없다"고 보았기 때문이다.
-              그 전제가 틀렸다. 만든 이벤트 페이지를 나중에 다시 고치는 일이 있고,
-              그때 필요한 것은 **돌아올 수 있는 유일한 저장**인 작업 파일 쪽이다.
-              돌아올 수 없는 내보내기가 앞에 있고 돌아올 수 있는 저장이 메뉴 안에
-              숨어 있으면, 사람은 이미지만 저장하고 작업을 잃는다. */}
+          {/* 여기 남는 것은 **작업 전부**를 담는 저장 하나다 (작업 목록 Patch).
+              한때 `이미지 저장`이 이 옆에 나란히 섰다. 작업을 잃지 않게 두 저장을
+              같은 자리에 두자는 뜻이었고 그 판단 자체는 옳았지만, 이미지 쪽이
+              내놓는 것은 **지금 고른 것 하나**다 — 고르는 자리가 따로 생겼으니
+              (`작업 목록`) 그 옆으로 내려보냈다. 여기 남은 저장은 목록의 한 줄이
+              아니라 모든 페이지·배너·조각·배경을 담으므로, 고르는 자리에 두면
+              고른 것 하나가 저장되는 것처럼 읽힌다. */}
           <button
             type="button"
             className="btn"
@@ -323,17 +321,6 @@ export function TopToolbar({
           >
             {studioMode ? '작업 파일 저장' : '파일로 저장'}
           </button>
-          {studioMode && imageSave !== null && (
-            <button
-              type="button"
-              className="btn"
-              onClick={imageSave.save}
-              disabled={busy || imageSave.state.kind === 'saving'}
-              title="생성한 결과 이미지를 PNG로 저장합니다 — 이 파일로는 작업을 이어갈 수 없습니다"
-            >
-              {imageSave.state.kind === 'saving' ? '이미지 저장 중…' : '이미지 저장'}
-            </button>
-          )}
           {studioMode && (
             <div className="work-menu" ref={workMenuRef}>
               <button
@@ -416,70 +403,6 @@ export function TopToolbar({
           }}
         />
       </div>
-
-      {/* 이미지 저장이 사람에게 물어야 하는 두 자리. 저장 자체는 이미 손에 있는
-          자산을 내놓는 일이라 외부 호출이 없다 (실작업 UI 마감 §5). */}
-      {imageSave !== null && imageSave.state.kind === 'nothing' && (
-        <div className="confirm-backdrop" role="presentation" onClick={imageSave.dismiss}>
-          <div
-            className="confirm"
-            role="alertdialog"
-            aria-modal="true"
-            aria-label="저장할 이미지 없음"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="confirm__title">아직 저장할 이미지가 없습니다</h2>
-            <p className="confirm__body">
-              먼저 <b>이미지 생성하기</b>로 결과를 만들어 주세요. 기획서 캔버스는 이미지로 저장하지 않습니다.
-            </p>
-            <div className="confirm__actions">
-              <button type="button" className="btn btn--primary" onClick={imageSave.dismiss}>확인</button>
-            </div>
-          </div>
-        </div>
-      )}
-      {imageSave !== null && imageSave.state.kind === 'partial' && (
-        <div className="confirm-backdrop" role="presentation" onClick={imageSave.dismiss}>
-          <div
-            className="confirm"
-            role="dialog"
-            aria-modal="true"
-            aria-label="일부 페이지만 저장"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="confirm__title">
-              {imageSave.state.plan.totalPages}페이지 중 생성 결과가 있는 {imageSave.state.plan.files.length}페이지만
-              저장합니다
-            </h2>
-            <p className="confirm__body">
-              아직 만들지 않은 페이지는 빈 이미지로도, 기획서 캔버스로도 저장하지 않습니다.
-            </p>
-            <div className="confirm__actions">
-              <button type="button" className="btn" onClick={imageSave.dismiss}>취소</button>
-              <button type="button" className="btn btn--primary" onClick={imageSave.confirmPartial}>
-                생성된 {imageSave.state.plan.files.length}장 저장
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {imageSave !== null && imageSave.state.kind === 'failed' && (
-        <div className="confirm-backdrop" role="presentation" onClick={imageSave.dismiss}>
-          <div
-            className="confirm"
-            role="alertdialog"
-            aria-modal="true"
-            aria-label="이미지 저장 실패"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="confirm__title">이미지를 저장하지 못했습니다</h2>
-            <p className="confirm__body">{imageSave.state.message}</p>
-            <div className="confirm__actions">
-              <button type="button" className="btn btn--primary" onClick={imageSave.dismiss}>확인</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {studioWipe !== null && (
         <div className="confirm-backdrop" role="presentation" onClick={() => setStudioWipe(null)}>

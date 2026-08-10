@@ -44,7 +44,7 @@ import { BlockOrderPanel } from '../components/studio/BlockOrderPanel'
 import { ToneAdjustPanel } from '../components/studio/ToneAdjustPanel'
 import { PaperTunePanel } from '../components/studio/PaperTunePanel'
 import { BannerPanel } from '../components/studio/BannerPanel'
-import { BannerTabs } from '../components/studio/BannerTabs'
+import { WorkList } from '../components/studio/WorkList'
 import { BannerDrawer } from '../components/studio/BannerDrawer'
 import { BackgroundCompositeProvider } from '../features/studio/useBackgroundComposite'
 import { StudioEffectsSync } from '../features/studio/StudioEffectsSync'
@@ -291,8 +291,9 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
         </div>
         <div className="workspace__center">
           <PageTabs />
-          {/* 만들어 둔 배너로 건너가는 줄 (배너 Patch §5). 없으면 나오지 않는다. */}
-          {mode === 'studio' && <BannerTabs />}
+          {/* 만든 것들의 목록 — 이벤트 페이지와 배너, 그리고 그 한 장의 저장
+              (작업 목록 Patch). 만든 것이 없으면 나오지 않는다. */}
+          {mode === 'studio' && <WorkList />}
           {statusPanel}
           {/* 작업판에서 결과가 생기면, 중앙이 무엇을 보여 줄지 고를 수 있다.
               결과가 없을 때는 고를 것이 없으므로 나타나지도 않는다. */}
