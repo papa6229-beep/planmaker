@@ -135,6 +135,21 @@
 - Ctrl/Cmd+D: 복제 · Delete/Backspace: 선택 삭제(입력 중 보호)
 - Ctrl/Cmd+Z: 실행 취소 · Ctrl/Cmd+Shift+Z (또는 Ctrl+Y): 다시 실행
 
+## 두 표면과 배포
+
+한 코드베이스가 **두 화면**을 낸다. `VITE_PLANMAKER_SURFACE` 하나로 갈린다 —
+`studio`면 이미지 생성기, 그 밖의 값이거나 없으면 기획서 작성기다. 없을 때 작성기로
+가는 것은 의도된 안전한 기본값이다: 환경변수를 빠뜨린 배포가 디자인팀 전용 화면을
+다른 팀에게 열어 주는 것보다, 작성기가 열리는 편이 낫다.
+
+| 표면 | 쓰는 사람 | Vercel 프로젝트 | `VITE_PLANMAKER_SURFACE` |
+| --- | --- | --- | --- |
+| 이미지 생성기 | 디자인팀 | `planmaker` (`planmaker-umber.vercel.app`) | `studio` |
+| 기획서 작성기 | 상품팀 등 타 팀 | `planmaker-writer` | 없음 |
+
+환경변수는 **환경마다 따로** 있다 (Production / Preview / Development). Preview에서
+맞게 열렸다고 Production도 맞다는 뜻이 아니므로, 두 곳을 따로 확인한다.
+
 ## 스크립트
 
 ```bash
@@ -145,6 +160,12 @@ npm run typecheck  # tsc -b --noEmit (strict)
 npm run test       # vitest 단위 테스트
 npm run build      # 타입체크 + 프로덕션 번들
 ```
+
+검사는 **`npx vitest run --no-file-parallelism`**으로 돌린다 (약 4분). 병렬로 돌리면
+IndexedDB를 쓰는 검사들이 서로를 밟아 간헐적으로 실패한다.
+
+`npm run build`의 `tsc -b`는 **검사 파일까지 읽는다.** `npx tsc --noEmit`은 읽지
+않으므로, 타입이 맞는지 보는 관문은 언제나 `npm run build`다.
 
 ## 도메인 계층 (`src/domain/`)
 
