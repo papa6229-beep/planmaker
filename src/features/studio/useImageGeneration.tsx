@@ -966,11 +966,19 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       const orderOverrides: Record<string, number> = {}
       const angleOverrides: Record<string, number> = {}
       const objectTones: Record<string, ToneAdjust> = {}
+      // 이미지 조각이 **자기가 그리는 그림**을 안다 (서랍 전체 Patch).
+      //
+      // 지금까지는 그릴 그림을 `job.productImages[blockId]`에서만 찾았다. 이벤트
+      // 페이지에서는 그 둘이 늘 같은 값이라 달라질 것이 없지만, 배너에서는 다르다 —
+      // 서랍에서 꺼낸 조각과 그것을 한 벌 더 꺼낸 복제본은 연결 목록에 없는 새 번호를
+      // 쓴다. 조각이 제 그림을 들고 있으므로 그것을 그대로 쓴다.
+      const productImages: Record<string, string> = { ...job.productImages }
       for (const object of images) {
         rectOverrides[object.blockId] = object.rect
         orderOverrides[object.blockId] = object.layer
         if (object.angle !== undefined) angleOverrides[object.blockId] = object.angle
         objectTones[object.blockId] = studio.objectToneOf(object.blockId)
+        productImages[object.blockId] = object.assetId
       }
 
       const composite = planLocalComposite({
@@ -984,7 +992,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           // 이 문구 하나에만 거는 톤 (블록별 톤 Patch). 전체 톤과 따로 산다.
           tone: studio.objectToneOf(t.blockId),
         })),
-        productImages: job.productImages,
+        productImages,
         effects: job.effects ?? {},
         grain: studio.grain,
         tone: studio.toneOf(pageId),

@@ -96,6 +96,13 @@ export interface StudioJobApi {
    */
   backgroundOf: (pageId: string) => StudioBackground | undefined
   setBackground: (pageId: string, background: StudioBackground) => Promise<void>
+  /**
+   * 배경을 옮기고 키운다 (배경 이동 Patch).
+   *
+   * 배너에서만 쓴다. 손가락을 따라 수십 번 일어나므로 조각을 옮길 때와 같은 길로
+   * 간다 — 화면이 먼저 따라가고 저장이 뒤따르며, 외부를 부르는 자리는 없다.
+   */
+  moveBackground: (pageId: string, rect: LayoutRect) => void
   removeBackground: (pageId: string) => Promise<void>
   /**
    * 페이지별 디자인 스타일 레퍼런스 (스타일 레퍼런스 Patch).
@@ -512,6 +519,11 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       // 실패하면 화면도 배경을 갖지 않는다 — 새로고침에 사라질 것을 보여 주지
       // 않기 위해서다.
       setBackground: (pageId, background) => mutate((j) => withPageBackground(j, pageId, background, Date.now())),
+      moveBackground: (pageId, rect) =>
+        void mutate((j) => {
+          const current = pageBackgroundOf(j, pageId)
+          return current === undefined ? j : withPageBackground(j, pageId, { ...current, rect }, Date.now())
+        }),
       removeBackground: (pageId) => mutate((j) => withoutPageBackground(j, pageId, Date.now())),
       styleReferenceOf: (pageId) => styleReferenceOf(job, pageId),
       setStyleReference: (pageId, assetId) => mutate((j) => withStyleReference(j, pageId, assetId, Date.now())),

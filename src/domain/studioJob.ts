@@ -21,6 +21,7 @@ import { documentFingerprint } from './documentFingerprint'
 import { referencedAssetIds } from './pageOps'
 import { normalizeEffects, type CompositeEffects } from './compositeEffects'
 import type { GeneratedPageResult, ImageRevision } from './imageGeneration'
+import type { LayoutRect } from './imageLayout'
 import type { StudioTextObject } from './textObjects'
 import { NO_TONE, normalizeTone, type ToneAdjust } from './toneAdjust'
 import type { BriefDocument } from './pageSchema'
@@ -53,6 +54,17 @@ export interface StudioBackground {
   assetId: string
   /** 작업자가 직접 넣었는가, AI가 만들었는가. */
   source: 'manual' | 'ai'
+  /**
+   * 배경을 놓을 자리 (배경 이동 Patch). 없으면 지금까지처럼 캔버스를 채운다.
+   *
+   * 배너에서만 생긴다. 작업자가 이벤트 페이지 작업창과의 **유일한 차이**로 꼽은
+   * 것이 이것이다 — "차이점은 배경도 위치, 크기 조절 가능한 것뿐이야." 이벤트
+   * 페이지에서는 배경이 지면 전체이므로 옮길 이유가 없지만, 배너는 큰 배경에서
+   * 어디를 보여 줄지가 곧 디자인이다.
+   *
+   * 캔버스 좌표다. 캔버스보다 크게 잡으면 그만큼 확대해서 일부만 보인다.
+   */
+  rect?: LayoutRect
   createdAt?: number
   /** AI 생성이면 그때 모델에게 요청한 크기. */
   requestedSize?: string

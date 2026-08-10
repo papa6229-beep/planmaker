@@ -83,10 +83,12 @@ function installCanvas(): void {
 /** 배경 원본은 840×1180 — 실제 이벤트 페이지 크기. */
 const BACKGROUND = { width: 840, height: 1180 }
 
-function plan(crop?: { x: number; y: number; width: number; height: number }): CompositePlan {
+type Box = { x: number; y: number; width: number; height: number }
+
+function plan(crop?: Box, at?: Box): CompositePlan {
   return {
     size: { width: 1020, height: 70 },
-    background: { assetId: 'bg', source: 'ai' },
+    background: { assetId: 'bg', source: 'ai', ...(at === undefined ? {} : { rect: at }) },
     ...(crop === undefined ? {} : { backgroundCrop: crop }),
     layers: [],
     texts: [],
@@ -112,10 +114,17 @@ beforeEach(() => {
 })
 
 /** 배경을 그린 첫 `drawImage`의 원본 자리. */
-function backgroundSource(): { x: number; y: number; width: number; height: number } | null {
+function backgroundSource(): Box | null {
   const nine = drawn.args.find((a) => a.length >= 8)
   if (nine === undefined) return null
   return { x: nine[0]!, y: nine[1]!, width: nine[2]!, height: nine[3]! }
+}
+
+/** 그리고 캔버스의 **어디에** 놓았는가. */
+function backgroundDest(): Box | null {
+  const nine = drawn.args.find((a) => a.length >= 8)
+  if (nine === undefined) return null
+  return { x: nine[4]!, y: nine[5]!, width: nine[6]!, height: nine[7]! }
 }
 
 describe('§34 배경에서 잘라 쓸 자리', () => {
@@ -148,5 +157,46 @@ describe('§34 배경에서 잘라 쓸 자리', () => {
     expect(source.y + source.height).toBeLessThanOrEqual(BACKGROUND.height)
     expect(source.width).toBeGreaterThan(0)
     expect(source.height).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * 배경도 옮기고 키운다 (배경 이동 Patch).
+ *
+ * 작업자가 이벤트 페이지 작업창과의 **유일한 차이**로 꼽은 것이다 — "차이점은
+ * 배경도 위치, 크기 조절 가능한 것뿐이야." 자리를 안 주면 지금까지와 한 픽셀도
+ * 달라지지 않아야 한다: 이벤트 페이지가 그 길로 다닌다.
+ */
+describe('§34-2 배경을 놓을 자리', () => {
+  it('자리를 주면 그 자리에 놓는다', async () => {
+    const { renderComposite } = await import('../services/compositeRenderer')
+    const at = { x: -120, y: -30, width: 1400, height: 200 }
+    await renderComposite(plan(undefined, at), SOURCES)
+    expect(backgroundDest()).toEqual(at)
+  })
+
+  it('캔버스 밖으로 걸쳐도 접지 않는다', async () => {
+    // 큰 배경의 한 조각만 보이는 것이 이 기능의 요점이다. 안으로 가두면 아무것도
+    // 못 한다.
+    const { renderComposite } = await import('../services/compositeRenderer')
+    await renderComposite(plan(undefined, { x: -400, y: -400, width: 2000, height: 900 }), SOURCES)
+    expect(backgroundDest()!.x).toBe(-400)
+  })
+
+  it('자리를 안 주면 지금까지처럼 캔버스를 채운다', async () => {
+    // 이벤트 페이지가 다니는 길이다. 여기가 달라지면 배너를 고치려다 완성본을
+    // 건드린 것이다.
+    const { renderComposite } = await import('../services/compositeRenderer')
+    await renderComposite(plan(), SOURCES)
+    expect(backgroundDest()).toEqual({ x: 0, y: 0, width: 1020, height: 70 })
+  })
+
+  it('잘라 쓸 자리와 놓을 자리를 함께 쓴다', async () => {
+    const { renderComposite } = await import('../services/compositeRenderer')
+    const crop = { x: 0, y: 620, width: 840, height: 58 }
+    const at = { x: 10, y: 5, width: 900, height: 60 }
+    await renderComposite(plan(crop, at), SOURCES)
+    expect(backgroundSource()).toEqual(crop)
+    expect(backgroundDest()).toEqual(at)
   })
 })

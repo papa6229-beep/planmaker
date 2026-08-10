@@ -19,6 +19,7 @@
 import { normalizeEffects, type CompositeEffects } from './compositeEffects'
 import type { BlockOrder, GenerationMethod, StudioBackground, StudioJob } from './studioJob'
 import { normalizeTone, type ToneAdjust } from './toneAdjust'
+import type { LayoutRect } from './imageLayout'
 import type { StudioTextObject } from './textObjects'
 
 /**
@@ -27,6 +28,7 @@ import type { StudioTextObject } from './textObjects'
  * `0.1.0`에는 제품 이미지 연결만 있었다. `0.2.0`부터 배경·합성 효과·그레인·
  * 생성 방식이 함께 들어가고, `0.3.0`부터 이미지별 종이 컷아웃이, `0.4.0`부터
  * 페이지별 디자인 스타일 레퍼런스가, `0.5.0`부터 종이 테두리 두께가 함께 들어간다.
+ * `0.13.0`부터 배경이 자기 자리를 갖는다 — 배너에서 배경을 옮기고 키울 수 있다.
  *
  * 버전을 올리는 대신 같은 `0.1.0`에 새 칸만 얹는 길도 있었지만, 그러면 예전
  * 빌드가 그 칸을 **말없이 버리고** 저장한다 — 작업자는 배경을 넣어 저장했는데
@@ -34,10 +36,10 @@ import type { StudioTextObject } from './textObjects'
  * 예전 빌드는 "읽을 수 없다"고 분명히 말한다. 잃는 것이 같다면 소리 내는 쪽이
  * 낫다 (§12 마지막 줄).
  */
-export const STUDIO_FILE_VERSION = '0.12.0'
+export const STUDIO_FILE_VERSION = '0.13.0'
 
 /** 이 판이 **읽을 수 있는** 버전. 예전 파일은 그대로 열린다. */
-export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0', '0.4.0', '0.5.0', '0.6.0', '0.7.0', '0.8.0', '0.9.0', '0.10.0', '0.11.0', '0.12.0']
+export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0', '0.4.0', '0.5.0', '0.6.0', '0.7.0', '0.8.0', '0.9.0', '0.10.0', '0.11.0', '0.12.0', '0.13.0']
 
 /** 파일이 기억하는 "이 작업이 어느 원본에서 시작했는가". */
 export interface StudioFileSource {
@@ -170,6 +172,14 @@ export function remapStudioFileState(
   return { ...state, productImages, backgrounds, styleRefs, textObjects, imageObjects, blockOrders }
 }
 
+/** 네 수가 다 있는 사각형만 사각형이다. 하나라도 빠지면 없는 것으로 본다. */
+function readRect(raw: unknown): LayoutRect | null {
+  if (!isRecord(raw)) return null
+  const nums = ['x', 'y', 'width', 'height'].map((k) => raw[k])
+  if (nums.some((n) => typeof n !== 'number' || !Number.isFinite(n))) return null
+  return { x: nums[0] as number, y: nums[1] as number, width: nums[2] as number, height: nums[3] as number }
+}
+
 /** 예전 판 파일에는 없다. 모양이 어긋난 항목은 조용히 버린다 — 자리를 모르는
  *  오브젝트를 살려 두면 화면 어딘가에 0×0으로 붙는다. */
 function readTextObjects(raw: unknown): Record<string, StudioTextObject[]> {
@@ -239,6 +249,8 @@ function readBackgrounds(raw: unknown): Record<string, StudioBackground> | null 
       ...(typeof value.createdAt === 'number' ? { createdAt: value.createdAt } : {}),
       ...(typeof value.requestedSize === 'string' ? { requestedSize: value.requestedSize } : {}),
       ...(typeof value.wish === 'string' ? { wish: value.wish } : {}),
+      // 배너에서 옮겨 놓은 배경 자리. 없으면 캔버스를 채운다 (배경 이동 Patch).
+      ...(readRect(value.rect) === null ? {} : { rect: readRect(value.rect)! }),
     }
   }
   return backgrounds

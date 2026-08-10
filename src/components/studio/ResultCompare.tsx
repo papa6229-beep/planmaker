@@ -22,6 +22,7 @@ import { useStudioJob } from '../../features/studio/useStudioJob'
 import { pageResultIsStale, pageResultOf } from '../../domain/studioJob'
 import { getAsset } from '../../services/assetStore'
 import { ResultObjectLayer } from './ResultObjectLayer'
+import { BannerBackgroundHandle } from './BannerBackgroundHandle'
 import { useResultView } from '../../features/studio/useResultView'
 
 function formatTime(ms: number): string {
@@ -142,6 +143,9 @@ export function ResultCompare() {
               style={{ width: `${String(Math.round(logical.width * zoom))}px` }}
             >
               <img className="compare__image" src={url} alt="AI가 생성한 결과 이미지" />
+              {/* 배경 손잡이가 조각보다 **뒤에** 온다. 앞에 두면 화면 전체가
+                  배경이라 어디를 눌러도 배경이 먼저 걸려 조각을 못 잡는다. */}
+              <BannerBackgroundHandle pageId={pageId} page={logical} />
               <ResultObjectLayer pageId={pageId} page={logical} />
             </div>
           </div>

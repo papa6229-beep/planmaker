@@ -83,7 +83,16 @@ function fullJob(): StudioJob {
   return {
     ...base,
     productImages: { blk_img: 'asset_product' },
-    backgrounds: { page_1: { assetId: 'asset_bg', source: 'ai', createdAt: 2_000, requestedSize: '832x1104' } },
+    backgrounds: {
+      page_1: { assetId: 'asset_bg', source: 'ai', createdAt: 2_000, requestedSize: '832x1104' },
+      // 배너에서 옮겨 놓은 배경. 자리를 잃으면 파일을 열 때마다 배경이 제자리로
+      // 돌아가고, 배너의 디자인이 통째로 무너진다 (배경 이동 Patch).
+      banner_page_1_1020x70: {
+        assetId: 'asset_bg',
+        source: 'ai',
+        rect: { x: -120, y: -30, width: 1400, height: 200 },
+      },
+    },
     effects: { blk_img: normalizeEffects({ paperCutout: true, paperWeight: 0.35, paperOpacity: 0.5 }) },
     styleRefs: { page_1: 'asset_style' },
     textObjects: {

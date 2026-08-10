@@ -1,35 +1,30 @@
 /**
- * 완성본에서 배너를 뽑는다 (배너 Patch §5).
+ * 완성본에서 배너를 뽑는다 (배너 Patch §5, 자동 배치 제거 Patch).
  *
- * 여기서는 **만들기만** 한다. 만들고 나면 그 배너는 페이지가 되고, 가운데 화면이
- * 완성본과 똑같이 그것을 연다 — 확대해서 보고, 조각을 끌어 옮기고, 크기를 바꾸고,
- * 지운다. 그래서 이 패널에 미리보기가 없다. 가운데가 곧 미리보기다.
+ * 여기서는 **크기를 고르기만** 한다. 고르면 그 크기의 배너가 페이지로 서고, 배경만
+ * 깔린 빈 캔버스가 가운데에 열린다 — 확대해서 보고, 서랍에서 조각을 꺼내 놓고,
+ * 끌어 옮기고, 크기를 바꾸고, 지운다. 그래서 이 패널에 미리보기가 없다. 가운데가
+ * 곧 미리보기다.
  *
- * 자동 배치는 **초안**이다. 완벽할 필요가 없고, 그래서 이 패널이 하는 나머지 절반은
- * **무엇을 버렸는지 말하는 것**이다. 배너는 버리는 일이고, 말하지 않으면 사람이
- * 그 배너를 믿고 그대로 내보낸다.
+ * 앞선 판에는 여기 "무엇을 버렸는지" 알리는 목록이 있었다. 자동 배치가 사라졌으니
+ * 버릴 일도 없다 — 올릴 것은 사람이 서랍에서 고른다.
  */
 
-import { useBannerMaker, sideLabel, type BannerNote } from '../../features/studio/useBannerMaker'
+import { useBannerMaker, sideLabel } from '../../features/studio/useBannerMaker'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
+import { useBannerPresets } from '../../features/studio/useBannerPresets'
 import { useState } from 'react'
-import { BANNER_SPECS, customBannerSpec } from '../../domain/bannerSpec'
+import { customBannerSpec } from '../../domain/bannerSpec'
+import { fromDraft, toDraft, type PresetDraft } from '../../domain/bannerPresets'
 import { PanelFold } from './PanelFold'
-
-const NOTE_TEXT: Record<BannerNote['kind'], string> = {
-  unplaced: '자리를 못 얻었습니다 — 빼면 안 되는 것입니다',
-  missing: '완성본에 이 블록의 그림이 없습니다',
-  'mis-shape': '이 규격에는 모양이 안 맞아 뺐습니다',
-  dropped: '자리가 없어 뺐습니다',
-}
-
-/** 사람이 봐야 하는 것과 그냥 알려 주는 것. */
-const NEEDS_EYES = new Set<BannerNote['kind']>(['unplaced', 'missing'])
 
 export function BannerPanel() {
   const banner = useBannerMaker()
   const generation = useImageGeneration()
+  const { presets, save, edited } = useBannerPresets()
   const [custom, setCustom] = useState({ width: '', height: '' })
+  /** 프리셋을 고치는 중인가. 고치는 동안에는 뽑기 버튼 대신 입력줄이 선다. */
+  const [drafts, setDrafts] = useState<PresetDraft[] | null>(null)
   // 만드는 동안·만든 뒤에는 결과 유무와 상관없이 남는다. 만드는 도중 가운데가
   // 잠깐 다른 페이지를 가리키는데, 그때 사라지면 방금 만든 배너의 안내가 함께
   // 사라진다 — 무엇을 버렸는지가 그 안내에만 있다.
@@ -38,32 +33,132 @@ export function BannerPanel() {
 
   const busy = banner.state.kind === 'working' || generation.state.kind === 'running'
   const result = banner.state.kind === 'done' ? banner.state.result : null
-  const warnings = result?.notes.filter((n) => NEEDS_EYES.has(n.kind)) ?? []
 
   return (
-    <PanelFold id="banner" title="배너 뽑기" note="완성본 조각을 다시 놓습니다" marked={warnings.length > 0}>
+    <PanelFold id="banner" title="배너 뽑기" note="배경만 깔린 배너 캔버스">
       <section className="banner" aria-label="배너 뽑기">
         <p className="banner__note">
-          완성본에 쓴 조각을 배너 규격에 다시 놓습니다. 새로 그리지 않으므로 AI 호출이 없습니다. 만든 뒤에는
-          가운데에서 조각을 끌어 옮기고 크기를 바꿀 수 있습니다.
+          고른 크기로 배너 캔버스를 엽니다. 배경만 깔리고 조각은 올라오지 않습니다 — 필요한 것을 아래
+          <b> 조각 서랍</b>에서 꺼내 놓으세요. 새로 그리지 않으므로 AI 호출이 없습니다.
         </p>
 
-        <div className="banner__specs">
-          {BANNER_SPECS.map((spec) => (
+        {drafts === null ? (
+          <div className="banner__specs">
+          {presets.map((spec) => (
             <button
               key={spec.id}
               type="button"
               className="btn btn--primary banner__make"
               disabled={busy}
+              title={
+                spec.siblings.length === 0
+                  ? spec.label
+                  : `${spec.label} · 같은 배치로 ${spec.siblings.map((s) => `${String(s.width)}×${String(s.height)}`).join(', ')}`
+              }
               onClick={() => banner.make(spec.id)}
             >
-              {spec.width}×{spec.height} {banner.viewingSpecId === spec.id ? '다시 만들기' : '만들기'}
+              {spec.width}×{spec.height} {banner.viewingSpecId === spec.id ? '다시 뽑기' : '뽑기'}
             </button>
           ))}
-        </div>
+          <button
+            type="button"
+            className="btn banner__edit-presets"
+            onClick={() => setDrafts(presets.map(toDraft))}
+          >
+            크기 고치기
+          </button>
+          </div>
+        ) : (
+          /* 쇼핑몰이 개편되면 크기가 바뀌고, 새 자리가 생기면 여섯째가 필요해진다.
+             적어 둔 다섯을 코드에 박아 두면 그때마다 사람을 불러야 한다. */
+          <div className="banner__presets" role="group" aria-label="배너 크기 프리셋">
+            {drafts.map((draft, index) => {
+              const set = (patch: Partial<PresetDraft>) =>
+                setDrafts((list) => (list ?? []).map((d, i) => (i === index ? { ...d, ...patch } : d)))
+              const bad = fromDraft(draft) === null
+              return (
+                <div className={`banner__preset${bad ? ' is-bad' : ''}`} key={`row-${String(index)}`}>
+                  <input
+                    className="banner__preset-label"
+                    value={draft.label}
+                    aria-label={`프리셋 ${String(index + 1)} 이름`}
+                    placeholder="이름"
+                    onChange={(e) => set({ label: e.target.value })}
+                  />
+                  <input
+                    className="banner__preset-size"
+                    value={draft.width}
+                    aria-label={`프리셋 ${String(index + 1)} 가로`}
+                    onChange={(e) => set({ width: e.target.value })}
+                  />
+                  <span className="banner__custom-x">×</span>
+                  <input
+                    className="banner__preset-size"
+                    value={draft.height}
+                    aria-label={`프리셋 ${String(index + 1)} 세로`}
+                    onChange={(e) => set({ height: e.target.value })}
+                  />
+                  <input
+                    className="banner__preset-siblings"
+                    value={draft.siblings}
+                    aria-label={`프리셋 ${String(index + 1)} 형제 크기`}
+                    placeholder="형제 크기 (840×78, 500×387)"
+                    onChange={(e) => set({ siblings: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn--danger"
+                    aria-label={`프리셋 ${String(index + 1)} 삭제`}
+                    onClick={() => setDrafts((list) => (list ?? []).filter((_, i) => i !== index))}
+                  >
+                    ✕
+                  </button>
+                </div>
+              )
+            })}
+            <div className="banner__preset-actions">
+              <button
+                type="button"
+                className="btn"
+                onClick={() =>
+                  setDrafts((list) => [...(list ?? []), { id: '', label: '', width: '', height: '', siblings: '' }])
+                }
+              >
+                크기 추가
+              </button>
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => {
+                  // 모양이 어긋난 줄은 저장하지 않는다. 전부 어긋나면 기본값으로
+                  // 돌아간다 — 되돌릴 길이 없는 편집은 만들지 않는다.
+                  save(drafts.map(fromDraft).filter((s): s is NonNullable<typeof s> => s !== null))
+                  setDrafts(null)
+                }}
+              >
+                저장
+              </button>
+              <button type="button" className="btn" onClick={() => setDrafts(null)}>
+                취소
+              </button>
+              {edited && (
+                <button
+                  type="button"
+                  className="btn"
+                  title="처음 적어 둔 다섯 크기로 돌아갑니다"
+                  onClick={() => {
+                    save([])
+                    setDrafts(null)
+                  }}
+                >
+                  기본값으로
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
-        {/* 정해진 규격 말고 원하는 크기로도. 틀이 없으므로 배경만 깔리고 조각은
-            서랍에서 꺼내 놓는다 — 없는 문법을 지어내는 것보다 백지가 낫다. */}
+        {/* 프리셋 말고 그때그때 필요한 크기로도. */}
         <div className="banner__custom">
           <label className="banner__custom-field">
             <span>가로</span>
@@ -134,19 +229,6 @@ export function BannerPanel() {
 
             {result.centerFallback && (
               <p className="banner__status">배경에서 잔잔한 자리를 고르지 못해 원본 배경을 그대로 썼습니다.</p>
-            )}
-
-            {result.notes.length > 0 && (
-              <ul className="banner__notes">
-                {result.notes.map((note, index) => (
-                  <li
-                    key={`${note.kind}-${note.label}-${String(index)}`}
-                    className={NEEDS_EYES.has(note.kind) ? 'banner__notes-item is-warn' : 'banner__notes-item'}
-                  >
-                    <b>{note.label}</b> — {NOTE_TEXT[note.kind]}
-                  </li>
-                ))}
-              </ul>
             )}
 
             <p className="banner__note">

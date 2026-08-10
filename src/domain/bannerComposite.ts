@@ -1,5 +1,5 @@
 /**
- * 완성본의 조각을 배너 자리에 다시 놓는다 (배너 Patch §3).
+ * 배너 한 장의 첫 화면 — 배경만 (배너 Patch §3, 자동 배치 제거 Patch).
  *
  * 배너는 새로 그리는 것이 아니라 **다시 놓는 것**이다. 그래서 모델을 한 번도
  * 부르지 않는다 — 제목 조각도 버튼 조각도 상품 사진도 완성본을 만들 때 이미
@@ -11,40 +11,25 @@
  * 그린다. 배너도 같은 조각을 다른 자리에 놓는 일이므로, 파일 하나만 있으면
  * 크레딧 없이 몇 번이든 다시 뽑을 수 있다.
  *
- * 합성 계획은 새로 만들지 않고 `planLocalComposite`을 그대로 지난다. 배너 페이지의
- * 캔버스 크기가 규격이고 블록의 자리가 이미 배너 좌표이므로, 그 함수가 아는 일이
- * 달라질 것이 없다.
+ * ## 첫 화면에는 조각이 없다
  *
- * ## 조각이 없는 블록
- *
- * 자리를 얻었는데 그릴 그림이 없는 경우가 있다 — 문구 조각이 생기기 전에 저장한
- * 파일이거나, 이미지 블록에 연결된 그림이 없거나. 그때 **아무 말 없이 빈 자리로
- * 두지 않는다.** `missingPieces`로 이름을 돌려주고, 화면이 그것을 말한다. 제목이
- * 없는 배너가 조용히 나가는 것이 이 기능에서 가장 나쁜 결말이다.
+ * 앞선 판은 여기서 조각을 자리에 꽂아 내보냈다. 지금은 **배경 한 장만** 깐다.
+ * 무엇을 올릴지는 서랍에서 사람이 고른다 — 배너는 작아서, 자동이 놓은 자리를
+ * 고치는 것이 처음부터 놓는 것보다 오래 걸린다.
  *
  * 순수 모듈이다. 캔버스도 저장소도 모른다.
  */
 
-import { buildBannerPage, type BannerFit } from './bannerFit'
+import { blankBannerPage } from './bannerFit'
 import type { BannerSpec } from './bannerSpec'
 import { planLocalComposite, type CompositePlan } from './composite'
-import type { CompositeEffects } from './compositeEffects'
-import type { LayoutRect } from './imageLayout'
 import type { BriefPage } from './pageSchema'
 import type { StudioBackground } from './studioJob'
-import type { StudioTextObject } from './textObjects'
 import type { ToneAdjust } from './toneAdjust'
 
-/** 완성본이 남긴 조각들. 저장 파일에서 그대로 나온다. */
+/** 완성본이 남긴 것 중 배너의 첫 화면이 쓰는 것. */
 export interface BannerPieces {
   background?: StudioBackground | undefined
-  /** 페이지의 문구 조각. `blockId`로 찾는다. */
-  textObjects?: readonly StudioTextObject[] | undefined
-  /** 페이지의 이미지 조각. */
-  imageObjects?: readonly StudioTextObject[] | undefined
-  productImages: Readonly<Record<string, string>>
-  effects: Readonly<Record<string, Partial<CompositeEffects>>>
-  objectTones?: Readonly<Record<string, ToneAdjust>> | undefined
   grain?: number | undefined
   tone?: ToneAdjust | undefined
 }
@@ -52,85 +37,26 @@ export interface BannerPieces {
 export interface BannerBuild {
   /** 배너 규격의 기획서 페이지. 편집기가 그대로 열 수 있다. */
   page: BriefPage
-  fit: BannerFit
   plan: CompositePlan
-  /**
-   * 자리를 얻었지만 **그릴 그림이 없는** 블록.
-   *
-   * 비어 있지 않으면 그 배너에는 구멍이 있다. 대개 문구 조각이 생기기 전에 저장한
-   * 파일이다.
-   */
-  missingPieces: readonly string[]
 }
 
-export interface BuildBannerOptions {
-  /** 배경에서 잘라 쓸 자리. `quietRegion`이 고른다. 없으면 가운데를 쓴다. */
-  backgroundCrop?: LayoutRect | undefined
-}
-
-export function buildBanner(
-  source: BriefPage,
-  spec: BannerSpec,
-  pieces: BannerPieces,
-  options: BuildBannerOptions = {},
-): BannerBuild {
-  const { page, fit } = buildBannerPage(source, spec)
-
-  const textPieces = new Map((pieces.textObjects ?? []).map((piece) => [piece.blockId, piece]))
-  const imagePieces = new Map((pieces.imageObjects ?? []).map((piece) => [piece.blockId, piece]))
-
-  // 문구 조각은 **배너 자리**로 옮겨 얹는다. 그림 자체는 그대로다 — 조각을 다시
-  // 만들지 않는 것이 이 기능의 값어치다.
-  const textObjects = fit.placements.flatMap((placement) => {
-    const piece = textPieces.get(placement.blockId)
-    if (piece === undefined) return []
-    return [
-      {
-        assetId: piece.assetId,
-        rect: placement.rect,
-        order: piece.layer,
-        ...(pieces.objectTones?.[placement.blockId] === undefined
-          ? {}
-          : { tone: pieces.objectTones[placement.blockId]! }),
-      },
-    ]
-  })
-
-  // 이미지 블록은 결과 화면에서 고른 그림이 우선한다. 그것이 곧 완성본에 실제로
-  // 그려진 그림이라, 배너만 다른 그림을 쓰면 두 장이 달라 보인다.
-  const productImages: Record<string, string> = { ...pieces.productImages }
-  for (const [blockId, piece] of imagePieces) productImages[blockId] = piece.assetId
-
+export function buildBanner(source: BriefPage, spec: BannerSpec, pieces: BannerPieces): BannerBuild {
+  const page = blankBannerPage(source, spec)
 
   const plan = planLocalComposite({
     page,
     background: pieces.background,
-    backgroundCrop: options.backgroundCrop,
-    textObjects,
-    productImages,
-    effects: pieces.effects,
-    ...(pieces.objectTones === undefined ? {} : { objectTones: pieces.objectTones }),
+    textObjects: [],
+    productImages: {},
+    effects: {},
+    // 블록은 전부 데려왔지만 **아무것도 올리지 않는다.** 빈 목록이 그 뜻이다 —
+    // 이것을 빼면 페이지의 블록이 전부 그려져 첫 화면이 이벤트 페이지가 된다.
+    onlyBlockIds: [],
     ...(pieces.grain === undefined ? {} : { grain: pieces.grain }),
     ...(pieces.tone === undefined ? {} : { tone: pieces.tone }),
     // 글자는 조각이 그린다. 여기서 또 그리면 같은 문구가 두 번 나온다.
     includeTexts: false,
   })
 
-  // 자리는 얻었는데 문구 조각도 없고 그려진 그림 겹도 없으면, 그 자리는 빈 자리다.
-  const drawn = new Set(plan.layers.map((layer) => layer.blockId))
-  const missingPieces = fit.placements
-    .filter((placement) => !textPieces.has(placement.blockId) && !drawn.has(placement.blockId))
-    .map((placement) => placement.blockId)
-
-  return { page, fit, plan, missingPieces }
-}
-
-/**
- * 배너 배경으로 잘라 쓸 자리를 고를 때 글자가 놓일 곳.
- *
- * 규격의 자리를 그대로 `quietRegion`의 슬롯으로 옮긴 것이다. 자리는 이미 0~1
- * 비율이라 옮길 것이 없다 — 그러라고 비율로 적었다.
- */
-export function readableSlots(spec: BannerSpec): { x: number; y: number; width: number; height: number }[] {
-  return spec.slots.map((slot) => ({ ...slot.area }))
+  return { page, plan }
 }

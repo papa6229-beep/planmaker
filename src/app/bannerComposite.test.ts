@@ -1,30 +1,27 @@
 /**
- * 완성본의 조각으로 배너를 만든다 (배너 Patch §3).
+ * 배너의 첫 화면은 배경뿐이다 (배너 Patch §3, 자동 배치 제거 Patch).
  *
  * 저장 파일에는 합쳐진 완성본 그림이 들어 있지 않다. 배경과 블록별 조각이 들어
  * 있고, `완성본 다시 합치기`가 그것들로 다시 그린다. 배너도 **같은 조각을 다른
  * 자리에 놓는 일**이라, 파일 하나만 있으면 크레딧 없이 몇 번이든 다시 뽑을 수 있다.
  *
- * 그 성질이 성립하는지를 여기서 붙든다. 조각을 다시 만들면 — 자산 번호가 바뀌면 —
- * 그것은 다시 놓은 것이 아니라 다시 그린 것이고, 배너를 뽑을 때마다 돈이 든다.
- *
- * 그리고 하나 더. **조각이 없는 블록**을 조용히 넘기지 않는지. 문구 조각이 생기기
- * 전에 저장한 파일을 열면 제목의 그림이 없는데, 그때 아무 말 없이 빈 배너가
- * 나가는 것이 이 기능에서 가장 나쁜 결말이다.
+ * 다만 **처음부터 놓아 주지는 않는다.** 배너는 작고, 자동이 놓은 자리를 고치는
+ * 것이 처음부터 놓는 것보다 오래 걸린다는 것이 실물을 보고 확인된 사실이다.
+ * 그래서 여기서 붙드는 것은 "조각이 하나도 실리지 않았는가"이다 — 하나라도 실리면
+ * 걷어낸 자동 배치가 어딘가에서 돌아온 것이다.
  */
 
 import { describe, it, expect } from 'vitest'
-import { buildBanner, readableSlots, type BannerPieces } from '../domain/bannerComposite'
-import { BANNER_1020x70, bannerSpecById, customBannerSpec } from '../domain/bannerSpec'
+import { buildBanner } from '../domain/bannerComposite'
 import { bannerPageId, sourcePageIdOf } from '../domain/bannerFit'
+import { bannerSpecById, customBannerSpec } from '../domain/bannerSpec'
 import { documentFingerprint } from '../domain/documentFingerprint'
 import { createBlock, createEmptyProject } from '../domain/factory'
 import type { BriefBlock } from '../domain/briefSchema'
 import type { BlockType } from '../domain/blockTypes'
 import type { BriefPage } from '../domain/pageSchema'
-import type { StudioTextObject } from '../domain/textObjects'
 
-const SPEC = BANNER_1020x70
+const SPEC = bannerSpecById('1020x70')!
 
 function block(type: BlockType, id: string, size = { width: 300, height: 100 }): BriefBlock {
   return createBlock(type, { id, content: id, position: { x: 40, y: 40, ...size } })
@@ -45,125 +42,45 @@ function page(blocks: BriefBlock[]): BriefPage {
   }
 }
 
-function piece(blockId: string, assetId: string, layer = 0): StudioTextObject {
-  return { blockId, assetId, rect: { x: 100, y: 200, width: 400, height: 120 }, layer }
-}
+const SOURCE = page([
+  block('main_headline', 'title'),
+  block('cta_button', 'cta'),
+  imageBlock('hero', 'asset-hero'),
+])
 
-const BARE: BannerPieces = { productImages: {}, effects: {} }
-
-describe('§33-1 조각을 다시 놓는다', () => {
-  const source = page([block('main_headline', 'title'), block('cta_button', 'cta')])
-  const pieces: BannerPieces = {
-    ...BARE,
-    textObjects: [piece('title', 'asset-title', 3), piece('cta', 'asset-cta', 5)],
-  }
-
-  it('조각을 다시 만들지 않는다 — 같은 그림이 그대로 간다', () => {
-    // 자산 번호가 바뀌면 그것은 다시 놓은 것이 아니라 다시 그린 것이고, 배너를
-    // 뽑을 때마다 돈이 든다.
-    const { plan } = buildBanner(source, SPEC, pieces)
-    expect(plan.textObjects?.map((t) => t.assetId).toSorted()).toEqual(['asset-cta', 'asset-title'])
+describe('§33-1 첫 화면에는 조각이 없다', () => {
+  it('아무 겹도 그리지 않는다', () => {
+    // 하나라도 실리면 걷어낸 자동 배치가 돌아온 것이다.
+    expect(buildBanner(SOURCE, SPEC, {}).plan.layers).toEqual([])
   })
 
-  it('조각이 배너 자리로 옮겨진다', () => {
-    const { plan, fit } = buildBanner(source, SPEC, pieces)
-    const placed = fit.placements.find((p) => p.blockId === 'title')!
-    const drawn = plan.textObjects!.find((t) => t.assetId === 'asset-title')!
-    // 원본 자리(100,200,400×120)가 아니라 배너 자리여야 한다.
-    expect(drawn.rect).toEqual(placed.rect)
+  it('그릴 그림이 달린 블록이 있어도 실리지 않는다', () => {
+    // `hero`에는 `assetId`가 달려 있다. 목록을 비워 두지 않으면 이것이 그려진다.
+    const { plan } = buildBanner(SOURCE, SPEC, {})
+    expect(plan.layers.some((l) => l.blockId.endsWith('__hero'))).toBe(false)
   })
 
-  it('앞뒤 차례는 완성본의 것을 그대로 쓴다', () => {
-    // 배너에서만 문구의 앞뒤가 뒤집히면 완성본과 다른 그림이 된다.
-    const { plan } = buildBanner(source, SPEC, pieces)
-    expect(plan.textObjects!.find((t) => t.assetId === 'asset-cta')!.order).toBe(5)
+  it('계획의 크기가 규격이다', () => {
+    expect(buildBanner(SOURCE, SPEC, {}).plan.size).toEqual({ width: SPEC.width, height: SPEC.height })
   })
 
-  it('모델을 한 번도 부르지 않는다', () => {
-    // 이 값이 0이 아니게 되는 날, 배너 다섯 장이 다섯 번의 호출이 된다.
-    expect(buildBanner(source, SPEC, pieces).plan.externalCalls).toBe(0)
+  it('배경은 그대로 깔린다', () => {
+    const { plan } = buildBanner(SOURCE, SPEC, { background: { assetId: 'asset-bg', source: 'ai' } })
+    expect(plan.background?.assetId).toBe('asset-bg')
   })
 
-  it('계획의 크기가 배너 규격이다', () => {
-    const { plan, page: banner } = buildBanner(source, SPEC, pieces)
-    expect(plan.size).toEqual({ width: 1020, height: 70 })
-    expect([banner.canvasWidth, banner.canvasHeight]).toEqual([1020, 70])
+  it('배경이 없으면 없는 대로 간다', () => {
+    expect(buildBanner(SOURCE, SPEC, {}).plan.background).toBeUndefined()
   })
 
-  it('같은 문구를 두 번 그리지 않는다', () => {
-    // 조각이 이미 꾸며진 글자를 그린다. 합성기가 맨글씨로 한 번 더 그리면 겹친다.
-    expect(buildBanner(source, SPEC, pieces).plan.texts).toEqual([])
-  })
-})
-
-describe('§33-2 조각이 없으면 말한다', () => {
-  it('문구 조각이 없는 파일이면 그 블록들을 이름으로 알린다', () => {
-    // 문구 조각이 생기기 전(파일 0.6.0 미만)에 저장한 파일이 이렇다. 조용히
-    // 넘기면 제목 없는 배너가 그대로 나간다.
-    const { missingPieces } = buildBanner(page([block('main_headline', 'title')]), SPEC, BARE)
-    expect(missingPieces).toEqual(['title'])
+  it('종이 두께는 따라온다', () => {
+    // 완성본과 같은 결이어야 한다. 배너만 매끈하면 나란히 놓았을 때 튄다.
+    expect(buildBanner(SOURCE, SPEC, { grain: 0.4 }).plan.grain).toBe(0.4)
   })
 
-  it('조각이 다 있으면 아무 말도 하지 않는다', () => {
-    const source = page([block('main_headline', 'title'), imageBlock('photo', 'asset-photo')])
-    const { missingPieces } = buildBanner(source, SPEC, {
-      ...BARE,
-      textObjects: [piece('title', 'asset-title')],
-    })
-    expect(missingPieces).toEqual([])
-  })
-
-  it('배너에 가지 않는 블록은 없는 조각으로 세지 않는다', () => {
-    // 주의 문구는 애초에 배너에 갈 것이 아니다. 이것까지 세면 경고가 늘 켜져 있어
-    // 아무도 안 읽게 된다.
-    const source = page([block('main_headline', 'title'), block('caution_text', 'notice')])
-    const { missingPieces } = buildBanner(source, SPEC, {
-      ...BARE,
-      textObjects: [piece('title', 'asset-title')],
-    })
-    expect(missingPieces).toEqual([])
-  })
-
-  it('그림이 연결된 이미지 블록은 조각이 있는 것으로 본다', () => {
-    const source = page([imageBlock('photo', 'asset-photo')])
-    expect(buildBanner(source, SPEC, BARE).missingPieces).toEqual([])
-  })
-})
-
-describe('§33-3 배경과 강등', () => {
-  const source = page([block('main_headline', 'title')])
-
-  it('잘라 쓸 자리를 주면 계획에 실린다', () => {
-    const crop = { x: 0, y: 520, width: 840, height: 58 }
-    const { plan } = buildBanner(source, SPEC, BARE, { backgroundCrop: crop })
-    expect(plan.backgroundCrop).toEqual(crop)
-  })
-
-  it('주지 않으면 지금까지와 같다', () => {
-    // 없으면 합성기가 가운데를 채워 쓴다 — 배너가 아닌 길은 달라지지 않아야 한다.
-    expect(buildBanner(source, SPEC, BARE).plan.backgroundCrop).toBeUndefined()
-  })
-
-  it('모양이 안 맞는 그림은 배경으로 깔지 않고 뺀다', () => {
-    // 한때 배경으로 내려 깔았다. 이벤트3의 가차 기계를 보고 만든 규칙인데, 실물로
-    // 돌려 보니 인물 컷아웃은 늘리면 얼룩이고 작업자가 "배경에 뭐가 깔린지
-    // 모르겠다"고 했다. 빼고 그렇다고 말한다.
-    const gacha = page([imageBlock('gacha', 'asset-gacha', { width: 330, height: 470 })])
-    const { plan, fit } = buildBanner(gacha, SPEC, BARE)
-    expect(fit.dropped).toEqual([{ blockId: 'gacha', reason: 'no-shape' }])
-    expect(plan.layers).toEqual([])
-    expect(plan.background).toBeUndefined()
-  })
-
-  it('글자가 놓일 자리를 배경 고르기에 넘길 수 있다', () => {
-    // `quietRegion`이 "글자 밑이 잔잔한 자리"를 고르려면 글자가 어디 놓이는지를
-    // 알아야 한다. 규격의 자리가 이미 0~1 비율이라 그대로 넘어간다.
-    const slots = readableSlots(SPEC)
-    expect(slots).toHaveLength(SPEC.slots.length)
-    for (const slot of slots) {
-      expect(slot.x + slot.width).toBeLessThanOrEqual(1)
-      expect(slot.y + slot.height).toBeLessThanOrEqual(1)
-    }
+  it('페이지에는 블록이 전부 있다', () => {
+    // 올린 조각은 0개지만 블록은 전부 있어야 서랍에서 꺼낸 이미지가 그려진다.
+    expect(buildBanner(SOURCE, SPEC, {}).page.blocks).toHaveLength(SOURCE.blocks.length)
   })
 })
 
@@ -175,10 +92,14 @@ describe('§33-3 배경과 강등', () => {
  * 세면 배너 하나를 뽑았을 뿐인데 **메인 이벤트 페이지의 완성본까지** 오래된 것으로
  * 표시된다 — 실제로 화면에 그 경고가 떴다.
  */
-describe('§33-4 배너 페이지는 기획서 지문에 들어가지 않는다', () => {
-  function docOf(pages: BriefPage[]): Parameters<typeof documentFingerprint>[0] {
-    return { schemaVersion: '2.0.0', project: createEmptyProject('지문'), pages, activePageId: pages[0]!.id, assets: [] }
-  }
+describe('§33-2 배너 페이지는 기획서 지문에 들어가지 않는다', () => {
+  const docOf = (pages: BriefPage[]): Parameters<typeof documentFingerprint>[0] => ({
+    schemaVersion: '2.0.0',
+    project: createEmptyProject('지문'),
+    pages,
+    activePageId: pages[0]!.id,
+    assets: [],
+  })
   const eventPage = page([block('main_headline', 'title')])
   const banner = (): BriefPage => ({
     ...page([block('main_headline', 'title')]),
@@ -198,23 +119,11 @@ describe('§33-4 배너 페이지는 기획서 지문에 들어가지 않는다'
   })
 })
 
-/**
- * 작업자가 적어 넣은 크기 (배너 Patch §6).
- *
- * 정해진 다섯 말고도 뽑을 수 있어야 한다. 다만 임의 크기에는 사람이 만든 틀이
- * 없으므로 **자리를 하나도 두지 않는다** — 없는 문법을 지어내면 어색한 배치가
- * 나오고, 백지에서 서랍으로 꺼내 놓는 편이 낫다.
- */
-describe('§33-5 임의 크기', () => {
+describe('§33-3 임의 크기', () => {
   it('크기만 적으면 규격이 된다', () => {
     const spec = customBannerSpec(640, 200)!
     expect([spec.width, spec.height]).toEqual([640, 200])
     expect(spec.siblings).toEqual([])
-  })
-
-  it('자리를 지어내지 않는다', () => {
-    // 자리가 있으면 자동이 거기에 꽂는다. 그 자리는 아무도 확인한 적이 없다.
-    expect(customBannerSpec(640, 200)!.slots).toEqual([])
   })
 
   it('말이 안 되는 크기는 만들지 않는다', () => {
@@ -226,18 +135,11 @@ describe('§33-5 임의 크기', () => {
   it('번호로 되찾을 수 있다', () => {
     const spec = customBannerSpec(640, 200)!
     expect(bannerSpecById(spec.id)).toEqual(spec)
+    expect(sourcePageIdOf(bannerPageId('page_abc', spec.id), spec.id)).toBe('page_abc')
   })
 
-  it('임의 크기 배너에서도 원본 페이지를 되찾는다', () => {
-    // 임의 크기 번호에는 밑줄이 들어 있다. 마지막 밑줄에서 자르면 원본 번호에
-    // `_custom`이 붙어 원본을 못 찾는다.
+  it('임의 크기도 캔버스가 그 크기다', () => {
     const spec = customBannerSpec(640, 200)!
-    const pageId = bannerPageId('page_abc', spec.id)
-    expect(sourcePageIdOf(pageId, spec.id)).toBe('page_abc')
-  })
-
-  it('정해진 규격에서도 원본을 되찾는다', () => {
-    expect(sourcePageIdOf(bannerPageId('page_abc', SPEC.id), SPEC.id)).toBe('page_abc')
-    expect(sourcePageIdOf('page_abc', SPEC.id)).toBeNull()
+    expect(buildBanner(SOURCE, spec, {}).plan.size).toEqual({ width: 640, height: 200 })
   })
 })

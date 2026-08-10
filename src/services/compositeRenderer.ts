@@ -380,15 +380,14 @@ export async function renderComposite(
       // 다만 **어디를 채울지**는 계획이 정할 수 있다 (배너 Patch §3). 배너는 원본
       // 배경을 그대로 잘라 쓰는데, `cover`가 고르는 가운데가 하필 하트·풍선이
       // 몰린 자리면 글자가 묻힌다. 잘라 쓸 자리를 받으면 그 자리를 그대로 편다.
+      // 그리고 **어디에 놓을지**도 계획이 정할 수 있다 (배경 이동 Patch). 배너에서만
+      // 생긴다 — 작업자가 이벤트 페이지와의 유일한 차이로 꼽은 것이 이것이다.
+      // 없으면 지금까지처럼 캔버스를 통째로 채운다.
+      const at = plan.background.rect ?? { x: 0, y: 0, width: plan.size.width, height: plan.size.height }
       const crop = plan.backgroundCrop
       const fit =
         crop === undefined
-          ? fitSourceRect('cover', { width: source.width, height: source.height }, {
-              x: 0,
-              y: 0,
-              width: plan.size.width,
-              height: plan.size.height,
-            })
+          ? fitSourceRect('cover', { width: source.width, height: source.height }, at)
           : {
               source: {
                 x: Math.max(0, Math.min(source.width, crop.x)),
@@ -396,7 +395,7 @@ export async function renderComposite(
                 width: Math.max(1, Math.min(source.width - crop.x, crop.width)),
                 height: Math.max(1, Math.min(source.height - crop.y, crop.height)),
               },
-              dest: { x: 0, y: 0, width: plan.size.width, height: plan.size.height },
+              dest: at,
             }
       if (fit !== null) {
         ctx.drawImage(

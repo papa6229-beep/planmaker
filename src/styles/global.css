@@ -2979,9 +2979,65 @@ button { font-family: inherit; }
   background: repeating-conic-gradient(#eceff3 0% 25%, #fff 0% 50%) 50% / 8px 8px;
 }
 .drawer__thumb--empty { display: inline-block; }
-.drawer__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drawer__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; text-align: left; }
+/* 이미 올라온 조각도 서랍에 남는다 — 지운 것을 되살릴 길이 있어야 한다. */
+.drawer__piece.is-placed { border-style: dashed; }
+.drawer__placed {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--color-accent, #4f46e5);
+  background: color-mix(in srgb, var(--color-accent, #4f46e5) 12%, transparent);
+}
 
 .banner__custom { display: flex; align-items: flex-end; gap: 6px; flex-wrap: wrap; }
 .banner__custom-field { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--color-muted); }
 .banner__custom-field input { width: 72px; }
 .banner__custom-x { padding-bottom: 6px; color: var(--color-muted); font-size: 11px; }
+
+/* ── 배너의 배경 손잡이 (배경 이동 Patch) ────────────────────────────────── */
+/*
+ * 겹 전체는 **잡히지 않는다.** 화면 전체가 배경이라, 잡히게 두면 어디를 눌러도
+ * 배경이 걸려 조각을 고를 수 없다. 잡는 곳은 왼쪽 위 꼬리표와 모서리 넷뿐이다.
+ */
+.banner-bg { position: absolute; inset: 0; pointer-events: none; }
+.banner-bg__frame { position: absolute; outline: 1px dashed rgba(79, 70, 229, 0.55); }
+.banner-bg__grab {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 1px 6px;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1.6;
+  color: #fff;
+  background: rgba(79, 70, 229, 0.8);
+  border: 0;
+  border-radius: 0 0 6px 0;
+  cursor: move;
+  pointer-events: auto;
+}
+.banner-bg__handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border: 1px solid rgba(79, 70, 229, 0.8);
+  border-radius: 2px;
+  pointer-events: auto;
+}
+.banner-bg__handle--nw { left: -5px; top: -5px; cursor: nwse-resize; }
+.banner-bg__handle--ne { right: -5px; top: -5px; cursor: nesw-resize; }
+.banner-bg__handle--sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
+.banner-bg__handle--se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+
+/* ── 배너 프리셋 편집 (프리셋 관리 Patch) ────────────────────────────────── */
+.banner__presets { display: flex; flex-direction: column; gap: 4px; }
+.banner__preset { display: flex; align-items: center; gap: 4px; }
+.banner__preset.is-bad .banner__preset-size { border-color: var(--color-danger, #dc2626); }
+.banner__preset-label { flex: 1 1 60px; min-width: 0; }
+.banner__preset-size { flex: 0 0 46px; width: 46px; text-align: center; }
+.banner__preset-siblings { flex: 1 1 90px; min-width: 0; }
+.banner__preset-actions { display: flex; gap: 4px; flex-wrap: wrap; padding-top: 4px; }
+.banner__edit-presets { font-size: 11px; }

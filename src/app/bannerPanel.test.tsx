@@ -178,7 +178,7 @@ async function makeBanner(): Promise<void> {
   await openStudio()
   await showResult()
   fireEvent.click(screen.getByRole('button', { name: /배너 뽑기/ }))
-  fireEvent.click(within(bannerPanel()).getByRole('button', { name: '1020×70 만들기' }))
+  fireEvent.click(within(bannerPanel()).getByRole('button', { name: '1020×70 뽑기' }))
   // 그려진 것만으로는 이르다 — 안내가 화면에 오를 때까지 기다린다.
   await waitFor(() => {
     expect(rendered.length).toBeGreaterThan(0)
@@ -208,26 +208,26 @@ describe('§35-2 배너는 규격대로 그려진다', () => {
     expect(rendered.at(-1)!.size).toEqual({ width: 1020, height: 70 })
   })
 
-  it('완성본의 조각을 그대로 쓴다 — 다시 만들지 않는다', async () => {
+  it('첫 화면에는 조각이 하나도 올라오지 않는다', async () => {
+    // 손검수: "이벤트 페이지는 자동 배치를 해 주지, 왜냐 크니까. 하지만 배너는
+    // 작은 것들이 많아." 조각이 하나라도 실리면 걷어낸 자동 배치가 돌아온 것이다.
     await makeBanner()
     const plan = rendered.at(-1)!
-    expect(plan.textObjects?.map((t) => t.assetId).toSorted()).toEqual([
-      'asset_cta',
-      'asset_g1',
-      'asset_g2',
-      'asset_g3',
-      'asset_title',
-    ])
+    expect(plan.textObjects ?? []).toEqual([])
+    expect(plan.layers).toEqual([])
   })
 
-  it('조각이 배너 안으로 들어온다', async () => {
+  it('작업에도 빈 목록으로 적힌다', async () => {
+    // **없는 목록과 빈 목록은 다르다.** 없으면 다시 합칠 때 기획서 블록에서
+    // 다시 세어 전부 그려 버린다.
     await makeBanner()
-    for (const object of rendered.at(-1)!.textObjects ?? []) {
-      expect(object.rect.x).toBeGreaterThanOrEqual(0)
-      expect(object.rect.x + object.rect.width).toBeLessThanOrEqual(1020)
-      expect(object.rect.y + object.rect.height).toBeLessThanOrEqual(70)
-    }
-  })
+    await waitFor(async () => {
+      const job = (await loadStudioJob(STUDIO_JOB_ID))!
+      const bannerId = Object.keys(job.bannerPages ?? {})[0]!
+      expect(job.textObjects?.[bannerId]).toEqual([])
+      expect(job.imageObjects?.[bannerId]).toEqual([])
+    }, { timeout: 9000 })
+  }, 15_000)
 
   it('잘라 구운 배경을 쓴다 — 원본 배경이 아니다', async () => {
     // 계획에 크롭을 실어 보내면 사람이 조각을 옮긴 뒤 다시 합칠 때 그 경로가
@@ -253,29 +253,51 @@ describe('§35-3 배너를 만드는 데 돈이 들지 않는다', () => {
   })
 })
 
-describe('§35-4 버린 것을 말한다', () => {
-  it('자리가 없어 뺀 것을 이름으로 알린다', async () => {
-    // 아무 말 없이 빠지면 사람이 그 배너를 믿고 그대로 내보낸다. 로고는 제목·제품·
-    // 사은품이 자리를 다 채워 들어갈 곳이 없다.
-    await makeBanner()
-    const note = within(bannerPanel()).getByText(/자리가 없어 뺐습니다/).textContent ?? ''
-    expect(note).toContain('로고')
+describe('§35-4 뽑고 나서 알려 주는 것', () => {
+  it('작업자가 적어 준 크기가 전부 버튼으로 서 있다', async () => {
+    // 손검수: "내가 지정했던 사이즈는 기본으로 다 있어야해."
+    await openStudio()
+    await showResult()
+    fireEvent.click(screen.getByRole('button', { name: /배너 뽑기/ }))
+    for (const name of ['178×90', '840×640', '1020×70', '800×250', '602×70']) {
+      expect(within(bannerPanel()).getByRole('button', { name: `${name} 뽑기` })).toBeTruthy()
+    }
   })
 
-  it('완성본에 그림이 없는 블록을 알린다', async () => {
-    // 기간은 자리를 얻었지만 그 블록의 조각이 없다. 조용히 넘기면 그 자리는 빈
-    // 채로 나가고, 아무도 왜 비었는지 모른다.
-    await makeBanner()
-    const note = within(bannerPanel()).getByText(/이 블록의 그림이 없습니다/).textContent ?? ''
-    expect(note).toContain('기간')
-  })
+  it('크기를 고쳐 저장하면 버튼이 바뀐다', async () => {
+    // 손검수: "이 프리셋 사이즈는 수정 변경 저장 가능하게."
+    await openStudio()
+    await showResult()
+    fireEvent.click(screen.getByRole('button', { name: /배너 뽑기/ }))
+    fireEvent.click(within(bannerPanel()).getByRole('button', { name: '크기 고치기' }))
+    const width = within(bannerPanel()).getByLabelText('프리셋 1 가로')
+    fireEvent.change(width, { target: { value: '300' } })
+    fireEvent.click(within(bannerPanel()).getByRole('button', { name: '저장' }))
+    await waitFor(() => {
+      expect(within(bannerPanel()).getByRole('button', { name: '300×90 뽑기' })).toBeTruthy()
+      expect(within(bannerPanel()).queryByRole('button', { name: '178×90 뽑기' })).toBeNull()
+    })
+    // 그리고 **다시 열어도 남아 있어야** 한다. 화면 안에서만 바뀌면 저장이 아니다.
+    cleanup()
+    resetFoldsForTests()
+    await openStudio()
+    await showResult()
+    fireEvent.click(screen.getByRole('button', { name: /배너 뽑기/ }))
+    await waitFor(() => expect(within(bannerPanel()).getByRole('button', { name: '300×90 뽑기' })).toBeTruthy())
+  }, 20_000)
 
-  it('배너에 가지 않는 것은 알리지 않는다', async () => {
-    // 주의 문구는 애초에 갈 것이 아니다. 이것까지 적으면 경고가 늘 켜져 있어
-    // 아무도 안 읽게 된다.
-    await makeBanner()
-    expect(within(bannerPanel()).queryByText(/주의 문구/)).toBeNull()
-  })
+  it('기본값으로 되돌릴 수 있다', async () => {
+    await openStudio()
+    await showResult()
+    fireEvent.click(screen.getByRole('button', { name: /배너 뽑기/ }))
+    fireEvent.click(within(bannerPanel()).getByRole('button', { name: '크기 고치기' }))
+    fireEvent.change(within(bannerPanel()).getByLabelText('프리셋 1 가로'), { target: { value: '300' } })
+    fireEvent.click(within(bannerPanel()).getByRole('button', { name: '저장' }))
+    await waitFor(() => expect(within(bannerPanel()).getByRole('button', { name: '300×90 뽑기' })).toBeTruthy())
+    fireEvent.click(within(bannerPanel()).getByRole('button', { name: '크기 고치기' }))
+    fireEvent.click(within(bannerPanel()).getByRole('button', { name: '기본값으로' }))
+    await waitFor(() => expect(within(bannerPanel()).getByRole('button', { name: '178×90 뽑기' })).toBeTruthy())
+  }, 15_000)
 
   it('끝단 색을 함께 내놓는다', async () => {
     // 사람이 스포이드로 찍던 값이다.
@@ -354,35 +376,78 @@ describe('§35-5 배너는 페이지가 된다', () => {
     await waitFor(async () => {
       const job = (await loadStudioJob(STUDIO_JOB_ID))!
       const bannerId = Object.keys(job.bannerPages ?? {})[0]!
-      const ids = new Set((job.textObjects?.[bannerId] ?? []).map((o) => o.blockId))
-      expect(ids.size).toBeGreaterThan(0)
-      expect([...ids].every((id) => id.startsWith(bannerId))).toBe(true)
-      expect(ids.has('blk_title')).toBe(false)
+      const banner = job.doc.pages.find((p) => p.id === bannerId)
+      // 블록은 **전부** 데려온다 — 이미지 조각은 제 블록이 페이지에 있어야
+      // 합성에 실리므로, 하나라도 빠지면 서랍에서 꺼내도 안 그려진다.
+      expect(banner?.blocks).toHaveLength(9)
+      expect(banner!.blocks.every((b) => b.id.startsWith(bannerId))).toBe(true)
+      expect(banner!.blocks.some((b) => b.id === 'blk_title')).toBe(false)
     }, { timeout: 9000 })
   }, 15_000)
 })
 
+async function openDrawer(): Promise<HTMLElement> {
+  await makeBanner()
+  fireEvent.click(await screen.findByRole('button', { name: /조각 서랍/ }, { timeout: 3500 }))
+  return screen.getByRole('region', { name: '조각 서랍' })
+}
+
 describe('§35-6 조각 서랍', () => {
-  it('배너에 없는 조각을 이름으로 늘어놓는다', async () => {
-    // 자동은 버리는 일을 한다. 뺀 것을 되돌릴 방법이 없으면, 가장 작은 규격은
-    // 아무것도 못 만드는 화면이 된다.
-    await makeBanner()
-    fireEvent.click(await screen.findByRole('button', { name: /조각 서랍/ }, { timeout: 3500 }))
-    const drawer = screen.getByRole('region', { name: '조각 서랍' })
-    // 로고는 자리가 없어 빠졌다. 서랍에는 있어야 한다.
-    expect(within(drawer).getByRole('button', { name: /로고/ })).toBeTruthy()
+  it('이벤트 페이지의 조각이 전부 들어 있다', async () => {
+    // 손검수: "작업창에 조각은 더 있는데 서랍에는 문구 2개와 똑같은 컷오프 큰 거
+    // 2개뿐이야. 작업창에는 이벤트 페이지에 있는 모든 오브젝트들이 다 있어야지."
+    // 앞선 판은 **자동이 뺀 것만** 서랍에 넣었다.
+    const drawer = await openDrawer()
+    // 문구 조각 다섯(제목·CTA·사은품 셋)과 그림 둘(제품 그룹·로고).
+    expect(within(drawer).getAllByRole('button')).toHaveLength(7)
+  }, 15_000)
+
+  it('부분수정과 같은 이름으로 부른다', async () => {
+    // 앞선 판은 기획서 블록의 이름표를 썼다 — 이미지가 넷이면 넷 다 `이미지`라
+    // 무엇을 꺼내는지 알 수 없었다. 두 화면이 같은 것을 같은 이름으로 부른다.
+    const drawer = await openDrawer()
+    expect(within(drawer).getByRole('button', { name: /문구 1/ })).toBeTruthy()
+    expect(within(drawer).getByRole('button', { name: /이미지 1/ })).toBeTruthy()
+    expect(within(drawer).getByRole('button', { name: /텐가 사고, 선물 받자/ })).toBeTruthy()
   }, 15_000)
 
   it('꺼내면 배너에 놓인다', async () => {
-    await makeBanner()
-    fireEvent.click(await screen.findByRole('button', { name: /조각 서랍/ }, { timeout: 3500 }))
-    const drawer = screen.getByRole('region', { name: '조각 서랍' })
-    fireEvent.click(within(drawer).getByRole('button', { name: /로고/ }))
+    const drawer = await openDrawer()
+    fireEvent.click(within(drawer).getByRole('button', { name: /문구 1/ }))
     await waitFor(async () => {
       const job = (await loadStudioJob(STUDIO_JOB_ID))!
       const bannerId = Object.keys(job.bannerPages ?? {})[0]!
-      const ids = (job.imageObjects?.[bannerId] ?? []).map((o) => o.blockId)
-      expect(ids.some((id) => id.endsWith('blk_logo'))).toBe(true)
+      expect((job.textObjects?.[bannerId] ?? []).length).toBe(1)
+    }, { timeout: 3500 })
+  }, 15_000)
+
+  it('올라온 뒤에도 서랍에 남고, 다시 누르면 한 벌 더 놓인다', async () => {
+    // 지운 것을 되살릴 길이 없으면 안 된다. 그리고 같은 조각을 두 벌 쓰는 배너가
+    // 실제로 있다.
+    const drawer = await openDrawer()
+    const pick = () => within(drawer).getByRole('button', { name: /문구 1/ })
+    fireEvent.click(pick())
+    await waitFor(() => expect(within(drawer).getByText('올림 1')).toBeTruthy(), { timeout: 3500 })
+    fireEvent.click(pick())
+    await waitFor(async () => {
+      const job = (await loadStudioJob(STUDIO_JOB_ID))!
+      const bannerId = Object.keys(job.bannerPages ?? {})[0]!
+      const objects = job.textObjects?.[bannerId] ?? []
+      expect(objects).toHaveLength(2)
+      // 번호가 같으면 하나가 다른 하나를 덮어써, 누른 만큼 늘지 않는다.
+      expect(new Set(objects.map((o) => o.blockId)).size).toBe(2)
+    }, { timeout: 3500 })
+  }, 20_000)
+
+  it('꺼낸 조각의 번호가 원본과 다르다', async () => {
+    // 같은 번호를 쓰면 배너 조각에 건 톤이 메인 이벤트 페이지까지 바꾼다.
+    const drawer = await openDrawer()
+    fireEvent.click(within(drawer).getByRole('button', { name: /문구 1/ }))
+    await waitFor(async () => {
+      const job = (await loadStudioJob(STUDIO_JOB_ID))!
+      const bannerId = Object.keys(job.bannerPages ?? {})[0]!
+      const objects = job.textObjects?.[bannerId] ?? []
+      expect(objects[0]!.blockId.startsWith(bannerId)).toBe(true)
     }, { timeout: 3500 })
   }, 15_000)
 
