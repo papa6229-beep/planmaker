@@ -122,6 +122,21 @@ export function WorkList() {
           {saving ? '저장 중…' : '이 이미지 저장'}
         </button>
       )}
+      {/* 그리고 한 번에 전부 (전체 저장 Patch). 작업이 끝나면 이벤트 페이지 한 장과
+          배너 대여섯 장을 한꺼번에 넘긴다 — 하나씩 눌러 내려받고 폴더에서 다시
+          모으는 일은 그 자체로 실수가 난다. 한 장뿐이면 둘 버튼이 같은 일을 하므로
+          내놓지 않는다. */}
+      {imageSave !== null && imageSave.allCount > 1 && (
+        <button
+          type="button"
+          className="btn btn--primary work-list__save-all"
+          disabled={saving}
+          onClick={imageSave.saveAll}
+          title="이벤트 페이지와 배너를 한 묶음(ZIP)으로 저장합니다"
+        >
+          전부 저장 {imageSave.allCount}장
+        </button>
+      )}
       {/* 저장이 사람에게 물어야 하는 자리들. 버튼과 **같은 컴포넌트**에 있어야
           한다 — `useImageSave`는 부르는 곳마다 제 상태를 따로 갖는 훅이라, 버튼과
           창이 떨어져 있으면 눌러도 아무 창이 뜨지 않는다. */}

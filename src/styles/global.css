@@ -3081,4 +3081,11 @@ button { font-family: inherit; }
 }
 /* 원본은 뽑아 낸 것과 모양이 달라야 한다. */
 .work-list__item--event { border-style: dashed; }
-.work-list__save { margin-left: auto; font-size: 11px; }
+.work-list__save { font-size: 11px; }
+
+/* ── API 키를 이 브라우저에 기억 (키 기억하기 Patch) ─────────────────────── */
+.key-remember { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; padding: 6px 0 2px; }
+.key-remember input { margin-top: 3px; }
+.key-remember small { color: var(--color-muted); }
+.work-list__save { margin-left: auto; }
+.work-list__save-all { font-size: 11px; }

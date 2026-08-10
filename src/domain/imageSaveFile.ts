@@ -69,6 +69,13 @@ export interface ImageSavePlan {
 
 export interface ImageSaveOptions {
   /**
+   * 배너까지 **전부** (전체 저장 Patch).
+   *
+   * 작업이 끝나면 이벤트 페이지 한 장과 배너 대여섯 장을 한꺼번에 넘긴다 —
+   * 하나씩 눌러 내려받고 폴더에서 다시 모으는 일은 그 자체로 실수가 난다.
+   */
+  all?: boolean | undefined
+  /**
    * 이 페이지 하나만 (배너 저장 Patch).
    *
    * 배너를 보면서 `이미지 저장`을 누르면 그 배너 한 장이 나와야 한다. 앞선 판은
@@ -90,7 +97,12 @@ export function planImageSave(doc: BriefDocument, job: StudioJob, options: Image
   const files: ImageSavePlanFile[] = []
   const isBanner = (pageId: string) => job.bannerPages?.[pageId] !== undefined
   const only = options.onlyPageId
-  const wanted = only === undefined ? doc.pages.filter((p) => !isBanner(p.id)) : doc.pages.filter((p) => p.id === only)
+  const wanted =
+    only !== undefined
+      ? doc.pages.filter((p) => p.id === only)
+      : options.all === true
+        ? [...doc.pages]
+        : doc.pages.filter((p) => !isBanner(p.id))
   for (const page of wanted) {
     const result = pageResultOf(job, page.id)
     if (result === undefined) continue

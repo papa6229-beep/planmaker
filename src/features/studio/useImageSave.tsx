@@ -30,6 +30,10 @@ export type ImageSaveState =
 export interface ImageSaveApi {
   state: ImageSaveState
   save: () => void
+  /** 배너까지 전부 한 묶음으로 (전체 저장 Patch). */
+  saveAll: () => void
+  /** 전부 저장하면 몇 장인가. 0이면 버튼을 둘 이유가 없다. */
+  allCount: number
   /** 일부만 저장하겠다고 사람이 답한 뒤. */
   confirmPartial: () => void
   dismiss: () => void
@@ -73,11 +77,29 @@ export function useImageSave(): ImageSaveApi | null {
     void run(plan, doc.project.title)
   }, [studio, getDocument, run])
 
+  /**
+   * 만든 것을 전부 (전체 저장 Patch).
+   *
+   * 여기서는 **묻지 않는다.** `isPartialSave`는 "3페이지 중 2페이지만 있다"를
+   * 확인받는 장치인데, 전부 저장은 있는 것을 다 담겠다는 뜻이 이미 분명하다.
+   */
+  const saveAll = useCallback(() => {
+    if (studio === null) return
+    const doc = getDocument()
+    const plan = planImageSave(doc, studio.job, { all: true })
+    if (plan.files.length === 0) {
+      setState({ kind: 'nothing' })
+      return
+    }
+    void run(plan, doc.project.title)
+  }, [studio, getDocument, run])
+
   const confirmPartial = useCallback(() => {
     if (state.kind !== 'partial') return
     void run(state.plan, getDocument().project.title)
   }, [state, run, getDocument])
 
   if (studio === null) return null
-  return { state, save, confirmPartial, dismiss: () => setState({ kind: 'idle' }) }
+  const allCount = planImageSave(getDocument(), studio.job, { all: true }).files.length
+  return { state, save, saveAll, allCount, confirmPartial, dismiss: () => setState({ kind: 'idle' }) }
 }

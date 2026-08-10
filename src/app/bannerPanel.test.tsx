@@ -58,6 +58,17 @@ vi.mock('../features/assets/imageUtils', async () => {
   const actual = await vi.importActual<typeof import('../features/assets/imageUtils')>('../features/assets/imageUtils')
   return { ...actual, readImageSize: async () => ({ width: 640, height: 640 }) }
 })
+/**
+ * 압축만 대신한다. jsdom의 IndexedDB를 한 번 다녀온 Blob은 JSZip이 읽지 못하는데,
+ * 그것은 이 검사가 묻는 것(무엇이 몇 장 나가는가)과 상관없는 환경의 사정이다.
+ * 자산을 꺼내는 `collectSavedImages`는 진짜를 쓴다 — 없는 자산을 조용히 넘기는
+ * 결함은 그쪽에서 잡혀야 한다.
+ */
+vi.mock('../services/imageSave', async () => {
+  const actual = await vi.importActual<typeof import('../services/imageSave')>('../services/imageSave')
+  return { ...actual, zipSavedImages: async () => new Blob([new Uint8Array([80, 75])]) }
+})
+
 /** `이미지 저장`이 실제로 내놓은 파일들. 이름만 봐도 무엇이 나갔는지 안다. */
 let downloaded: string[] = []
 vi.mock('../services/downloadFile', () => ({
@@ -454,6 +465,28 @@ describe('§35-7 배너 저장과 이어받기', () => {
     expect(downloaded[0]).toContain('1020x70')
     expect(downloaded[0]).not.toContain('.zip')
   }, 15_000)
+
+  it('전부 저장은 이벤트 페이지와 배너를 한 묶음으로 낸다', async () => {
+    // 손검수: "단독 저장도 중요하지만 전체 이미지 저장도 중요해." 작업이 끝나면
+    // 한꺼번에 넘긴다 — 하나씩 눌러 내려받고 폴더에서 다시 모으면 실수가 난다.
+    await makeBanner()
+    const strip = await screen.findByRole('group', { name: '작업 목록' }, { timeout: 9000 })
+    fireEvent.click(within(strip).getByRole('button', { name: '전부 저장 2장' }))
+    // 압축은 jsdom에서 느리다. 그리고 실패하면 화면이 그렇게 말하므로 함께 본다.
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog', { name: '이미지 저장 실패' })).toBeNull()
+      expect(downloaded).toHaveLength(1)
+    }, { timeout: 12000 })
+    expect(downloaded[0]).toContain('.zip')
+  }, 20_000)
+
+  it('저장할 것이 한 장뿐이면 전부 저장은 없다', async () => {
+    // 두 버튼이 같은 일을 하면 어느 쪽이 무엇인지 아무도 모른다.
+    await openStudio()
+    await showResult()
+    const strip = screen.getByRole('group', { name: '작업 목록' })
+    expect(within(strip).queryByRole('button', { name: /전부 저장/ })).toBeNull()
+  })
 
   it('이벤트 페이지에서 저장하면 배너가 딸려 나가지 않는다', async () => {
     await makeBanner()

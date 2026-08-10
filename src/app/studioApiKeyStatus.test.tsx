@@ -189,6 +189,53 @@ describe('§2 키가 이 탭에 있는지 버튼이 말해 준다', () => {
     expect(window.location.href).not.toContain(FAKE_KEY)
   }, 20000)
 
+  it('기억을 켜지 않으면 브라우저에 남지 않는다', async () => {
+    // 기본은 지금까지와 같다 — 탭을 닫으면 사라진다.
+    await openStudio()
+    fireEvent.click(keyButton())
+    fireEvent.change(screen.getByLabelText('새 API 키'), { target: { value: FAKE_KEY } })
+    fireEvent.click(screen.getByRole('button', { name: '저장' }))
+    await waitFor(() => expect(keyButton().textContent?.trim()).toBe('✓ API 키 저장됨'))
+    expect(JSON.stringify(localStorage)).not.toContain(FAKE_KEY)
+    expect(JSON.stringify(sessionStorage)).toContain(FAKE_KEY)
+  }, 20000)
+
+  it('기억을 켜면 브라우저를 다시 열어도 남아 있다', async () => {
+    // 손검수: "그냥 지금 쓰는 키 한번 입력하고 저장버튼 누르면 새 키 넣을 때까지
+    // 매번 수동입력 안 하고 쓸 수 있게."
+    await openStudio()
+    fireEvent.click(keyButton())
+    fireEvent.change(screen.getByLabelText('새 API 키'), { target: { value: FAKE_KEY } })
+    fireEvent.click(screen.getByLabelText(/이 브라우저에 기억/))
+    fireEvent.click(screen.getByRole('button', { name: '저장' }))
+    await waitFor(() => expect(keyButton().textContent?.trim()).toBe('✓ API 키 저장됨'))
+
+    // 탭을 닫은 것과 같은 자리 — 세션은 비었는데 키는 살아 있어야 한다.
+    cleanup()
+    sessionStorage.clear()
+    await openStudio()
+    expect(keyButton().textContent?.trim()).toBe('✓ API 키 저장됨')
+    // 그리고 창을 다시 열면 기억이 켜진 채다 — 저장할 때마다 켜야 한다면 기억이 아니다.
+    fireEvent.click(keyButton())
+    expect((screen.getByLabelText(/이 브라우저에 기억/) as HTMLInputElement).checked).toBe(true)
+  }, 25000)
+
+  it('키 지우기는 양쪽을 다 지운다', async () => {
+    // 한쪽만 지우면 지운 줄 알았는데 브라우저에 그대로 있다.
+    await openStudio()
+    fireEvent.click(keyButton())
+    fireEvent.change(screen.getByLabelText('새 API 키'), { target: { value: FAKE_KEY } })
+    fireEvent.click(screen.getByLabelText(/이 브라우저에 기억/))
+    fireEvent.click(screen.getByRole('button', { name: '저장' }))
+    await waitFor(() => expect(keyButton().textContent?.trim()).toBe('✓ API 키 저장됨'))
+
+    fireEvent.click(keyButton())
+    fireEvent.click(screen.getByRole('button', { name: '키 지우기' }))
+    await waitFor(() => expect(keyButton().textContent?.trim()).toBe('API 키'))
+    expect(JSON.stringify(localStorage)).not.toContain(FAKE_KEY)
+    expect(JSON.stringify(sessionStorage)).not.toContain(FAKE_KEY)
+  }, 25000)
+
   it('still shows the structured 401 for a bad key', async () => {
     await openStudio()
     respond = async () =>

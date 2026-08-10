@@ -35,7 +35,7 @@ import {
 import { useBriefDocument } from '../document/useBriefDocument'
 import { useStudioJob } from './useStudioJob'
 import { cursorOf, pageResultOf, revisionsOf, studioLiveAssetIds } from '../../domain/studioJob'
-import { clearApiKey, readApiKey, saveApiKey } from './apiKeySession'
+import { apiKeyRemembered, clearApiKey, readApiKey, saveApiKey } from './apiKeySession'
 import { buildGenerationRequest } from '../../domain/generationRequest'
 import {
   bannerEditTargets,
@@ -215,7 +215,13 @@ export interface ImageGenerationApi {
    * 둔다.
    */
   hasKey: boolean
-  saveKey: (key: string) => void
+  /**
+   * 키를 둔다. `remember`면 브라우저에 남아 탭을 닫아도 살아 있다
+   * (키 기억하기 Patch). 기본은 지금까지처럼 이 탭에만.
+   */
+  saveKey: (key: string, remember?: boolean) => void
+  /** 브라우저에 남아 있는가 — 화면이 그 상태를 그대로 보여 준다. */
+  keyRemembered: boolean
   clearKey: () => void
   view: StudioCenterView
   setView: (view: StudioCenterView) => void
@@ -348,6 +354,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
   const [view, setView] = useState<StudioCenterView>('brief')
   /** 키가 있느냐만 담는다. 값 자체는 이 state에 들어오지 않는다. */
   const [hasKey, setHasKey] = useState(() => readApiKey() !== null)
+  const [keyRemembered, setKeyRemembered] = useState(() => apiKeyRemembered())
   const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>([])
   /** 대상 키 → 그 대상에만 적용할 지시. 표시 번호가 아니라 키로 담는다. */
   const [instructions, setInstructions] = useState<Record<string, string>>({})
@@ -1703,13 +1710,16 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             state,
             hasResult,
             hasKey,
-            saveKey: (key: string) => {
-              saveApiKey(key)
+            saveKey: (key: string, remember = false) => {
+              saveApiKey(key, remember)
               setHasKey(readApiKey() !== null)
+              setKeyRemembered(apiKeyRemembered())
             },
+            keyRemembered,
             clearKey: () => {
               clearApiKey()
               setHasKey(false)
+              setKeyRemembered(false)
             },
             view,
             setView,
@@ -1738,7 +1748,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             dismiss: () => setState({ kind: 'idle' }),
           },
     [
-      studio, state, hasResult, hasKey, view, begin, confirm, retryConversion, recomposePage,
+      studio, state, hasResult, hasKey, keyRemembered, view, begin, confirm, retryConversion, recomposePage,
       rebuildPage, canRebuild,
       editTargets, selectedTargetIds, toggleTarget, instructionFor, setInstructionFor,
       canEdit, editBlockedReason, beginEdit, confirmEdit,

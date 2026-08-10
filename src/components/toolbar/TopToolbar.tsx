@@ -78,6 +78,8 @@ export function TopToolbar({
   const generation = useImageGeneration()
   const [keyPanel, setKeyPanel] = useState(false)
   const [keyDraft, setKeyDraft] = useState('')
+  /** 이 브라우저에 기억할 것인가. 이미 기억해 둔 사람은 켜진 채로 연다. */
+  const [keyRemember, setKeyRemember] = useState(false)
   // 만든 이미지를 내놓는 일. 작업판 밖에서는 `null`이다.
   const studioMode = mode === 'studio'
   // 저장이 실제로 되고 있는가. provider 밖의 모듈이므로 화면 구조와 무관하다.
@@ -276,11 +278,16 @@ export function TopToolbar({
               <button
                 type="button"
                 className={`btn${generation.hasKey ? ' btn--key-saved is-saved' : ''}`}
-                onClick={() => setKeyPanel(true)}
+                onClick={() => {
+                  // 이미 기억해 둔 사람에게는 켜진 채로 열린다 — 저장을 누를
+                  // 때마다 켜야 한다면 기억하는 것이 아니다.
+                  setKeyRemember(generation.keyRemembered)
+                  setKeyPanel(true)
+                }}
                 disabled={busy}
                 title={
                   generation.hasKey
-                    ? '이 탭에 테스트용 키가 저장되어 있습니다. 눌러서 바꾸거나 지울 수 있습니다.'
+                    ? '테스트용 키가 저장되어 있습니다. 눌러서 바꾸거나 지울 수 있습니다.'
                     : '테스트용 OpenAI API 키를 입력합니다'
                 }
               >
@@ -455,8 +462,12 @@ export function TopToolbar({
           >
             <h2 className="confirm__title">테스트용 OpenAI API 키</h2>
             <p className="confirm__body">
-              {generation?.hasKey === true ? '이 탭에 키가 저장되어 있습니다.' : '아직 키가 없습니다.'} 키는 이 탭에만
-              보관되며 탭을 닫으면 지워집니다. 파일·저장소·기획서에는 남지 않습니다.
+              {generation?.hasKey !== true
+                ? '아직 키가 없습니다.'
+                : generation.keyRemembered
+                  ? '이 브라우저에 키가 기억되어 있습니다 — 닫았다 열어도 그대로입니다.'
+                  : '이 탭에 키가 저장되어 있습니다 — 탭을 닫으면 지워집니다.'}{' '}
+              어느 쪽이든 파일·기획서·작업 파일에는 남지 않습니다.
             </p>
             <label className="save-dialog__field">
               <span className="save-dialog__label">새 키 입력</span>
@@ -468,6 +479,22 @@ export function TopToolbar({
                 value={keyDraft}
                 onChange={(e) => setKeyDraft(e.target.value)}
               />
+            </label>
+            {/* 하루에 몇 번씩 키를 붙여 넣는 일은 그 자체로 위험하다 — 키를 어딘가
+                메모장에 꺼내 두게 만든다 (키 기억하기 Patch). 다만 기억한 키는 이
+                브라우저를 여는 사람이면 개발자 도구로 읽을 수 있으므로, 켜는 것은
+                사람의 선택이고 화면이 그 뜻을 그대로 말한다. */}
+            <label className="key-remember">
+              <input
+                type="checkbox"
+                checked={keyRemember}
+                onChange={(e) => setKeyRemember(e.target.checked)}
+              />
+              <span>
+                이 브라우저에 기억 — 새 키를 넣거나 <b>키 지우기</b>를 누를 때까지 다시 입력하지 않습니다.
+                <br />
+                <small>이 컴퓨터를 쓰는 사람이 개발자 도구로 읽을 수 있습니다. 공용 컴퓨터에서는 끄세요.</small>
+              </span>
             </label>
             <div className="confirm__actions">
               <button
@@ -487,7 +514,7 @@ export function TopToolbar({
                 className="btn btn--primary"
                 disabled={keyDraft.trim().length === 0}
                 onClick={() => {
-                  generation?.saveKey(keyDraft)
+                  generation?.saveKey(keyDraft, keyRemember)
                   setKeyDraft('')
                   setKeyPanel(false)
                 }}
