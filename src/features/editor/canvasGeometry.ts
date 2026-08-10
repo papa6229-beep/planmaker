@@ -27,6 +27,33 @@ export function minBlockSize(canvasWidth: number, canvasHeight: number): { width
   }
 }
 
+/**
+ * 완성본 위 **조각**의 바닥값 (자유 조절 Patch).
+ *
+ * 기획서 블록의 80×48은 상자 **안에 들어가는 것들** 때문에 생긴 값이다 — 이름표,
+ * 더보기 버튼, 안내 문구가 그보다 좁으면 겹친다. 완성본 위의 조각에는 그런 것이
+ * 하나도 없다. 이미 그려진 그림 한 장과 모서리 조작점 넷뿐이다.
+ *
+ * 그런데 지금까지 조각도 그 80×48을 썼고, 비율이 고정이라 둘이 **곱해졌다** —
+ * 가로로 긴 조각은 `48 × 비율`이 실제 바닥이 되어, 비율 3짜리 문구는 144px보다
+ * 좁아지지 않았다. 그보다 작게 놓여 있던 조각은 모서리를 잡는 순간 그 값으로
+ * **튀어 올랐고**, 다시는 원래 크기로 돌아가지 못했다. 작업자가 "조절이 아니라
+ * 변경"이라고 부른 것이 이 튐이다.
+ *
+ * 그래서 조각은 따로 잰다. 캔버스의 2%, 최소 8px — 1020×70 배너에서 20×8,
+ * 840×1180 기획서에서 17×24다. 조작점을 잡을 수는 있고, 가로띠 배너에서 글자
+ * 한 줄을 손톱만큼 줄이는 일도 된다.
+ */
+export const MIN_PIECE_PX = 8
+export const MIN_PIECE_SHARE = 0.02
+
+export function minPieceSize(canvasWidth: number, canvasHeight: number): { width: number; height: number } {
+  return {
+    width: Math.max(MIN_PIECE_PX, canvasWidth * MIN_PIECE_SHARE),
+    height: Math.max(MIN_PIECE_PX, canvasHeight * MIN_PIECE_SHARE),
+  }
+}
+
 /** How short and how long a page may be (손검수 2 §3.2). */
 export const MIN_CANVAS_HEIGHT = 400
 export const MAX_CANVAS_HEIGHT = 30000
@@ -152,6 +179,9 @@ export function freeDelta(
  *
  * `free`면 캔버스 경계로 가두지 않는다 — 이미 밖에 걸쳐 둔 블록의 모서리를 잡는
  * 순간 안으로 튀어 들어오면, 의도한 크롭이 조용히 사라진다 (§3.2).
+ *
+ * `floorSize`를 주면 그것이 바닥값이다 — 완성본 위의 조각은 블록보다 훨씬 작아질
+ * 수 있어야 한다 (`minPieceSize`).
  */
 export function resizeRect(
   rect: Rect,
@@ -161,6 +191,7 @@ export function resizeRect(
   canvasWidth: number,
   canvasHeight: number,
   free = false,
+  floorSize?: { width: number; height: number },
 ): Rect {
   const right = rect.x + rect.width
   const bottom = rect.y + rect.height
@@ -172,7 +203,13 @@ export function resizeRect(
   const minX = free ? -Infinity : 0
   const maxWidth = free ? Infinity : canvasWidth - rect.x
   const maxHeight = free ? Infinity : canvasHeight - rect.y
-  const floor = minBlockSize(canvasWidth, canvasHeight)
+  // 잡는 순간 **커지는 일은 없다.** 이미 바닥값보다 작게 놓여 있던 상자가 모서리를
+  // 잡자마자 바닥값으로 튀어 오르면, 그것은 조절이 아니라 변경이다.
+  const wanted = floorSize ?? minBlockSize(canvasWidth, canvasHeight)
+  const floor = {
+    width: Math.min(wanted.width, rect.width),
+    height: Math.min(wanted.height, rect.height),
+  }
 
   if (movesLeft) {
     x = clamp(rect.x + dx, minX, right - floor.width)

@@ -134,8 +134,26 @@ export function photoImageStyle(size: { width: number; height: number }, box: Co
  * 사진에서 가로세로를 따로 늘리면 원본에 없던 찌그러짐이 생긴다. 잡은 모서리의
  * 반대쪽은 제자리에 남고, 가로·세로 중 **더 많이 끈 쪽**이 새 크기를 정한다 —
  * 그래야 위아래로만 끌어도 반응한다.
+ *
+ * ## 바닥값이 곱해지지 않게 (자유 조절 Patch)
+ *
+ * 비율이 고정이므로 가로 바닥값과 세로 바닥값을 **둘 다** 지키려면 실제 바닥은
+ * `max(바닥가로, 바닥세로 × 비율)`이 된다. 기획서의 80×48을 그대로 쓰면 비율 3짜리
+ * 가로 문구는 144px보다 좁아지지 못했고, 비율 0.5짜리 세로 사진은 160px보다 낮아지지
+ * 못했다. 작업자가 "특정 사이즈 이하로 줄어들지 않는다"고 한 자리가 정확히 여기다.
+ *
+ * 두 가지로 푼다. 부르는 쪽이 자기 바닥값을 주고(완성본 조각은 `minPieceSize`),
+ * 그 바닥값은 **잡기 전 크기를 넘지 않는다** — 이미 그보다 작은 상자를 잡았다고
+ * 커지는 것은 조절이 아니라 변경이다.
  */
-export function keepAspect(rect: Rect, handle: ResizeHandle, dx: number, dy: number, aspect: number): Rect {
+export function keepAspect(
+  rect: Rect,
+  handle: ResizeHandle,
+  dx: number,
+  dy: number,
+  aspect: number,
+  floorSize?: { width: number; height: number },
+): Rect {
   const safeAspect = aspect > 0 ? aspect : 1
   const movesLeft = handle === 'nw' || handle === 'sw'
   const movesTop = handle === 'nw' || handle === 'ne'
@@ -144,7 +162,12 @@ export function keepAspect(rect: Rect, handle: ResizeHandle, dx: number, dy: num
   const fromY = (movesTop ? rect.height - dy : rect.height + dy) * safeAspect
   const wanted = Math.abs(fromX - rect.width) >= Math.abs(fromY - rect.width) ? fromX : fromY
 
-  const width = Math.max(MIN_BLOCK_WIDTH, Math.max(MIN_BLOCK_HEIGHT * safeAspect, wanted))
+  const asked = floorSize ?? { width: MIN_BLOCK_WIDTH, height: MIN_BLOCK_HEIGHT }
+  const floorWidth = Math.min(
+    Math.max(asked.width, asked.height * safeAspect),
+    Math.max(1, rect.width),
+  )
+  const width = Math.max(floorWidth, wanted)
   const height = width / safeAspect
 
   const right = rect.x + rect.width

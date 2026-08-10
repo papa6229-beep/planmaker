@@ -6,6 +6,8 @@ import {
   MIN_BLOCK_HEIGHT,
   MIN_BLOCK_WIDTH,
   minBlockSize,
+  MIN_PIECE_PX,
+  minPieceSize,
   resizeRect,
   type Rect,
 } from './canvasGeometry'
@@ -84,5 +86,43 @@ describe('minBlockSize', () => {
     // 손검수에서 막힌 그 동작이다.
     const shrunk = resizeRect({ x: 0, y: 0, width: 300, height: 60 }, 'se', -280, -55, 1020, 70, true)
     expect(shrunk.height).toBeLessThan(MIN_BLOCK_HEIGHT)
+  })
+})
+
+/**
+ * 조각의 바닥값 (자유 조절 Patch).
+ *
+ * 완성본 위의 조각은 블록이 아니다 — 안에 이름표도 버튼도 없다. 블록의 80×48을
+ * 물려 쓰면서 "특정 사이즈 이하로 줄어들지 않는다"는 손검수 지적이 나왔다.
+ */
+describe('minPieceSize', () => {
+  it('블록 바닥값보다 훨씬 낮다', () => {
+    const piece = minPieceSize(840, 1180)
+    expect(piece.width).toBeLessThan(MIN_BLOCK_WIDTH)
+    expect(piece.height).toBeLessThan(MIN_BLOCK_HEIGHT)
+  })
+
+  it('아무리 작은 캔버스에서도 잡을 수 있을 만큼은 남는다', () => {
+    expect(minPieceSize(1, 1)).toEqual({ width: MIN_PIECE_PX, height: MIN_PIECE_PX })
+  })
+})
+
+describe('resizeRect: 잡는 순간 커지지 않는다', () => {
+  it('바닥값보다 작게 놓인 상자가 모서리를 잡았다고 튀어 오르지 않는다', () => {
+    // 자동 배치가 40×20으로 놓아 둔 조각. 예전에는 첫 움직임에 80×48이 되었다 —
+    // 작업자가 "조절이 아니라 변경"이라고 부른 그 튐이다.
+    const tiny = { x: 0, y: 0, width: 40, height: 20 }
+    const r = resizeRect(tiny, 'se', -5, -5, 840, 1180)
+    expect(r.width).toBeLessThanOrEqual(tiny.width)
+    expect(r.height).toBeLessThanOrEqual(tiny.height)
+  })
+
+  it('건네준 바닥값을 쓴다', () => {
+    const r = resizeRect({ x: 0, y: 0, width: 300, height: 60 }, 'se', -290, -55, 1020, 70, true, {
+      width: 10,
+      height: 6,
+    })
+    expect(r.width).toBe(10)
+    expect(r.height).toBe(6)
   })
 })

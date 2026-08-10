@@ -22,7 +22,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
 import { getAsset } from '../../services/assetStore'
-import { RESIZE_HANDLES, resizeRect, type ResizeHandle } from '../../features/editor/canvasGeometry'
+import { RESIZE_HANDLES, minPieceSize, resizeRect, type ResizeHandle } from '../../features/editor/canvasGeometry'
 import { keepAspect } from '../../domain/photoBox'
 import { LAYER_MOVES } from '../../domain/layerOrder'
 import { boundsOf, layerOrderOf, scaleWithin, spunResize, toLocalDelta } from '../../domain/textLayers'
@@ -195,9 +195,13 @@ export function ResultObjectLayer({ pageId, page }: Props) {
         const local = toLocalDelta(screen.dx, screen.dy, angle)
         // 잡은 모서리의 반대쪽이 제자리에 남는다. 지면 밖으로도 걸칠 수 있으므로
         // 가두지 않는다 — 밖으로 나간 부분은 다시 합칠 때 지금까지처럼 잘린다.
+        // 조각의 바닥값은 블록의 것이 아니다 (자유 조절 Patch). 블록의 80×48은
+        // 상자 안에 들어가는 이름표·버튼 때문에 생긴 값이고, 조각에는 그런 것이
+        // 없다. 게다가 비율 고정이라 두 값이 곱해져 실제 바닥이 훌쩍 올라갔다.
+        const floor = minPieceSize(page.width, page.height)
         const box = ev.shiftKey
-          ? resizeRect(from, handle, local.dx, local.dy, page.width, page.height, true)
-          : keepAspect(from, handle, local.dx, local.dy, aspect)
+          ? resizeRect(from, handle, local.dx, local.dy, page.width, page.height, true, floor)
+          : keepAspect(from, handle, local.dx, local.dy, aspect, floor)
         // 돌아간 상자는 축이 한가운데라, 크기가 바뀌면 잡지 않은 모서리도 화면에서
         // 움직인다. 가운데를 그만큼 되밀어 그 모서리를 묶어 둔다.
         const to = spunResize(from, box, handle, angle)

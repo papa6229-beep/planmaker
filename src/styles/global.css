@@ -2935,6 +2935,11 @@ button { font-family: inherit; }
   color: var(--color-accent, #4f46e5);
   font-weight: 700;
 }
+/* 돌아갈 자리는 배너들과 한눈에 갈려야 한다 — 같은 모양이면 배너 하나로 읽힌다. */
+.banner-tabs__tab--source {
+  border-style: dashed;
+  margin-right: 4px;
+}
 
 /* ── 조각 서랍 (배너 Patch §6) ────────────────────────────────────────────── */
 .drawer {

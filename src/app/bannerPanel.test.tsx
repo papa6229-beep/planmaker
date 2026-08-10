@@ -313,10 +313,38 @@ describe('§35-5 배너는 페이지가 된다', () => {
   it('배너 줄에 나오고, 페이지 탭에는 나오지 않는다', async () => {
     // 페이지 탭이 뜻하는 것은 "이벤트 페이지가 몇 장인가"다. 배너가 끼면 흐려진다.
     await makeBanner()
-    const strip = await screen.findByRole('group', { name: '만든 배너' }, { timeout: 9000 })
+    const strip = await screen.findByRole('group', { name: '완성본과 배너' }, { timeout: 9000 })
     expect(within(strip).getByRole('button', { name: '1020×70' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /배너 1020×70/ })).toBeNull()
   }, 15_000)
+
+  it('같은 줄에서 이벤트 페이지로 돌아간다', async () => {
+    // 손검수: "이벤트 페이지로 돌아가는 버튼이 없어." 좌상단 `기획서`를 눌러
+    // 합치기 전 화면을 보고, 거기서 `1페이지`를 누르고, 다시 `완성본`을 눌러야
+    // 제자리로 왔다 — 세 번 눌러 두 번 엉뚱한 화면을 지나는 길이었다.
+    await makeBanner()
+    const strip = await screen.findByRole('group', { name: '완성본과 배너' }, { timeout: 9000 })
+    const job = (await loadStudioJob(STUDIO_JOB_ID))!
+    const bannerId = Object.keys(job.bannerPages ?? {})[0]!
+    const source = job.doc.pages.find((p) => !p.id.startsWith('banner_'))!
+    // 배너를 보고 있다. 돌아갈 자리가 이 줄에 함께 서 있어야 한다.
+    expect(within(strip).getByRole('button', { name: source.title })).toBeTruthy()
+    // 기획서를 한 번 들렀다 오는 길을 그대로 재현한다 — 손검수가 걸린 자리다.
+    fireEvent.click(screen.getAllByRole('radio').find((el) => el.textContent === '기획서')!)
+    fireEvent.click(within(strip).getByRole('button', { name: source.title }))
+    await waitFor(async () => {
+      const after = (await loadStudioJob(STUDIO_JOB_ID))!
+      expect(after.doc.activePageId).toBe(source.id)
+      expect(after.doc.activePageId).not.toBe(bannerId)
+    }, { timeout: 9000 })
+    // 그리고 곧장 완성본이다 — 기획서를 한 번 더 지나지 않는다.
+    await waitFor(() => {
+      const tab = screen
+        .getAllByRole('radio')
+        .find((el) => el.textContent === '완성본')
+      expect(tab?.getAttribute('aria-checked')).toBe('true')
+    }, { timeout: 3500 })
+  }, 20_000)
 
   it('배너의 블록은 원본과 다른 번호를 받는다', async () => {
     // 같은 번호를 쓰면 배너 조각 하나를 어둡게 눌렀을 뿐인데 메인 이벤트 페이지의

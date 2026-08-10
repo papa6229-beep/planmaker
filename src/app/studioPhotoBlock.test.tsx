@@ -265,6 +265,33 @@ describe('Patch-2 선택 영역이 실제 이미지 경계와 같다', () => {
     expect(nw.x + nw.width).toBeCloseTo(300, 5)
     expect(nw.y + nw.height).toBeCloseTo(150, 5)
   })
+
+  /**
+   * 손검수: "커지는 것은 잘 커지는데 한번 커지면 일정 크기 이하로 줄어들지 않는다."
+   *
+   * 원인은 바닥값이 **곱해진** 것이었다. 비율이 고정이라 가로 바닥 80과 세로 바닥
+   * 48을 둘 다 지키려면 실제 바닥이 `max(80, 48 × 비율)`이 되고, 비율 3짜리 가로
+   * 문구는 144px에서 멈춘다.
+   */
+  it('조각의 바닥값을 건네면 그만큼 작아진다', async () => {
+    const { keepAspect } = await load('domain/photoBox')
+    const wide = { x: 0, y: 0, width: 300, height: 100 }
+    // 바닥값을 안 주면 예전 그대로 — 기획서 블록의 동작은 한 픽셀도 안 바뀐다.
+    const blocked = keepAspect(wide, 'se', -290, 0, 3)
+    expect(blocked.width).toBeCloseTo(144, 5)
+    // 조각의 바닥값(가로 20 · 세로 8)을 주면 그 아래까지 내려간다.
+    const free = keepAspect(wide, 'se', -290, 0, 3, { width: 20, height: 8 })
+    expect(free.width).toBeCloseTo(24, 5)
+    expect(free.height).toBeCloseTo(8, 5)
+  })
+
+  it('바닥값보다 작게 놓인 조각을 잡아도 커지지 않는다', async () => {
+    const { keepAspect } = await load('domain/photoBox')
+    // 자동 배치가 60×20으로 놓은 조각. 예전에는 손을 대는 순간 144×48이 되었다.
+    const tiny = { x: 0, y: 0, width: 60, height: 20 }
+    const grabbed = keepAspect(tiny, 'se', -1, 0, 3)
+    expect(grabbed.width).toBeLessThanOrEqual(tiny.width)
+  })
 })
 
 // ── 3. 블록 위 레이어 메뉴 ───────────────────────────────────────────────────
