@@ -244,6 +244,38 @@ describe('§38-3 짠 것을 되읽는다', () => {
   })
 })
 
+/**
+ * 실물 크기 (깜빡이는 버튼 Patch, 손검수 1차).
+ *
+ * 작은 검사 그림만으로는 안 걸리는 결함이 있었다. 부호를 `push(...배열)`로 이어
+ * 붙였는데, 840×1107 완성본의 부호는 수십만 바이트라 인자로 펼치는 순간 스택이
+ * 터졌다. 검사는 전부 통과했고 화면에서는 "GIF를 만들지 못했습니다"만 나왔다.
+ *
+ * 그래서 여기서만 진짜 지면 크기를 쓴다. 느리지만, 이 크기에서만 드러나는 결함이
+ * 실제로 있었다.
+ */
+describe('§38-4 실물 크기', () => {
+  it('840×1107 완성본을 짜낸다', () => {
+    const width = 840
+    const height = 1107
+    const data = new Uint8ClampedArray(width * height * 4)
+    for (let i = 0; i < width * height; i += 1) {
+      data[i * 4] = (i * 7) % 256
+      data[i * 4 + 1] = (i * 13) % 256
+      data[i * 4 + 2] = (i * 3) % 256
+      data[i * 4 + 3] = 255
+    }
+    const bytes = encodeGif({ width, height }, [
+      { data, width, height, left: 0, top: 0, delayCs: 100 },
+      // 둘째 프레임은 버튼 자리만 — 실물에서도 그 길로 간다.
+      { data: data.slice(0, 200 * 60 * 4), width: 200, height: 60, left: 300, top: 900, delayCs: 100 },
+    ])
+    expect(bytes.length).toBeGreaterThan(10_000)
+    expect(bytes.at(-1)).toBe(0x3b)
+    expect(imageDescriptors(bytes)).toHaveLength(2)
+  }, 120_000)
+})
+
 describe('§38-2 팔레트와 오차 확산', () => {
   it('색이 적으면 그대로 담는다', () => {
     expect(buildPalette(solid(8, 8, [1, 2, 3]))).toEqual([(1 << 16) | (2 << 8) | 3])

@@ -202,15 +202,47 @@ function tableExponent(size: number): number {
   return Math.max(1, Math.min(8, bits))
 }
 
+/**
+ * 자라나는 바이트 통.
+ *
+ * 배열을 `push(...arr)`로 이어 붙이면 **큰 그림에서 스택이 터진다** — 840×1107
+ * 완성본의 부호는 수십만 바이트이고, 그것을 인자로 펼치는 순간 끝이다. 작은 검사
+ * 그림에서는 걸리지 않아 실물에서만 드러났다. 그래서 통에 한 바이트씩 넣는다.
+ */
+class Bytes {
+  private buf = new Uint8Array(1024)
+  private len = 0
+
+  push(...values: number[]): void {
+    for (const value of values) {
+      if (this.len === this.buf.length) {
+        const bigger = new Uint8Array(this.buf.length * 2)
+        bigger.set(this.buf)
+        this.buf = bigger
+      }
+      this.buf[this.len] = value
+      this.len += 1
+    }
+  }
+
+  get length(): number {
+    return this.len
+  }
+
+  done(): Uint8Array {
+    return this.buf.slice(0, this.len)
+  }
+}
+
 /** GIF의 LZW. 부호 길이가 자라고, 사전이 차면 비운다. */
-function lzw(indices: Uint8Array, minCodeSize: number): number[] {
+function lzw(indices: Uint8Array, minCodeSize: number): Uint8Array {
   const clear = 1 << minCodeSize
   const end = clear + 1
   let dict = new Map<string, number>()
   let next = end + 1
   let codeSize = minCodeSize + 1
 
-  const out: number[] = []
+  const out = new Bytes()
   let bits = 0
   let acc = 0
   const emit = (code: number) => {
@@ -252,18 +284,17 @@ function lzw(indices: Uint8Array, minCodeSize: number): number[] {
   if (indices.length > 0) emit(run.includes(',') ? dict.get(run)! : Number(run))
   emit(end)
   if (bits > 0) out.push(acc & 255)
-  return out
+  return out.done()
 }
 
 /** 255바이트씩 끊어 담는 GIF의 자료 덩어리. */
-function subBlocks(bytes: readonly number[]): number[] {
-  const out: number[] = []
+function writeSubBlocks(out: Bytes, bytes: Uint8Array): void {
   for (let i = 0; i < bytes.length; i += 255) {
-    const chunk = bytes.slice(i, i + 255)
-    out.push(chunk.length, ...chunk)
+    const size = Math.min(255, bytes.length - i)
+    out.push(size)
+    for (let j = 0; j < size; j += 1) out.push(bytes[i + j]!)
   }
   out.push(0)
-  return out
 }
 
 /**
@@ -276,7 +307,7 @@ export function encodeGif(
   size: { width: number; height: number },
   frames: readonly GifFrame[],
 ): Uint8Array {
-  const bytes: number[] = []
+  const bytes = new Bytes()
   const push16 = (n: number) => bytes.push(n & 255, (n >> 8) & 255)
 
   for (const ch of 'GIF89a') bytes.push(ch.charCodeAt(0))
@@ -317,9 +348,9 @@ export function encodeGif(
     // 최소 부호 길이는 2보다 작을 수 없다 — 색이 둘뿐인 프레임도 마찬가지다.
     const minCodeSize = Math.max(2, exponent)
     bytes.push(minCodeSize)
-    bytes.push(...subBlocks(lzw(indices, minCodeSize)))
+    writeSubBlocks(bytes, lzw(indices, minCodeSize))
   }
 
   bytes.push(0x3b)
-  return Uint8Array.from(bytes)
+  return bytes.done()
 }
