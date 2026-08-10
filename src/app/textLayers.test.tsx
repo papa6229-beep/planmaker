@@ -1353,7 +1353,9 @@ describe('§16 완성본이 가운데를 다 쓴다', () => {
 
     // 만들고 나면 완성본 화면이다. 기획서 캔버스는 접혀 있다.
     await waitFor(() => {
-      expect(screen.getByRole('radio', { name: '완성본', checked: true })).toBeTruthy()
+      // 완성본을 보는 동안에는 중앙 보기 줄이 아예 없다 (기획서 탭 감추기 Patch).
+      // 그래서 "완성본으로 넘어갔는가"는 그 화면의 제목으로 묻는다.
+      expect(screen.getByRole('heading', { name: '완성본' })).toBeTruthy()
     }, { timeout: 5000 })
     expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(0)
 
@@ -1395,7 +1397,9 @@ describe('§17 페이지 전환', () => {
 
     // 1페이지: 완성본 화면.
     await waitFor(() => {
-      expect(screen.getByRole('radio', { name: '완성본', checked: true })).toBeTruthy()
+      // 완성본을 보는 동안에는 중앙 보기 줄이 아예 없다 (기획서 탭 감추기 Patch).
+      // 그래서 "완성본으로 넘어갔는가"는 그 화면의 제목으로 묻는다.
+      expect(screen.getByRole('heading', { name: '완성본' })).toBeTruthy()
     }, { timeout: 5000 })
 
     const calls = fetchSpy.mock.calls.length
@@ -1416,7 +1420,9 @@ describe('§17 페이지 전환', () => {
     // 1페이지로 돌아오면 만들어 둔 결과가 그대로다.
     fireEvent.click(screen.getByRole('button', { name: '1페이지' }))
     await waitFor(() => {
-      expect(screen.getByRole('radio', { name: '완성본', checked: true })).toBeTruthy()
+      // 완성본을 보는 동안에는 중앙 보기 줄이 아예 없다 (기획서 탭 감추기 Patch).
+      // 그래서 "완성본으로 넘어갔는가"는 그 화면의 제목으로 묻는다.
+      expect(screen.getByRole('heading', { name: '완성본' })).toBeTruthy()
     }, { timeout: 5000 })
     const job = await loadStudioJob(STUDIO_JOB_ID)
     expect(job?.results?.page_1).toBeDefined()

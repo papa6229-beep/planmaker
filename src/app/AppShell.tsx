@@ -204,10 +204,20 @@ function GlobalEventBriefDrop() {
 function StudioViewTabs() {
   const generation = useImageGeneration()
   if (generation === null) return null
-  // 이름이 곧 무엇을 보는지다. `AI 결과 비교`는 둘을 나란히 두던 시절의 이름이라,
-  // 완성본이 가운데를 다 쓰는 지금은 화면을 잘못 설명한다 (완성본 모드 Patch).
+  /**
+   * 완성본을 보고 있으면 이 줄이 없다 (기획서 탭 감추기 Patch).
+   *
+   * 작업자의 말 — "이미 이미지 생성하기 해서 부분수정만 남은 단계라면 저걸 그냥
+   * 눈에 보이지만 않게라도 해야지. 왜 눈에 보여야 하는지 모르겠고." 맞는 말이다.
+   * 이미지를 만든 뒤에 오갈 곳은 완성본과 배너 둘뿐이고, 기획서 캔버스가 필요하면
+   * 완성본 화면 안의 `기획서 나란히 보기`가 바로 옆에 세워 준다.
+   *
+   * 길을 없애지는 않았다. 기획서를 고쳐 다시 뽑는 일은 남아 있어야 하므로, 그
+   * 문은 상단 `작업 메뉴`의 `기획서 보기`로 옮겼다. 늘 보이던 것이 가끔 찾는
+   * 자리로 간 것뿐이다.
+   */
+  if (generation.view === 'compare') return null
   const tabs: { value: 'brief' | 'compare'; label: string }[] = [
-    { value: 'brief', label: '기획서' },
     { value: 'compare', label: '완성본' },
   ]
   return (

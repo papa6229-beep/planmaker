@@ -3044,3 +3044,5 @@ button { font-family: inherit; }
 .banner__preset--head { font-size: 10px; color: var(--color-muted); }
 .banner__preset--head > * { padding: 0 2px; }
 .banner__preset-drop { flex: 0 0 26px; }
+/* 형제 크기 버튼은 프리셋과 한눈에 갈려야 한다 — 같은 모양이면 열 개가 한 줄로 선다. */
+.banner__make--sibling { font-size: 11px; opacity: 0.9; }

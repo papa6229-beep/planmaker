@@ -36,6 +36,7 @@ import { useStudioJob } from './useStudioJob'
 import { useImageGeneration } from './useImageGeneration'
 import { buildBanner } from '../../domain/bannerComposite'
 import { bannerPageId, sourcePageIdOf } from '../../domain/bannerFit'
+import { carryBannerWork, closestBanner } from '../../domain/bannerCarry'
 import { bannerSpecById, type BannerSpec } from '../../domain/bannerSpec'
 import type { EdgeSide } from '../../domain/edgeColor'
 import { getAsset, putAsset } from '../../services/assetStore'
@@ -53,6 +54,8 @@ export interface BannerResult {
   edges: { side: EdgeSide; hex: string }[]
   /** 잔잔한 자리를 못 골라 배경을 그대로 썼는가. */
   centerFallback: boolean
+  /** 비슷한 비율의 배너에서 작업을 옮겨 왔으면 그 크기. */
+  carriedFrom: { width: number; height: number } | null
 }
 
 export type BannerState =
@@ -101,6 +104,8 @@ export function useBannerMaker(): BannerMakerApi | null {
         try {
           const job = studio.currentJob()
           const pageId = bannerPageId(source.id, spec.id)
+          /** 어느 크기에서 작업을 옮겨 왔는가. 화면이 그것을 말한다. */
+          let carriedFrom: { width: number; height: number } | null = null
 
           // 배경에서 잔잔한 자리를 골라 배너 크기로 구워 둔다.
           let backgroundAssetId: string | undefined
@@ -149,10 +154,48 @@ export function useBannerMaker(): BannerMakerApi | null {
 
           // 작업에 심는다. 이 다음부터는 완성본 화면이 알아서 한다.
           //
-          // **빈 목록을 적는다.** 없는 목록과 빈 목록은 다르다 — 없으면 다시 합칠
-          // 때 기획서 블록에서 다시 세어 전부 그려 버린다.
-          await studio.setTextObjects(pageId, [])
-          await studio.setImageObjects(pageId, [])
+          // 이미 조각이 올라와 있으면 **건드리지 않는다.** `다시 뽑기`는 배경을
+          // 다시 굽는 일이지 작업을 버리는 일이 아니다 — 앞선 판은 여기서 빈
+          // 목록을 적어, 다시 뽑는 순간 놓아 둔 조각이 전부 사라졌다.
+          const already = studio.textObjectsOf(pageId).length + studio.imageObjectsOf(pageId).length
+          if (already === 0) {
+            // 비슷한 비율로 이미 작업해 둔 배너가 있으면 그것을 옮겨 온다
+            // (배너 이어받기 Patch). 없으면 **빈 목록을 적는다** — 없는 목록과
+            // 빈 목록은 다르다: 없으면 다시 합칠 때 기획서 블록에서 다시 세어
+            // 전부 그려 버린다.
+            const worked = studio.bannerPageIds.flatMap((id) => {
+              if (id === pageId) return []
+              const otherSpec = studio.bannerSpecOf(id)
+              if (otherSpec === null || sourcePageIdOf(id, otherSpec) !== source.id) return []
+              const page = pages.find((p) => p.id === id)
+              if (page === undefined) return []
+              return [
+                {
+                  pageId: id,
+                  size: { width: page.canvasWidth, height: page.canvasHeight },
+                  pieceCount: studio.textObjectsOf(id).length + studio.imageObjectsOf(id).length,
+                },
+              ]
+            })
+            const near = closestBanner(worked, spec)
+            if (near === null) {
+              await studio.setTextObjects(pageId, [])
+              await studio.setImageObjects(pageId, [])
+            } else {
+              await studio.carryBanner(
+                pageId,
+                carryBannerWork(
+                  near.pageId,
+                  pageId,
+                  near.size,
+                  spec,
+                  studio.textObjectsOf(near.pageId),
+                  studio.imageObjectsOf(near.pageId),
+                ),
+              )
+              carriedFrom = near.size
+            }
+          }
           if (backgroundAssetId !== undefined) {
             await studio.setBackground(pageId, { assetId: backgroundAssetId, source: 'ai' })
           }
@@ -169,12 +212,21 @@ export function useBannerMaker(): BannerMakerApi | null {
           // **페이지는 맨 뒤에 붙인다.** 작업에 쓰는 모든 길이 그때 손에 있던 문서를
           // 함께 실어 보내므로, 페이지를 먼저 붙이면 뒤따르는 쓰기가 그것을 지운다 —
           // 실제로 지웠다. 문서를 건드리는 일은 한 번, 그리고 마지막에.
-          putBannerPage(built.page)
+          // 옮겨 온 이미지 조각 중 **복제본**은 제 블록이 아직 없다 (`#2`). 합성이
+          // `page.blocks`를 훑으므로, 없으면 편집 화면에는 보이는데 합쳐진 그림에는
+          // 없다. 있는 블록에서 본떠 한 장씩 더 붙인다.
+          const have = new Set(built.page.blocks.map((b) => b.id))
+          const extra = studio.imageObjectsOf(pageId).flatMap((object) => {
+            if (have.has(object.blockId)) return []
+            const origin = built.page.blocks.find((b) => object.blockId.startsWith(`${b.id}#`))
+            return origin === undefined ? [] : [{ ...origin, id: object.blockId, position: { ...object.rect } }]
+          })
+          putBannerPage(extra.length === 0 ? built.page : { ...built.page, blocks: [...built.page.blocks, ...extra] })
           // 배너를 뽑으면 그 배너를 본다. 가운데가 기획서를 가리키고 있으면 방금
           // 만든 것이 어디 있는지 알 수 없다.
           generation?.setView('compare')
 
-          setState({ kind: 'done', result: { spec, pageId, blob, edges, centerFallback } })
+          setState({ kind: 'done', result: { spec, pageId, blob, edges, centerFallback, carriedFrom } })
         } catch {
           // 공급자 오류도 내부 경로도 여기 없다 — 이 길에는 외부가 없다.
           setState({ kind: 'failed', message: '배너를 만들지 못했습니다. 완성본을 먼저 만들어 주세요.' })

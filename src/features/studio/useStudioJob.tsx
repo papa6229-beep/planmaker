@@ -62,6 +62,7 @@ import {
 import { DEFAULT_GRAIN, type CompositeEffects } from '../../domain/compositeEffects'
 import type { GeneratedPageResult } from '../../domain/imageGeneration'
 import type { StudioTextObject } from '../../domain/textObjects'
+import type { CarriedWork } from '../../domain/bannerCarry'
 import { layerOrderOf, reorderLayers } from '../../domain/textLayers'
 import type { LayerMove } from '../../domain/layerOrder'
 import type { ToneAdjust } from '../../domain/toneAdjust'
@@ -213,6 +214,13 @@ export interface StudioJobApi {
     object: StudioTextObject,
     kind: 'text' | 'image',
   ) => Promise<void>
+  /**
+   * 비슷한 크기의 배너에서 작업을 통째로 옮겨 온다 (배너 이어받기 Patch).
+   *
+   * 조각과 그 조각의 설정(컷아웃 두께·톤·주문·연결한 그림)을 **한 번의 쓰기**로
+   * 옮긴다. 나눠 부르면 뒤의 것이 앞의 것을 못 본 채 덮어쓴다.
+   */
+  carryBanner: (pageId: string, work: CarriedWork) => Promise<void>
   moveImageObject: (pageId: string, blockId: string, rect: LayoutRect) => void
   /**
    * 결과 화면의 앞뒤 순서를 바꾼다 (레이어 순서 Patch).
@@ -588,6 +596,14 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
         mutate((j) => withTextObject(j, pageId, blockId, { assetId }, Date.now())),
       imageObjectsOf: (pageId) => imageObjectsOf(job, pageId),
       setImageObjects: (pageId, objects) => mutate((j) => withImageObjects(j, pageId, objects, Date.now())),
+      carryBanner: (pageId, work) =>
+        mutate((j) => {
+          const now = Date.now()
+          let next = j
+          for (const link of work.settingsFrom) next = withClonedBlock(next, link.from, link.to, now)
+          next = withTextObjects(next, pageId, work.texts, now)
+          return withImageObjects(next, pageId, work.images, now)
+        }),
       placePiece: (pageId, from, object, kind) =>
         mutate((j) => {
           const now = Date.now()

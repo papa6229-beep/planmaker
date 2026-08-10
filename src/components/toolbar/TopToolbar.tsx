@@ -349,6 +349,24 @@ export function TopToolbar({
                   버튼이 손가락과 검사에는 여전히 잡힌다. */}
               {workMenu && (
                 <div className="work-menu__panel" aria-label="작업 메뉴 항목">
+                  {/* 기획서로 가는 문 (기획서 탭 감추기 Patch).
+                      완성본을 보는 동안 `기획서`탭이 늘 서 있는 것이 불편하다는
+                      말을 들었다 — 이미지를 만든 뒤에 오갈 곳은 완성본과 배너
+                      둘뿐이다. 다만 기획서를 고쳐 다시 뽑는 길까지 없앨 수는
+                      없으므로, 늘 보이던 자리에서 가끔 찾는 자리로 옮겼다. */}
+                  {generation !== null && generation.hasResult && generation.view === 'compare' && (
+                    <button
+                      type="button"
+                      className="work-menu__item"
+                      onClick={() => {
+                        setWorkMenu(false)
+                        generation.setView('brief')
+                      }}
+                      title="기획서를 고쳐 다시 만들 때 씁니다"
+                    >
+                      기획서 보기
+                    </button>
+                  )}
                   {/* 작업 파일 저장은 바로 나갔다. 한 가지 일에 들어가는 문은
                       하나면 충분하고, 이 메뉴에 남은 것은 되돌릴 수 없는 일뿐이다. */}
                   <button

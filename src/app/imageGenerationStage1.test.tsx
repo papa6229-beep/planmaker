@@ -511,7 +511,9 @@ describe('§13-1·10·11 생성 버튼과 결과 비교 화면', () => {
     expect(screen.queryByRole('radio', { name: '완성본' })).toBeNull()
     await generateOnce()
     await waitFor(() => {
-      expect(screen.getByRole('radio', { name: '완성본', checked: true })).toBeTruthy()
+      // 완성본을 보는 동안에는 중앙 보기 줄이 아예 없다 (기획서 탭 감추기 Patch).
+      // 그래서 "완성본으로 넘어갔는가"는 그 화면의 제목으로 묻는다.
+      expect(screen.getByRole('heading', { name: '완성본' })).toBeTruthy()
     }, { timeout: 8000 })
     expect(screen.getByRole('heading', { name: '완성본' })).toBeTruthy()
     // 완성본이 가운데를 다 쓴다 — 기획서는 접혀 있다 (완성본 모드 Patch).

@@ -58,6 +58,13 @@ vi.mock('../features/assets/imageUtils', async () => {
   const actual = await vi.importActual<typeof import('../features/assets/imageUtils')>('../features/assets/imageUtils')
   return { ...actual, readImageSize: async () => ({ width: 640, height: 640 }) }
 })
+/** `이미지 저장`이 실제로 내놓은 파일들. 이름만 봐도 무엇이 나갔는지 안다. */
+let downloaded: string[] = []
+vi.mock('../services/downloadFile', () => ({
+  downloadBlob: (_blob: Blob, fileName: string) => {
+    downloaded.push(fileName)
+  },
+}))
 vi.mock('../services/previewRenderer', () => ({
   renderPreviewPng: async () => new Blob([new Uint8Array([137, 80, 78, 71, 1])], { type: 'image/png' }),
 }))
@@ -132,6 +139,7 @@ let fetched: string[] = []
 beforeEach(async () => {
   rendered = []
   fetched = []
+  downloaded = []
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
     fetched.push(String(input))
     return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
@@ -189,6 +197,26 @@ async function makeBanner(): Promise<void> {
     expect(within(bannerPanel()).queryByText(/끝단 색/)).not.toBeNull()
   }, { timeout: 8000 })
 }
+
+describe('§35-0 완성본을 보는 동안 기획서 탭이 없다', () => {
+  it('완성본을 보고 있으면 중앙 보기 줄이 사라진다', async () => {
+    // 손검수: "이미 이미지 생성하기 해서 부분수정만 남은 단계라면 저걸 그냥 눈에
+    // 보이지만 않게라도 해야지. 왜 눈에 보여야 하는지 모르겠고."
+    await openStudio()
+    expect(screen.getByRole('radiogroup', { name: '중앙 보기' })).toBeTruthy()
+    await showResult()
+    expect(screen.queryByRole('radiogroup', { name: '중앙 보기' })).toBeNull()
+  })
+
+  it('기획서로 가는 문은 작업 메뉴에 남아 있다', async () => {
+    // 길까지 없애면 기획서를 고쳐 다시 뽑을 수가 없다.
+    await openStudio()
+    await showResult()
+    fireEvent.click(screen.getByRole('button', { name: '작업 메뉴' }))
+    fireEvent.click(screen.getByRole('button', { name: '기획서 보기' }))
+    await waitFor(() => expect(screen.getByRole('radiogroup', { name: '중앙 보기' })).toBeTruthy())
+  })
+})
 
 describe('§35-1 완성본이 있어야 나온다', () => {
   it('결과가 없으면 배너 자리도 없다', async () => {
@@ -309,11 +337,14 @@ describe('§35-4 뽑고 나서 알려 주는 것', () => {
     expect(within(bannerPanel()).getAllByText(/#354151/).length).toBeGreaterThan(0)
   })
 
-  it('형제 규격을 함께 일러 준다', async () => {
-    // 840×78은 따로 배치하지 않고 이 배치를 다른 크기로 저장하는 것이다.
+  it('형제 크기도 버튼으로 뽑을 수 있다', async () => {
+    // 손검수: "같은 배치로 500×387도 저장하세요 라고 써 있는데 무슨 수로 저장해?"
+    // 적어만 놓고 길을 주지 않았다.
     await makeBanner()
-    expect(within(bannerPanel()).getByText(/840×78/)).toBeTruthy()
-  })
+    for (const name of ['250×135', '500×387', '840×78', '700×153']) {
+      expect(within(bannerPanel()).getByRole('button', { name: `${name} 뽑기` })).toBeTruthy()
+    }
+  }, 15_000)
 
   it('저장은 완성본과 같은 길로 간다고 알려 준다', async () => {
     // 배너도 한 장의 완성본이다. 저장 버튼을 두 개 두면 어느 것이 무엇을 내놓는지
@@ -356,19 +387,19 @@ describe('§35-5 배너는 페이지가 된다', () => {
     // 배너를 보고 있다. 돌아갈 자리가 이 줄에 함께 서 있어야 한다.
     expect(within(strip).getByRole('button', { name: source.title })).toBeTruthy()
     // 기획서를 한 번 들렀다 오는 길을 그대로 재현한다 — 손검수가 걸린 자리다.
-    fireEvent.click(screen.getAllByRole('radio').find((el) => el.textContent === '기획서')!)
+    // 기획서로 가는 문은 상단 `작업 메뉴` 안에 있다 (기획서 탭 감추기 Patch).
+    fireEvent.click(screen.getByRole('button', { name: '작업 메뉴' }))
+    fireEvent.click(screen.getByRole('button', { name: '기획서 보기' }))
     fireEvent.click(within(strip).getByRole('button', { name: source.title }))
     await waitFor(async () => {
       const after = (await loadStudioJob(STUDIO_JOB_ID))!
       expect(after.doc.activePageId).toBe(source.id)
       expect(after.doc.activePageId).not.toBe(bannerId)
     }, { timeout: 9000 })
-    // 그리고 곧장 완성본이다 — 기획서를 한 번 더 지나지 않는다.
+    // 그리고 곧장 완성본이다 — 기획서를 한 번 더 지나지 않는다. 완성본을 보고
+    // 있으면 그 줄 자체가 사라진다 (기획서 탭 감추기 Patch).
     await waitFor(() => {
-      const tab = screen
-        .getAllByRole('radio')
-        .find((el) => el.textContent === '완성본')
-      expect(tab?.getAttribute('aria-checked')).toBe('true')
+      expect(screen.queryByRole('radiogroup', { name: '중앙 보기' })).toBeNull()
     }, { timeout: 3500 })
   }, 20_000)
 
@@ -395,6 +426,77 @@ async function openDrawer(): Promise<HTMLElement> {
   fireEvent.click(await screen.findByRole('button', { name: /조각 서랍/ }, { timeout: 3500 }))
   return screen.getByRole('region', { name: '조각 서랍' })
 }
+
+describe('§35-7 배너 저장과 이어받기', () => {
+  it('배너를 보면서 저장하면 그 배너 한 장이다', async () => {
+    // 손검수: "저대로 이미지 저장하면 840×640, 원본 이벤트 이미지, 그리고 다른
+    // 사이즈 작업 완료한 배너가 압축파일로 저장되던데?"
+    await makeBanner()
+    fireEvent.click(screen.getByRole('button', { name: '이미지 저장' }))
+    await waitFor(() => expect(downloaded).toHaveLength(1), { timeout: 3500 })
+    // 이름도 페이지 번호가 아니라 크기다 — 폴더에서 찾는 것은 언제나 크기다.
+    expect(downloaded[0]).toContain('1020x70')
+    expect(downloaded[0]).not.toContain('.zip')
+  }, 15_000)
+
+  it('이벤트 페이지에서 저장하면 배너가 딸려 나가지 않는다', async () => {
+    await makeBanner()
+    const strip = await screen.findByRole('group', { name: '완성본과 배너' }, { timeout: 9000 })
+    const job = (await loadStudioJob(STUDIO_JOB_ID))!
+    const source = job.doc.pages.find((p) => !p.id.startsWith('banner_'))!
+    fireEvent.click(within(strip).getByRole('button', { name: source.title }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '이미지 저장' })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: '이미지 저장' }))
+    await waitFor(() => expect(downloaded).toHaveLength(1), { timeout: 3500 })
+    expect(downloaded[0]).toContain('page-01')
+  }, 20_000)
+
+  it('형제 크기를 뽑으면 앞선 배너의 조각이 옮겨 온다', async () => {
+    // 손검수: "유사 사이즈 배너 하나를 작업했다면 다른 사이즈 배너 작업창을
+    // 불러왔을 때 그 내용이 남아 있으면 좋겠다."
+    await makeBanner()
+    fireEvent.click(await screen.findByRole('button', { name: /조각 서랍/ }, { timeout: 3500 }))
+    const drawer = screen.getByRole('region', { name: '조각 서랍' })
+    fireEvent.click(within(drawer).getByRole('button', { name: /문구 1/ }))
+    await waitFor(async () => {
+      const job = (await loadStudioJob(STUDIO_JOB_ID))!
+      expect((job.textObjects?.[Object.keys(job.bannerPages ?? {})[0]!] ?? []).length).toBe(1)
+    }, { timeout: 3500 })
+
+    fireEvent.click(within(bannerPanel()).getByRole('button', { name: '840×78 뽑기' }))
+    await waitFor(async () => {
+      const job = (await loadStudioJob(STUDIO_JOB_ID))!
+      const sibling = Object.keys(job.bannerPages ?? {}).find((id) => id.includes('840x78'))
+      expect(sibling).toBeDefined()
+      const carried = job.textObjects?.[sibling!] ?? []
+      expect(carried).toHaveLength(1)
+      // 번호는 새 배너의 것으로 갈아입고, 그림은 그대로 쓴다.
+      expect(carried[0]!.blockId.startsWith(sibling!)).toBe(true)
+      expect(carried[0]!.assetId).toBe('asset_title')
+    }, { timeout: 9000 })
+  }, 25_000)
+
+  it('다시 뽑아도 놓아 둔 조각이 살아 있다', async () => {
+    // `다시 뽑기`는 배경을 다시 굽는 일이지 작업을 버리는 일이 아니다.
+    await makeBanner()
+    fireEvent.click(await screen.findByRole('button', { name: /조각 서랍/ }, { timeout: 3500 }))
+    const drawer = screen.getByRole('region', { name: '조각 서랍' })
+    fireEvent.click(within(drawer).getByRole('button', { name: /문구 1/ }))
+    await waitFor(async () => {
+      const job = (await loadStudioJob(STUDIO_JOB_ID))!
+      expect((job.textObjects?.[Object.keys(job.bannerPages ?? {})[0]!] ?? []).length).toBe(1)
+    }, { timeout: 3500 })
+    const before = rendered.length
+    fireEvent.click(within(bannerPanel()).getByRole('button', { name: '1020×70 다시 뽑기' }))
+    // **다시 뽑기가 끝난 뒤에** 센다. 끝나기 전에 세면 지워지기 직전의 값을 보고
+    // 통과해 버려, 지우는 결함을 잡지 못한다.
+    await waitFor(() => expect(rendered.length).toBeGreaterThan(before), { timeout: 9000 })
+    await waitFor(async () => {
+      const job = (await loadStudioJob(STUDIO_JOB_ID))!
+      expect((job.textObjects?.[Object.keys(job.bannerPages ?? {})[0]!] ?? []).length).toBe(1)
+    }, { timeout: 9000 })
+  }, 25_000)
+})
 
 describe('§35-6 조각 서랍', () => {
   it('이벤트 페이지의 조각이 전부 들어 있다', async () => {

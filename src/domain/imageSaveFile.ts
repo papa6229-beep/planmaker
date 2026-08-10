@@ -37,6 +37,16 @@ export function pageImageFileName(title: string, pageNumber: number): string {
   return `${imageBaseName(title)}_page-${padded}${IMAGE_EXTENSION}`
 }
 
+/**
+ * 배너는 페이지 번호가 아니라 **크기**로 이름 짓는다 (배너 저장 Patch).
+ *
+ * `page-04`로 나가면 다운로드 폴더에서 그것이 1020×70 띠인지 178×90 사각인지 알
+ * 수가 없다. 배너를 쓰는 사람이 찾는 것은 언제나 크기다.
+ */
+export function bannerImageFileName(title: string, width: number, height: number): string {
+  return `${imageBaseName(title)}_배너_${String(Math.round(width))}x${String(Math.round(height))}${IMAGE_EXTENSION}`
+}
+
 /** 여러 장일 때의 묶음 이름. */
 export function imageZipFileName(title: string): string {
   return `${imageBaseName(title)}${IMAGE_ZIP_SUFFIX}`
@@ -57,21 +67,44 @@ export interface ImageSavePlan {
   totalPages: number
 }
 
-/** 몇 장을, 어느 이름으로 내보낼 것인가. */
-export function planImageSave(doc: BriefDocument, job: StudioJob): ImageSavePlan {
+export interface ImageSaveOptions {
+  /**
+   * 이 페이지 하나만 (배너 저장 Patch).
+   *
+   * 배너를 보면서 `이미지 저장`을 누르면 그 배너 한 장이 나와야 한다. 앞선 판은
+   * 페이지를 전부 훑어서, 배너 한 장을 원하는데 원본 이벤트 페이지와 열어 둔 다른
+   * 배너까지 압축파일로 나갔다 — 작업자가 그 자리에서 걸렸다.
+   */
+  onlyPageId?: string | undefined
+}
+
+/**
+ * 몇 장을, 어느 이름으로 내보낼 것인가.
+ *
+ * 한 페이지만 고르지 않았으면 **이벤트 페이지만** 담는다. 배너는 이벤트 페이지가
+ * 몇 장 나왔는가와 무관한 파생물이라, 함께 세면 "3페이지 중 2페이지" 같은 말이
+ * 배너 수에 따라 오락가락한다.
+ */
+export function planImageSave(doc: BriefDocument, job: StudioJob, options: ImageSaveOptions = {}): ImageSavePlan {
   const title = doc.project.title
   const files: ImageSavePlanFile[] = []
-  doc.pages.forEach((page, index) => {
+  const isBanner = (pageId: string) => job.bannerPages?.[pageId] !== undefined
+  const only = options.onlyPageId
+  const wanted = only === undefined ? doc.pages.filter((p) => !isBanner(p.id)) : doc.pages.filter((p) => p.id === only)
+  for (const page of wanted) {
     const result = pageResultOf(job, page.id)
-    if (result === undefined) return
+    if (result === undefined) continue
+    const index = doc.pages.indexOf(page)
     files.push({
       pageId: page.id,
       assetId: result.assetId,
       pageNumber: index + 1,
-      fileName: pageImageFileName(title, index + 1),
+      fileName: isBanner(page.id)
+        ? bannerImageFileName(title, page.canvasWidth, page.canvasHeight)
+        : pageImageFileName(title, index + 1),
     })
-  })
-  return { files, totalPages: doc.pages.length }
+  }
+  return { files, totalPages: wanted.length }
 }
 
 /** 전부 만들었는가 — 아니면 사람에게 먼저 물어야 한다. */

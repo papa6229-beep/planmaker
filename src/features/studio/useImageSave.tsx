@@ -58,7 +58,10 @@ export function useImageSave(): ImageSaveApi | null {
   const save = useCallback(() => {
     if (studio === null) return
     const doc = getDocument()
-    const plan = planImageSave(doc, studio.job)
+    // 배너를 보면서 누르면 **그 배너 한 장**이다 (배너 저장 Patch). 앞선 판은
+    // 원본 이벤트 페이지와 열어 둔 다른 배너까지 압축파일로 내보냈다.
+    const onBanner = studio.bannerSpecOf(doc.activePageId) !== null
+    const plan = planImageSave(doc, studio.job, onBanner ? { onlyPageId: doc.activePageId } : {})
     if (plan.files.length === 0) {
       setState({ kind: 'nothing' })
       return

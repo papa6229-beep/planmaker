@@ -60,6 +60,29 @@ export function BannerPanel() {
               {spec.width}×{spec.height} {banner.viewingSpecId === spec.id ? '다시 뽑기' : '뽑기'}
             </button>
           ))}
+          {/* 형제 크기도 **뽑을 수 있어야 한다** (배너 이어받기 Patch).
+              앞선 판은 "같은 배치로 500×387도 저장하세요"라고 적어 놓고 그 길을
+              주지 않았다 — 작업자의 물음이 정확했다: "무슨 수로 저장해?"
+              지금은 누르면 그 크기의 캔버스가 서고, 비율이 가장 가까운 배너의
+              작업이 그대로 옮겨 와 있다. 미세 조정만 하면 된다. */}
+          {presets
+            .flatMap((spec) => spec.siblings.map((size) => ({ spec, size })))
+            .map(({ spec, size }) => {
+              const id = customBannerSpec(size.width, size.height)?.id
+              if (id === undefined) return null
+              return (
+                <button
+                  key={`sib-${spec.id}-${id}`}
+                  type="button"
+                  className="btn banner__make banner__make--sibling"
+                  disabled={busy}
+                  title={`${spec.width}×${spec.height}의 형제 크기 — 그 작업을 옮겨 와 시작합니다`}
+                  onClick={() => banner.make(id)}
+                >
+                  {size.width}×{size.height} {banner.viewingSpecId === id ? '다시 뽑기' : '뽑기'}
+                </button>
+              )
+            })}
           <button
             type="button"
             className="btn banner__edit-presets"
@@ -217,10 +240,17 @@ export function BannerPanel() {
               {result.spec.siblings.length > 0 && (
                 <span className="banner__siblings">
                   {' '}
-                  · 같은 배치로 {result.spec.siblings.map((s) => `${s.width}×${s.height}`).join(', ')} 도 저장하세요
+                  · 형제 크기 {result.spec.siblings.map((s) => `${s.width}×${s.height}`).join(', ')} 는 위 버튼으로
+                  뽑으면 이 작업이 옮겨 갑니다
                 </span>
               )}
             </p>
+            {result.carriedFrom !== null && (
+              <p className="banner__status">
+                {result.carriedFrom.width}×{result.carriedFrom.height} 배너의 조각을 옮겨 왔습니다 — 자리와 크기만
+                손보세요.
+              </p>
+            )}
 
             {result.edges.length > 0 && (
               <div className="banner__edges">
