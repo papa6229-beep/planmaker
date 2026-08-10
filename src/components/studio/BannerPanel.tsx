@@ -72,6 +72,18 @@ export function BannerPanel() {
           /* 쇼핑몰이 개편되면 크기가 바뀌고, 새 자리가 생기면 여섯째가 필요해진다.
              적어 둔 다섯을 코드에 박아 두면 그때마다 사람을 불러야 한다. */
           <div className="banner__presets" role="group" aria-label="배너 크기 프리셋">
+            <p className="banner__note">
+              이 브라우저에 저장됩니다. <b>같이 저장할 크기</b>는 뽑지 않고 알려만 주는 값입니다 — 하나
+              만들어 두고 크기만 바꿔 저장하는 그 크기입니다.
+            </p>
+            <div className="banner__preset banner__preset--head" aria-hidden="true">
+              <span className="banner__preset-label">이름</span>
+              <span className="banner__preset-size">가로</span>
+              <span className="banner__custom-x"> </span>
+              <span className="banner__preset-size">세로</span>
+              <span className="banner__preset-siblings">같이 저장할 크기</span>
+              <span className="banner__preset-drop"> </span>
+            </div>
             {drafts.map((draft, index) => {
               const set = (patch: Partial<PresetDraft>) =>
                 setDrafts((list) => (list ?? []).map((d, i) => (i === index ? { ...d, ...patch } : d)))
@@ -107,8 +119,9 @@ export function BannerPanel() {
                   />
                   <button
                     type="button"
-                    className="btn btn--danger"
+                    className="btn btn--danger banner__preset-drop"
                     aria-label={`프리셋 ${String(index + 1)} 삭제`}
+                    title="이 크기를 목록에서 뺍니다"
                     onClick={() => setDrafts((list) => (list ?? []).filter((_, i) => i !== index))}
                   >
                     ✕

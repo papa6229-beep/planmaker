@@ -126,6 +126,62 @@ export function buildEditTargets(doc: BriefDocument, job: StudioJob, pageId: str
   return targets
 }
 
+/**
+ * 배너 위 조각들의 편집 대상 목록 (배너 부분수정 Patch).
+ *
+ * 이벤트 페이지의 목록은 **생성된 순간에 얼어붙는다.** 그 뒤로 기획서를 고쳐도
+ * `문구 3`이 가리키는 것이 변하지 않아야 하기 때문이다.
+ *
+ * 배너는 사정이 다르다. 조각을 서랍에서 꺼내고 지우는 것이 이 화면의 일이라,
+ * 얼려 두면 방금 꺼낸 조각을 고칠 수가 없다. 그래서 **지금 올라와 있는 것**이 곧
+ * 목록이다.
+ *
+ * ## 문구 조각만 담는다
+ *
+ * 작업자가 든 예가 정확히 이것이다 — "이벤트 이미지에서는 3줄이었던 문구가
+ * 배너에서는 2줄, 1줄이 될 수도 있는데 수정 방법이 없잖아." 그 고침은 **그 조각
+ * 하나만 다시 그리는** 길(`preserve`)로 간다. 조각 하나의 그림만 바뀌므로 원본
+ * 이벤트 페이지에도 옆 조각에도 영향이 없다.
+ *
+ * 이미지 조각과 전체 배경은 담지 않는다. 그 둘을 고치는 길은 **완성본 한 장을
+ * 통째로 다시 그리는** 것이고, 배너에서 그것을 하면 애써 놓은 조각이 전부
+ * 사라진다. 담지 않는 것이 곧 그 사고를 막는 방법이다.
+ *
+ * 이름은 원본의 것을 그대로 쓴다 — 배너의 `문구 1`이 이벤트 페이지의 `문구 1`과
+ * 같은 것을 가리켜야, "이벤트에서 3줄이던 그것"이 통한다.
+ */
+export function bannerEditTargets(
+  page: BriefPage,
+  texts: readonly { blockId: string; assetId: string; rect: EditTargetBox }[],
+  sourceTargets: readonly EditTarget[],
+  sourceBlockIdOf: (blockId: string) => string | null,
+  copyNoOf: (blockId: string) => number,
+): EditTarget[] {
+  const bySource = new Map(sourceTargets.map((t) => [t.blockId ?? '', t]))
+  return [...texts]
+    // 화면에서 눈이 움직이는 순서와 같아야 목록에서 찾을 수 있다.
+    .sort((a, b) => a.rect.y - b.rect.y || a.rect.x - b.rect.x)
+    .flatMap((object) => {
+      const sourceId = sourceBlockIdOf(object.blockId)
+      const from = sourceId === null ? undefined : bySource.get(sourceId)
+      if (from === undefined) return []
+      const copy = copyNoOf(object.blockId)
+      const box: EditTargetBox = { ...object.rect }
+      return [
+        {
+          ...from,
+          targetId: object.blockId,
+          blockId: object.blockId,
+          kind: 'text' as const,
+          label: copy > 1 ? `${from.label} (복제 ${String(copy)})` : from.label,
+          box,
+          ratio: ratioOf(box, page.canvasWidth, page.canvasHeight),
+          pageId: page.id,
+        },
+      ]
+    })
+}
+
 /** 고른 것들만. 없는 id는 조용히 버리지 않고 빠진 채로 드러난다. */
 export function selectedTargets(targets: readonly EditTarget[], ids: readonly string[]): EditTarget[] {
   return targets.filter((t) => ids.includes(t.targetId))

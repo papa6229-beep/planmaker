@@ -13,6 +13,7 @@ import { useRef } from 'react'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
 import { useInstructionRefine } from '../../features/studio/useInstructionRefine'
 import { useStudioJob } from '../../features/studio/useStudioJob'
+import { BANNER_PAGE_PREFIX } from '../../domain/bannerFit'
 import { useAssets } from '../../features/assets/useAssets'
 import { REFINE_COST_NOTE } from '../../domain/instructionRefine'
 import { ACCEPTED_MIME_TYPES } from '../../features/assets/imageUtils'
@@ -102,16 +103,30 @@ export function EditPanel() {
   const busy = generation.state.kind === 'running'
   const chosen = generation.editTargets.filter((t) => generation.selectedTargetIds.includes(t.targetId))
 
+  // 목록의 대상이 전부 배너 조각이면 배너 화면이다. 대상은 활성 페이지에서 나온다.
+  const onBanner = generation.editTargets.every((t) => t.pageId.startsWith(BANNER_PAGE_PREFIX))
+
   return (
     <section className="edit-panel" role="region" aria-label="AI 부분수정">
       <header className="edit-panel__head">
         <h2 className="edit-panel__title">AI 부분수정</h2>
-        <p className="edit-panel__hint">
-          고칠 대상을 고르고 원하는 바를 문장으로 적어 주세요. 문구·버튼만 고르면 <b>고른 것만</b> 하나씩 새로
-          만들고 나머지는 손대지 않습니다. 이때 <b>스타일 레퍼런스·완성된 배경·그 자리의 색</b>을 함께 보내므로
-          “배경과 어울리게”가 실제로 통합니다. 이미지·컷아웃이 섞이면 한 장짜리 이미지를 다시 그리는 방식이라
-          주변이 조금 달라질 수 있습니다.
-        </p>
+        {onBanner ? (
+          /* 배너에서는 **조각 하나만** 다시 그린다 (배너 부분수정 Patch). 목록에
+             문구 조각만 서 있으므로 한 장짜리로 다시 그리는 길로는 갈 수가 없다 —
+             그 길로 가면 애써 놓은 조각이 전부 사라진다. */
+          <p className="edit-panel__hint">
+            이 배너에 올라온 <b>문구 조각</b>을 하나씩 다시 그립니다. 배너는 좁아서 이벤트 페이지에서 3줄이던
+            문구를 2줄·1줄로 줄여야 할 때가 있는데, 그 고침이 여기입니다. <b>고른 조각의 그림 하나만</b>
+            바뀌므로 원본 이벤트 페이지에도 옆 조각에도 영향이 없습니다. 조각 하나당 AI 1회입니다.
+          </p>
+        ) : (
+          <p className="edit-panel__hint">
+            고칠 대상을 고르고 원하는 바를 문장으로 적어 주세요. 문구·버튼만 고르면 <b>고른 것만</b> 하나씩 새로
+            만들고 나머지는 손대지 않습니다. 이때 <b>스타일 레퍼런스·완성된 배경·그 자리의 색</b>을 함께 보내므로
+            “배경과 어울리게”가 실제로 통합니다. 이미지·컷아웃이 섞이면 한 장짜리 이미지를 다시 그리는 방식이라
+            주변이 조금 달라질 수 있습니다.
+          </p>
+        )}
       </header>
 
       {/* 지금 캔버스에서 잡고 있는 것이 이 목록의 어느 줄인지 눈으로 잇는다

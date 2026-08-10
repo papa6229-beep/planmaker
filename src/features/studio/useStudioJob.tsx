@@ -193,6 +193,26 @@ export interface StudioJobApi {
    */
   imageObjectsOf: (pageId: string) => StudioTextObject[]
   setImageObjects: (pageId: string, objects: readonly StudioTextObject[]) => Promise<void>
+  /**
+   * 서랍의 조각 하나를 배너에 올린다 (배너 부분수정 Patch).
+   *
+   * 조각만 올리는 것이 아니라 **원본 블록의 설정을 함께 옮긴다** — 종이 컷아웃의
+   * 두께와 진하기, 톤, 블록 주문, 연결한 제품 이미지. 앞선 판은 조각만 올렸고,
+   * 그래서 배너에서는 `종이 테두리 다듬기` 칸이 아예 나오지 않았다: 그 칸은
+   * 컷아웃이 켜진 블록을 찾는데, 배너 블록은 새 번호라 켜진 것이 하나도 없었다.
+   *
+   * 설정은 **새 번호로** 복사된다. 그래서 배너에서 두께를 고쳐도 원본 이벤트
+   * 페이지의 같은 그림은 그대로다.
+   *
+   * 한 번의 쓰기로 끝낸다. 설정 복사와 조각 올리기를 따로 부르면 뒤의 것이 앞의
+   * 것을 못 본 채 덮어쓴다.
+   */
+  placePiece: (
+    pageId: string,
+    from: string,
+    object: StudioTextObject,
+    kind: 'text' | 'image',
+  ) => Promise<void>
   moveImageObject: (pageId: string, blockId: string, rect: LayoutRect) => void
   /**
    * 결과 화면의 앞뒤 순서를 바꾼다 (레이어 순서 Patch).
@@ -568,6 +588,14 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
         mutate((j) => withTextObject(j, pageId, blockId, { assetId }, Date.now())),
       imageObjectsOf: (pageId) => imageObjectsOf(job, pageId),
       setImageObjects: (pageId, objects) => mutate((j) => withImageObjects(j, pageId, objects, Date.now())),
+      placePiece: (pageId, from, object, kind) =>
+        mutate((j) => {
+          const now = Date.now()
+          const carried = withClonedBlock(j, from, object.blockId, now)
+          return kind === 'text'
+            ? withTextObjects(carried, pageId, [...textObjectsOf(carried, pageId), object], now)
+            : withImageObjects(carried, pageId, [...imageObjectsOf(carried, pageId), object], now)
+        }),
       moveImageObject: (pageId, blockId, rect) =>
         void mutate((j) => withImageObject(j, pageId, blockId, { rect }, Date.now())),
       reorderObject: (pageId, blockId, move) =>

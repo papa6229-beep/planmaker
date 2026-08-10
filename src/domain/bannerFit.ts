@@ -53,6 +53,28 @@ export function bannerBlockId(pageId: string, blockId: string): string {
 }
 
 /**
+ * 배너 조각의 번호에서 **원본 블록**을 되찾는다.
+ *
+ * 서랍에서 한 벌 더 꺼낸 복제본은 뒤에 `#2`가 붙는다. 그 꼬리를 떼야 원본의
+ * 이름과 문구 원문을 찾을 수 있다 — 부분수정이 "무엇을 고치는가"를 그것으로 안다.
+ */
+export function sourceBlockIdOf(pageId: string, blockId: string): string | null {
+  const head = `${pageId}__`
+  if (!blockId.startsWith(head)) return null
+  const rest = blockId.slice(head.length)
+  const hash = rest.indexOf('#')
+  return hash === -1 ? rest : rest.slice(0, hash)
+}
+
+/** 이 조각이 몇 벌째인가 — 첫 벌은 1. */
+export function bannerCopyNo(blockId: string): number {
+  const hash = blockId.lastIndexOf('#')
+  if (hash === -1) return 1
+  const n = Number(blockId.slice(hash + 1))
+  return Number.isInteger(n) && n > 1 ? n : 1
+}
+
+/**
  * 배너 페이지 번호에서 원본 페이지를 되찾는다.
  *
  * 규격 번호를 **알고 있어야** 한다. 임의 크기 규격은 `custom_640x200`처럼 밑줄이

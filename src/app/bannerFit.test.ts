@@ -16,7 +16,15 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { bannerBlockId, bannerPageId, blankBannerPage, sourcePageIdOf } from '../domain/bannerFit'
+import {
+  bannerBlockId,
+  bannerCopyNo,
+  bannerPageId,
+  blankBannerPage,
+  sourceBlockIdOf,
+  sourcePageIdOf,
+} from '../domain/bannerFit'
+import { bannerEditTargets, type EditTarget } from '../domain/editTargets'
 import { BANNER_SPECS, bannerSpecById, customBannerSpec } from '../domain/bannerSpec'
 import { createBlock } from '../domain/factory'
 import type { BriefBlock } from '../domain/briefSchema'
@@ -137,5 +145,71 @@ describe('§32-3 프리셋', () => {
     expect(siblingOf('1020x70')).toEqual(['840x78'])
     expect(siblingOf('800x250')).toEqual(['700x153'])
     expect(siblingOf('602x70')).toEqual([])
+  })
+})
+
+/**
+ * 배너 조각의 부분수정 목록 (배너 부분수정 Patch).
+ *
+ * 작업자의 말이 근거다 — "이벤트 이미지에서는 3줄이었던 문구가 배너에서는 2줄,
+ * 1줄이 될 수도 있는데 수정 방법이 없잖아. 또 그렇게 수정했다고 하더라도 원본
+ * 이미지나 다른 조각에 영향은 없어야겠지."
+ *
+ * 마지막 문장이 이 목록의 모양을 정한다. 조각 하나만 다시 그리는 길로 가려면
+ * 목록에 **문구 조각만** 있어야 한다 — 이미지나 배경이 섞이면 한 장을 통째로 다시
+ * 그리는 길로 넘어가고, 그러면 애써 놓은 조각이 전부 사라진다.
+ */
+describe('§32-4 배너 조각의 부분수정 목록', () => {
+  const BANNER_ID = bannerPageId('page_1', '1020x70')
+  const banner = { ...blankBannerPage(FULL, SPEC), id: BANNER_ID }
+  const source: EditTarget[] = [
+    { targetId: 'title', blockId: 'title', kind: 'text', label: '문구 1 — 텐가 사고', content: '텐가 사고', pageId: 'page_1' },
+    { targetId: 'hero', blockId: 'hero', kind: 'image', label: '이미지 1', pageId: 'page_1' },
+    { targetId: 'background', kind: 'background', label: '전체 배경', pageId: 'page_1' },
+  ]
+  const rect = (y: number) => ({ x: 10, y, width: 100, height: 20 })
+  const at = (blockId: string, y: number) => ({ blockId, assetId: 'a', rect: rect(y) })
+  const build = (texts: { blockId: string; assetId: string; rect: ReturnType<typeof rect> }[]) =>
+    bannerEditTargets(banner, texts, source, (id) => sourceBlockIdOf(BANNER_ID, id), bannerCopyNo)
+
+  it('올린 조각만 목록에 선다', () => {
+    // 얼려 두면 방금 서랍에서 꺼낸 조각을 고칠 수가 없다.
+    expect(build([])).toEqual([])
+    expect(build([at(bannerBlockId(BANNER_ID, 'title'), 10)])).toHaveLength(1)
+  })
+
+  it('이름과 문구 원문은 원본의 것을 그대로 쓴다', () => {
+    // 배너의 `문구 1`이 이벤트 페이지의 `문구 1`과 같은 것을 가리켜야, "이벤트에서
+    // 3줄이던 그것"이 통한다. 그리고 다시 그릴 글자가 그 원문이다.
+    const [target] = build([at(bannerBlockId(BANNER_ID, 'title'), 10)])
+    expect(target!.label).toBe('문구 1 — 텐가 사고')
+    expect(target!.content).toBe('텐가 사고')
+  })
+
+  it('대상 번호는 배너 조각의 번호다', () => {
+    // 이 번호로 그 조각 하나의 그림만 갈아 끼운다. 원본 번호를 쓰면 이벤트
+    // 페이지의 조각이 바뀐다.
+    const id = bannerBlockId(BANNER_ID, 'title')
+    expect(build([at(id, 10)])[0]!.targetId).toBe(id)
+    expect(build([at(id, 10)])[0]!.pageId).toBe(BANNER_ID)
+  })
+
+  it('복제한 조각은 따로 선다', () => {
+    const id = bannerBlockId(BANNER_ID, 'title')
+    const list = build([at(id, 10), at(`${id}#2`, 30)])
+    expect(list).toHaveLength(2)
+    expect(list[1]!.label).toContain('복제 2')
+  })
+
+  it('위에서 아래로 센다', () => {
+    const id = bannerBlockId(BANNER_ID, 'title')
+    const list = build([at(`${id}#2`, 40), at(id, 5)])
+    expect(list.map((t) => t.targetId)).toEqual([id, `${id}#2`])
+  })
+
+  it('원본에 없는 조각은 담지 않는다', () => {
+    // 이름도 문구 원문도 없는 것을 고칠 수는 없다.
+    expect(build([at(bannerBlockId(BANNER_ID, '없는것'), 10)])).toEqual([])
+    expect(build([at('남의페이지__title', 10)])).toEqual([])
   })
 })

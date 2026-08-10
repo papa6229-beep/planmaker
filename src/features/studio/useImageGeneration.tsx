@@ -37,7 +37,14 @@ import { useStudioJob } from './useStudioJob'
 import { cursorOf, pageResultOf, revisionsOf, studioLiveAssetIds } from '../../domain/studioJob'
 import { clearApiKey, readApiKey, saveApiKey } from './apiKeySession'
 import { buildGenerationRequest } from '../../domain/generationRequest'
-import { buildEditTargets, selectedProductAssetIds, selectedTargets, type EditTarget } from '../../domain/editTargets'
+import {
+  bannerEditTargets,
+  buildEditTargets,
+  selectedProductAssetIds,
+  selectedTargets,
+  type EditTarget,
+} from '../../domain/editTargets'
+import { bannerCopyNo, sourceBlockIdOf, sourcePageIdOf } from '../../domain/bannerFit'
 import { buildEditPrompt } from '../../domain/editPrompt'
 import { planGenerationInputs, MAX_INPUT_IMAGES, type GenerationInputImage } from '../../domain/imageGenerationInputs'
 import { buildOpenAIImagePrompt } from '../../domain/imagePrompt'
@@ -1442,7 +1449,29 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
   const currentResult = studio === null ? undefined : pageResultOf(studio.job, activePageId)
   // 결과 안에 얼려 둔 목록 그대로. 매 렌더 새 배열을 만들면 아래 훅들이 계속
   // 다시 만들어지므로, 결과가 바뀔 때만 새로 잡는다.
-  const editTargets = useMemo<EditTarget[]>(() => currentResult?.targets ?? [], [currentResult])
+  //
+  // 배너는 얼려 두지 않는다 (배너 부분수정 Patch). 조각을 서랍에서 꺼내고 지우는
+  // 것이 그 화면의 일이라, 얼려 두면 방금 꺼낸 조각을 고칠 수가 없다.
+  const bannerSpecId = studio?.bannerSpecOf(activePageId) ?? null
+  const bannerTexts = studio?.textObjectsOf(activePageId) ?? []
+  const bannerTextKey = bannerTexts.map((o) => `${o.blockId}:${o.assetId}`).join(',')
+  const editTargets = useMemo<EditTarget[]>(() => {
+    if (bannerSpecId === null || studio === null) return currentResult?.targets ?? []
+    const doc = getDocument()
+    const page = doc.pages.find((p) => p.id === activePageId)
+    const sourceId = sourcePageIdOf(activePageId, bannerSpecId)
+    if (page === undefined || sourceId === null) return []
+    if (!doc.pages.some((p) => p.id === sourceId)) return []
+    return bannerEditTargets(
+      page,
+      studio.textObjectsOf(activePageId),
+      buildEditTargets(doc, studio.currentJob(), sourceId),
+      (blockId) => sourceBlockIdOf(activePageId, blockId),
+      bannerCopyNo,
+    )
+    // `bannerTextKey`가 조각 목록의 지문이다 — 조각이 오가면 목록도 따라 바뀐다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentResult, bannerSpecId, bannerTextKey, activePageId, studio, getDocument])
 
   const toggleTarget = useCallback((targetId: string) => {
     setSelectedTargetIds((ids) => (ids.includes(targetId) ? ids.filter((id) => id !== targetId) : [...ids, targetId]))

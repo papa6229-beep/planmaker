@@ -3041,3 +3041,6 @@ button { font-family: inherit; }
 .banner__preset-siblings { flex: 1 1 90px; min-width: 0; }
 .banner__preset-actions { display: flex; gap: 4px; flex-wrap: wrap; padding-top: 4px; }
 .banner__edit-presets { font-size: 11px; }
+.banner__preset--head { font-size: 10px; color: var(--color-muted); }
+.banner__preset--head > * { padding: 0 2px; }
+.banner__preset-drop { flex: 0 0 26px; }

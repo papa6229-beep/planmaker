@@ -150,28 +150,25 @@ export function BannerDrawer() {
     const id = piece.placed === 0 ? piece.bannerBlockId : `${piece.bannerBlockId}#${String(piece.placed + 1)}`
     const rect = landingRect(piece.size, canvas, piece.placed)
     const layer = 100 + onBanner.length
-    if (piece.kind === 'text') {
-      void studio.setTextObjects(activePageId, [
-        ...studio.textObjectsOf(activePageId),
-        { blockId: id, assetId: piece.assetId, rect, layer },
-      ])
-    } else {
-      void studio.setImageObjects(activePageId, [
-        ...studio.imageObjectsOf(activePageId),
-        { blockId: id, assetId: piece.assetId, rect, layer },
-      ])
-      // **이미지 조각은 제 블록이 페이지에 있어야 그려진다** — 합성이 `page.blocks`
-      // 를 훑기 때문이다. 첫 벌은 배너를 뽑을 때 데려온 블록을 쓰고, 두 벌째부터는
-      // 새 번호로 한 장 더 만들어 붙인다. 이것을 빼면 복제한 조각이 편집 화면에는
-      // 보이는데 합쳐진 그림에는 없다.
-      const origin = banner.blocks.find((b) => b.id === piece.bannerBlockId)
-      if (origin !== undefined && id !== piece.bannerBlockId) {
+    // 조각만 올리는 것이 아니라 **원본 블록의 설정을 함께 옮긴다** — 종이 컷아웃의
+    // 두께와 진하기, 톤, 블록 주문. 새 번호로 복사되므로 배너에서 두께를 고쳐도
+    // 원본 이벤트 페이지의 같은 그림은 그대로다.
+    void studio
+      .placePiece(activePageId, piece.sourceBlockId, { blockId: id, assetId: piece.assetId, rect, layer }, piece.kind)
+      .then(() => {
+        // **이미지 조각은 제 블록이 페이지에 있어야 그려진다** — 합성이
+        // `page.blocks`를 훑기 때문이다. 첫 벌은 배너를 뽑을 때 데려온 블록을 쓰고,
+        // 두 벌째부터는 새 번호로 한 장 더 만들어 붙인다. 이것을 빼면 복제한
+        // 조각이 편집 화면에는 보이는데 합쳐진 그림에는 없다.
+        //
         // 작업 쪽을 먼저 적고 문서를 나중에 적는다 — 작업에 쓰는 길은 그때 손에
         // 있던 문서를 함께 실어 보내므로, 순서를 뒤집으면 방금 붙인 블록이 지워진다.
-        putBannerPage({ ...banner, blocks: [...banner.blocks, { ...origin, id, position: rect }] })
-      }
-    }
-    void generation.recomposePage(activePageId)
+        const origin = banner.blocks.find((b) => b.id === piece.bannerBlockId)
+        if (piece.kind === 'image' && origin !== undefined && id !== piece.bannerBlockId) {
+          putBannerPage({ ...banner, blocks: [...banner.blocks, { ...origin, id, position: rect }] })
+        }
+        return generation.recomposePage(activePageId)
+      })
   }
 
   const spare = pieces.filter((piece) => piece.placed === 0).length

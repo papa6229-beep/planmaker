@@ -27,6 +27,7 @@ import { createStudioJob, withSource, type StudioJob } from '../domain/studioJob
 import { createEmptyDocument, type BriefDocument } from '../domain/pageSchema'
 import { documentFingerprint } from '../domain/documentFingerprint'
 import { createBlock, createEmptyProject } from '../domain/factory'
+import { normalizeEffects } from '../domain/compositeEffects'
 import { resetFoldsForTests } from '../components/studio/PanelFold'
 import type { CompositePlan } from '../domain/composite'
 
@@ -106,6 +107,9 @@ function finishedJob(): StudioJob {
   return {
     ...job,
     productImages: { blk_prod: 'asset_prod', blk_logo: 'asset_logo' },
+    // 제품 뭉치에 종이 컷아웃이 걸려 있다 — 이 설정이 배너 조각을 따라오는지가
+    // 손검수에서 걸린 자리다.
+    effects: { blk_prod: normalizeEffects({ paperCutout: true, paperWeight: 0.35, paperOpacity: 0.5 }) },
     backgrounds: { [pageId]: { assetId: 'asset_bg', source: 'ai' } },
     results: { [pageId]: { pageId, assetId: 'asset_result', model: 'gpt-image-2', quality: 'medium', requestedSize: '832x1104', sourceFingerprint: fingerprint, createdAt: 1 } },
     textObjects: {
@@ -439,6 +443,34 @@ describe('§35-6 조각 서랍', () => {
     }, { timeout: 3500 })
   }, 20_000)
 
+  it('컷아웃의 두께 설정이 조각을 따라온다', async () => {
+    // 손검수: "배너에서는 컷오프의 두께 조절하는 부분이 없는데?" 앞선 판은 조각만
+    // 올렸고, 배너 블록은 새 번호라 컷아웃이 켜진 것이 하나도 없어 `종이 테두리
+    // 다듬기` 칸이 아예 나오지 않았다.
+    const drawer = await openDrawer()
+    // `이미지 2`가 제품 뭉치다 — 목록은 위에서 아래로 세므로 로고가 먼저다.
+    fireEvent.click(within(drawer).getByRole('button', { name: /이미지 2/ }))
+    await waitFor(async () => {
+      const job = (await loadStudioJob(STUDIO_JOB_ID))!
+      const bannerId = Object.keys(job.bannerPages ?? {})[0]!
+      const placed = (job.imageObjects?.[bannerId] ?? [])[0]!
+      // 새 번호로 복사된다 — 배너에서 두께를 고쳐도 원본은 그대로여야 한다.
+      expect(job.effects?.[placed.blockId]?.paperCutout).toBe(true)
+      expect(placed.blockId).not.toBe('blk_prod')
+      expect(job.effects?.blk_prod?.paperWeight).toBe(0.35)
+    }, { timeout: 3500 })
+  }, 15_000)
+
+  it('컷아웃을 올리면 종이 테두리 다듬기가 나온다', async () => {
+    // 손검수가 없다고 한 그 칸이다. 설정이 안 따라오면 이 칸은 영영 안 나온다.
+    const drawer = await openDrawer()
+    expect(screen.queryByRole('region', { name: '완성본 종이 테두리' })).toBeNull()
+    fireEvent.click(within(drawer).getByRole('button', { name: /이미지 2/ }))
+    const open = await screen.findByRole('button', { name: /종이 테두리 다듬기/ }, { timeout: 3500 })
+    fireEvent.click(open)
+    expect(screen.getByRole('region', { name: '완성본 종이 테두리' })).toBeTruthy()
+  }, 15_000)
+
   it('꺼낸 조각의 번호가 원본과 다르다', async () => {
     // 같은 번호를 쓰면 배너 조각에 건 톤이 메인 이벤트 페이지까지 바꾼다.
     const drawer = await openDrawer()
@@ -448,6 +480,31 @@ describe('§35-6 조각 서랍', () => {
       const bannerId = Object.keys(job.bannerPages ?? {})[0]!
       const objects = job.textObjects?.[bannerId] ?? []
       expect(objects[0]!.blockId.startsWith(bannerId)).toBe(true)
+    }, { timeout: 3500 })
+  }, 15_000)
+
+  it('올린 조각이 부분수정 목록에 선다', async () => {
+    // 손검수: "여기 배너에서도 이벤트 이미지 부분처럼 부분 수정이 되어야 해...
+    // 이벤트 이미지에서는 3줄이었던 문구가 2줄, 1줄이 될 수도 있는데."
+    const drawer = await openDrawer()
+    // 아직 올린 것이 없으면 고칠 것도 없다.
+    expect(screen.queryByRole('region', { name: 'AI 부분수정' })).toBeNull()
+    fireEvent.click(within(drawer).getByRole('button', { name: /문구 1/ }))
+    const panel = await screen.findByRole('region', { name: 'AI 부분수정' }, { timeout: 3500 })
+    expect(within(panel).getByText(/문구 조각/)).toBeTruthy()
+    expect(within(panel).getByText(/원본 이벤트 페이지에도 옆 조각에도 영향이 없습니다/)).toBeTruthy()
+  }, 15_000)
+
+  it('부분수정 목록에 이미지 조각과 전체 배경은 없다', async () => {
+    // 그 둘을 고치는 길은 한 장을 통째로 다시 그리는 것이고, 배너에서 그것을 하면
+    // 애써 놓은 조각이 전부 사라진다.
+    const drawer = await openDrawer()
+    fireEvent.click(within(drawer).getByRole('button', { name: /문구 1/ }))
+    fireEvent.click(within(drawer).getByRole('button', { name: /이미지 2/ }))
+    const panel = await screen.findByRole('region', { name: 'AI 부분수정' }, { timeout: 3500 })
+    await waitFor(() => {
+      expect(within(panel).queryByText('전체 배경')).toBeNull()
+      expect(within(panel).getAllByRole('checkbox')).toHaveLength(1)
     }, { timeout: 3500 })
   }, 15_000)
 
