@@ -63,6 +63,7 @@ const RESTORED: Record<Carried, (job: StudioJob) => unknown> = {
   tones: (job) => job.tones,
   objectTones: (job) => job.objectTones,
   bannerPages: (job) => job.bannerPages,
+  blink: (job) => job.blink,
 }
 
 function sampleDoc(): BriefDocument {
@@ -102,6 +103,9 @@ function fullJob(): StudioJob {
       page_1: [{ blockId: 'blk_img', assetId: 'asset_product', rect: { x: 8, y: 9, width: 10, height: 11 }, layer: 0 }],
     },
     keepReferenceBg: { page_1: true },
+    // 켜 둔 깜빡임과 만들어 둔 GIF. 잃으면 파일을 열 때마다 PNG로 돌아가고,
+    // 작업자는 왜 안 깜빡이는지 모른다 (깜빡이는 버튼 Patch).
+    blink: { page_1: { strength: 0.3, assetId: 'asset_blink' } },
     blockOrders: { blk_txt: { note: '둥근 라벨 위에 굵게', referenceAssetId: 'asset_ref' } },
     tones: { page_1: { brightness: 0.4, contrast: -0.2, saturation: 0.1, temperature: -0.3 } },
     objectTones: { blk_txt: { brightness: -0.5, contrast: 0.25, saturation: 0, temperature: 0.6 } },

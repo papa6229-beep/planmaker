@@ -72,6 +72,13 @@ export interface StudioBackground {
   wish?: string
 }
 
+export interface StudioBlink {
+  /** 밝기를 미는 정도 (0~1). */
+  strength: number
+  /** 만들어 둔 GIF의 자산 id. 아직 안 만들었으면 없다. */
+  assetId?: string
+}
+
 /** 불러온 원본 기획서 — 작업본과 비교할 기준. */
 export interface StudioSource {
   doc: BriefDocument
@@ -156,6 +163,15 @@ export interface StudioJob {
    * 거기에 배너 다섯이 끼면 그 탭의 뜻이 흐려진다.
    */
   bannerPages?: Record<string, string>
+  /**
+   * 페이지 id → 깜빡이는 버튼 (깜빡이는 버튼 Patch).
+   *
+   * **선택 기능이다.** 여기 없는 페이지는 지금까지처럼 PNG 한 장이다. 켜 두면
+   * 완성본 화면이 GIF를 보여 주고 저장도 그 GIF로 나간다 — 저장 버튼을 따로 두지
+   * 않는다. 작업자의 말 그대로다: "버튼만 만들어야지, 저장은 기존 전부 저장·이
+   * 이미지 저장으로만 처리해야지."
+   */
+  blink?: Record<string, StudioBlink>
   /** 완성 결과 전체에 얹는 그레인 (§9.5). */
   grain?: number
   /** 페이지 id → 완성 결과 전체의 톤 조절 (톤 조절 Patch). */
@@ -227,6 +243,24 @@ export function withoutStyleReference(job: StudioJob, pageId: string, now: numbe
   const next = { ...job.styleRefs }
   delete next[pageId]
   return { ...job, styleRefs: next, updatedAt: now }
+}
+
+/** 이 페이지의 깜빡임 설정. 안 켰으면 `undefined`. */
+export function blinkOf(job: StudioJob | null, pageId: string): StudioBlink | undefined {
+  return job?.blink?.[pageId]
+}
+
+/**
+ * 깜빡임을 켜거나 끈다. `null`이면 끈다.
+ *
+ * 세기를 바꾸면 만들어 둔 GIF는 **버린다** — 남겨 두면 화면이 옛 세기의 그림을
+ * 보여 주면서 슬라이더는 새 값을 가리킨다.
+ */
+export function withBlink(job: StudioJob, pageId: string, blink: StudioBlink | null, now: number): StudioJob {
+  const next = { ...job.blink }
+  if (blink === null) delete next[pageId]
+  else next[pageId] = blink
+  return { ...job, blink: next, updatedAt: now }
 }
 
 /** 이 페이지의 배경. 없으면 `undefined` — 배경 없이도 작업은 성립한다. */
@@ -468,6 +502,10 @@ export function studioLiveAssetIds(job: StudioJob): string[] {
       ...Object.values(job.backgrounds ?? {}).map((b) => b.assetId),
       // 스타일 레퍼런스도 같다. 기획서 문서는 이 그림을 모른다.
       ...Object.values(job.styleRefs ?? {}),
+      // 깜빡이는 GIF도 같다 — 빼면 정리가 지우고, 저장하려는 순간 사라져 있다.
+      ...Object.values(job.blink ?? {})
+        .map((b) => b.assetId)
+        .filter((id): id is string => id !== undefined),
       // 블록별 참고 그림도 같다. 기획서 문서는 이 그림을 모른다.
       ...Object.values(job.blockOrders ?? {})
         .map((o) => o.referenceAssetId)

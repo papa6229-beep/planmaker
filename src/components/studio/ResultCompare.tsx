@@ -45,6 +45,8 @@ export function ResultCompare() {
   const viewportRef = useRef<HTMLDivElement | null>(null)
 
   const page = doc.pages.find((p) => p.id === pageId)
+  /** 깜빡이는 GIF가 있으면 그것을 건다. 바뀌면 화면도 다시 건다. */
+  const blinkAssetId = studio?.blinkOf(pageId)?.assetId
   const logicalWidth = page?.canvasWidth ?? 840
   const logicalHeight = page?.canvasHeight ?? 1000
   const logical = { width: logicalWidth, height: logicalHeight }
@@ -76,7 +78,10 @@ export function ResultCompare() {
         setUrl(null)
         return
       }
-      const asset = await getAsset(result.assetId)
+      // 깜빡임을 켜 두었으면 **그 GIF가 곧 완성본**이다 (깜빡이는 버튼 Patch).
+      // 저장도 이것으로 나가므로, 화면과 파일이 같은 것을 가리킨다.
+      const blink = studio?.blinkOf(pageId)
+      const asset = await getAsset(blink?.assetId ?? result.assetId)
       if (cancelled || asset === undefined) return
       revoked = URL.createObjectURL(asset.blob)
       setUrl(revoked)
@@ -85,7 +90,7 @@ export function ResultCompare() {
       cancelled = true
       if (revoked !== null) URL.revokeObjectURL(revoked)
     }
-  }, [result])
+  }, [result, blinkAssetId, pageId, studio])
 
   const zoom = view?.zoom ?? 1
 

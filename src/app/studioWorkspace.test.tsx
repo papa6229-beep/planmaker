@@ -368,6 +368,36 @@ describe('§5 이미지 저장은 진짜 결과를 내놓는다', () => {
     expect(pageImageFileName('50%↓ 여름/특가 <필독>', 1)).toBe('50%↓_여름_특가_필독_page-01.png')
   })
 
+  it('깜빡임을 켠 페이지는 그 GIF를 가리킨다', async () => {
+    // 저장하는 길은 하나여야 한다 (깜빡이는 버튼 Patch). 켠 페이지의 완성본은
+    // 그 GIF이고, `이 이미지 저장`·`전부 저장`이 그것을 그대로 가져간다.
+    const job = (await loadStudioJob(STUDIO_JOB_ID))!
+    const pageId = job.doc.pages[0]!.id
+    const withResult = {
+      ...job,
+      results: {
+        [pageId]: {
+          pageId,
+          assetId: 'asset_png',
+          model: 'gpt-image-2' as const,
+          quality: 'medium' as const,
+          requestedSize: '832x1104',
+          sourceFingerprint: 'x',
+          createdAt: 1,
+        },
+      },
+      blink: { [pageId]: { strength: 0.25, assetId: 'asset_gif' } },
+    }
+    const plan = planImageSave(withResult.doc, withResult)
+    expect(plan.files[0]!.assetId).toBe('asset_gif')
+    expect(plan.files[0]!.fileName.endsWith('.gif')).toBe(true)
+
+    // 끄면 지금까지 그대로다.
+    const off = planImageSave(withResult.doc, { ...withResult, blink: {} })
+    expect(off.files[0]!.assetId).toBe('asset_png')
+    expect(off.files[0]!.fileName.endsWith('.png')).toBe(true)
+  })
+
   it('plans nothing when no page has a result', async () => {
     const job = (await loadStudioJob(STUDIO_JOB_ID))!
     const plan = planImageSave(job.doc, job)

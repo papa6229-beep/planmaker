@@ -69,6 +69,15 @@ vi.mock('../services/imageSave', async () => {
   return { ...actual, zipSavedImages: async () => new Blob([new Uint8Array([80, 75])]) }
 })
 
+/**
+ * GIF를 짜는 일은 캔버스가 필요하다. 여기서 묻는 것은 **켜고 끄는 길이 저장까지
+ * 이어지는가**이고, 픽셀과 바이트는 각자의 검사가 붙든다.
+ */
+vi.mock('../services/blinkGif', () => ({
+  BLINK_DELAY_CS: 50,
+  renderBlinkGif: async () => new Blob([new Uint8Array([71, 73, 70])], { type: 'image/gif' }),
+}))
+
 /** `이미지 저장`이 실제로 내놓은 파일들. 이름만 봐도 무엇이 나갔는지 안다. */
 let downloaded: string[] = []
 vi.mock('../services/downloadFile', () => ({
@@ -544,6 +553,55 @@ describe('§35-7 배너 저장과 이어받기', () => {
       const job = (await loadStudioJob(STUDIO_JOB_ID))!
       expect((job.textObjects?.[Object.keys(job.bannerPages ?? {})[0]!] ?? []).length).toBe(1)
     }, { timeout: 9000 })
+  }, 25_000)
+})
+
+/**
+ * 깜빡이는 버튼은 **만들기만** 한다 (깜빡이는 버튼 Patch, 손검수 2차).
+ *
+ * 앞선 판은 버튼 하나가 만들고 곧장 내려받기까지 했다. 작업자의 말이 정확했다 —
+ * "버튼만 만들어야지, 저장은 기존 전부 저장·이 이미지 저장으로만 처리해야지."
+ * 그러면 낱장을 저마다 따로 받게 되고 묶어 저장하는 길과 어긋난다.
+ */
+describe('§35-8 깜빡이는 버튼', () => {
+  const blinkButton = () => within(screen.getByRole('group', { name: '작업 목록' })).getByRole('button', { name: /깜빡이는 버튼/ })
+
+  it('버튼 조각이 있는 페이지에만 나온다', async () => {
+    // 깜빡일 것이 없는데 GIF로 만들면 화질만 잃는다.
+    await openStudio()
+    await showResult()
+    expect(blinkButton()).toBeTruthy()
+  })
+
+  it('눌러도 저장하지 않는다 — 켜기만 한다', async () => {
+    await openStudio()
+    await showResult()
+    fireEvent.click(blinkButton())
+    await waitFor(() => expect(blinkButton().getAttribute('aria-pressed')).toBe('true'), { timeout: 8000 })
+    expect(downloaded).toEqual([])
+  }, 20_000)
+
+  it('켜면 저장이 GIF로 나간다 — 버튼은 그대로 둘뿐', async () => {
+    // 저장하는 길은 하나여야 한다. 만드는 일과 저장하는 일은 다른 일이다.
+    await openStudio()
+    await showResult()
+    fireEvent.click(blinkButton())
+    await waitFor(() => expect(blinkButton().getAttribute('aria-pressed')).toBe('true'), { timeout: 8000 })
+    fireEvent.click(screen.getByRole('button', { name: '이 이미지 저장' }))
+    await waitFor(() => expect(downloaded).toHaveLength(1), { timeout: 8000 })
+    expect(downloaded[0]!.endsWith('.gif')).toBe(true)
+  }, 25_000)
+
+  it('끄면 다시 PNG로 나간다', async () => {
+    await openStudio()
+    await showResult()
+    fireEvent.click(blinkButton())
+    await waitFor(() => expect(blinkButton().getAttribute('aria-pressed')).toBe('true'), { timeout: 8000 })
+    fireEvent.click(blinkButton())
+    await waitFor(() => expect(blinkButton().getAttribute('aria-pressed')).toBe('false'), { timeout: 8000 })
+    fireEvent.click(screen.getByRole('button', { name: '이 이미지 저장' }))
+    await waitFor(() => expect(downloaded).toHaveLength(1), { timeout: 8000 })
+    expect(downloaded[0]!.endsWith('.png')).toBe(true)
   }, 25_000)
 })
 

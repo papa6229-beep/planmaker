@@ -93,7 +93,7 @@ describe('§38-1 GIF의 뼈대', () => {
     expect([...bytes.subarray(at + 11, at + 16)]).toEqual([3, 1, 0, 0, 0])
   })
 
-  it('프레임마다 1초를 준다', () => {
+  it('프레임마다 준 만큼의 시간을 적는다', () => {
     let seen = 0
     for (let i = 0; i + 6 < bytes.length; i += 1) {
       if (bytes[i] !== 0x21 || bytes[i + 1] !== 0xf9 || bytes[i + 2] !== 4) continue

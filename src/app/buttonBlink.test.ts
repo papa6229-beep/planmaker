@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { blinkFrame, blinkGoesBrighter, bodyLuma, BLINK_KEEP_GAP } from '../domain/buttonBlink'
+import { blinkFrame, blinkGoesBrighter, blinkInsideMask, bodyLuma, BLINK_KEEP_GAP } from '../domain/buttonBlink'
 
 type Rgb = [number, number, number]
 
@@ -135,5 +135,96 @@ describe('§39-2 두 번째 프레임', () => {
       for (const value of next) expect(value).toBeGreaterThanOrEqual(0)
       for (const value of next) expect(value).toBeLessThanOrEqual(255)
     }
+  })
+})
+
+/**
+ * 깜빡이는 속도 (깜빡이는 버튼 Patch, 손검수 2차).
+ *
+ * 1초는 느리다는 손검수를 받았다 — "지금보다 2배 빨라야 함." 이 값은 눈으로는
+ * 확인이 어렵다(느린 것과 안 깜빡이는 것이 비슷해 보인다). 그래서 수로 붙든다.
+ */
+describe('§39-3 속도', () => {
+  it('프레임 하나가 0.5초다', async () => {
+    const { BLINK_DELAY_CS } = await import('../services/blinkGif')
+    expect(BLINK_DELAY_CS).toBe(50)
+  })
+})
+
+/**
+ * 둥근 버튼은 둥글게 깜빡인다 (깜빡이는 버튼 Patch, 손검수 2차).
+ *
+ * 앞선 판은 버튼이 앉은 사각형을 통째로 밀어, 둥근 버튼인데 깜빡이는 자리가 네모였다.
+ * 합쳐진 완성본에는 모서리 정보가 없으므로 **버튼 조각의 투명도**를 틀로 쓴다.
+ */
+describe('§39-4 모양 틀', () => {
+  const width = 4
+  const height = 4
+
+  /** 가운데 2×2만 불투명한 틀 — 모서리가 잘린 버튼이라고 치자. */
+  function roundMask(): Uint8ClampedArray {
+    const mask = new Uint8ClampedArray(width * height * 4)
+    for (let y = 1; y <= 2; y += 1) {
+      for (let x = 1; x <= 2; x += 1) mask[(y * width + x) * 4 + 3] = 255
+    }
+    return mask
+  }
+
+  /** 안팎이 같은 색인 사각형 — 틀이 듣는지만 본다. */
+  function patch(): Uint8ClampedArray {
+    const data = new Uint8ClampedArray(width * height * 4)
+    for (let i = 0; i < width * height; i += 1) {
+      data[i * 4] = 60
+      data[i * 4 + 1] = 30
+      data[i * 4 + 2] = 120
+      data[i * 4 + 3] = 255
+    }
+    return data
+  }
+
+  const inside = (data: Uint8ClampedArray) => data[(1 * width + 1) * 4]!
+  const corner = (data: Uint8ClampedArray) => data[0]!
+
+  it('틀 안쪽만 움직인다', () => {
+    const before = patch()
+    const after = blinkInsideMask(before, roundMask(), { width, height }, 0.4)
+    expect(inside(after)).toBeGreaterThan(inside(before))
+    // 모서리가 함께 어두워지면 네모가 깜빡인다.
+    expect(corner(after)).toBe(corner(before))
+  })
+
+  it('알파는 첫 프레임 그대로다', () => {
+    // 틀 밖을 투명으로 표시한 채 내보내면, 그 자리에 구멍이 뚫린다.
+    const after = blinkInsideMask(patch(), roundMask(), { width, height }, 0.4)
+    for (let i = 3; i < after.length; i += 4) expect(after[i]).toBe(255)
+  })
+
+  it('틀 밖의 색이 방향을 정하지 않는다', () => {
+    // 버튼은 어둡고 배경이 밝은 흔한 경우. 배경까지 세면 "밝은 버튼"으로 읽혀
+    // 어두워지는 쪽으로 밀린다 — 그러면 어두운 버튼이 더 어두워진다.
+    const data = patch()
+    for (let i = 0; i < width * height; i += 1) {
+      const insideBox = i === width + 1 || i === width + 2 || i === 2 * width + 1 || i === 2 * width + 2
+      if (insideBox) continue
+      data[i * 4] = 245
+      data[i * 4 + 1] = 240
+      data[i * 4 + 2] = 250
+    }
+    const after = blinkInsideMask(data, roundMask(), { width, height }, 0.4)
+    expect(inside(after)).toBeGreaterThan(inside(data))
+  })
+
+  it('틀이 없으면 예전처럼 사각형 전체다', () => {
+    // 조각 그림을 못 읽는 경우에도 깜빡이기는 해야 한다.
+    const before = patch()
+    const after = blinkInsideMask(before, null, { width, height }, 0.4)
+    expect(corner(after)).toBeGreaterThan(corner(before))
+  })
+
+  it('원본을 고치지 않는다', () => {
+    const before = patch()
+    const copy = [...before]
+    blinkInsideMask(before, roundMask(), { width, height }, 0.4)
+    expect([...before]).toEqual(copy)
   })
 })

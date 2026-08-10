@@ -110,3 +110,48 @@ export function blinkFrame(
   }
   return out
 }
+
+/**
+ * 모양 틀 안쪽만 흔든다 (깜빡이는 버튼 Patch, 손검수 2차).
+ *
+ * 앞선 판은 버튼이 앉은 **사각형을 통째로** 밀었다. 둥근 버튼인데 깜빡이는 자리는
+ * 네모여서 버튼 밖의 배경까지 함께 어두워졌다 — "저렇게 라운드된 버튼을 만들었으면서
+ * 깜빡 라인은 사각임."
+ *
+ * 합쳐진 완성본에는 버튼의 둥근 모서리를 알 방법이 없다. 다행히 버튼 조각은 투명도를
+ * 가진 그림으로 따로 남아 있으므로, 그것을 틀로 쓴다. 색은 여전히 완성본에서 읽으니
+ * 톤·종이 테두리 같은 후처리가 그대로 살아 있다.
+ *
+ * 방향과 몸통 밝기도 **틀 안쪽만** 보고 정한다. 바깥 배경까지 세면 배경이 몸통으로
+ * 읽혀 엉뚱한 쪽으로 민다.
+ *
+ * 틀이 없으면 예전처럼 사각형 전체다 — 그래도 깜빡이기는 한다.
+ */
+export function blinkInsideMask(
+  patch: Uint8ClampedArray,
+  mask: Uint8ClampedArray | null,
+  size: { width: number; height: number },
+  strength: number,
+): Uint8ClampedArray {
+  const inside = new Uint8ClampedArray(patch)
+  if (mask !== null) {
+    for (let i = 0; i < inside.length; i += 4) {
+      if ((mask[i + 3] ?? 0) <= BLINK_ALPHA_FLOOR) inside[i + 3] = 0
+    }
+  }
+  const region = { data: inside, width: size.width, height: size.height }
+  const shifted = blinkFrame(region, strength, blinkGoesBrighter(region))
+
+  // 틀 밖은 첫 프레임 그대로 되돌린다 — 그래야 둥근 모서리가 산다.
+  if (mask !== null) {
+    for (let i = 0; i < shifted.length; i += 4) {
+      if ((mask[i + 3] ?? 0) > BLINK_ALPHA_FLOOR) continue
+      shifted[i] = patch[i]!
+      shifted[i + 1] = patch[i + 1]!
+      shifted[i + 2] = patch[i + 2]!
+    }
+  }
+  // 알파는 첫 프레임의 것으로 되돌린다 — 위에서 틀 밖을 투명으로 표시해 두었다.
+  for (let i = 3; i < shifted.length; i += 4) shifted[i] = patch[i]!
+  return shifted
+}

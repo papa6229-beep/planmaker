@@ -17,7 +17,7 @@
  */
 
 import { normalizeEffects, type CompositeEffects } from './compositeEffects'
-import type { BlockOrder, GenerationMethod, StudioBackground, StudioJob } from './studioJob'
+import type { BlockOrder, GenerationMethod, StudioBackground, StudioBlink, StudioJob } from './studioJob'
 import { normalizeTone, type ToneAdjust } from './toneAdjust'
 import type { LayoutRect } from './imageLayout'
 import type { StudioTextObject } from './textObjects'
@@ -29,6 +29,7 @@ import type { StudioTextObject } from './textObjects'
  * 생성 방식이 함께 들어가고, `0.3.0`부터 이미지별 종이 컷아웃이, `0.4.0`부터
  * 페이지별 디자인 스타일 레퍼런스가, `0.5.0`부터 종이 테두리 두께가 함께 들어간다.
  * `0.13.0`부터 배경이 자기 자리를 갖는다 — 배너에서 배경을 옮기고 키울 수 있다.
+ * `0.14.0`부터 페이지별 깜빡이는 버튼 설정이 함께 들어간다.
  *
  * 버전을 올리는 대신 같은 `0.1.0`에 새 칸만 얹는 길도 있었지만, 그러면 예전
  * 빌드가 그 칸을 **말없이 버리고** 저장한다 — 작업자는 배경을 넣어 저장했는데
@@ -36,10 +37,10 @@ import type { StudioTextObject } from './textObjects'
  * 예전 빌드는 "읽을 수 없다"고 분명히 말한다. 잃는 것이 같다면 소리 내는 쪽이
  * 낫다 (§12 마지막 줄).
  */
-export const STUDIO_FILE_VERSION = '0.13.0'
+export const STUDIO_FILE_VERSION = '0.14.0'
 
 /** 이 판이 **읽을 수 있는** 버전. 예전 파일은 그대로 열린다. */
-export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0', '0.4.0', '0.5.0', '0.6.0', '0.7.0', '0.8.0', '0.9.0', '0.10.0', '0.11.0', '0.12.0', '0.13.0']
+export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0', '0.4.0', '0.5.0', '0.6.0', '0.7.0', '0.8.0', '0.9.0', '0.10.0', '0.11.0', '0.12.0', '0.13.0', '0.14.0']
 
 /** 파일이 기억하는 "이 작업이 어느 원본에서 시작했는가". */
 export interface StudioFileSource {
@@ -79,6 +80,8 @@ export interface StudioFileState {
   objectTones?: Record<string, ToneAdjust>
   /** 페이지 id → 그 페이지가 어느 배너 규격인가 (0.12.0). */
   bannerPages?: Record<string, string>
+  /** 페이지 id → 깜빡이는 버튼 설정 (0.14.0). */
+  blink?: Record<string, StudioBlink>
 }
 
 /** 지금 작업에서 파일에 남길 것만 추린다. */
@@ -105,6 +108,7 @@ export function toStudioFileState(job: StudioJob): StudioFileState {
     tones: { ...job.tones },
     objectTones: { ...job.objectTones },
     bannerPages: { ...job.bannerPages },
+    blink: { ...job.blink },
     ...(job.grain === undefined ? {} : { grain: job.grain }),
     ...(job.method === undefined ? {} : { method: job.method }),
   }
@@ -122,6 +126,11 @@ export function studioFileAssetIds(state: StudioFileState): string[] {
       ...Object.values(state.productImages),
       ...Object.values(state.backgrounds ?? {}).map((b) => b.assetId),
       ...Object.values(state.styleRefs ?? {}),
+      // 깜빡이는 GIF도 파일에 담긴다 — 빼면 다른 컴퓨터에서 열었을 때 켜져 있는데
+      // 그림이 없는 상태가 된다.
+      ...Object.values(state.blink ?? {})
+        .map((b) => b.assetId)
+        .filter((id): id is string => id !== undefined),
       // 문구 오브젝트의 그림도 파일에 담긴다 — 빼면 다른 컴퓨터에서 열었을 때
       // 문구만 사라진 결과가 열린다.
       ...Object.values(state.textObjects ?? {}).flatMap((list) => list.map((t) => t.assetId)),
@@ -169,7 +178,33 @@ export function remapStudioFileState(
         ? order
         : { ...order, referenceAssetId: mapping.get(order.referenceAssetId) ?? order.referenceAssetId }
   }
-  return { ...state, productImages, backgrounds, styleRefs, textObjects, imageObjects, blockOrders }
+  const blink: Record<string, StudioBlink> = {}
+  for (const [pageId, item] of Object.entries(state.blink ?? {})) {
+    blink[pageId] =
+      item.assetId === undefined ? item : { ...item, assetId: mapping.get(item.assetId) ?? item.assetId }
+  }
+  return { ...state, productImages, backgrounds, styleRefs, textObjects, imageObjects, blockOrders, blink }
+}
+
+/**
+ * 깜빡이는 버튼 설정 (0.14.0). 예전 파일에는 없다.
+ *
+ * 그림 번호가 없으면 **켜져 있되 아직 안 만든 상태**다 — 화면이 다시 만든다.
+ * 세기가 말이 안 되면 그 줄을 버린다: 0이면 켜 놓고도 안 깜빡인다.
+ */
+function readBlink(raw: unknown): Record<string, StudioBlink> {
+  if (!isRecord(raw)) return {}
+  const out: Record<string, StudioBlink> = {}
+  for (const [pageId, value] of Object.entries(raw)) {
+    if (!isRecord(value)) continue
+    const strength = value.strength
+    if (typeof strength !== 'number' || !Number.isFinite(strength) || strength <= 0 || strength > 1) continue
+    out[pageId] = {
+      strength,
+      ...(typeof value.assetId === 'string' && value.assetId.length > 0 ? { assetId: value.assetId } : {}),
+    }
+  }
+  return out
 }
 
 /** 네 수가 다 있는 사각형만 사각형이다. 하나라도 빠지면 없는 것으로 본다. */
@@ -333,6 +368,7 @@ export function parseStudioFileState(raw: unknown): StudioFileState | null {
           Object.entries(raw.bannerPages).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
         )
       : {},
+    blink: readBlink(raw.blink),
     ...(typeof raw.grain === 'number' ? { grain: Math.min(1, Math.max(0, raw.grain)) } : {}),
     ...(raw.method === 'background_composite' || raw.method === 'full_ai' ? { method: raw.method } : {}),
   }

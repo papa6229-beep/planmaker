@@ -21,6 +21,7 @@ import { sanitizeFileName } from '../features/export/exportFileName'
 import type { BriefDocument } from './pageSchema'
 
 export const IMAGE_EXTENSION = '.png'
+export const BLINK_EXTENSION = '.gif'
 export const IMAGE_ZIP_SUFFIX = '_images.zip'
 
 /**
@@ -107,13 +108,21 @@ export function planImageSave(doc: BriefDocument, job: StudioJob, options: Image
     const result = pageResultOf(job, page.id)
     if (result === undefined) continue
     const index = doc.pages.indexOf(page)
+    // 깜빡임을 켜 둔 페이지는 **그 GIF가 곧 완성본**이다 (깜빡이는 버튼 Patch).
+    // 저장 버튼을 따로 두지 않고 여기서 갈아 끼운다 — 만드는 일과 저장하는 일은
+    // 다른 일이고, 저장하는 길은 하나여야 한다.
+    const blink = job.blink?.[page.id]
+    const name = isBanner(page.id)
+      ? bannerImageFileName(title, page.canvasWidth, page.canvasHeight)
+      : pageImageFileName(title, index + 1)
     files.push({
       pageId: page.id,
-      assetId: result.assetId,
+      assetId: blink?.assetId ?? result.assetId,
       pageNumber: index + 1,
-      fileName: isBanner(page.id)
-        ? bannerImageFileName(title, page.canvasWidth, page.canvasHeight)
-        : pageImageFileName(title, index + 1),
+      fileName:
+        blink?.assetId === undefined
+          ? name
+          : `${name.slice(0, -IMAGE_EXTENSION.length)}${BLINK_EXTENSION}`,
     })
   }
   return { files, totalPages: wanted.length }

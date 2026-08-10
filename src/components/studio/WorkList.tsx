@@ -35,7 +35,7 @@ import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
 import { useImageSave } from '../../features/studio/useImageSave'
-import { useBlinkGifSave } from '../../features/studio/useBlinkGifSave'
+import { useBlinkGif } from '../../features/studio/useBlinkGif'
 import { pageResultOf } from '../../domain/studioJob'
 import { sourcePageIdOf } from '../../domain/bannerFit'
 import { bannerSpecById } from '../../domain/bannerSpec'
@@ -44,7 +44,7 @@ export function WorkList() {
   const studio = useStudioJob()
   const generation = useImageGeneration()
   const imageSave = useImageSave()
-  const blink = useBlinkGifSave()
+  const blink = useBlinkGif()
   const { pages, activePageId, switchPage } = useBriefDocument()
   if (studio === null) return null
 
@@ -143,36 +143,44 @@ export function WorkList() {
           그대로 두고, 필요할 때만 이쪽을 누른다 — 쇼핑몰이 요구해서 만드는 것이지
           늘 쓰는 것이 아니다. 이 페이지에 CTA 버튼 조각이 없으면 나오지 않는다:
           깜빡일 것이 없는데 GIF로 만들면 화질만 잃는다. */}
+      {/* 깜빡이는 버튼은 **선택 기능**이다 (깜빡이는 버튼 Patch). 여기서는 켜고 끄기만
+          한다 — 켜 두면 가운데 화면이 그 GIF를 보여 주고, 저장은 위의 두 버튼이
+          그대로 가져간다. 앞선 판은 이 버튼이 만들고 곧장 내려받기까지 해서, 낱장을
+          저마다 따로 받게 만들었다. */}
       {blink !== null && blink.buttonCount > 0 && savable && (
         <span className="work-list__blink">
           <button
             type="button"
-            className="btn"
+            className={`btn${blink.on ? ' is-active' : ''}`}
+            aria-pressed={blink.on}
             disabled={blink.state.kind === 'working'}
-            onClick={blink.save}
-            title="버튼이 1초마다 색이 바뀌는 GIF로 저장합니다 — 전체가 GIF라 화질이 조금 떨어집니다"
+            onClick={blink.toggle}
+            title={
+              blink.on
+                ? '끄면 다시 PNG 한 장으로 저장됩니다'
+                : '버튼이 깜빡이는 GIF로 바꿉니다 — 전체가 GIF라 화질이 조금 떨어집니다'
+            }
           >
-            {blink.state.kind === 'working' ? 'GIF 만드는 중…' : '깜빡이는 버튼 GIF'}
+            {blink.state.kind === 'working' ? 'GIF 만드는 중…' : blink.on ? '✓ 깜빡이는 버튼' : '깜빡이는 버튼'}
           </button>
-          <label className="work-list__blink-strength">
-            <span>세기 {Math.round(blink.strength * 100)}%</span>
-            <input
-              type="range"
-              min={5}
-              max={60}
-              step={5}
-              aria-label="깜빡임 세기"
-              value={Math.round(blink.strength * 100)}
-              onChange={(e) => blink.setStrength(Number(e.target.value) / 100)}
-            />
-          </label>
+          {blink.on && (
+            <label className="work-list__blink-strength">
+              <span>세기 {Math.round(blink.strength * 100)}%</span>
+              <input
+                type="range"
+                min={5}
+                max={60}
+                step={5}
+                aria-label="깜빡임 세기"
+                value={Math.round(blink.strength * 100)}
+                onChange={(e) => blink.setStrength(Number(e.target.value) / 100)}
+              />
+            </label>
+          )}
         </span>
       )}
       {blink !== null && blink.state.kind === 'failed' && (
         <span className="work-list__note" role="status">{blink.state.message}</span>
-      )}
-      {blink !== null && blink.state.kind === 'no-button' && (
-        <span className="work-list__note" role="status">이 페이지에는 버튼 조각이 없습니다.</span>
       )}
       {/* 저장이 사람에게 물어야 하는 자리들. 버튼과 **같은 컴포넌트**에 있어야
           한다 — `useImageSave`는 부르는 곳마다 제 상태를 따로 갖는 훅이라, 버튼과

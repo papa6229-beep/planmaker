@@ -30,6 +30,8 @@ import {
   createStudioJob,
   linkProductImage,
   methodOf,
+  blinkOf,
+  withBlink,
   pageBackgroundOf,
   productImageOf,
   sourceChanged as jobSourceChanged,
@@ -57,6 +59,7 @@ import {
   type BlockOrder,
   type GenerationMethod,
   type StudioBackground,
+  type StudioBlink,
   type StudioJob,
 } from '../../domain/studioJob'
 import { DEFAULT_GRAIN, type CompositeEffects } from '../../domain/compositeEffects'
@@ -148,6 +151,14 @@ export interface StudioJobApi {
    * 페이지 탭이 이것을 보고 배너를 감춘다 — 페이지 탭은 "이벤트 페이지가 몇
    * 장인가"를 뜻하는 자리라, 거기에 배너가 끼면 뜻이 흐려진다.
    */
+  /**
+   * 이 페이지에 깜빡이는 버튼을 켰는가 (깜빡이는 버튼 Patch).
+   *
+   * 켜 두면 완성본 화면이 GIF를 보여 주고 저장도 그 GIF로 나간다. 저장 버튼을 따로
+   * 두지 않는다 — 만드는 일과 저장하는 일은 다른 일이다.
+   */
+  blinkOf: (pageId: string) => StudioBlink | undefined
+  setBlink: (pageId: string, blink: StudioBlink | null) => Promise<void>
   bannerSpecOf: (pageId: string) => string | null
   /** 만들어 둔 배너 페이지들. 만든 차례대로. */
   bannerPageIds: string[]
@@ -502,6 +513,7 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
               tones: { ...state.tones },
               objectTones: { ...state.objectTones },
               bannerPages: { ...state.bannerPages },
+              blink: { ...state.blink },
               // 완성본은 파일에 담기지 않는다. 그런데 지금까지 이 자리는 **열기
               // 전에 보던 작업의 결과**를 그대로 물려받았다 — 다른 기획서를 열었는데
               // 앞 기획서의 완성본이 붙어 있는 셈이다. 파일이 말하지 않은 것은
@@ -571,6 +583,8 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
         const next = withOnlyBlocks(job, liveBlockIds, Date.now())
         if (next !== job) void commit(next)
       },
+      blinkOf: (pageId) => blinkOf(job, pageId),
+      setBlink: (pageId, blink) => mutate((j) => withBlink(j, pageId, blink, Date.now())),
       bannerSpecOf: (pageId) => job.bannerPages?.[pageId] ?? null,
       bannerPageIds: Object.keys(job.bannerPages ?? {}),
       // **가장 최근 작업 위에** 얹는다. 렌더 시점의 `job`을 통째로 다시 쓰면,
