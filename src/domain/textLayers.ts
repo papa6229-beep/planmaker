@@ -182,6 +182,42 @@ export function layerOrderOf(
     .map((o) => o.blockId)
 }
 
+/**
+ * 이 자리에 겹쳐 있는 것들 중 **다음 것**을 고른다 (겹친 조각 잡기 Patch).
+ *
+ * ## 왜 필요한가
+ *
+ * 화면의 상자는 잉크가 아니라 **사각형**이다. 문구 조각의 상자는 글자 둘레 여백까지
+ * 포함하므로, 눈에는 안 겹쳐 보여도 상자는 겹친다. 그래서 앞 조각이 뒤 조각을 통째로
+ * 덮고 있으면 뒤 조각은 **누를 자리가 아예 없다** — 작업자가 "아무리 해도 안 집힌다"고
+ * 한 자리가 여기다.
+ *
+ * `from`은 지금 손가락 밑에서 잡힌 것이다. 그 **뒤에 있는 것**을 돌려주고, 맨 뒤까지
+ * 갔으면 다시 맨 앞으로 돈다. 같은 자리를 계속 누르면 겹친 것들을 한 바퀴 훑게 된다.
+ *
+ * `order`는 **뒤에서 앞** 차례다 (`layerOrderOf`가 내놓는 그대로). 돌려주는 것은
+ * 언제나 그 자리에 실제로 있는 이름이거나 `null`이다.
+ */
+export function pickBehind(
+  order: readonly { blockId: string; rect: LayoutRect }[],
+  point: { x: number; y: number },
+  from: string | null,
+): string | null {
+  const here = order
+    .filter(
+      (o) =>
+        point.x >= o.rect.x &&
+        point.x <= o.rect.x + o.rect.width &&
+        point.y >= o.rect.y &&
+        point.y <= o.rect.y + o.rect.height,
+    )
+    .toReversed()
+  if (here.length === 0) return null
+  const at = here.findIndex((o) => o.blockId === from)
+  // 잡힌 것이 이 자리에 없으면(있을 수 없지만) 맨 앞부터 시작한다.
+  return here[at < 0 ? 0 : (at + 1) % here.length]!.blockId
+}
+
 /** 여럿을 감싸는 가장 작은 상자. 하나면 그 상자 그대로다. */
 export function boundsOf(rects: readonly LayoutRect[]): LayoutRect | null {
   if (rects.length === 0) return null

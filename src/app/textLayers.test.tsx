@@ -528,6 +528,70 @@ describe('§4 이미지와 문구가 한 줄에 선다', () => {
     ).toEqual(['img', 'txt', 'top'])
   })
 
+  /**
+   * 상자는 잉크가 아니라 사각형이다 (겹친 조각 잡기 Patch). 앞 조각이 뒤 조각을
+   * 통째로 덮으면 뒤 조각은 누를 자리가 아예 없어, "아무리 해도 안 집힌다"가 된다.
+   * 같은 자리를 계속 누르면 겹친 것을 한 바퀴 훑어야 한다.
+   */
+  it('겹친 자리에서는 밑에 깔린 것을 차례로 파고든다', async () => {
+    const { pickBehind } = await load('domain/textLayers')
+    // 뒤 → 앞. 셋이 한 자리에서 겹치고, `far`는 멀찍이 떨어져 있다.
+    const order = [
+      { blockId: 'back', rect: { x: 0, y: 0, width: 100, height: 100 } },
+      { blockId: 'mid', rect: { x: 10, y: 10, width: 60, height: 60 } },
+      { blockId: 'front', rect: { x: 20, y: 20, width: 30, height: 30 } },
+      { blockId: 'far', rect: { x: 500, y: 500, width: 20, height: 20 } },
+    ]
+    const at = { x: 30, y: 30 }
+    // 맨 앞에서 시작해 한 칸씩 뒤로, 맨 뒤에서 다시 맨 앞으로 돈다.
+    expect(pickBehind(order, at, 'front')).toBe('mid')
+    expect(pickBehind(order, at, 'mid')).toBe('back')
+    expect(pickBehind(order, at, 'back')).toBe('front')
+    // 이 자리에 없는 것은 셈에서 빠진다.
+    expect(pickBehind(order, { x: 505, y: 505 }, 'far')).toBe('far')
+    // 아무것도 없는 자리는 `null`이다 — 부르는 쪽이 잡힌 것을 그대로 쓴다.
+    expect(pickBehind(order, { x: 300, y: 300 }, 'front')).toBeNull()
+  })
+
+  it('Alt로 누르면 화면에서도 밑에 깔린 것이 잡힌다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+    const calls = fetchSpy.mock.calls.length
+
+    const boxes = await waitFor(() => {
+      const found = container.querySelectorAll<HTMLElement>('.result-object')
+      expect(found.length).toBe(6)
+      return found
+    }, { timeout: 5000 })
+
+    // jsdom에는 배치가 없다. 지면 좌표를 그대로 쓰도록 판의 자리를 심는다.
+    const layer = container.querySelector('.result-objects') as HTMLElement
+    Object.defineProperty(layer, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ left: 0, top: 0, width: 840, height: 1200, right: 840, bottom: 1200 }),
+    })
+
+    // (350, 200)에서 `blk_t3`(앞)과 `blk_t1`(뒤)이 겹친다.
+    const t3 = Array.from(boxes).find((b) => labelOf(b) === '꾸며진 문구 blk_t3')!
+    const t1 = Array.from(boxes).find((b) => labelOf(b) === '꾸며진 문구 blk_t1')!
+
+    // 그냥 누르면 손가락 밑에 있는 그것이 잡힌다.
+    fireEvent.pointerDown(t3, { button: 0, clientX: 350, clientY: 200 })
+    await waitFor(() => expect(t3.getAttribute('aria-pressed')).toBe('true'))
+    fireEvent.pointerUp(window)
+
+    // Alt를 누른 채면 그 밑에 깔린 것이 잡힌다 — 상자가 통째로 덮여 있어도.
+    fireEvent.pointerDown(t3, { button: 0, clientX: 350, clientY: 200, altKey: true })
+    await waitFor(() => expect(t1.getAttribute('aria-pressed')).toBe('true'))
+    expect(t3.getAttribute('aria-pressed')).toBe('false')
+    fireEvent.pointerUp(window)
+
+    // 잡는 데 외부로 나간 요청은 없다.
+    expect(fetchSpy.mock.calls.length).toBe(calls)
+  }, 20000)
+
   it('문구를 맨 뒤로 보내면 합성도 그 차례로 그린다', async () => {
     await seedJob()
     const { container } = renderStudio()

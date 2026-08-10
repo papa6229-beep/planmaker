@@ -2800,6 +2800,22 @@ button { font-family: inherit; }
 .result-object.is-picked { outline: 2px dashed var(--color-accent); }
 .result-object.is-selected { outline: 2px solid var(--color-accent); }
 .result-object__image { width: 100%; height: 100%; display: block; opacity: 0; }
+/* 고른 상자의 조작 UI는 **다른 상자 위로 나온다** (겹친 조각 잡기 Patch).
+
+   `.result-object`는 `position: absolute`이지만 `z-index`가 없다 — 그래서 쌓임
+   문맥을 만들지 않고, 그 안의 손잡이는 이 `z-index` 하나로 형제 상자들 위로
+   빠져나온다. 상자 자체는 올리지 않는다: 올리면 고른 것이 앞 조각을 덮어, 그
+   앞 조각을 누르려 해도 고른 것이 잡히는 반대 문제가 생긴다.
+
+   앞선 판은 이것이 없어서, 고른 조각이 맨 앞이 아니면 **손잡이가 앞 조각의 투명한
+   상자 밑에 깔렸다.** 손잡이는 보이는데 누르면 엉뚱한 조각이 끌려갔다 — 작업자가
+   "잘 안 집힌다"고 한 자리다. */
+.result-object__name,
+.result-object__layers,
+.result-object__remove,
+.result-object__spin,
+.result-object__handle { z-index: 5; }
+
 .result-object__handle {
   position: absolute;
   width: 10px;
@@ -2808,6 +2824,18 @@ button { font-family: inherit; }
   border: 2px solid var(--color-accent);
   border-radius: 2px;
 }
+/* 보이는 크기는 10px 그대로 두고 **잡히는 면적만** 넓힌다.
+
+   넓히는 방향은 바깥쪽이다. 안쪽으로 똑같이 넓히면 작은 조각에서 네 손잡이가
+   가운데를 다 덮어 끌어 옮길 자리가 없어진다. */
+.result-object__handle::before {
+  content: '';
+  position: absolute;
+  inset: -8px -4px -4px -8px;
+}
+.result-object__handle--ne::before { inset: -8px -8px -4px -4px; }
+.result-object__handle--sw::before { inset: -4px -4px -8px -8px; }
+.result-object__handle--se::before { inset: -4px -8px -8px -4px; }
 .result-object__layers {
   position: absolute;
   right: 0;

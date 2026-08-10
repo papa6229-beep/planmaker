@@ -25,7 +25,7 @@ import { getAsset } from '../../services/assetStore'
 import { RESIZE_HANDLES, minPieceSize, resizeRect, type ResizeHandle } from '../../features/editor/canvasGeometry'
 import { keepAspect } from '../../domain/photoBox'
 import { LAYER_MOVES } from '../../domain/layerOrder'
-import { boundsOf, layerOrderOf, scaleWithin, spunResize, toLocalDelta } from '../../domain/textLayers'
+import { boundsOf, layerOrderOf, pickBehind, scaleWithin, spunResize, toLocalDelta } from '../../domain/textLayers'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
 import type { LayoutRect } from '../../domain/imageLayout'
 import type { StudioTextObject } from '../../domain/textObjects'
@@ -119,10 +119,29 @@ export function ResultObjectLayer({ pageId, page }: Props) {
     else studio.moveTextObject(pageId, blockId, rect)
   }
 
-  const startMove = (blockId: string) => (e: ReactPointerEvent) => {
+  /** 화면 좌표 하나를 페이지 좌표로. 겹친 것을 파고들 때 쓴다. */
+  const pointOf = (e: ReactPointerEvent): { x: number; y: number } | null => {
+    const box = boxRef.current?.getBoundingClientRect()
+    if (box === undefined || box.width <= 0 || box.height <= 0) return null
+    return {
+      x: ((e.clientX - box.left) / box.width) * page.width,
+      y: ((e.clientY - box.top) / box.height) * page.height,
+    }
+  }
+
+  const startMove = (hitId: string) => (e: ReactPointerEvent) => {
     if (e.button !== 0) return
     e.preventDefault()
     e.stopPropagation()
+    // Alt를 누른 채 누르면 **그 밑에 깔린 것**을 잡는다 (겹친 조각 잡기 Patch).
+    // 상자는 잉크가 아니라 사각형이라, 앞 조각이 뒤 조각을 통째로 덮으면 누를
+    // 자리가 아예 없다. 같은 자리를 계속 누르면 겹친 것들을 한 바퀴 훑는다.
+    const point = e.altKey ? pointOf(e) : null
+    const blockId =
+      point === null
+        ? hitId
+        : (pickBehind(objects.map((o) => ({ blockId: o.object.blockId, rect: o.object.rect })), point, hitId) ??
+          hitId)
     // 이 끌기 하나가 되돌리기 한 칸이다 (결과 되돌리기 Patch). 손가락을 따라
     // 수십 번 고쳐 써도 칸은 여기서 한 번만 만들어진다.
     studio.markStep()
@@ -272,6 +291,7 @@ export function ResultObjectLayer({ pageId, page }: Props) {
             tabIndex={0}
             aria-pressed={picked}
             aria-label={`${kind === 'image' ? '이미지' : '꾸며진 문구'} ${object.blockId}`}
+            title="끌어서 이동 · Alt+클릭으로 밑에 깔린 조각 잡기"
             style={{
               left: percent(object.rect.x, page.width),
               top: percent(object.rect.y, page.height),
@@ -281,7 +301,13 @@ export function ResultObjectLayer({ pageId, page }: Props) {
               // 한가운데가 축이다.
               ...(object.angle === undefined || object.angle === 0
                 ? {}
-                : { transform: `rotate(${String(object.angle)}deg)` }),
+                : {
+                    transform: `rotate(${String(object.angle)}deg)`,
+                    // `transform`은 쌓임 문맥을 만든다 — 그 안의 손잡이는 CSS로
+                    // 아무리 올려도 형제 상자 위로 못 나온다. 돌아간 상자를 고른
+                    // 동안만 상자째 올려 그 갇힘을 푼다 (겹친 조각 잡기 Patch).
+                    ...(selected ? { zIndex: 4 } : {}),
+                  }),
             }}
             onPointerDown={startMove(object.blockId)}
             onKeyDown={(e) => {
@@ -411,6 +437,7 @@ export function ResultObjectLayer({ pageId, page }: Props) {
                   key={handle}
                   className={`result-object__handle result-object__handle--${handle}`}
                   aria-hidden="true"
+                  title="끌어서 크기 조절 · Shift로 비율 풀기"
                   onPointerDown={startResize(object.blockId, object.rect, handle)}
                 />
               ))}
