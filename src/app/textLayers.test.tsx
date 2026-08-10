@@ -10,7 +10,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
-import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
 import { StudioJobProvider, useStudioJob } from '../features/studio/useStudioJob'
@@ -91,9 +91,12 @@ vi.mock('../services/regionTone', () => ({
     rects.map(() => ({ average: { r: 120, g: 90, b: 60 }, brightness: 0.4, contrast: 0.3 })),
 }))
 const composed = vi.fn()
+/** 참이면 합성이 실패한다 — 자동 합치기가 실패를 되풀이하는지 보려고. */
+let composeFails = false
 vi.mock('../services/compositeRenderer', () => ({
   renderComposite: async (plan: unknown) => {
     composed(plan)
+    if (composeFails) throw new Error('합성 실패')
     return new Blob([new Uint8Array([5, 5, 5])], { type: 'image/png' })
   },
 }))
@@ -245,6 +248,7 @@ beforeEach(async () => {
   trim.size = { width: 400, height: 100 }
   fetchSpy.mockReset()
   composed.mockReset()
+  composeFails = false
   resetAssetStoreForTests()
   resetDocumentStoreForTests()
   resetRequestStoreForTests()
@@ -1487,10 +1491,10 @@ describe('§19 다시 합치기', () => {
     const { container: reopened } = renderStudio()
     await documentReady(reopened)
 
-    // 되살릴 재료가 있으므로 그 자리를 화면이 먼저 말한다.
-    const button = await screen.findByRole('button', { name: /완성본 다시 합치기/ }, { timeout: 5000 })
-    fireEvent.click(button)
-
+    // **누르지 않는다.** 재료가 다 있는데 완성본만 없는 자리는 하나뿐이고 —
+    // 방금 작업 파일을 연 참이다 — 그때 사람에게 버튼을 누르게 할 이유가 없다.
+    // 다시 합치는 일은 외부 호출 0건이라, 누르든 안 누르든 결과가 같다
+    // (자동 합치기 Patch).
     await waitFor(async () => {
       const now = await loadStudioJob(STUDIO_JOB_ID)
       expect(now?.results?.page_1).toBeDefined()
@@ -1510,7 +1514,9 @@ describe('§19 다시 합치기', () => {
 
     // **공짜다.** 합치기는 브라우저가 했고 밖으로 나간 요청은 없다.
     expect(fetchSpy.mock.calls.length).toBe(calls)
-    expect(composed).toHaveBeenCalled()
+    // 그리고 **한 번만** 합친다. 자동으로 걸리는 길이라, 되풀이하면 화면이 영영
+    // `합치는 중…`이고 아무도 그것을 멈추지 못한다.
+    expect(composed).toHaveBeenCalledTimes(1)
   })
 
   it('배경이 없으면 되살릴 재료도 없다 — 그 자리를 내밀지 않는다', async () => {
@@ -1519,6 +1525,52 @@ describe('§19 다시 합치기', () => {
     await documentReady(container)
     expect(screen.queryByRole('button', { name: /완성본 다시 합치기/ })).toBeNull()
   })
+
+  it('합치기가 실패해도 되풀이하지 않는다', async () => {
+    // 자동으로 걸리는 길이라 되풀이하면 화면이 영영 `합치는 중…`이고, 아무도
+    // 그것을 멈추지 못한다. 실패하면 한 번으로 그치고 버튼을 남긴다.
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+    const made = await loadStudioJob(STUDIO_JOB_ID)
+    await saveStudioJob({ ...made!, results: {} })
+    cleanup()
+
+    composed.mockClear()
+    composeFails = true
+    const { container: reopened } = renderStudio()
+    await documentReady(reopened)
+    // 한 번 시도하고 멈춘다. 사람이 다시 누를 수 있게 버튼은 남는다.
+    await waitFor(() => expect(composed).toHaveBeenCalled(), { timeout: 8000 })
+    await waitFor(
+      () => expect(screen.getByRole('button', { name: /완성본 다시 합치기/ })).toBeTruthy(),
+      { timeout: 8000 },
+    )
+    const tried = composed.mock.calls.length
+    await waitFor(() => expect(composed.mock.calls.length).toBe(tried), { timeout: 1500 })
+    expect(tried).toBe(1)
+  }, 30000)
+
+  it('되살아난 뒤에는 버튼도 사라진다', async () => {
+    // 자동으로 합쳤으므로 누를 것이 없다. 남아 있으면 사람이 "아직 안 됐나" 한다.
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+    const made = await loadStudioJob(STUDIO_JOB_ID)
+    await saveStudioJob({ ...made!, results: {} })
+    cleanup()
+
+    const { container: reopened } = renderStudio()
+    await documentReady(reopened)
+    await waitFor(async () => {
+      expect((await loadStudioJob(STUDIO_JOB_ID))?.results?.page_1).toBeDefined()
+    }, { timeout: 8000 })
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /완성본 다시 합치기/ })).toBeNull()
+    }, { timeout: 5000 })
+  }, 25000)
 })
 
 // ── §20 결과 줄은 값을 치른 것만 담는다 ────────────────────────────────────

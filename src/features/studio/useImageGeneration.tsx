@@ -27,6 +27,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -1151,6 +1152,31 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     },
     [studio, composePage, storeComposed, getDocument],
   )
+
+  /**
+   * 파일을 열면 **알아서 합친다** (자동 합치기 Patch).
+   *
+   * 재료가 다 있는데 완성본만 없는 자리는 하나뿐이다 — 작업 파일을 방금 연 참이다.
+   * 그때 사람에게 버튼을 누르게 할 이유가 없다. 다시 합치는 일은 **외부 호출 0건**
+   * 이고, 누르든 안 누르든 결과가 같다.
+   *
+   * 되풀이하지 않는다. 실패는 상태를 `failed`로 남기고 이 효과는 `idle`에서만
+   * 걸리므로, 한 번 실패하면 저절로 다시 걸리지 않는다. 페이지마다 한 번만
+   * 시도한다는 표(`autoRebuilt`)는 그 위에 덧대는 보험이다 — 다른 흐름이 상태를
+   * `idle`로 되돌려도 자동 합치기가 다시 깨어나지 않게. 어느 쪽이든 실패하면
+   * `ReadyPanel`의 버튼이 남아 사람이 다시 누를 수 있다.
+   *
+   * 보고 있는 페이지만 합친다. 파일 하나에 이벤트 페이지와 배너가 여럿 들어 있을 수
+   * 있는데, 열자마자 전부 합치면 한참을 멈춰 선다. 넘어가는 그 페이지에서 합쳐지므로
+   * 사람이 보기에는 언제나 합쳐져 있다.
+   */
+  const autoRebuilt = useRef(new Set<string>())
+  useEffect(() => {
+    if (!canRebuild || activePageId === '' || state.kind !== 'idle') return
+    if (autoRebuilt.current.has(activePageId)) return
+    autoRebuilt.current.add(activePageId)
+    void rebuildPage(activePageId)
+  }, [canRebuild, activePageId, state.kind, rebuildPage])
 
   /** 같은 원본으로 작업본만 다시 만든다. 외부 호출 0건. */
   const retryConversion = useCallback(() => {
