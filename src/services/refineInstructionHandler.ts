@@ -21,9 +21,10 @@ import {
   type RefineErrorCode,
   type RefineFailure,
   type RefineRequestBody,
+  REFINE_ERROR_TEXT,
 } from '../domain/instructionRefine.js'
-import { API_KEY_HEADER } from '../domain/imageGeneration.js'
 import { RefineProviderError, requestOpenAiRefine } from './openAiResponsesClient.js'
+import { resolveApiKey, type ServerEnv } from './serverAccess.js'
 
 export interface RefineHandlerDeps {
   /** 검사에서 공급자 호출을 가로채기 위한 이음매. */
@@ -31,6 +32,8 @@ export interface RefineHandlerDeps {
   fetch?: typeof fetch
   /** 개발자 확인용 기록. 키는 절대 넘기지 않는다. */
   log?: (entry: { code: string; status: number; requestId?: string }) => void
+  /** 서버가 쥔 값. 기본은 비어 있다 — 환경을 읽는 일은 `api/*.ts`가 맡는다. */
+  env?: ServerEnv
 }
 
 function fail(code: RefineErrorCode, status: number, message: string, requestId?: string): Response {
@@ -41,12 +44,6 @@ function fail(code: RefineErrorCode, status: number, message: string, requestId?
     status,
     headers: { 'content-type': 'application/json' },
   })
-}
-
-/** 키를 공급하는 곳. 지금은 요청 헤더 하나뿐이다. */
-export function refineApiKeyOf(request: Request): string | null {
-  const key = request.headers.get(API_KEY_HEADER)?.trim()
-  return key !== undefined && key.length > 0 ? key : null
 }
 
 /** 보내온 것이 우리가 아는 모양인가. 아니면 공급자를 부르지 않는다. */
@@ -74,10 +71,12 @@ export async function handleRefineInstruction(request: Request, deps: RefineHand
     return fail('unknown', 405, 'POST만 사용할 수 있습니다.')
   }
 
-  const apiKey = refineApiKeyOf(request)
-  if (apiKey === null) {
-    return fail('missing_api_key', 400, 'OpenAI API 키를 먼저 입력해 주세요.')
+  // 이미지 쪽과 같은 문을 지난다 (서버 키 Patch). 막히면 공급자를 부르지 않는다.
+  const access = resolveApiKey(request, deps.env ?? {})
+  if (!access.ok) {
+    return fail(access.code, access.status, REFINE_ERROR_TEXT[access.code])
   }
+  const apiKey = access.apiKey
 
   let raw: unknown
   try {

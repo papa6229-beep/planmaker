@@ -38,8 +38,16 @@ export function ReadyPanel() {
           <dd>{page.title} ({pageNumber} / {doc.pages.length})</dd>
         </div>
         <div>
-          <dt>API 키</dt>
-          <dd>{generation.hasKey ? '이 탭에 저장됨' : '아직 없음'}</dd>
+          <dt>{generation.accessMode === 'server-key' ? '접속 암구호' : 'API 키'}</dt>
+          <dd>
+            {generation.accessMode === 'server-key'
+              ? generation.hasKey
+                ? '저장됨 (키는 서버에)'
+                : '아직 없음'
+              : generation.hasKey
+                ? '이 탭에 저장됨'
+                : '아직 없음'}
+          </dd>
         </div>
         <div>
           <dt>제품 이미지</dt>

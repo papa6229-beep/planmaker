@@ -6,33 +6,43 @@
  *
  * 키에 대해 여기서 지키는 것:
  *
- *  - 키는 **이 요청의 헤더에서만** 온다. 환경변수도, 파일도, 전역도 읽지 않는다.
+ *  - 키가 어디서 오는지 **이 파일은 모른다.** `resolveApiKey`에게 묻는다
+ *    (서버 환경변수이거나, 지금까지처럼 요청 헤더다).
  *  - 지역 변수 밖으로 나가지 않는다. 저장하지 않고, 로그에 찍지 않고, 응답에
  *    담지 않는다.
- *  - 없으면 OpenAI를 부르지 않는다 — 키 없이 부르면 실패가 아니라 낭비다.
+ *  - 답이 `ok`가 아니면 OpenAI를 부르지 않는다 — 암구호가 틀렸는데 부르면
+ *    실패가 아니라 남의 결제다.
  *
- * 나중에 회사 시스템으로 옮길 때 바뀌는 곳은 `apiKeyOf` 하나다. 이미지 요청·
- * 응답 처리는 그대로 남는다.
+ * 나중에 회사 시스템으로 옮길 때 바뀌는 곳은 `src/services/serverAccess.ts`
+ * 하나다. 이미지 요청·응답 처리는 그대로 남는다.
  */
 
 import {
-  API_KEY_HEADER,
   FIELD_BACKGROUND,
   FIELD_IMAGES,
   FIELD_PROMPT,
   FIELD_SIZE,
   IMAGE_MODEL,
   IMAGE_QUALITY,
+  errorTextFor,
   type GenerateImageFailure,
   type GenerateImageSuccess,
   type ImageGenerationErrorCode,
 } from '../domain/imageGeneration.js'
 import { ImageProviderError, requestOpenAiImage } from './openAiImageClient.js'
+import { resolveApiKey, type ServerEnv } from './serverAccess.js'
 
 export interface HandlerDeps {
   /** 검사에서 공급자 호출을 가로채기 위한 이음매. */
   requestImage?: typeof requestOpenAiImage
   fetch?: typeof fetch
+  /**
+   * 서버가 쥔 값. **기본은 비어 있다** — 환경을 읽는 일은 `api/*.ts`가 맡는다.
+   *
+   * 여기서 `process.env`를 읽으면, 검사가 검사를 돌리는 사람의 노트북 환경변수에
+   * 따라 다른 길로 간다.
+   */
+  env?: ServerEnv
   /** 개발자 확인용 기록. 키는 절대 넘기지 않는다. */
   log?: (entry: {
     code: string
@@ -58,26 +68,19 @@ function fail(code: ImageGenerationErrorCode, status: number, message: string, r
   })
 }
 
-/**
- * 키를 공급하는 곳. 지금은 요청 헤더 하나뿐이다 (§3).
- *
- * 회사 시스템으로 옮길 때 이 함수만 서버 보관 키를 읽도록 바꾸면 되고, 아래
- * 생성 흐름은 손대지 않는다.
- */
-export function apiKeyOf(request: Request): string | null {
-  const key = request.headers.get(API_KEY_HEADER)?.trim()
-  return key !== undefined && key.length > 0 ? key : null
-}
-
 export async function handleGenerateImage(request: Request, deps: HandlerDeps = {}): Promise<Response> {
   if (request.method !== 'POST') {
     return fail('unknown', 405, 'POST만 사용할 수 있습니다.')
   }
 
-  const apiKey = apiKeyOf(request)
-  if (apiKey === null) {
-    return fail('missing_api_key', 400, 'OpenAI API 키를 먼저 입력해 주세요.')
+  // 여기서 막히면 공급자를 부르지 않는다. 폼을 읽기도 전에 끝내는 것은 값을
+  // 아끼기 위해서가 아니라, 부르지 않을 요청의 이미지를 메모리에 올릴 이유가
+  // 없기 때문이다.
+  const access = resolveApiKey(request, deps.env ?? {})
+  if (!access.ok) {
+    return fail(access.code, access.status, errorTextFor(access.code))
   }
+  const apiKey = access.apiKey
 
   let form: FormData
   try {

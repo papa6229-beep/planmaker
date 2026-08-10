@@ -1,7 +1,19 @@
 /**
- * 테스트용 OpenAI API 키의 보관 범위 (1단계 키 교정 §2, 키 기억하기 Patch).
+ * 브라우저가 쥐는 **자격 한 줄** (1단계 키 교정 §2, 키 기억하기 Patch,
+ * 서버 키 Patch).
  *
- * 이 파일이 키에 대해 아는 전부이고, 키가 갈 수 있는 곳도 여기가 전부다.
+ * 배포에 따라 그 한 줄이 무엇인지가 다르다.
+ *
+ *  - `server-key` — 키는 서버(Vercel 환경변수)에 있다. 브라우저가 쥐는 것은
+ *    **암구호**다. 키는 이 컴퓨터에 내려오지 않는다.
+ *  - `client-key` — 지금까지처럼 **자기 OpenAI 키**를 쥔다.
+ *
+ * 어느 쪽인지는 서버에게 한 번 물어 캐시한다 (`ensureAccessMode`). 부르는 쪽은
+ * 그 갈래를 몰라도 되게 `authHeaders()` 하나만 쓰면 된다 — 세 군데(생성·배경
+ * 합성·지시 다듬기)가 각자 갈래를 따지기 시작하면, 한 곳을 빠뜨린 날 그 요청만
+ * 조용히 인증 없이 나간다.
+ *
+ * 아래는 **키**에 대한 이야기이고, 그대로 유효하다.
  *
  *  - `sessionStorage` 또는 `localStorage`. **둘 중 어느 쪽인지는 사람이 고른다.**
  *  - IndexedDB·StudioJob·기획서 문서·`.eventbrief`·주소 어디에도 쓰지 않는다.
@@ -28,7 +40,25 @@
  * 위해서다.
  */
 
+import {
+  ACCESS_CODE_HEADER,
+  ACCESS_MODE_PATH,
+  encodeAccessCode,
+  readAccessMode,
+  type AccessMode,
+} from '../../domain/serverAccess'
+import { API_KEY_HEADER } from '../../domain/imageGeneration'
+
 export const API_KEY_STORAGE_KEY = 'planmaker.openai-key'
+
+/**
+ * 암구호가 앉는 자리.
+ *
+ * 키와 달리 **언제나 이 브라우저에 남는다.** 암구호는 개인의 비밀이 아니라 팀이
+ * 나눠 갖는 한 줄이고, 새어도 OpenAI 계정과 무관하며, 주인이 환경변수 한 글자만
+ * 바꾸면 죽는다. 그 값을 하루에 몇 번씩 다시 넣게 만들 이유가 없다.
+ */
+export const ACCESS_CODE_STORAGE_KEY = 'planmaker.access-code'
 
 function session(): Storage | null {
   try {
@@ -98,4 +128,103 @@ export function clearApiKey(): void {
       // 이미 없는 것과 같다.
     }
   }
+}
+
+// ── 암구호와 갈래 (서버 키 Patch) ───────────────────────────────────────────
+
+export function readAccessCode(): string | null {
+  try {
+    const value = local()?.getItem(ACCESS_CODE_STORAGE_KEY)
+    return value === null || value === undefined || value.length === 0 ? null : value
+  } catch {
+    return null
+  }
+}
+
+export function saveAccessCode(code: string): void {
+  const trimmed = code.trim()
+  if (trimmed.length === 0) {
+    clearAccessCode()
+    return
+  }
+  try {
+    local()?.setItem(ACCESS_CODE_STORAGE_KEY, trimmed)
+  } catch {
+    // 저장하지 못해도 이번 요청에는 쓸 수 있다 — 호출부가 값을 쥐고 있다.
+  }
+}
+
+export function clearAccessCode(): void {
+  try {
+    local()?.removeItem(ACCESS_CODE_STORAGE_KEY)
+  } catch {
+    // 이미 없는 것과 같다.
+  }
+}
+
+/**
+ * 이 배포의 갈래. 물어보기 전에는 `client-key`다 — 지금까지의 동작 그대로.
+ *
+ * 모듈 안에 한 벌만 둔다. 화면 상태로 두면 세 hook이 각자 물어보게 되고, 그러면
+ * 같은 질문이 세 번 나가면서 셋이 서로 다른 답을 쥐는 순간이 생긴다.
+ */
+let cachedMode: AccessMode | null = null
+let asking: Promise<AccessMode> | null = null
+
+export function currentAccessMode(): AccessMode {
+  return cachedMode ?? 'client-key'
+}
+
+/**
+ * 서버에게 한 번 묻는다. 이미 물었으면 그 답을 그대로 돌려준다.
+ *
+ * 실패는 `client-key`다 — 서버가 죽었거나 옛 배포라 이 길이 없을 때, 브라우저가
+ * 할 수 있는 안전한 일은 자기 키를 쓰는 것이다. 남의 키를 쓸 수 있다고 넘겨짚지
+ * 않는다.
+ */
+export async function ensureAccessMode(deps: { fetch?: typeof fetch } = {}): Promise<AccessMode> {
+  if (cachedMode !== null) return cachedMode
+  if (asking !== null) return await asking
+  const doFetch = deps.fetch ?? fetch
+  asking = (async (): Promise<AccessMode> => {
+    try {
+      const response = await doFetch(ACCESS_MODE_PATH, { method: 'GET' })
+      if (!response.ok) return 'client-key'
+      return readAccessMode(await response.json())
+    } catch {
+      return 'client-key'
+    }
+  })()
+  const mode = await asking
+  cachedMode = mode
+  asking = null
+  return mode
+}
+
+/** 검사 이음매 — 한 검사가 물어 둔 답이 다음 검사로 새지 않게 한다. */
+export function resetAccessModeForTests(): void {
+  cachedMode = null
+  asking = null
+}
+
+/**
+ * 이번 요청에 붙일 자격 헤더. 쥔 것이 없으면 `null`이고, 그때는 **부르지 않는다.**
+ *
+ * 갈래를 따지는 곳이 여기 하나여야 하는 이유는 단순하다 — 생성·배경 합성·지시
+ * 다듬기 셋이 각자 따지면, 한 곳을 고치지 않은 날 그 요청만 조용히 옛 헤더로
+ * 나가고 서버는 401을 돌려준다. 그 실패는 화면에서 "암구호가 틀렸다"로 보이므로
+ * 원인을 엉뚱한 데서 찾게 된다.
+ */
+export function authHeaders(): Record<string, string> | null {
+  if (currentAccessMode() === 'server-key') {
+    const code = readAccessCode()
+    return code === null ? null : { [ACCESS_CODE_HEADER]: encodeAccessCode(code) }
+  }
+  const key = readApiKey()
+  return key === null ? null : { [API_KEY_HEADER]: key }
+}
+
+/** 지금 갈래에서 쥔 자격이 있는가. 버튼을 켤지 정하는 값이다. */
+export function hasCredential(): boolean {
+  return authHeaders() !== null
 }

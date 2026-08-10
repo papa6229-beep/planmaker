@@ -20,7 +20,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { useAssets } from '../assets/useAssets'
 import { useBriefDocument } from '../document/useBriefDocument'
 import { useStudioJob } from './useStudioJob'
-import { readApiKey } from './apiKeySession'
+import { authHeaders } from './apiKeySession'
 import { getAsset, putAsset } from '../../services/assetStore'
 import { analyzeImageBlob } from '../../services/imageAnalysisRunner'
 import { renderComposite } from '../../services/compositeRenderer'
@@ -31,7 +31,6 @@ import { resolveGptImageSize } from '../../domain/gptImageSize'
 import { createId } from '../../domain/factory'
 import { getBlockTypeMeta } from '../../domain/blockTypes'
 import {
-  API_KEY_HEADER,
   errorTextFor,
   FIELD_IMAGES,
   FIELD_PROMPT,
@@ -175,7 +174,7 @@ export function BackgroundCompositeProvider({ children }: { children: ReactNode 
 
   const beginGenerate = useCallback(() => {
     if (studio === null || page === null) return
-    if (readApiKey() === null) {
+    if (authHeaders() === null) {
       setState({ kind: 'failed', message: errorTextFor('missing_api_key') })
       return
     }
@@ -195,8 +194,8 @@ export function BackgroundCompositeProvider({ children }: { children: ReactNode 
 
   const confirmGenerate = useCallback(() => {
     if (studio === null || page === null) return
-    const key = readApiKey()
-    if (key === null) {
+    const auth = authHeaders()
+    if (auth === null) {
       setState({ kind: 'failed', message: errorTextFor('missing_api_key') })
       return
     }
@@ -250,7 +249,7 @@ export function BackgroundCompositeProvider({ children }: { children: ReactNode 
 
         const response = await fetch(GENERATE_IMAGE_PATH, {
           method: 'POST',
-          headers: { [API_KEY_HEADER]: key },
+          headers: auth,
           body: form,
         })
         const payload: unknown = await response.json().catch(() => null)

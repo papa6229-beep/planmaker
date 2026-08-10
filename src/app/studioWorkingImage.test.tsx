@@ -15,6 +15,7 @@ import 'fake-indexeddb/auto'
 import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { AppRoutes } from './AppRoutes'
+import { resetAccessModeForTests } from '../features/studio/apiKeySession'
 import { clearAll, getAsset, putAsset, resetAssetStoreForTests, type StoredAsset } from '../services/assetStore'
 import { clearAllDocuments, resetDocumentStoreForTests } from '../services/documentStore'
 import { clearAllRequests, resetRequestStoreForTests } from '../services/requestStore'
@@ -111,6 +112,8 @@ async function seed(canvasHeight: number): Promise<void> {
 
 beforeEach(async () => {
   calls = 0
+  // 앞 검사가 물어 둔 갈래가 새지 않게 한다 (서버 키 Patch).
+  resetAccessModeForTests()
   fakeCanvas.sourceSize = { width: 832, height: 1488 }
   fakeCanvas.drawCalls = 0
   fakeCanvas.failDraw = false
@@ -122,7 +125,16 @@ beforeEach(async () => {
       }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     )
-  globalThis.fetch = vi.fn(async () => {
+  globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+  // 갈래 묻기(`/api/access-mode`)는 **우리 함수**이고 값이 붙지 않는다 (서버 키
+  // Patch). 아래 계수는 "공급자를 몇 번 불렀는가"를 재는 자리이므로 여기서
+  // 걸러 낸다 — 세면 모든 검사가 한 건씩 밀린다.
+    if (String(input).includes('/api/access-mode')) {
+      return new Response(JSON.stringify({ mode: 'client-key' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
     calls += 1
     return respond()
   }) as unknown as typeof fetch

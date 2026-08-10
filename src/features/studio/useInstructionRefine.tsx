@@ -17,11 +17,10 @@ import { createContext, useCallback, useContext, useMemo, useRef, useState, type
 import { useBriefDocument } from '../document/useBriefDocument'
 import { useStudioJob } from './useStudioJob'
 import { useImageGeneration } from './useImageGeneration'
-import { readApiKey } from './apiKeySession'
+import { authHeaders } from './apiKeySession'
 import { isImageBlock } from '../../domain/blockTypes'
 import { BACKGROUND_TARGET_ID, type EditTarget } from '../../domain/editTargets'
 import { pageResultOf } from '../../domain/studioJob'
-import { API_KEY_HEADER } from '../../domain/imageGeneration'
 import {
   REFINE_INSTRUCTION_PATH,
   readRefineOutput,
@@ -156,13 +155,14 @@ export function InstructionRefineProvider({ children }: { children: ReactNode })
    */
   const send = useCallback(
     async (body: RefineRequestBody, allowedBlockIds?: readonly string[]): Promise<RefineSuccess | { error: string }> => {
-      const key = readApiKey()
-      if (key === null) return { error: refineErrorTextFor('missing_api_key') }
+      // 갈래(자기 키 · 서버 키+암구호)는 `authHeaders`만 안다 (서버 키 Patch).
+      const auth = authHeaders()
+      if (auth === null) return { error: refineErrorTextFor('missing_api_key') }
       try {
         const response = await fetch(REFINE_INSTRUCTION_PATH, {
           method: 'POST',
-          // 키는 이 요청의 헤더에만 실린다 — 주소에도, 본문에도 없다.
-          headers: { [API_KEY_HEADER]: key, 'content-type': 'application/json' },
+          // 자격은 이 요청의 헤더에만 실린다 — 주소에도, 본문에도 없다.
+          headers: { ...auth, 'content-type': 'application/json' },
           body: JSON.stringify(body),
         })
         const payload: unknown = await response.json().catch(() => null)

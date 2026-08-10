@@ -129,6 +129,10 @@ export type ImageGenerationErrorCode =
   | 'target_not_found'
   | 'rate_limited'
   | 'aspect_out_of_range'
+  /** 서버 키를 쓰는 배포인데 암구호가 없거나 틀렸다 (서버 키 Patch). */
+  | 'access_denied'
+  /** 서버에 키만 있고 암구호가 없다 — 잠기지 않은 채로 열어 두지 않는다. */
+  | 'server_not_configured'
   | 'unknown'
 
 export interface GenerateImageFailure {
@@ -154,6 +158,9 @@ export const ERROR_TEXT: Record<ImageGenerationErrorCode, string> = {
     '수정할 대상을 현재 결과에서 찾지 못했습니다. 기존 이미지로 돌아갑니다. 어느 문구·이미지인지 더 구체적으로 적어 다시 시도해 주세요.',
   rate_limited: '요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요.',
   aspect_out_of_range: '현재 페이지는 1장 생성이 가능한 최대 세로 비율을 넘었습니다. 페이지를 나누어 다시 시도해 주세요.',
+  access_denied: '접속 암구호가 올바르지 않습니다. 암구호를 다시 입력해 주세요.',
+  server_not_configured:
+    '서버 설정이 끝나지 않아 생성할 수 없습니다. 관리자에게 문의해 주세요.',
   unknown: '이미지를 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.',
 }
 

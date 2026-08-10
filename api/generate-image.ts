@@ -10,12 +10,15 @@
  * `Request.formData()`가 multipart를 읽으므로, 파싱 라이브러리를 하나 더 들이지
  * 않아도 된다.
  *
- * 키는 이 요청의 `X-OpenAI-API-Key` 헤더에서만 온다. 환경변수를 읽지 않으므로
- * 배포 설정에 키를 등록할 필요가 없고, 저장소에도 키가 남지 않는다.
+ * 키는 두 곳 중 하나에서 온다 (서버 키 Patch) — 배포에 등록해 둔 `OPENAI_API_KEY`,
+ * 아니면 지금까지처럼 이 요청의 `X-OpenAI-API-Key` 헤더. 어느 쪽인지 고르는 규칙은
+ * `src/services/serverAccess.ts`에 있고, 이 파일은 환경변수를 읽어 넘기기만 한다.
+ * 저장소에는 어느 쪽 키도 남지 않는다.
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { handleGenerateImage } from '../src/services/generateImageHandler.js'
+import { readServerEnv } from '../src/services/serverAccess.js'
 
 /**
  * 배포 설정.
@@ -56,6 +59,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   for await (const chunk of req) chunks.push(chunk as Buffer)
 
   const response = await handleGenerateImage(toRequest(req, Buffer.concat(chunks)), {
+    // 환경을 읽는 곳은 여기 한 줄뿐이다 (서버 키 Patch).
+    env: readServerEnv(process.env),
     log: (entry) => {
       // 키도, 공급자 원문도 없다. 조사에 필요한 것만.
       console.error('[generate-image]', JSON.stringify(entry))

@@ -80,6 +80,13 @@ export function TopToolbar({
   const [keyDraft, setKeyDraft] = useState('')
   /** 이 브라우저에 기억할 것인가. 이미 기억해 둔 사람은 켜진 채로 연다. */
   const [keyRemember, setKeyRemember] = useState(false)
+  /**
+   * 이 배포는 서버 키를 쓰는가 (서버 키 Patch).
+   *
+   * 그렇다면 이 창이 묻는 것은 OpenAI 키가 아니라 **접속 암구호**다 — 키는 서버에
+   * 있고 이 컴퓨터로 내려오지 않는다.
+   */
+  const serverKeyMode = generation?.accessMode === 'server-key'
   // 만든 이미지를 내놓는 일. 작업판 밖에서는 `null`이다.
   const studioMode = mode === 'studio'
   // 저장이 실제로 되고 있는가. provider 밖의 모듈이므로 화면 구조와 무관하다.
@@ -282,16 +289,28 @@ export function TopToolbar({
                   // 이미 기억해 둔 사람에게는 켜진 채로 열린다 — 저장을 누를
                   // 때마다 켜야 한다면 기억하는 것이 아니다.
                   setKeyRemember(generation.keyRemembered)
+                  // 이 창은 키를 묻거나 암구호를 묻는다. 어느 쪽인지 지금 확인한다.
+                  generation.askAccessMode()
                   setKeyPanel(true)
                 }}
                 disabled={busy}
                 title={
-                  generation.hasKey
-                    ? '테스트용 키가 저장되어 있습니다. 눌러서 바꾸거나 지울 수 있습니다.'
-                    : '테스트용 OpenAI API 키를 입력합니다'
+                  generation.accessMode === 'server-key'
+                    ? generation.hasKey
+                      ? '접속 암구호가 저장되어 있습니다. 눌러서 바꾸거나 지울 수 있습니다.'
+                      : '이 사이트의 접속 암구호를 입력합니다 — OpenAI 키는 서버에 있습니다'
+                    : generation.hasKey
+                      ? '테스트용 키가 저장되어 있습니다. 눌러서 바꾸거나 지울 수 있습니다.'
+                      : '테스트용 OpenAI API 키를 입력합니다'
                 }
               >
-                {generation.hasKey ? '✓ API 키 저장됨' : 'API 키'}
+                {generation.accessMode === 'server-key'
+                  ? generation.hasKey
+                    ? '✓ 암구호 저장됨'
+                    : '접속 암구호'
+                  : generation.hasKey
+                    ? '✓ API 키 저장됨'
+                    : 'API 키'}
               </button>
             </>
           )}
@@ -457,25 +476,33 @@ export function TopToolbar({
             className="confirm"
             role="dialog"
             aria-modal="true"
-            aria-label="테스트용 OpenAI API 키"
+            aria-label={serverKeyMode ? '접속 암구호' : '테스트용 OpenAI API 키'}
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="confirm__title">테스트용 OpenAI API 키</h2>
+            <h2 className="confirm__title">{serverKeyMode ? '접속 암구호' : '테스트용 OpenAI API 키'}</h2>
+            {/* 서버 키 배포에서는 **키를 묻지 않는다** (서버 키 Patch). OpenAI 키는
+                Vercel 환경변수에 있고 브라우저로 내려오지 않으므로, 팀원이 쥐는
+                것은 이 사이트에서만 통하는 암구호 한 줄뿐이다. */}
             <p className="confirm__body">
-              {generation?.hasKey !== true
-                ? '아직 키가 없습니다.'
-                : generation.keyRemembered
-                  ? '이 브라우저에 키가 기억되어 있습니다 — 닫았다 열어도 그대로입니다.'
-                  : '이 탭에 키가 저장되어 있습니다 — 탭을 닫으면 지워집니다.'}{' '}
-              어느 쪽이든 파일·기획서·작업 파일에는 남지 않습니다.
+              {serverKeyMode
+                ? generation?.hasKey === true
+                  ? 'OpenAI 키는 서버에 있습니다 — 이 컴퓨터에는 내려오지 않습니다. 암구호는 이 브라우저에 기억되어 있습니다.'
+                  : 'OpenAI 키는 서버에 있습니다 — 이 컴퓨터에는 내려오지 않습니다. 관리자에게 받은 접속 암구호를 넣어 주세요.'
+                : `${
+                    generation?.hasKey !== true
+                      ? '아직 키가 없습니다.'
+                      : generation.keyRemembered
+                        ? '이 브라우저에 키가 기억되어 있습니다 — 닫았다 열어도 그대로입니다.'
+                        : '이 탭에 키가 저장되어 있습니다 — 탭을 닫으면 지워집니다.'
+                  } 어느 쪽이든 파일·기획서·작업 파일에는 남지 않습니다.`}
             </p>
             <label className="save-dialog__field">
-              <span className="save-dialog__label">새 키 입력</span>
+              <span className="save-dialog__label">{serverKeyMode ? '암구호 입력' : '새 키 입력'}</span>
               <input
                 className="field__input"
                 type="password"
                 autoFocus
-                aria-label="새 API 키"
+                aria-label={serverKeyMode ? '접속 암구호' : '새 API 키'}
                 value={keyDraft}
                 onChange={(e) => setKeyDraft(e.target.value)}
               />
@@ -484,18 +511,23 @@ export function TopToolbar({
                 메모장에 꺼내 두게 만든다 (키 기억하기 Patch). 다만 기억한 키는 이
                 브라우저를 여는 사람이면 개발자 도구로 읽을 수 있으므로, 켜는 것은
                 사람의 선택이고 화면이 그 뜻을 그대로 말한다. */}
-            <label className="key-remember">
-              <input
-                type="checkbox"
-                checked={keyRemember}
-                onChange={(e) => setKeyRemember(e.target.checked)}
-              />
-              <span>
-                이 브라우저에 기억 — 새 키를 넣거나 <b>키 지우기</b>를 누를 때까지 다시 입력하지 않습니다.
-                <br />
-                <small>이 컴퓨터를 쓰는 사람이 개발자 도구로 읽을 수 있습니다. 공용 컴퓨터에서는 끄세요.</small>
-              </span>
-            </label>
+            {/* 암구호에는 이 선택이 없다 — 개인의 비밀이 아니라 팀이 나눠 갖는
+                한 줄이고, 새어도 OpenAI 계정과 무관하며, 주인이 환경변수 한 글자만
+                바꾸면 죽는다. 매번 다시 넣게 할 이유가 없다. */}
+            {!serverKeyMode && (
+              <label className="key-remember">
+                <input
+                  type="checkbox"
+                  checked={keyRemember}
+                  onChange={(e) => setKeyRemember(e.target.checked)}
+                />
+                <span>
+                  이 브라우저에 기억 — 새 키를 넣거나 <b>키 지우기</b>를 누를 때까지 다시 입력하지 않습니다.
+                  <br />
+                  <small>이 컴퓨터를 쓰는 사람이 개발자 도구로 읽을 수 있습니다. 공용 컴퓨터에서는 끄세요.</small>
+                </span>
+              </label>
+            )}
             <div className="confirm__actions">
               <button
                 type="button"
@@ -506,7 +538,7 @@ export function TopToolbar({
                   setKeyPanel(false)
                 }}
               >
-                키 지우기
+                {serverKeyMode ? '암구호 지우기' : '키 지우기'}
               </button>
               <button type="button" className="btn" onClick={() => setKeyPanel(false)}>취소</button>
               <button

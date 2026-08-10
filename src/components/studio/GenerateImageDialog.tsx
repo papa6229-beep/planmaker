@@ -148,6 +148,7 @@ export function GenerateImageDialog() {
   }
 
   const { plan, needsKey } = state
+  const serverKeyMode = generation.accessMode === 'server-key'
   return (
     <div className="confirm-backdrop" role="presentation" onClick={generation.dismiss}>
       <div
@@ -179,19 +180,25 @@ export function GenerateImageDialog() {
           </p>
         )}
 
+        {/* 서버 키 배포에서는 여기서도 키가 아니라 **암구호**를 묻는다
+            (서버 키 Patch). OpenAI 키는 이 컴퓨터로 내려오지 않는다. */}
         {needsKey && (
           <label className="gen-dialog__field">
-            <span className="gen-dialog__label">테스트용 OpenAI API 키</span>
+            <span className="gen-dialog__label">
+              {serverKeyMode ? '접속 암구호' : '테스트용 OpenAI API 키'}
+            </span>
             <input
               className="field__input"
               type="password"
               autoFocus
-              aria-label="테스트용 OpenAI API 키"
+              aria-label={serverKeyMode ? '접속 암구호' : '테스트용 OpenAI API 키'}
               value={key}
               onChange={(e) => setKey(e.target.value)}
             />
             <span className="gen-dialog__hint">
-              이 탭에만 보관되며 탭을 닫으면 지워집니다. 저장소나 파일에는 남지 않습니다.
+              {serverKeyMode
+                ? 'OpenAI 키는 서버에 있습니다 — 이 컴퓨터에는 내려오지 않습니다. 암구호는 이 브라우저에 기억됩니다.'
+                : '이 탭에만 보관되며 탭을 닫으면 지워집니다. 저장소나 파일에는 남지 않습니다.'}
             </span>
           </label>
         )}

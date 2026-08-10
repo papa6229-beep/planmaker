@@ -36,8 +36,19 @@ import {
 import { useBriefDocument } from '../document/useBriefDocument'
 import { useStudioJob } from './useStudioJob'
 import { cursorOf, pageResultOf, revisionsOf, studioLiveAssetIds } from '../../domain/studioJob'
-import { apiKeyRemembered, clearApiKey, readApiKey, saveApiKey } from './apiKeySession'
+import {
+  apiKeyRemembered,
+  authHeaders,
+  clearAccessCode,
+  clearApiKey,
+  currentAccessMode,
+  ensureAccessMode,
+  hasCredential,
+  saveAccessCode,
+  saveApiKey,
+} from './apiKeySession'
 import { buildGenerationRequest } from '../../domain/generationRequest'
+import type { AccessMode } from '../../domain/serverAccess'
 import {
   bannerEditTargets,
   buildEditTargets,
@@ -79,7 +90,6 @@ import { resolveGptImageSize } from '../../domain/gptImageSize'
 import { documentFingerprint } from '../../domain/documentFingerprint'
 import { pageAsEventBrief } from '../../domain/briefMigration'
 import {
-  API_KEY_HEADER,
   errorTextFor,
   httpFailureCode,
   FIELD_IMAGES,
@@ -217,8 +227,24 @@ export interface ImageGenerationApi {
    */
   hasKey: boolean
   /**
-   * 키를 둔다. `remember`면 브라우저에 남아 탭을 닫아도 살아 있다
-   * (키 기억하기 Patch). 기본은 지금까지처럼 이 탭에만.
+   * 이 배포가 무엇을 묻는가 (서버 키 Patch).
+   *
+   *  - `client-key` — 자기 OpenAI 키. 지금까지 그대로다.
+   *  - `server-key` — 키는 서버에 있고, 화면은 **암구호**를 묻는다.
+   *
+   * 화면은 이 값으로 라벨과 설명만 바꾼다. 판정은 언제나 서버가 한다.
+   */
+  accessMode: AccessMode
+  /**
+   * 갈래를 서버에게 묻는다 (한 번만 나간다). 자격을 **달라고 하기 직전**에 부른다 —
+   * 화면을 여는 것만으로 부르면 아무것도 안 했는데 요청이 하나 나간다.
+   */
+  askAccessMode: () => void
+  /**
+   * 자격을 둔다. 갈래에 따라 키이거나 암구호다.
+   *
+   * `remember`는 키에만 뜻이 있다 (키 기억하기 Patch) — 암구호는 개인의 비밀이
+   * 아니라 팀이 나눠 갖는 한 줄이라 언제나 이 브라우저에 남는다.
    */
   saveKey: (key: string, remember?: boolean) => void
   /** 브라우저에 남아 있는가 — 화면이 그 상태를 그대로 보여 준다. */
@@ -353,9 +379,15 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
   const studio = useStudioJob()
   const [state, setState] = useState<GenerationState>({ kind: 'idle' })
   const [view, setView] = useState<StudioCenterView>('brief')
-  /** 키가 있느냐만 담는다. 값 자체는 이 state에 들어오지 않는다. */
-  const [hasKey, setHasKey] = useState(() => readApiKey() !== null)
+  /**
+   * 자격이 있느냐만 담는다. 값 자체는 이 state에 들어오지 않는다.
+   *
+   * "자격"이 키인지 암구호인지는 갈래에 달렸다 (서버 키 Patch). 화면은 그 둘을
+   * 같은 자리에서 묻고, 여기서는 있느냐 없느냐만 안다.
+   */
+  const [hasKey, setHasKey] = useState(() => hasCredential())
   const [keyRemembered, setKeyRemembered] = useState(() => apiKeyRemembered())
+  const [accessMode, setAccessModeState] = useState(() => currentAccessMode())
   const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>([])
   /** 대상 키 → 그 대상에만 적용할 지시. 표시 번호가 아니라 키로 담는다. */
   const [instructions, setInstructions] = useState<Record<string, string>>({})
@@ -487,6 +519,24 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     }
   }, [getDocument, studio])
 
+  /**
+   * 이 배포가 어느 갈래인지 서버에게 묻는다 (서버 키 Patch). 답은 한 번만 나간다.
+   *
+   * **화면을 여는 것만으로는 묻지 않는다.** 갈래는 오직 "무엇을 달라고 할지"를
+   * 정하기 위한 값이라, 이미 자격을 쥐고 있는 사람에게는 아무 쓸모가 없다. 반대로
+   * 아무 때나 물으면 열기만 해도 요청이 하나 나가고, 그 한 건이 "이 화면은 외부를
+   * 부르지 않는다"는 약속을 흐린다.
+   *
+   * 그래서 자격을 **달라고 하기 직전에만** 묻는다 — 키 관리창을 열 때, 그리고
+   * 생성 확인창이 자격 없이 열릴 때.
+   */
+  const askAccessMode = useCallback(() => {
+    void ensureAccessMode().then((mode) => {
+      setAccessModeState(mode)
+      setHasKey(hasCredential())
+    })
+  }, [])
+
   const begin = useCallback(() => {
     if (runningRef.current) return
     const result = planNow()
@@ -494,8 +544,11 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       setState({ kind: 'blocked', message: result.blocked })
       return
     }
-    setState({ kind: 'confirm', plan: result.plan, needsKey: readApiKey() === null })
-  }, [planNow])
+    const needsKey = !hasCredential()
+    // 달라고 하기 직전이다. 답은 창이 떠 있는 동안 도착해 라벨을 바꾼다.
+    if (needsKey) askAccessMode()
+    setState({ kind: 'confirm', plan: result.plan, needsKey })
+  }, [planNow, askAccessMode])
 
   /**
    * 보낼 이미지들을 실제 바이너리로 모은다. 순서는 넘긴 목록 그대로.
@@ -1193,7 +1246,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
   const requestLayer = useCallback(
     async (
       plan: GenerationPlan,
-      key: string,
+      /** 이 요청에 붙일 자격 헤더 — 자기 키이거나 암구호다 (서버 키 Patch). */
+      auth: Record<string, string>,
       inputs: readonly GenerationInputImage[],
       prompt: string,
       /** 이 요청만의 판 크기. 없으면 계획의 페이지 규격 그대로다. */
@@ -1209,10 +1263,10 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         form.append(FIELD_IMAGES, new File([file.blob], file.fileName, { type: file.blob.type || 'image/png' }))
       }
 
-      // 키는 이 요청의 헤더에만 실린다 — 주소에도, 본문에도 없다.
+      // 자격은 이 요청의 헤더에만 실린다 — 주소에도, 본문에도 없다.
       const response = await fetch(GENERATE_IMAGE_PATH, {
         method: 'POST',
-        headers: { [API_KEY_HEADER]: key },
+        headers: auth,
         body: form,
       })
 
@@ -1279,7 +1333,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const run = useCallback(
-    async (plan: GenerationPlan, key: string) => {
+    async (plan: GenerationPlan, auth: Record<string, string>) => {
       runningRef.current = true
       setState({ kind: 'running' })
       try {
@@ -1296,7 +1350,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           for (const [index, edit] of plan.textEdits.entries()) {
             const answer = await requestLayer(
               plan,
-              key,
+              auth,
               planTextEditInputs({
                 currentAssetId: edit.assetId,
                 ...(context?.styleReferenceAssetId === undefined
@@ -1364,7 +1418,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           return
         }
 
-        const first = await requestLayer(plan, key, plan.inputs, await platePrompt(plan))
+        const first = await requestLayer(plan, auth, plan.inputs, await platePrompt(plan))
         if (!('blob' in first)) {
           setState({ kind: 'failed', message: errorTextFor(first.code) })
           return
@@ -1410,7 +1464,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             const order = plan.blockOrders?.[block.blockId] ?? {}
             const answer = await requestLayer(
               plan,
-              key,
+              auth,
               planTextLayerInputs({
                 ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
                 ...(plateAssetId === undefined ? {} : { backgroundAssetId: plateAssetId }),
@@ -1462,17 +1516,19 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     (key?: string) => {
       if (state.kind !== 'confirm' || runningRef.current) return
       const plan = state.plan
+      // 확인 창에서 바로 적어 넣은 값. 갈래에 따라 키이거나 암구호다.
       const trimmed = key?.trim()
       if (trimmed !== undefined && trimmed.length > 0) {
-        saveApiKey(trimmed)
+        if (currentAccessMode() === 'server-key') saveAccessCode(trimmed)
+        else saveApiKey(trimmed)
         setHasKey(true)
       }
-      const usable = trimmed !== undefined && trimmed.length > 0 ? trimmed : readApiKey()
-      if (usable === null) {
+      const auth = authHeaders()
+      if (auth === null) {
         setState({ kind: 'blocked', message: errorTextFor('missing_api_key') })
         return
       }
-      void run(plan, usable)
+      void run(plan, auth)
     },
     [state, run],
   )
@@ -1686,12 +1742,12 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
 
   const confirmEdit = useCallback(() => {
     if (state.kind !== 'edit-confirm' || runningRef.current) return
-    const key = readApiKey()
-    if (key === null) {
+    const auth = authHeaders()
+    if (auth === null) {
       setState({ kind: 'blocked', message: errorTextFor('missing_api_key') })
       return
     }
-    void run(state.plan, key)
+    void run(state.plan, auth)
   }, [state, run])
 
   // ── 결과의 줄 ──────────────────────────────────────────────────────────────
@@ -1736,14 +1792,19 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             state,
             hasResult,
             hasKey,
+            accessMode,
+            askAccessMode,
             saveKey: (key: string, remember = false) => {
-              saveApiKey(key, remember)
-              setHasKey(readApiKey() !== null)
+              if (accessMode === 'server-key') saveAccessCode(key)
+              else saveApiKey(key, remember)
+              setHasKey(hasCredential())
               setKeyRemembered(apiKeyRemembered())
             },
             keyRemembered,
             clearKey: () => {
+              // 갈래가 바뀐 뒤에도 옛 값이 남아 있지 않게 **둘 다** 지운다.
               clearApiKey()
+              clearAccessCode()
               setHasKey(false)
               setKeyRemembered(false)
             },
@@ -1774,7 +1835,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             dismiss: () => setState({ kind: 'idle' }),
           },
     [
-      studio, state, hasResult, hasKey, keyRemembered, view, begin, confirm, retryConversion, recomposePage,
+      studio, state, hasResult, hasKey, keyRemembered, accessMode, askAccessMode, view, begin, confirm, retryConversion, recomposePage,
       rebuildPage, canRebuild,
       editTargets, selectedTargetIds, toggleTarget, instructionFor, setInstructionFor,
       canEdit, editBlockedReason, beginEdit, confirmEdit,

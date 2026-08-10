@@ -196,6 +196,10 @@ export type RefineErrorCode =
   /** 모양은 맞지만 길이·대상 계약을 넘었다 — 잘라 붙이지 않고 되돌린다 (§6). */
   | 'output_too_long'
   | 'bad_request'
+  /** 서버 키를 쓰는 배포인데 암구호가 없거나 틀렸다 (서버 키 Patch). */
+  | 'access_denied'
+  /** 서버에 키만 있고 암구호가 없다 — 잠기지 않은 채로 열어 두지 않는다. */
+  | 'server_not_configured'
   | 'unknown'
 
 export interface RefineFailure {
@@ -214,6 +218,8 @@ export const REFINE_ERROR_TEXT: Record<RefineErrorCode, string> = {
   bad_output: '다듬은 지시를 약속된 형식으로 받지 못했습니다. 다시 시도해 주세요.',
   output_too_long: 'AI가 지시를 너무 길게 작성했습니다. 다시 다듬어 주세요.',
   bad_request: '보낼 내용이 올바르지 않습니다. 지시를 적었는지 확인해 주세요.',
+  access_denied: '접속 암구호가 올바르지 않습니다. 암구호를 다시 입력해 주세요.',
+  server_not_configured: '서버 설정이 끝나지 않아 다듬을 수 없습니다. 관리자에게 문의해 주세요.',
   unknown: '지시를 다듬지 못했습니다. 잠시 후 다시 시도해 주세요.',
 }
 

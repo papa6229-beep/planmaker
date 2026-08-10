@@ -18,6 +18,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { handleRefineInstruction } from '../src/services/refineInstructionHandler.js'
+import { readServerEnv } from '../src/services/serverAccess.js'
 
 /**
  * 배포 설정.
@@ -56,6 +57,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   for await (const chunk of req) chunks.push(chunk as Buffer)
 
   const response = await handleRefineInstruction(toRequest(req, Buffer.concat(chunks)), {
+    // 환경을 읽는 곳은 여기 한 줄뿐이다 (서버 키 Patch).
+    env: readServerEnv(process.env),
     log: (entry) => {
       // 키도, 공급자 원문도 없다. 조사에 필요한 것만.
       console.error('[refine-instruction]', JSON.stringify(entry))
