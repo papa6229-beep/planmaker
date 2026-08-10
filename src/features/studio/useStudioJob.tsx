@@ -456,6 +456,7 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
               blockOrders: { ...state.blockOrders },
               tones: { ...state.tones },
               objectTones: { ...state.objectTones },
+              bannerPages: { ...state.bannerPages },
               // 완성본은 파일에 담기지 않는다. 그런데 지금까지 이 자리는 **열기
               // 전에 보던 작업의 결과**를 그대로 물려받았다 — 다른 기획서를 열었는데
               // 앞 기획서의 완성본이 붙어 있는 셈이다. 파일이 말하지 않은 것은

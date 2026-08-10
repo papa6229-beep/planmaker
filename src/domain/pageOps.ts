@@ -76,6 +76,20 @@ export function addPage(doc: BriefDocument, title?: string): BriefDocument {
   return { ...doc, pages: [...doc.pages, page], activePageId: page.id }
 }
 
+/**
+ * 이미 만들어 둔 페이지를 그대로 붙이고 활성으로 만든다 (배너 Patch §5).
+ *
+ * `addPage`는 빈 페이지를 만든다. 배너는 크기도 블록도 이미 정해진 채로 오므로
+ * 그 길로는 넣을 수 없다. 같은 번호가 이미 있으면 **덮어쓴다** — 같은 규격의 배너를
+ * 다시 뽑을 때 페이지가 쌓이지 않게 하려는 것이고, 그래야 "다시 만들기"가
+ * 사람이 기대하는 대로 제자리에서 바뀐다.
+ */
+export function putPage(doc: BriefDocument, page: BriefPage): BriefDocument {
+  const idx = pageIndex(doc, page.id)
+  const pages = idx === -1 ? [...doc.pages, page] : doc.pages.map((p) => (p.id === page.id ? page : p))
+  return { ...doc, pages, activePageId: page.id }
+}
+
 /** Duplicates a page (fresh block/group ids) right after the original; new page becomes active. */
 export function duplicatePage(doc: BriefDocument, pageId: string): BriefDocument {
   const idx = pageIndex(doc, pageId)

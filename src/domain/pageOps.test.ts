@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   addPage,
+  putPage,
   deletePage,
   duplicatePage,
   getActivePage,
@@ -12,7 +13,7 @@ import {
   setReferenceOpacity,
   setReferenceViewMode,
 } from './pageOps'
-import { createEmptyDocument } from './pageSchema'
+import { createEmptyDocument, createPage } from './pageSchema'
 import { createBlock } from './factory'
 import { createEmptyProject } from './factory'
 import type { BriefDocument } from './pageSchema'
@@ -120,5 +121,40 @@ describe('reference layer per page', () => {
     const id = doc.pages[0]!.id
     expect(setReferenceOpacity(doc, id, 5).pages[0]!.reference.opacity).toBe(1)
     expect(setReferenceOpacity(doc, id, -2).pages[0]!.reference.opacity).toBe(0)
+  })
+})
+
+/**
+ * 이미 만들어 둔 페이지를 그대로 붙인다 (배너 Patch §5).
+ *
+ * 배너는 크기도 블록도 정해진 채로 온다. `addPage`는 빈 페이지를 만들므로 그 길로는
+ * 넣을 수 없다.
+ */
+describe('putPage', () => {
+  const banner = (id: string, title = '배너 1020×70') =>
+    createPage({ id, title, canvasWidth: 1020, canvasHeight: 70 })
+
+  it('없던 페이지는 뒤에 붙이고 활성으로 만든다', () => {
+    const doc = putPage(createEmptyDocument(createEmptyProject('t')), banner('page_banner'))
+    expect(doc.pages).toHaveLength(2)
+    expect(doc.pages[1]!.id).toBe('page_banner')
+    expect([doc.pages[1]!.canvasWidth, doc.pages[1]!.canvasHeight]).toEqual([1020, 70])
+    expect(doc.activePageId).toBe('page_banner')
+  })
+
+  it('같은 번호가 있으면 제자리에서 덮어쓴다', () => {
+    // 같은 규격을 다시 뽑을 때마다 페이지가 쌓이면, 열 번 만지면 열 장이 남는다.
+    let doc = putPage(createEmptyDocument(createEmptyProject('t')), banner('page_banner'))
+    doc = putPage(doc, banner('page_banner', '배너 1020×70 (다시)'))
+    expect(doc.pages).toHaveLength(2)
+    expect(doc.pages[1]!.title).toBe('배너 1020×70 (다시)')
+  })
+
+  it('다른 페이지는 건드리지 않는다', () => {
+    const base = createEmptyDocument(createEmptyProject('t'))
+    const firstId = base.pages[0]!.id
+    const doc = putPage(base, banner('page_banner'))
+    expect(doc.pages[0]!.id).toBe(firstId)
+    expect(doc.pages[0]!.canvasWidth).toBe(base.pages[0]!.canvasWidth)
   })
 })

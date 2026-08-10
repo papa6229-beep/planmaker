@@ -34,10 +34,10 @@ import type { StudioTextObject } from './textObjects'
  * 예전 빌드는 "읽을 수 없다"고 분명히 말한다. 잃는 것이 같다면 소리 내는 쪽이
  * 낫다 (§12 마지막 줄).
  */
-export const STUDIO_FILE_VERSION = '0.11.0'
+export const STUDIO_FILE_VERSION = '0.12.0'
 
 /** 이 판이 **읽을 수 있는** 버전. 예전 파일은 그대로 열린다. */
-export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0', '0.4.0', '0.5.0', '0.6.0', '0.7.0', '0.8.0', '0.9.0', '0.10.0', '0.11.0']
+export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0', '0.4.0', '0.5.0', '0.6.0', '0.7.0', '0.8.0', '0.9.0', '0.10.0', '0.11.0', '0.12.0']
 
 /** 파일이 기억하는 "이 작업이 어느 원본에서 시작했는가". */
 export interface StudioFileSource {
@@ -75,6 +75,8 @@ export interface StudioFileState {
   tones?: Record<string, ToneAdjust>
   /** 블록 id → 그 오브젝트 하나에만 거는 톤 (0.11.0). */
   objectTones?: Record<string, ToneAdjust>
+  /** 페이지 id → 그 페이지가 어느 배너 규격인가 (0.12.0). */
+  bannerPages?: Record<string, string>
 }
 
 /** 지금 작업에서 파일에 남길 것만 추린다. */
@@ -100,6 +102,7 @@ export function toStudioFileState(job: StudioJob): StudioFileState {
     blockOrders: { ...job.blockOrders },
     tones: { ...job.tones },
     objectTones: { ...job.objectTones },
+    bannerPages: { ...job.bannerPages },
     ...(job.grain === undefined ? {} : { grain: job.grain }),
     ...(job.method === undefined ? {} : { method: job.method }),
   }
@@ -313,6 +316,11 @@ export function parseStudioFileState(raw: unknown): StudioFileState | null {
       ? Object.fromEntries(Object.entries(raw.objectTones).map(([blockId, v]) => [blockId, normalizeTone(v)]))
       : {},
     effects: readEffects(raw.effects),
+    bannerPages: isRecord(raw.bannerPages)
+      ? Object.fromEntries(
+          Object.entries(raw.bannerPages).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+        )
+      : {},
     ...(typeof raw.grain === 'number' ? { grain: Math.min(1, Math.max(0, raw.grain)) } : {}),
     ...(raw.method === 'background_composite' || raw.method === 'full_ai' ? { method: raw.method } : {}),
   }

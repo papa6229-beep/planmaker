@@ -62,6 +62,7 @@ const RESTORED: Record<Carried, (job: StudioJob) => unknown> = {
   blockOrders: (job) => job.blockOrders,
   tones: (job) => job.tones,
   objectTones: (job) => job.objectTones,
+  bannerPages: (job) => job.bannerPages,
 }
 
 function sampleDoc(): BriefDocument {
@@ -95,6 +96,7 @@ function fullJob(): StudioJob {
     blockOrders: { blk_txt: { note: '둥근 라벨 위에 굵게', referenceAssetId: 'asset_ref' } },
     tones: { page_1: { brightness: 0.4, contrast: -0.2, saturation: 0.1, temperature: -0.3 } },
     objectTones: { blk_txt: { brightness: -0.5, contrast: 0.25, saturation: 0, temperature: 0.6 } },
+    bannerPages: { page_banner: '1020x70' },
     grain: 0.2,
     method: 'background_composite',
     // 완성본은 파일에 담기지 않는다. 열었을 때 이것이 묻어오면 안 된다.
