@@ -122,10 +122,10 @@ describe('§31-3 물러나는 방법', () => {
     expect(nextConcession('product_group_image')).toBe('thin')
   })
 
-  it('한 대뿐인 히어로는 개수 대신 배경으로 내려간다', () => {
-    // 이벤트3의 가차 기계. 줄일 개수가 없으므로 확대해 흐리게 깔았다. 여기서
-    // `thin`이 나오면 줄일 수 없는 것을 줄이려다 결국 빼게 된다.
-    expect(nextConcession('main_product_image')).toBe('demote')
+  it('한 대뿐인 히어로는 줄일 개수가 없다 — 안 맞으면 뺀다', () => {
+    // 한때 배경으로 내려 깔았다. 실물로 돌려 보니 인물 컷아웃은 늘리면 얼룩이라
+    // 작업자가 "배경에 뭐가 깔린지 모르겠다"고 했다. 빼고 말하는 쪽으로 되돌렸다.
+    expect(nextConcession('main_product_image')).toBe('drop')
     expect(bannerRoleOf('main_product_image').concessions).not.toContain('thin')
   })
 
@@ -141,9 +141,8 @@ describe('§31-3 물러나는 방법', () => {
   })
 
   it('이미 한 것은 다시 하지 않는다', () => {
-    expect(nextConcession('product_group_image', ['thin'])).toBe('demote')
-    expect(nextConcession('product_group_image', ['thin', 'demote'])).toBe('drop')
-    expect(nextConcession('product_group_image', ['thin', 'demote', 'drop'])).toBeNull()
+    expect(nextConcession('product_group_image', ['thin'])).toBe('drop')
+    expect(nextConcession('product_group_image', ['thin', 'drop'])).toBeNull()
   })
 
   it('기간과 로고는 물러날 것 없이 바로 빠진다', () => {

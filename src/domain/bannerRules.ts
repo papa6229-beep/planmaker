@@ -27,9 +27,6 @@
  *    벗었다. 기간·고지·배지처럼 읽어야 아는 것이 먼저 빠졌다.
  *  - **개수를 줄이는 것과 통째로 빠지는 것이 다르다.** 상품 뭉치는 8→5로 줄었고,
  *    기간은 0 아니면 전부였다.
- *  - **개수를 줄일 수 없는 히어로는 배경이 된다.** 이벤트3의 가차 기계는 한 대뿐이라
- *    줄일 수가 없었고, 얇은 띠 두 장에서 잘리지도 빠지지도 않고 **확대해 흐리게
- *    깔렸다.**
  *
  * ## 작은 규격에서 실제로 넣는 차례
  *
@@ -99,8 +96,6 @@ export type Concession =
   | 'unlabel'
   /** 개수를 줄인다 — 상품 뭉치 8→5. 줄였다는 표시(`⋮`)는 함께 간다. */
   | 'thin'
-  /** 배경으로 내린다 — 확대해 흐리게 깔고 글자 뒤로 보낸다. */
-  | 'demote'
   /** 뺀다. */
   | 'drop'
 
@@ -116,7 +111,6 @@ export const CONCESSION_ORDER: readonly Concession[] = [
   'shorten',
   'unlabel',
   'thin',
-  'demote',
   'drop',
 ]
 
@@ -166,16 +160,23 @@ export const BANNER_ROLES: Record<BlockType, BannerRole> = {
    * 그래서 중요도가 낮고, 물러날 방법도 빠지는 것뿐이다.
    */
   logo: { purpose: 'chrome', importance: 25, concessions: ['drop'] },
-  /** 한 대뿐인 히어로는 개수를 줄일 수 없다. 얇은 띠에서는 배경이 된다. */
-  main_product_image: { purpose: 'imagery', importance: 75, concessions: ['demote', 'drop'] },
-  sub_product_image: { purpose: 'imagery', importance: 45, concessions: ['thin', 'demote', 'drop'] },
+  /**
+   * 한 대뿐인 히어로는 개수를 줄일 수 없다. 모양이 안 맞으면 뺀다.
+   *
+   * 앞선 판은 **배경으로 내렸다** — 이벤트3의 가차 기계가 얇은 띠에서 확대되어
+   * 흐리게 깔린 것을 보고 만든 규칙이었다. 실물로 돌려 보니 틀렸다. 기계는 늘려도
+   * 실루엣이 남지만 **인물 컷아웃은 늘리면 얼룩**이고, 작업자가 "배경에 뭐가 깔린지
+   * 모르겠다"고 했다. 뺀 것은 조각 서랍에서 다시 꺼낼 수 있다.
+   */
+  main_product_image: { purpose: 'imagery', importance: 75, concessions: ['drop'] },
+  sub_product_image: { purpose: 'imagery', importance: 45, concessions: ['thin', 'drop'] },
   /**
    * 뭉치는 개수부터 줄인다 — 8→5.
    *
    * 작은 규격에서 넣는 차례가 제목 → **제품 이미지** → 남는 것이므로, 가격·혜택보다
    * 앞선다. 밀리면 글자만 남은 배너가 나온다.
    */
-  product_group_image: { purpose: 'imagery', importance: 74, concessions: ['thin', 'demote', 'drop'] },
+  product_group_image: { purpose: 'imagery', importance: 74, concessions: ['thin', 'drop'] },
   /** 참고용이라 완성본에도 나가지 않는다. */
   background_reference_image: { purpose: 'none', importance: 0, concessions: [] },
   existing_full_image: { purpose: 'none', importance: 0, concessions: [] },

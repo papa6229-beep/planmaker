@@ -17,9 +17,8 @@
  *
  * 이 파일에서 가장 조심한 자리다. 셋으로 갈린다.
  *
- *  - **배경으로 내려간다** — 개수를 줄일 수 없는 히어로. 이벤트3의 가차 기계가
- *    70px 띠에서 잘리지도 빠지지도 않고 확대되어 흐리게 깔렸다.
- *  - **빠진다** — 양보 목록 끝이 `drop`인 것. 기간, 로고.
+ *  - **빠진다** — 양보 목록 끝이 `drop`인 것. 기간, 로고, 그리고 모양이 안 맞는
+ *    그림. 뺀 것은 조각 서랍에서 사람이 다시 꺼낼 수 있다.
  *  - **남는다, 자리 없이** — 제목과 CTA. 이 둘은 뺄 수 없으므로, 자리를 못 얻으면
  *    **그렇다고 말한다.** 조용히 빼면 제목 없는 배너가 나오고, 억지로 밀어 넣으면
  *    다른 것과 겹친 배너가 나온다. 둘 다 사람이 알아야 고칠 수 있는 일이다.
@@ -43,9 +42,9 @@ const SLOT_GAP = 0.06
  * 기계가 가로로 긴 상자를 받아 옆으로 찌그러진다. 비율을 지켜 넣으면 찌그러지지는
  * 않지만, 이번에는 204×56 자리에 39×56짜리 조각이 덩그러니 남는다.
  *
- * 그때가 **배경으로 내려갈 때**다. 앞선 판은 배경 강등을 "자리가 모자랄 때"로만
- * 적었는데, 이벤트3에서 가차 기계가 배경이 된 진짜 이유는 자리가 없어서가 아니라
- * **모양이 안 맞아서**였다. 자리는 왼쪽에 있었다.
+ * 그때는 **뺀다.** 한때 배경으로 내려 깔아 보았지만 — 이벤트3의 가차 기계가 그랬듯 —
+ * 인물 컷아웃은 늘리면 얼룩이고, 작업자가 "배경에 뭐가 깔린지 모르겠다"고 했다.
+ * 빼고 그렇다고 말하면, 필요한 사람은 조각 서랍에서 다시 꺼낸다.
  */
 export const MIN_SLOT_FILL = 0.25
 
@@ -72,6 +71,19 @@ export function bannerBlockId(pageId: string, blockId: string): string {
   return `${pageId}__${blockId}`
 }
 
+/**
+ * 배너 페이지 번호에서 원본 페이지를 되찾는다.
+ *
+ * 규격 번호를 **알고 있어야** 한다. 임의 크기 규격은 `custom_640x200`처럼 밑줄이
+ * 들어 있어서, 마지막 밑줄에서 자르면 `custom_640`을 규격으로 읽고 원본 번호에
+ * `_custom`이 붙는다. 그렇게 잘린 번호로는 원본을 못 찾는다.
+ */
+export function sourcePageIdOf(bannerPageId: string, specId: string): string | null {
+  const tail = `_${specId}`
+  if (!bannerPageId.startsWith(BANNER_PAGE_PREFIX) || !bannerPageId.endsWith(tail)) return null
+  return bannerPageId.slice(BANNER_PAGE_PREFIX.length, bannerPageId.length - tail.length)
+}
+
 export interface BannerPlacement {
   blockId: string
   slotId: string
@@ -85,12 +97,12 @@ export type DropReason =
   | 'not-for-banner'
   /** 받아 주는 자리가 없었다. */
   | 'no-slot'
+  /** 자리는 있었지만 그 모양으로는 어울리지 않았다. */
+  | 'no-shape'
 
 export interface BannerFit {
   spec: BannerSpec
   placements: readonly BannerPlacement[]
-  /** 자리 대신 배경으로 내려간 블록. 전면으로 깔리고 맨 뒤에 간다. */
-  background: readonly string[]
   dropped: readonly { blockId: string; reason: DropReason }[]
   /**
    * 자리를 못 얻었지만 **빼서도 안 되는** 것 — 제목과 CTA.
@@ -176,7 +188,6 @@ function round(rect: LayoutRect, width: number, height: number): LayoutRect {
  */
 export function fitBanner(blocks: readonly BriefBlock[], spec: BannerSpec): BannerFit {
   const placements: BannerPlacement[] = []
-  const background: string[] = []
   const dropped: { blockId: string; reason: DropReason }[] = []
   const unplaced: string[] = []
 
@@ -197,8 +208,12 @@ export function fitBanner(blocks: readonly BriefBlock[], spec: BannerSpec): Bann
       // 혼자 쓴다고 쳐도 이만큼도 못 채우면, 그 자리는 이 블록의 자리가 아니다.
       const whole = slotCell(slot, 0, 1, spec.width, spec.height)
       const { aspect, rotated } = aspectIn(block, whole)
-      if (fillOf(whole, containIn(whole, aspect)) < MIN_SLOT_FILL && role.concessions.includes('demote')) {
-        background.push(block.id)
+      // **줄일 수 없는 히어로에게만** 묻는다. 개수를 줄일 수 있는 뭉치나 글자는
+      // 작게 들어가도 제 몫을 한다 — 이벤트2의 70px 띠에서 사은품 사진이 그랬다.
+      // 이 조건을 넓히면 그런 것들까지 조용히 빠진다.
+      const cannotThin = role.purpose === 'imagery' && !role.concessions.includes('thin')
+      if (cannotThin && fillOf(whole, containIn(whole, aspect)) < MIN_SLOT_FILL && role.concessions.includes('drop')) {
+        dropped.push({ blockId: block.id, reason: 'no-shape' })
         continue
       }
       taken.get(slot.id)!.push({ id: block.id, rotated })
@@ -211,11 +226,6 @@ export function fitBanner(blocks: readonly BriefBlock[], spec: BannerSpec): Bann
     let settled = false
     for (let step = nextConcession(block.type); step !== null; step = nextConcession(block.type, applied)) {
       applied.push(step)
-      if (step === 'demote') {
-        background.push(block.id)
-        settled = true
-        break
-      }
       if (step === 'drop') {
         dropped.push({ blockId: block.id, reason: 'no-slot' })
         settled = true
@@ -242,7 +252,7 @@ export function fitBanner(blocks: readonly BriefBlock[], spec: BannerSpec): Bann
     }
   }
 
-  return { spec, placements, background, dropped, unplaced }
+  return { spec, placements, dropped, unplaced }
 }
 
 /**
@@ -251,27 +261,12 @@ export function fitBanner(blocks: readonly BriefBlock[], spec: BannerSpec): Bann
  * 원본 페이지는 **건드리지 않는다.** 블록은 복제해서 자리만 바꾼다 — 배너를
  * 뽑았다고 메인 이벤트 페이지의 배치가 흔들리면 안 된다.
  *
- * 배경으로 내려간 블록은 전면으로 깔리고 배열의 맨 앞에 온다. 이 기획서에서
- * 배열의 차례가 곧 앞뒤이므로, 앞에 있는 것이 뒤에 깔린다.
+ * 배열의 차례가 곧 앞뒤다 — 앞에 있는 것이 뒤에 깔린다.
  */
 export function buildBannerPage(page: BriefPage, spec: BannerSpec): { page: BriefPage; fit: BannerFit } {
   const fit = fitBanner(page.blocks, spec)
   const byId = new Map(page.blocks.map((block) => [block.id, block]))
 
-  const behind: BriefBlock[] = fit.background.flatMap((id) => {
-    const block = byId.get(id)
-    if (block === undefined) return []
-    return [
-      {
-        ...block,
-        position: { x: 0, y: 0, width: spec.width, height: spec.height },
-        // **채우기**로 바꾼다. 기본값인 `맞추기`로 두면 세로로 긴 히어로가 70px
-        // 높이에 맞춰 손톱만 하게 줄어 가운데 박힌다 — 브라우저에서 실제로 그랬다.
-        // 배경으로 내린다는 것은 화면을 덮는다는 뜻이지 작게 놓는다는 뜻이 아니다.
-        image: { ...block.image, fit: 'cover' },
-      },
-    ]
-  })
   const front: BriefBlock[] = fit.placements.flatMap((placement) => {
     const block = byId.get(placement.blockId)
     return block === undefined ? [] : [{ ...block, position: { ...placement.rect } }]
@@ -284,7 +279,7 @@ export function buildBannerPage(page: BriefPage, spec: BannerSpec): { page: Brie
       // 규격을 다시 뽑을 때 제자리에서 바뀌는 것도 이 번호 덕이다.
       id: bannerPageId(page.id, spec.id),
       title: `${page.title} · ${spec.width}×${spec.height}`,
-      blocks: [...behind, ...front],
+      blocks: front,
       canvasWidth: spec.width,
       canvasHeight: spec.height,
       reference: { viewMode: 'canvas', opacity: DEFAULT_REFERENCE_OPACITY, fit: 'width', visible: false },

@@ -113,12 +113,10 @@ describe('§32-1 어느 자리로 가는가', () => {
 })
 
 describe('§32-2 자리를 못 얻으면', () => {
-  it('한 대뿐인 히어로는 배경으로 내려간다', () => {
-    // 이벤트3의 가차 기계. 잘리지도 빠지지도 않고 확대되어 흐리게 깔렸다.
+  it('자리를 못 얻은 히어로는 빠진다', () => {
     const many = ['a', 'b', 'c', 'd', 'e'].map((id) => block('main_product_image', id))
     const fit = fitBanner(many, SPEC)
-    expect(fit.background).toEqual(['e'])
-    expect(fit.dropped).toEqual([])
+    expect(fit.dropped).toEqual([{ blockId: 'e', reason: 'no-slot' }])
   })
 
   it('기간은 남는 자리가 있으면 들어가고, 없으면 그냥 빠진다', () => {
@@ -152,7 +150,6 @@ describe('§32-2 자리를 못 얻으면', () => {
     )
     expect(fit.unplaced).toEqual(['three'])
     expect(fit.dropped).toEqual([])
-    expect(fit.background).toEqual([])
   })
 
   it('CTA도 마찬가지다', () => {
@@ -186,13 +183,11 @@ describe('§32-3 모양을 지킨다', () => {
     }
   })
 
-  it('모양이 안 맞으면 자리를 얻고도 배경으로 내려간다', () => {
-    // 이벤트3의 가차 기계. 앞선 판은 "자리가 모자랄 때"만 배경으로 내렸는데,
-    // 실제로 배경이 된 이유는 자리가 없어서가 아니라 **모양이 안 맞아서**였다 —
-    // 자리는 왼쪽에 있었다. 세로로 긴 기계를 70px 띠에 비율 지켜 넣으면 손가락만
-    // 한 조각이 남는다.
+  it('모양이 안 맞으면 자리를 얻고도 뺀다', () => {
+    // 세로로 긴 기계를 70px 띠에 비율 지켜 넣으면 손가락만 한 조각이 남는다.
+    // 그럴 바에는 빼고 말한다 — 필요하면 사람이 다시 넣는다.
     const fit = fitBanner([block('main_product_image', 'gacha', { width: 330, height: 470 })], SPEC)
-    expect(fit.background).toEqual(['gacha'])
+    expect(fit.dropped).toEqual([{ blockId: 'gacha', reason: 'no-shape' }])
     expect(fit.placements).toEqual([])
   })
 
@@ -203,7 +198,7 @@ describe('§32-3 모양을 지킨다', () => {
     const placed = fit.placements[0]!
     expect(placed.applied).toEqual(['rotate'])
     expect(placed.rect.width).toBeGreaterThan(placed.rect.height)
-    expect(fit.background).toEqual([])
+    expect(fit.dropped).toEqual([])
   })
 
   it('가로로 긴 것을 괜히 눕히지는 않는다', () => {
@@ -266,23 +261,7 @@ describe('§32-4 배너 기획서가 나온다', () => {
     expect([source.canvasWidth, source.canvasHeight]).toEqual([840, 1180])
   })
 
-  it('배경으로 내려간 것은 전면으로 깔리고 맨 뒤에 간다', () => {
-    // 배열의 앞이 뒤에 깔린다. 글자 위에 오면 아무것도 읽을 수 없다.
-    const many = ['a', 'b', 'c', 'd', 'e'].map((id) => block('main_product_image', id))
-    const { page: banner, fit } = buildBannerPage(page(many), SPEC)
-    expect(fit.background).toEqual(['e'])
-    expect(banner.blocks[0]!.id).toBe('e')
-    expect(banner.blocks[0]!.position).toEqual({ x: 0, y: 0, width: 1020, height: 70 })
-  })
 
-  it('배경으로 내려간 것은 화면을 **채운다**', () => {
-    // 기본값인 `맞추기`로 두면 세로로 긴 히어로가 70px 높이에 맞춰 손톱만 하게
-    // 줄어 가운데 박힌다 — 브라우저에서 실제로 그랬다. 배경으로 내린다는 것은
-    // 화면을 덮는다는 뜻이지 작게 놓는다는 뜻이 아니다.
-    const gacha = block('main_product_image', 'gacha', { width: 330, height: 470 })
-    const { page: banner } = buildBannerPage(page([gacha]), SPEC)
-    expect(banner.blocks[0]!.image?.fit).toBe('cover')
-  })
 })
 
 describe('§32-5 규격이 스스로 말하는 것', () => {

@@ -35,26 +35,6 @@ import type { StudioBackground } from './studioJob'
 import type { StudioTextObject } from './textObjects'
 import type { ToneAdjust } from './toneAdjust'
 
-/**
- * 배경으로 내려간 조각에 거는 톤.
- *
- * 이벤트3의 가차 기계는 얇은 띠에서 확대되어 **흐리게** 깔렸다. 흐리게 하는 길이
- * 지금 합성기에 없으므로, 밝히고 대비와 채도를 눌러 비슷한 자리에 둔다 — 글자가
- * 읽히는 것이 먼저다.
- *
- * 흐림이 아니라는 것을 적어 둔다. 실물을 보고 모자라면 그때 흐림을 만든다.
- */
-export const DEMOTED_TONE: ToneAdjust = { brightness: 0.35, contrast: -0.45, saturation: -0.35, temperature: 0 }
-
-/**
- * 배경으로 내려간 조각의 진하기.
- *
- * 톤만으로는 안 된다는 것을 브라우저에서 봤다. 밝기를 올려도 불투명한 그림은
- * 뒤를 가리고, 눌러 놓은 가차 기계가 그대로 제목을 덮었다. 배경으로 내린다는
- * 것은 **뒤에 비친다**는 뜻이므로 진하기를 함께 내린다.
- */
-export const DEMOTED_OPACITY = 0.22
-
 /** 완성본이 남긴 조각들. 저장 파일에서 그대로 나온다. */
 export interface BannerPieces {
   background?: StudioBackground | undefined
@@ -121,13 +101,6 @@ export function buildBanner(
   const productImages: Record<string, string> = { ...pieces.productImages }
   for (const [blockId, piece] of imagePieces) productImages[blockId] = piece.assetId
 
-  // 배경으로 내려간 것은 눌러서, 그리고 비치게 깐다.
-  const objectTones: Record<string, ToneAdjust> = { ...pieces.objectTones }
-  const opacities: Record<string, number> = {}
-  for (const blockId of fit.background) {
-    objectTones[blockId] = DEMOTED_TONE
-    opacities[blockId] = DEMOTED_OPACITY
-  }
 
   const plan = planLocalComposite({
     page,
@@ -136,8 +109,7 @@ export function buildBanner(
     textObjects,
     productImages,
     effects: pieces.effects,
-    objectTones,
-    opacities,
+    ...(pieces.objectTones === undefined ? {} : { objectTones: pieces.objectTones }),
     ...(pieces.grain === undefined ? {} : { grain: pieces.grain }),
     ...(pieces.tone === undefined ? {} : { tone: pieces.tone }),
     // 글자는 조각이 그린다. 여기서 또 그리면 같은 문구가 두 번 나온다.

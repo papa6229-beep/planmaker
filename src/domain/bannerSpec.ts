@@ -130,6 +130,42 @@ export const BANNER_1020x70: BannerSpec = {
 
 export const BANNER_SPECS: readonly BannerSpec[] = [BANNER_1020x70]
 
+/** 임의 크기 규격의 번호는 크기 그 자체다 — `640x200`. */
+export const CUSTOM_SPEC_PREFIX = 'custom'
+
+/**
+ * 작업자가 적어 넣은 크기 (배너 Patch §6).
+ *
+ * 정해진 규격에는 사람이 만든 틀이 있다 — 왼쪽 혜택, 가운데 제목, 오른쪽 행동.
+ * 임의 크기에는 그런 것이 없고, 없는 문법을 지어내면 어색한 배치가 나온다.
+ *
+ * 그래서 **자리를 하나도 두지 않는다.** 배경만 그 크기로 깔리고 나머지는 비어 있다.
+ * 조각은 서랍에서 꺼내 놓는다 — 백지에서 시작하는 것이 지어낸 배치보다 낫다.
+ */
+export function customBannerSpec(width: number, height: number): BannerSpec | null {
+  const w = Math.round(width)
+  const h = Math.round(height)
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w < 1 || h < 1 || w > 8000 || h > 8000) return null
+  return {
+    id: `${CUSTOM_SPEC_PREFIX}_${String(w)}x${String(h)}`,
+    label: '직접 지정',
+    width: w,
+    height: h,
+    siblings: [],
+    edgeReport: ['left', 'right'],
+    slots: [],
+  }
+}
+
+/** 임의 크기 번호에서 크기를 되찾는다. */
+export function sizeOfCustomSpecId(id: string): { width: number; height: number } | null {
+  const match = /^custom_(\d+)x(\d+)$/.exec(id)
+  return match === null ? null : { width: Number(match[1]), height: Number(match[2]) }
+}
+
 export function bannerSpecById(id: string): BannerSpec | null {
-  return BANNER_SPECS.find((spec) => spec.id === id) ?? null
+  const known = BANNER_SPECS.find((spec) => spec.id === id)
+  if (known !== undefined) return known
+  const size = sizeOfCustomSpecId(id)
+  return size === null ? null : customBannerSpec(size.width, size.height)
 }

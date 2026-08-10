@@ -45,6 +45,7 @@ import { ToneAdjustPanel } from '../components/studio/ToneAdjustPanel'
 import { PaperTunePanel } from '../components/studio/PaperTunePanel'
 import { BannerPanel } from '../components/studio/BannerPanel'
 import { BannerTabs } from '../components/studio/BannerTabs'
+import { BannerDrawer } from '../components/studio/BannerDrawer'
 import { BackgroundCompositeProvider } from '../features/studio/useBackgroundComposite'
 import { StudioEffectsSync } from '../features/studio/StudioEffectsSync'
 import { GenerateImageDialog } from '../components/studio/GenerateImageDialog'
@@ -322,6 +323,8 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
                 잠깐 기획서로 돌아가는데, 그때 패널이 사라지면 방금 만든 배너의
                 안내(무엇을 버렸는지)도 함께 사라진다. */}
             <BannerPanel />
+            {/* 배너에 없는 조각을 꺼내 놓는 서랍 (배너 Patch §6). 배너에서만 나온다. */}
+            <BannerDrawer />
             {compare ? (
               <>
                 <EditPanel />

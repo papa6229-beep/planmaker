@@ -29,7 +29,7 @@ import { useBriefDocument } from '../document/useBriefDocument'
 import { useStudioJob } from './useStudioJob'
 import { useImageGeneration } from './useImageGeneration'
 import { buildBanner, readableSlots } from '../../domain/bannerComposite'
-import { bannerBlockId, bannerPageId } from '../../domain/bannerFit'
+import { bannerBlockId, bannerPageId, sourcePageIdOf } from '../../domain/bannerFit'
 import { bannerSpecById, type BannerSpec } from '../../domain/bannerSpec'
 import type { EdgeSide } from '../../domain/edgeColor'
 import type { BriefPage } from '../../domain/pageSchema'
@@ -42,7 +42,7 @@ import { createId } from '../../domain/factory'
 
 /** 무엇이 어떻게 되었는지 한 줄. 화면이 그대로 읽는다. */
 export interface BannerNote {
-  kind: 'dropped' | 'background' | 'unplaced' | 'missing'
+  kind: 'dropped' | 'mis-shape' | 'unplaced' | 'missing'
   label: string
 }
 
@@ -92,7 +92,8 @@ export function useBannerMaker(): BannerMakerApi | null {
       const spec = bannerSpecById(specId)
       // 배너를 보고 있을 때 다시 만들면 **그 배너의 원본**에서 다시 만든다.
       // 배너에서 배너를 뽑으면 조각이 두 번 줄어든다.
-      const sourceId = studio.bannerSpecOf(activePageId) === null ? activePageId : sourcePageIdOf(activePageId)
+      const viewing = studio.bannerSpecOf(activePageId)
+      const sourceId = viewing === null ? activePageId : sourcePageIdOf(activePageId, viewing)
       const source = pages.find((p) => p.id === sourceId)
       if (spec === null || source === undefined) {
         setState({ kind: 'failed', message: '배너를 만들 페이지를 찾지 못했습니다.' })
@@ -216,10 +217,12 @@ export function useBannerMaker(): BannerMakerApi | null {
           const notes: BannerNote[] = [
             ...built.fit.unplaced.map((id) => ({ kind: 'unplaced' as const, label: labelOf(id) })),
             ...built.missingPieces.map((id) => ({ kind: 'missing' as const, label: labelOf(id) })),
-            ...built.fit.background.map((id) => ({ kind: 'background' as const, label: labelOf(id) })),
             ...built.fit.dropped
-              .filter((d) => d.reason === 'no-slot')
-              .map((d) => ({ kind: 'dropped' as const, label: labelOf(d.blockId) })),
+              .filter((d) => d.reason === 'no-slot' || d.reason === 'no-shape')
+              .map((d) => ({
+                kind: d.reason === 'no-shape' ? ('mis-shape' as const) : ('dropped' as const),
+                label: labelOf(d.blockId),
+              })),
           ]
 
           setState({ kind: 'done', result: { spec, pageId, blob, notes, edges, centerFallback } })
@@ -238,9 +241,3 @@ export function useBannerMaker(): BannerMakerApi | null {
   return { state, viewingSpecId, make, dismiss }
 }
 
-/** `banner_<원본>_<규격>`에서 원본을 되찾는다. */
-function sourcePageIdOf(bannerId: string): string {
-  const rest = bannerId.startsWith('banner_') ? bannerId.slice('banner_'.length) : bannerId
-  const cut = rest.lastIndexOf('_')
-  return cut === -1 ? rest : rest.slice(0, cut)
-}

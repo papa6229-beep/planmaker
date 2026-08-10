@@ -12,13 +12,14 @@
 
 import { useBannerMaker, sideLabel, type BannerNote } from '../../features/studio/useBannerMaker'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
-import { BANNER_SPECS } from '../../domain/bannerSpec'
+import { useState } from 'react'
+import { BANNER_SPECS, customBannerSpec } from '../../domain/bannerSpec'
 import { PanelFold } from './PanelFold'
 
 const NOTE_TEXT: Record<BannerNote['kind'], string> = {
   unplaced: '자리를 못 얻었습니다 — 빼면 안 되는 것입니다',
   missing: '완성본에 이 블록의 그림이 없습니다',
-  background: '모양이 안 맞아 배경으로 내렸습니다',
+  'mis-shape': '이 규격에는 모양이 안 맞아 뺐습니다',
   dropped: '자리가 없어 뺐습니다',
 }
 
@@ -28,6 +29,7 @@ const NEEDS_EYES = new Set<BannerNote['kind']>(['unplaced', 'missing'])
 export function BannerPanel() {
   const banner = useBannerMaker()
   const generation = useImageGeneration()
+  const [custom, setCustom] = useState({ width: '', height: '' })
   // 만드는 동안·만든 뒤에는 결과 유무와 상관없이 남는다. 만드는 도중 가운데가
   // 잠깐 다른 페이지를 가리키는데, 그때 사라지면 방금 만든 배너의 안내가 함께
   // 사라진다 — 무엇을 버렸는지가 그 안내에만 있다.
@@ -58,6 +60,43 @@ export function BannerPanel() {
               {spec.width}×{spec.height} {banner.viewingSpecId === spec.id ? '다시 만들기' : '만들기'}
             </button>
           ))}
+        </div>
+
+        {/* 정해진 규격 말고 원하는 크기로도. 틀이 없으므로 배경만 깔리고 조각은
+            서랍에서 꺼내 놓는다 — 없는 문법을 지어내는 것보다 백지가 낫다. */}
+        <div className="banner__custom">
+          <label className="banner__custom-field">
+            <span>가로</span>
+            <input
+              type="number"
+              min={1}
+              value={custom.width}
+              aria-label="배너 가로"
+              onChange={(e) => setCustom((c) => ({ ...c, width: e.target.value }))}
+            />
+          </label>
+          <span className="banner__custom-x">×</span>
+          <label className="banner__custom-field">
+            <span>세로</span>
+            <input
+              type="number"
+              min={1}
+              value={custom.height}
+              aria-label="배너 세로"
+              onChange={(e) => setCustom((c) => ({ ...c, height: e.target.value }))}
+            />
+          </label>
+          <button
+            type="button"
+            className="btn"
+            disabled={busy || customBannerSpec(Number(custom.width), Number(custom.height)) === null}
+            onClick={() => {
+              const spec = customBannerSpec(Number(custom.width), Number(custom.height))
+              if (spec !== null) banner.make(spec.id)
+            }}
+          >
+            이 크기로
+          </button>
         </div>
 
         {banner.state.kind === 'working' && <p className="banner__status">만드는 중…</p>}

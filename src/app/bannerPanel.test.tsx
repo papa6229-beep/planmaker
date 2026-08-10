@@ -333,3 +333,35 @@ describe('§35-5 배너는 페이지가 된다', () => {
     }, { timeout: 9000 })
   }, 15_000)
 })
+
+describe('§35-6 조각 서랍', () => {
+  it('배너에 없는 조각을 이름으로 늘어놓는다', async () => {
+    // 자동은 버리는 일을 한다. 뺀 것을 되돌릴 방법이 없으면, 가장 작은 규격은
+    // 아무것도 못 만드는 화면이 된다.
+    await makeBanner()
+    fireEvent.click(await screen.findByRole('button', { name: /조각 서랍/ }, { timeout: 3500 }))
+    const drawer = screen.getByRole('region', { name: '조각 서랍' })
+    // 로고는 자리가 없어 빠졌다. 서랍에는 있어야 한다.
+    expect(within(drawer).getByRole('button', { name: /로고/ })).toBeTruthy()
+  }, 15_000)
+
+  it('꺼내면 배너에 놓인다', async () => {
+    await makeBanner()
+    fireEvent.click(await screen.findByRole('button', { name: /조각 서랍/ }, { timeout: 3500 }))
+    const drawer = screen.getByRole('region', { name: '조각 서랍' })
+    fireEvent.click(within(drawer).getByRole('button', { name: /로고/ }))
+    await waitFor(async () => {
+      const job = (await loadStudioJob(STUDIO_JOB_ID))!
+      const bannerId = Object.keys(job.bannerPages ?? {})[0]!
+      const ids = (job.imageObjects?.[bannerId] ?? []).map((o) => o.blockId)
+      expect(ids.some((id) => id.endsWith('blk_logo'))).toBe(true)
+    }, { timeout: 3500 })
+  }, 15_000)
+
+  it('이벤트 페이지에는 서랍이 없다', async () => {
+    // 이벤트 페이지에는 조각이 이미 다 놓여 있다.
+    await openStudio()
+    await showResult()
+    expect(screen.queryByRole('region', { name: '조각 서랍' })).toBeNull()
+  })
+})

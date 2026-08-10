@@ -7,6 +7,26 @@
 export const MIN_BLOCK_WIDTH = 80
 export const MIN_BLOCK_HEIGHT = 48
 
+/**
+ * 캔버스가 작으면 바닥값도 함께 낮아진다 (배너 Patch §6).
+ *
+ * 위의 두 값은 840×1180 기획서 캔버스를 두고 정한 것이다 — 그보다 작은 상자는
+ * 손으로 잡을 수가 없다. 그런데 그 값이 **절대 픽셀**이라 1020×70 배너에서는
+ * 세로 48px이 캔버스 높이의 69%가 된다. 한 번 키운 조각이 그 아래로 줄지 않았고,
+ * 실제로 그 자리에서 막혔다.
+ *
+ * 캔버스의 한 자락을 넘지 않게 함께 낮춘다. 기획서 캔버스에서는 두 값이 그대로다
+ * (840×0.1 = 84 > 80, 1180×0.1 = 118 > 48) — 지금까지의 동작은 한 픽셀도 안 바뀐다.
+ */
+export const MIN_BLOCK_SHARE = 0.1
+
+export function minBlockSize(canvasWidth: number, canvasHeight: number): { width: number; height: number } {
+  return {
+    width: Math.min(MIN_BLOCK_WIDTH, Math.max(1, canvasWidth * MIN_BLOCK_SHARE)),
+    height: Math.min(MIN_BLOCK_HEIGHT, Math.max(1, canvasHeight * MIN_BLOCK_SHARE)),
+  }
+}
+
 /** How short and how long a page may be (손검수 2 §3.2). */
 export const MIN_CANVAS_HEIGHT = 400
 export const MAX_CANVAS_HEIGHT = 30000
@@ -152,19 +172,20 @@ export function resizeRect(
   const minX = free ? -Infinity : 0
   const maxWidth = free ? Infinity : canvasWidth - rect.x
   const maxHeight = free ? Infinity : canvasHeight - rect.y
+  const floor = minBlockSize(canvasWidth, canvasHeight)
 
   if (movesLeft) {
-    x = clamp(rect.x + dx, minX, right - MIN_BLOCK_WIDTH)
+    x = clamp(rect.x + dx, minX, right - floor.width)
     width = right - x
   } else {
-    width = clamp(rect.width + dx, MIN_BLOCK_WIDTH, maxWidth)
+    width = clamp(rect.width + dx, floor.width, maxWidth)
   }
 
   if (movesTop) {
-    y = clamp(rect.y + dy, minX, bottom - MIN_BLOCK_HEIGHT)
+    y = clamp(rect.y + dy, minX, bottom - floor.height)
     height = bottom - y
   } else {
-    height = clamp(rect.height + dy, MIN_BLOCK_HEIGHT, maxHeight)
+    height = clamp(rect.height + dy, floor.height, maxHeight)
   }
 
   return { x, y, width, height }

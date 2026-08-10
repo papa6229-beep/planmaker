@@ -14,9 +14,9 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { DEMOTED_OPACITY, DEMOTED_TONE, buildBanner, readableSlots, type BannerPieces } from '../domain/bannerComposite'
-import { BANNER_1020x70 } from '../domain/bannerSpec'
-import { bannerPageId } from '../domain/bannerFit'
+import { buildBanner, readableSlots, type BannerPieces } from '../domain/bannerComposite'
+import { BANNER_1020x70, bannerSpecById, customBannerSpec } from '../domain/bannerSpec'
+import { bannerPageId, sourcePageIdOf } from '../domain/bannerFit'
 import { documentFingerprint } from '../domain/documentFingerprint'
 import { createBlock, createEmptyProject } from '../domain/factory'
 import type { BriefBlock } from '../domain/briefSchema'
@@ -144,23 +144,15 @@ describe('§33-3 배경과 강등', () => {
     expect(buildBanner(source, SPEC, BARE).plan.backgroundCrop).toBeUndefined()
   })
 
-  it('배경으로 내려간 조각은 눌러서, 그리고 비치게 깐다', () => {
-    // 이벤트3의 가차 기계. 브라우저에서 실제로 본 것 — 톤만 눌러서는 안 된다.
-    // 밝기를 올려도 불투명한 그림은 뒤를 가리고, 눌러 놓은 기계가 그대로 제목을
-    // 덮었다. 배경으로 내린다는 것은 **뒤에 비친다**는 뜻이다.
+  it('모양이 안 맞는 그림은 배경으로 깔지 않고 뺀다', () => {
+    // 한때 배경으로 내려 깔았다. 이벤트3의 가차 기계를 보고 만든 규칙인데, 실물로
+    // 돌려 보니 인물 컷아웃은 늘리면 얼룩이고 작업자가 "배경에 뭐가 깔린지
+    // 모르겠다"고 했다. 빼고 그렇다고 말한다.
     const gacha = page([imageBlock('gacha', 'asset-gacha', { width: 330, height: 470 })])
     const { plan, fit } = buildBanner(gacha, SPEC, BARE)
-    expect(fit.background).toEqual(['gacha'])
-    const layer = plan.layers.find((l) => l.blockId === 'gacha')!
-    expect(layer.tone).toEqual(DEMOTED_TONE)
-    expect(layer.opacity).toBe(DEMOTED_OPACITY)
-    expect(DEMOTED_OPACITY).toBeLessThan(0.5)
-  })
-
-  it('자리를 얻은 조각은 진하기를 건드리지 않는다', () => {
-    // 배경으로 내린 것에만 거는 값이다. 앞에 선 제품까지 비치면 아무것도 안 보인다.
-    const { plan } = buildBanner(page([imageBlock('photo', 'asset-photo')]), SPEC, BARE)
-    expect(plan.layers.find((l) => l.blockId === 'photo')!.opacity).toBeUndefined()
+    expect(fit.dropped).toEqual([{ blockId: 'gacha', reason: 'no-shape' }])
+    expect(plan.layers).toEqual([])
+    expect(plan.background).toBeUndefined()
   })
 
   it('글자가 놓일 자리를 배경 고르기에 넘길 수 있다', () => {
@@ -203,5 +195,49 @@ describe('§33-4 배너 페이지는 기획서 지문에 들어가지 않는다'
     // 배너만 빼는 것이지 페이지를 세지 않는 것이 아니다.
     const second: BriefPage = { ...page([block('cta_button', 'cta')]), id: 'page_2' }
     expect(documentFingerprint(docOf([eventPage, second]))).not.toBe(documentFingerprint(docOf([eventPage])))
+  })
+})
+
+/**
+ * 작업자가 적어 넣은 크기 (배너 Patch §6).
+ *
+ * 정해진 다섯 말고도 뽑을 수 있어야 한다. 다만 임의 크기에는 사람이 만든 틀이
+ * 없으므로 **자리를 하나도 두지 않는다** — 없는 문법을 지어내면 어색한 배치가
+ * 나오고, 백지에서 서랍으로 꺼내 놓는 편이 낫다.
+ */
+describe('§33-5 임의 크기', () => {
+  it('크기만 적으면 규격이 된다', () => {
+    const spec = customBannerSpec(640, 200)!
+    expect([spec.width, spec.height]).toEqual([640, 200])
+    expect(spec.siblings).toEqual([])
+  })
+
+  it('자리를 지어내지 않는다', () => {
+    // 자리가 있으면 자동이 거기에 꽂는다. 그 자리는 아무도 확인한 적이 없다.
+    expect(customBannerSpec(640, 200)!.slots).toEqual([])
+  })
+
+  it('말이 안 되는 크기는 만들지 않는다', () => {
+    for (const [w, h] of [[0, 100], [100, 0], [-5, 5], [99_999, 100], [Number.NaN, 10]]) {
+      expect(customBannerSpec(w!, h!)).toBeNull()
+    }
+  })
+
+  it('번호로 되찾을 수 있다', () => {
+    const spec = customBannerSpec(640, 200)!
+    expect(bannerSpecById(spec.id)).toEqual(spec)
+  })
+
+  it('임의 크기 배너에서도 원본 페이지를 되찾는다', () => {
+    // 임의 크기 번호에는 밑줄이 들어 있다. 마지막 밑줄에서 자르면 원본 번호에
+    // `_custom`이 붙어 원본을 못 찾는다.
+    const spec = customBannerSpec(640, 200)!
+    const pageId = bannerPageId('page_abc', spec.id)
+    expect(sourcePageIdOf(pageId, spec.id)).toBe('page_abc')
+  })
+
+  it('정해진 규격에서도 원본을 되찾는다', () => {
+    expect(sourcePageIdOf(bannerPageId('page_abc', SPEC.id), SPEC.id)).toBe('page_abc')
+    expect(sourcePageIdOf('page_abc', SPEC.id)).toBeNull()
   })
 })

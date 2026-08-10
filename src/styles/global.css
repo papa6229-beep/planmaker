@@ -2619,6 +2619,7 @@ button { font-family: inherit; }
 /* 접히는 칸 안에서는 바깥 테두리와 배경을 한 번 더 두르지 않는다. */
 .fold__body > .tone,
 .fold__body > .banner,
+.fold__body > .drawer,
 .fold__body > .paper-tune,
 .fold__body > .block-order,
 .fold__body > .effects,
@@ -2934,3 +2935,48 @@ button { font-family: inherit; }
   color: var(--color-accent, #4f46e5);
   font-weight: 700;
 }
+
+/* ── 조각 서랍 (배너 Patch §6) ────────────────────────────────────────────── */
+.drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-panel);
+}
+.drawer__note { margin: 0; color: var(--color-muted); font-size: 11px; line-height: 1.5; }
+.drawer__empty { margin: 0; color: var(--color-muted); font-size: 11px; }
+.drawer__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.drawer__piece {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface, #fff);
+  cursor: pointer;
+}
+.drawer__piece:hover { border-color: var(--color-accent, #4f46e5); }
+/* 썸네일에 크기를 주지 않으면 원본이 제 크기로 펼쳐져 패널을 밀어낸다. */
+.drawer__thumb {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 24px;
+  object-fit: contain;
+  border-radius: 3px;
+  background: repeating-conic-gradient(#eceff3 0% 25%, #fff 0% 50%) 50% / 8px 8px;
+}
+.drawer__thumb--empty { display: inline-block; }
+.drawer__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.banner__custom { display: flex; align-items: flex-end; gap: 6px; flex-wrap: wrap; }
+.banner__custom-field { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--color-muted); }
+.banner__custom-field input { width: 72px; }
+.banner__custom-x { padding-bottom: 6px; color: var(--color-muted); font-size: 11px; }
