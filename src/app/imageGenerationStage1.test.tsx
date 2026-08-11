@@ -119,6 +119,14 @@ function storedAsset(id: string, seed: number): StoredAsset {
   }
 }
 
+/**
+ * 이 기획서 한 장을 만드는 데 드는 호출 수 (컷아웃 갈림길 교정).
+ *
+ * 겹 방식은 **배경 판 한 번 + 문구·버튼 한 번씩**이다. 이 표본에는 문구 하나와
+ * 버튼 하나가 있으므로 셋이다. 예전에는 통이미지 한 장이라 언제나 1이었다.
+ */
+const GEN_CALLS = 3
+
 /** 이미지 자리 하나, 문구 하나, 버튼과 그 주소가 있는 한 장짜리 기획서. */
 function sampleDoc(): BriefDocument {
   const project = createEmptyProject('가을 신상 예약판매')
@@ -525,7 +533,8 @@ describe('§13-1·10·11 생성 버튼과 결과 비교 화면', () => {
     expect(dialog.textContent).toContain('gpt-image-2')
     expect(dialog.textContent).toContain('medium')
     expect(dialog.textContent).toContain('832x992')
-    expect(dialog.textContent).toContain('1회')
+    // 확인창은 실제로 나갈 횟수를 그대로 말한다 — 결제는 이 숫자만큼 일어난다.
+    expect(dialog.textContent).toContain(`${String(GEN_CALLS)}회`)
   })
 
   it('sends exactly one request no matter how often the button is hit', async () => {
@@ -533,10 +542,17 @@ describe('§13-1·10·11 생성 버튼과 결과 비교 화면', () => {
     await openStudio()
     // 첫 호출을 붙잡아 두고, 그 사이에 계속 누른다.
     let release: (() => void) | null = null
-    respond = (call) => new Promise<Response>((resolve) => {
-      release = () => void okResponse().then(resolve)
+    // **첫 호출 하나만** 붙잡는다 (컷아웃 갈림길 교정). 겹 방식은 뒤이어 문구
+    // 겹을 더 부르는데, 그것까지 붙잡으면 아무도 풀어 주지 않아 멈춰 선다.
+    let held = false
+    respond = (call) => {
       void call
-    })
+      if (held) return okResponse()
+      held = true
+      return new Promise<Response>((resolve) => {
+        release = () => void okResponse().then(resolve)
+      })
+    }
 
     await generateOnce()
     await waitFor(() => expect(calls).toHaveLength(1))
@@ -548,7 +564,12 @@ describe('§13-1·10·11 생성 버튼과 결과 비교 화면', () => {
 
     release!()
     await waitFor(() => expect(screen.getByRole('button', { name: '다시 생성하기' })).toBeTruthy(), { timeout: 8000 })
-    expect(calls).toHaveLength(1)
+    // 계획한 만큼만 나갔다 — 진행 중에 누른 두 번은 한 건도 보태지 않았다.
+    expect(calls).toHaveLength(GEN_CALLS)
+    // 끝까지 가라앉히고 나간다 (컷아웃 갈림길 교정). 겹 방식은 마지막 호출 뒤에도
+    // 조각을 적고 화면을 바꾸는데, 그 일이 검사가 끝난 뒤에 끝나면 다음 검사의
+    // 새 저장소에 결과가 흘러들어 간다.
+    await waitFor(() => expect(screen.getByRole('heading', { name: '완성본' })).toBeTruthy(), { timeout: 8000 })
   }, 20000)
 
   it('sends the key in the header and nowhere else', async () => {
@@ -754,7 +775,11 @@ describe('테스트용 API 키는 이 탭에만 머문다', () => {
     await seedReady()
     await openStudio()
     await generateOnce()
-    await waitFor(() => expect(calls).toHaveLength(1))
+    // 이 검사가 보는 것은 키 단추이지 호출 수가 아니다 (컷아웃 갈림길 교정).
+    // 겹 방식은 여러 번 부르므로, 셈이 아니라 화면이 준비됐는지를 기다린다.
+    await waitFor(() => expect(screen.getByRole('button', { name: '✓ API 키 저장됨' })).toBeTruthy(), {
+      timeout: 8000,
+    })
 
     // 키가 들어간 뒤에는 버튼이 저장됨이라고 말한다 (마감 교정 §2).
     fireEvent.click(screen.getByRole('button', { name: '✓ API 키 저장됨' }))
