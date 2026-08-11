@@ -29,6 +29,8 @@ import {
 import { createStudioJob, withSource } from '../domain/studioJob'
 import { normalizeEffects } from '../domain/compositeEffects'
 import { resetFoldsForTests } from '../components/studio/PanelFold'
+import { clearUsage, listCalls, resetUsageStoreForTests } from '../services/usageStore'
+import { summarizeUsage } from '../domain/imageUsage'
 import type { BriefDocument } from '../domain/pageSchema'
 import type { LayoutRect } from '../domain/imageLayout'
 
@@ -208,7 +210,8 @@ async function generateOnce(calls = CALLS) {
       new Response(
         JSON.stringify({
           image: { b64: btoa('layer'), mimeType: 'image/png' },
-          metadata: { requestedSize: '832x1184' },
+          // 사용량은 공급자가 보내 주는 자리다 (사용량 기록 Patch).
+          metadata: { requestedSize: '832x1184', usage: { input_tokens: 700, output_tokens: 200, total_tokens: 900 } },
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       ),
@@ -251,6 +254,8 @@ beforeEach(async () => {
   composed.mockReset()
   composeFails = false
   resetAssetStoreForTests()
+  resetUsageStoreForTests()
+  await clearUsage()
   resetDocumentStoreForTests()
   resetRequestStoreForTests()
   resetStudioStoreForTests()
@@ -552,6 +557,31 @@ describe('§4 이미지와 문구가 한 줄에 선다', () => {
     // 아무것도 없는 자리는 `null`이다 — 부르는 쪽이 잡힌 것을 그대로 쓴다.
     expect(pickBehind(order, { x: 300, y: 300 }, 'front')).toBeNull()
   })
+
+  /**
+   * 한 페이지를 만드는 일은 호출 한 번이 아니다 — 배경 판 하나에 문구 겹이 블록
+   * 수만큼이다. 장부가 그 갈래를 그대로 적어야, 나중에 "돈이 어디로 나갔는가"를
+   * 짐작이 아니라 숫자로 말할 수 있다 (사용량 기록 Patch).
+   */
+  it('한 번 만들면 배경 판 하나와 문구 겹 넷이 갈래별로 적힌다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    expect(await listCalls()).toEqual([])
+
+    await generateOnce()
+
+    await waitFor(async () => {
+      expect((await listCalls()).length).toBe(CALLS)
+    }, { timeout: 5000 })
+    const summary = summarizeUsage(await listCalls())
+    expect(summary.calls).toBe(CALLS)
+    expect(summary.byKind.plate.calls).toBe(1)
+    expect(summary.byKind['text-layer'].calls).toBe(SHEET_IDS.length)
+    expect(summary.byKind.edit.calls).toBe(0)
+    // 공급자가 보낸 토큰이 그대로 실린다.
+    expect(summary.tokens).toBe(900 * CALLS)
+  }, 25000)
 
   it('Alt로 누르면 화면에서도 밑에 깔린 것이 잡힌다', async () => {
     await seedJob()

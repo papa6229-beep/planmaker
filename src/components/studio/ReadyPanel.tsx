@@ -7,9 +7,17 @@
  *
  * 막는 것이 있으면 개수까지 말한다. "이미지를 연결해 주세요"는 몇 개가 남았는지
  * 모르는 사람에게 아무것도 알려 주지 않는다.
+ *
+ * 여기에 **부른 횟수**도 한 줄 선다 (사용량 기록 Patch). 요금은 OpenAI 대시보드가
+ * 정확히 알려 주지만 "우리 화면의 어느 동작에서 나갔는가"는 거기 없다. 이 줄이
+ * 그것을 말한다 — 누르기 직전에 서는 자리라, 지금까지 얼마나 불렀는지가 다음
+ * 누름을 정하는 데 실제로 쓰인다.
  */
 
+import { useEffect, useState } from 'react'
 import { isImageBlock } from '../../domain/blockTypes'
+import { summarizeUsage, USAGE_KINDS, USAGE_KIND_LABEL, type UsageSummary } from '../../domain/imageUsage'
+import { listCalls } from '../../services/usageStore'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
@@ -18,6 +26,20 @@ export function ReadyPanel() {
   const studio = useStudioJob()
   const generation = useImageGeneration()
   const { getDocument, aiNote } = useBriefDocument()
+  /**
+   * 장부 요약. 화면에 서는 동안 한 번만 읽는다 — 이 값이 실시간이어야 할 이유가
+   * 없고, 누를 때마다 다시 읽으면 만드는 일이 느려진다.
+   */
+  const [usage, setUsage] = useState<UsageSummary | null>(null)
+  useEffect(() => {
+    let alive = true
+    void listCalls().then((calls) => {
+      if (alive) setUsage(summarizeUsage(calls))
+    })
+    return () => {
+      alive = false
+    }
+  }, [generation?.state.kind])
   if (studio === null || generation === null) return null
 
   const doc = getDocument()
@@ -57,6 +79,22 @@ export function ReadyPanel() {
           <dt>AI 추가 지시</dt>
           <dd>{aiNote.trim().length > 0 ? '작성함' : '아직 없음'}</dd>
         </div>
+        {/* 이 브라우저에서 지금까지 부른 횟수. 갈래별로 나눠 적는 것이 요점이다 —
+            한 페이지가 호출 한 번이 아니라, 총계만으로는 줄일 자리를 못 찾는다. */}
+        {usage !== null && usage.calls > 0 && (
+          <div>
+            <dt>AI 호출 (이 브라우저)</dt>
+            <dd>
+              {usage.calls}회
+              <br />
+              <small>
+                {USAGE_KINDS.filter((kind) => usage.byKind[kind].calls > 0)
+                  .map((kind) => `${USAGE_KIND_LABEL[kind]} ${String(usage.byKind[kind].calls)}`)
+                  .join(' · ')}
+              </small>
+            </dd>
+          </div>
+        )}
       </dl>
       {missing > 0 && (
         <p className="ready-panel__warn" role="status">

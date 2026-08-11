@@ -21,6 +21,8 @@ import { useAssets } from '../assets/useAssets'
 import { useBriefDocument } from '../document/useBriefDocument'
 import { useStudioJob } from './useStudioJob'
 import { authHeaders } from './apiKeySession'
+import { readImageUsage } from '../../domain/imageUsage'
+import { recordCall } from '../../services/usageStore'
 import { getAsset, putAsset } from '../../services/assetStore'
 import { analyzeImageBlob } from '../../services/imageAnalysisRunner'
 import { renderComposite } from '../../services/compositeRenderer'
@@ -258,6 +260,11 @@ export function BackgroundCompositeProvider({ children }: { children: ReactNode 
           setState({ kind: 'failed', message: errorTextFor(error?.code) })
           return
         }
+        // 값은 이미 치렀다 — 그림을 못 받았더라도. 그래서 장부는 그림을 확인하기
+        // **전에** 적는다 (사용량 기록 Patch). 던져 놓고 잊는다.
+        const used = readImageUsage((payload as { metadata?: { usage?: unknown } } | null)?.metadata?.usage)
+        void recordCall({ at: Date.now(), kind: 'background', ...(used === null ? {} : { usage: used }) })
+
         const b64 = (payload as { image?: { b64?: string } } | null)?.image?.b64
         if (typeof b64 !== 'string' || b64.length === 0) {
           setState({ kind: 'failed', message: errorTextFor('no_image') })

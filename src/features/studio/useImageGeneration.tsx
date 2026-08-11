@@ -49,6 +49,8 @@ import {
 } from './apiKeySession'
 import { buildGenerationRequest } from '../../domain/generationRequest'
 import type { AccessMode } from '../../domain/serverAccess'
+import { readImageUsage, type UsageKind } from '../../domain/imageUsage'
+import { recordCall } from '../../services/usageStore'
 import {
   bannerEditTargets,
   buildEditTargets,
@@ -1248,6 +1250,13 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       plan: GenerationPlan,
       /** 이 요청에 붙일 자격 헤더 — 자기 키이거나 암구호다 (서버 키 Patch). */
       auth: Record<string, string>,
+      /**
+       * 이 호출이 어느 동작인가 (사용량 기록 Patch).
+       *
+       * 장부에 그대로 적힌다. 한 페이지가 호출 한 번이 아니라서, 갈래 없이 세면
+       * "돈이 어디로 나갔는가"를 영영 알 수 없다.
+       */
+      kind: UsageKind,
       inputs: readonly GenerationInputImage[],
       prompt: string,
       /** 이 요청만의 판 크기. 없으면 계획의 페이지 규격 그대로다. */
@@ -1279,8 +1288,15 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       }
       const body = payload as {
         image?: { b64?: string; mimeType?: string }
-        metadata?: { requestedSize?: string; requestId?: string }
+        metadata?: { requestedSize?: string; requestId?: string; usage?: unknown }
       } | null
+
+      // 여기까지 왔으면 값은 이미 치렀다 — 그림을 못 받았더라도. 그래서 장부는
+      // 그림을 확인하기 **전에** 적는다. 던져 놓고 잊는다: 못 적었다고 방금 만든
+      // 것을 잃을 이유가 없다.
+      const used = readImageUsage(body?.metadata?.usage)
+      void recordCall({ at: Date.now(), kind, ...(used === null ? {} : { usage: used }) })
+
       const b64 = body?.image?.b64
       if (typeof b64 !== 'string' || b64.length === 0) return { code: 'no_image' }
 
@@ -1351,6 +1367,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             const answer = await requestLayer(
               plan,
               auth,
+              'edit',
               planTextEditInputs({
                 currentAssetId: edit.assetId,
                 ...(context?.styleReferenceAssetId === undefined
@@ -1418,7 +1435,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           return
         }
 
-        const first = await requestLayer(plan, auth, plan.inputs, await platePrompt(plan))
+        const first = await requestLayer(plan, auth, 'plate', plan.inputs, await platePrompt(plan))
         if (!('blob' in first)) {
           setState({ kind: 'failed', message: errorTextFor(first.code) })
           return
@@ -1465,6 +1482,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             const answer = await requestLayer(
               plan,
               auth,
+              'text-layer',
               planTextLayerInputs({
                 ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
                 ...(plateAssetId === undefined ? {} : { backgroundAssetId: plateAssetId }),
