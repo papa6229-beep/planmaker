@@ -275,8 +275,13 @@ export function TopToolbar({
                 disabled={busy || generation.state.kind === 'running'}
                 title="현재 페이지를 이미지 1장으로 생성합니다"
               >
+                {/* 겹 방식은 여러 장을 만든다 (겹 방식 속도 교정). 한 마디만 띄워
+                    두면 도는 중인지 멈춘 것인지 사람이 알 방법이 없다 — 그래서
+                    몇 장 중 몇 장인지 그대로 말한다. */}
                 {generation.state.kind === 'running'
-                  ? '이미지 생성 중…'
+                  ? generation.state.total === undefined
+                    ? '이미지 생성 중…'
+                    : `이미지 생성 중… (${String((generation.state.done ?? 0) + 1)}/${String(generation.state.total)})`
                   : generation.hasResult
                     ? '다시 생성하기'
                     : '이미지 생성하기'}

@@ -204,7 +204,12 @@ export type GenerationState =
   | { kind: 'confirm'; plan: GenerationPlan; needsKey: boolean }
   /** 부분수정 확인창 — 대상과 지시를 사람이 한 번 더 읽는 자리. */
   | { kind: 'edit-confirm'; plan: GenerationPlan; items: { target: EditTarget; instruction: string }[] }
-  | { kind: 'running' }
+  /**
+   * 만드는 중. `done`/`total`이 있으면 몇 장 중 몇 장인지 화면이 말한다
+   * (겹 방식 속도 교정) — 겹 방식은 여러 장을 만들므로, 한 마디만 띄워 두면
+   * 도는 중인지 멈춘 것인지 사람이 알 방법이 없다.
+   */
+  | { kind: 'running'; done?: number; total?: number }
   | { kind: 'failed'; message: string }
   /** 호출하기 전에 멈춘 것 — 아직 아무것도 쓰지 않았다. */
   | { kind: 'blocked'; message: string }
@@ -308,6 +313,15 @@ const ImageGenerationContext = createContext<ImageGenerationApi | null>(null)
  * 그림이면 얹지 않고 그 사실을 말한다.
  */
 const FOREGROUND_MAX_OPAQUE = 0.92
+
+/**
+ * 문구 겹을 한 번에 몇 장까지 함께 보내는가 (겹 방식 속도 교정).
+ *
+ * 다 던지면 공급자가 잦은 요청을 거절할 수 있고, 이 설계는 스스로 다시 부르지
+ * 않으므로 그 실패가 그대로 손해가 된다. 셋이면 대부분의 페이지가 두 묶음 안에
+ * 끝나면서도 그 선을 넘지 않는다.
+ */
+export const TEXT_LAYER_BATCH = 3
 
 /** base64 → 이미지 한 장. 이 문자열은 여기서 끝나고 어디에도 저장되지 않는다. */
 function blobFromBase64(b64: string, mimeType: string): Blob {
@@ -1388,12 +1402,15 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         // 통이미지를 다시 그리지 않으므로 배경도 사진도 고르지 않은 문구도 손대지
         // 않는다. 하나가 실패해도 나머지는 그대로 간다 — 값을 이미 치렀다.
         if (plan.textEdits !== undefined && studio !== null) {
-          const problems: string[] = []
+          const edits = plan.textEdits
+          const trouble: (string | undefined)[] = Array.from<string | undefined>({ length: edits.length })
           let changed = 0
+          let done = 0
           const context = plan.textEditContext
+          setState({ kind: 'running', done, total: edits.length })
           // 고칠 자리마다 그 아래에 실제로 깔려 있는 색. 외부 호출 0건이다.
-          const tones = await measureEditTones(plan.pageId, plan.textEdits.map((e) => e.rect))
-          for (const [index, edit] of plan.textEdits.entries()) {
+          const tones = await measureEditTones(plan.pageId, edits.map((e) => e.rect))
+          const fixOne = async (edit: (typeof edits)[number], index: number): Promise<void> => {
             const answer = await requestLayer(
               plan,
               auth,
@@ -1427,18 +1444,18 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
               edit.size,
             )
             if (!('blob' in answer)) {
-              problems.push(`"${edit.content}": ${errorTextFor(answer.code)}`)
-              continue
+              trouble[index] = `"${edit.content}": ${errorTextFor(answer.code)}`
+              return
             }
             const keyed = await removeKeyBackground(answer.blob)
             if (keyed === null || keyed.opaqueRatio > FOREGROUND_MAX_OPAQUE) {
-              problems.push(`"${edit.content}": 임시 배경을 걷어 내지 못했습니다.`)
-              continue
+              trouble[index] = `"${edit.content}": 임시 배경을 걷어 내지 못했습니다.`
+              return
             }
             const trimmed = await trimToContent(keyed.blob)
             if (trimmed === null) {
-              problems.push(`"${edit.content}": 새 디자인에서 글자를 찾지 못했습니다.`)
-              continue
+              trouble[index] = `"${edit.content}": 새 디자인에서 글자를 찾지 못했습니다.`
+              return
             }
             const assetId = createId('asset')
             await putAsset({
@@ -1453,6 +1470,20 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             await studio.replaceTextObjectAsset(plan.pageId, edit.blockId, assetId)
             changed += 1
           }
+
+          // 고칠 조각들도 서로 독립이다 — 생성과 같은 이유로 함께 나간다
+          // (겹 방식 속도 교정). 하나가 실패해도 나머지는 그대로 간다.
+          for (let at = 0; at < edits.length; at += TEXT_LAYER_BATCH) {
+            const batch = edits.slice(at, at + TEXT_LAYER_BATCH)
+            await Promise.all(
+              batch.map(async (edit, i) => {
+                await fixOne(edit, at + i)
+                done += 1
+                setState({ kind: 'running', done, total: edits.length })
+              }),
+            )
+          }
+          const problems = trouble.filter((t): t is string => t !== undefined)
           if (changed > 0) await recomposePage(plan.pageId)
           setSelectedTargetIds([])
           setInstructions({})
@@ -1502,9 +1533,13 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
 
           // ④ 블록마다 한 번씩. 하나가 실패해도 나머지는 그대로 간다 — 값을 치른
           //    것을 잃지 않기 위해서다. 스스로 다시 부르는 자리는 없다.
-          const objects: StudioTextObject[] = []
-          const problems: string[] = []
-          for (const [index, block] of textBlocks.entries()) {
+          const made: (StudioTextObject | undefined)[] = Array.from<StudioTextObject | undefined>({ length: textBlocks.length })
+          const trouble: (string | undefined)[] = Array.from<string | undefined>({ length: textBlocks.length })
+          let done = 0
+          setState({ kind: 'running', done, total: textBlocks.length + 1 })
+
+          /** 문구 겹 한 장. 자기 자리에만 적으므로 몇 장이 함께 돌아도 섞이지 않는다. */
+          const makeOne = async (block: TextLayerBlock, index: number): Promise<void> => {
             const withTone: TextLayerBlock = { ...block, tone: tones[index] ?? null }
             // 첨부와 주문은 블록마다 다르다 — 이 블록에만 붙여 둔 참고 그림이
             // 있으면 그 요청에만 실린다 (블록별 주문 Patch).
@@ -1532,13 +1567,46 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
               plan.textSizes?.[block.blockId],
             )
             if (!('blob' in answer)) {
-              problems.push(`"${block.content}": ${errorTextFor(answer.code)}`)
-              continue
+              trouble[index] = `"${block.content}": ${errorTextFor(answer.code)}`
+              return
             }
             const drawn = await drawTextLayer(answer.blob, withTone)
-            if (drawn.object !== undefined) objects.push(drawn.object)
-            if (drawn.problem !== undefined) problems.push(drawn.problem)
+            if (drawn.object !== undefined) made[index] = drawn.object
+            if (drawn.problem !== undefined) trouble[index] = drawn.problem
           }
+
+          /**
+           * 문구 겹은 **여러 장이 함께 나간다** (겹 방식 속도 교정).
+           *
+           * 앞선 판은 한 장씩 차례로 기다렸다. 문구가 다섯이면 여섯 번을 줄줄이
+           * 기다리므로, 한 장에 수십 초 걸리는 일이 몇 분이 됐다 — 작업자가 그
+           * 자리에서 걸렸다: "너무 오랫동안 이미지를 생성하지 못하고 있는데?"
+           *
+           * 겹들은 서로 독립이다. 배경 판만 먼저 나오면 그 뒤는 순서를 지킬 이유가
+           * 없고, 각자 자기 자리에만 적으므로 섞이지도 않는다. 걸리는 시간이 합이
+           * 아니라 **가장 느린 한 장**으로 줄어든다.
+           *
+           * 다만 한꺼번에 다 던지지는 않는다. 공급자가 잦은 요청을 거절하면
+           * (`rate_limited`) 값을 치른 것도 아닌 실패가 무더기로 나고, 그 실패는
+           * 스스로 다시 부르지 않는 이 설계에서 그대로 손해가 된다.
+           *
+           * 호출 **횟수**는 달라지지 않는다. 줄어드는 것은 기다리는 시간뿐이다.
+           */
+          for (let at = 0; at < textBlocks.length; at += TEXT_LAYER_BATCH) {
+            const batch = textBlocks.slice(at, at + TEXT_LAYER_BATCH)
+            await Promise.all(
+              batch.map(async (block, i) => {
+                await makeOne(block, at + i)
+                done += 1
+                setState({ kind: 'running', done, total: textBlocks.length + 1 })
+              }),
+            )
+          }
+
+          // 화면의 앞뒤는 블록 차례 그대로여야 한다. 자기 자리에 적어 두었으므로
+          // 먼저 끝난 순서가 아니라 **원래 차례**로 모인다.
+          const objects = made.filter((o): o is StudioTextObject => o !== undefined)
+          const problems = trouble.filter((t): t is string => t !== undefined)
 
           paidRef.current = {
             ...paidRef.current,

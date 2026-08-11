@@ -583,6 +583,63 @@ describe('§4 이미지와 문구가 한 줄에 선다', () => {
     expect(summary.tokens).toBe(900 * CALLS)
   }, 25000)
 
+  /**
+   * 문구 겹은 **함께 나간다** (겹 방식 속도 교정).
+   *
+   * 앞선 판은 한 장씩 차례로 기다렸다. 문구가 다섯이면 여섯 번을 줄줄이 기다리므로
+   * 한 장에 수십 초 걸리는 일이 몇 분이 됐다 — "너무 오랫동안 이미지를 생성하지
+   * 못하고 있는데?" 겹들은 서로 독립이라 순서를 지킬 이유가 없다.
+   *
+   * 여기서 재는 것은 **앞선 요청이 끝나기 전에 다음 요청이 나가는가**다. 걸린
+   * 시간을 재면 기계 사정에 따라 흔들리지만, 이것은 흔들리지 않는다.
+   */
+  it('배경 판이 나온 뒤 문구 겹은 서로를 기다리지 않는다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+
+    // 나간 요청을 붙잡아 둔다. 붙잡힌 동안 다음 요청이 나가면 함께 도는 것이다.
+    let inFlight = 0
+    let together = 0
+    const release: (() => void)[] = []
+    sessionStorage.setItem('planmaker.openai-key', 'sk-stub')
+    fetchSpy.mockImplementation(async () => {
+      inFlight += 1
+      together = Math.max(together, inFlight)
+      await new Promise<void>((resolve) => release.push(resolve))
+      inFlight -= 1
+      return new Response(
+        JSON.stringify({ image: { b64: btoa('layer'), mimeType: 'image/png' }, metadata: { requestedSize: '832x1184' } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: /이미지 생성하기/ }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(
+      // eslint-disable-next-line testing-library/no-node-access
+      Array.from(dialog.querySelectorAll('button')).find((b) => /생성 시작|저장하고 계속/.test(b.textContent ?? ''))!,
+    )
+
+    // 배경 판 한 장이 먼저다 — 문구 겹은 그 그림을 받아 써야 한다.
+    await waitFor(() => expect(release.length).toBe(1), { timeout: 5000 })
+    expect(together).toBe(1)
+    release.shift()!()
+
+    // 그 뒤로는 여러 장이 함께 돈다.
+    await waitFor(() => expect(together).toBeGreaterThan(1), { timeout: 5000 })
+    // 다만 한꺼번에 다 던지지는 않는다 — 공급자가 잦은 요청을 거절하면, 스스로
+    // 다시 부르지 않는 이 설계에서는 그 실패가 그대로 손해가 된다.
+    const { TEXT_LAYER_BATCH } = await load('features/studio/useImageGeneration')
+    expect(together).toBeLessThanOrEqual(TEXT_LAYER_BATCH)
+    expect(SHEET_IDS.length).toBeGreaterThan(TEXT_LAYER_BATCH)
+
+    while (release.length > 0) release.shift()!()
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(CALLS), { timeout: 10000 })
+    // 함께 돌아도 호출 수는 그대로다 — 줄어드는 것은 기다리는 시간뿐이다.
+    expect(fetchSpy.mock.calls.length).toBe(CALLS)
+  }, 25000)
+
   it('Alt로 누르면 화면에서도 밑에 깔린 것이 잡힌다', async () => {
     await seedJob()
     const { container } = renderStudio()
