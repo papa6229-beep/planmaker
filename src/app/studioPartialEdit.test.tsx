@@ -35,6 +35,7 @@ import {
 import { createStudioJob, linkProductImage, withSource } from '../domain/studioJob'
 import { buildEditTargets, BACKGROUND_TARGET_ID } from '../domain/editTargets'
 import { buildEditPrompt, EDIT_RULES } from '../domain/editPrompt'
+import { heldAssets, resetAssetHoldForTests } from '../services/assetHold'
 import { createEmptyDocument } from '../domain/pageSchema'
 import { createBlock, createEmptyProject } from '../domain/factory'
 import type { BriefDocument } from '../domain/pageSchema'
@@ -166,6 +167,8 @@ function okResponse(): Promise<Response> {
 }
 
 beforeEach(async () => {
+  // 앞 검사가 걸어 둔 그림이 다음 검사로 새지 않게 한다 (되돌릴 그림 지키기 Patch).
+  resetAssetHoldForTests()
   calls = []
   respond = okResponse
   fakeCanvas.failDraw = false
@@ -495,6 +498,48 @@ describe('§6 결과는 840으로 정착하고, 실패는 아무것도 바꾸지
     expect(after.previousAssetId).toBe(before.previousAssetId)
     expect(after.originalAssetId).toBe(before.originalAssetId)
   }, 25000)
+})
+
+/**
+ * 조각 수정도 되돌릴 수 있어야 한다 (조각 되돌리기 Patch).
+ *
+ * 결과 줄(이전 결과·최초 생성본)은 통이미지 수정이 만든다. 조각 수정에는 그 줄이
+ * 없으므로, 되돌릴 길은 `실행 취소` 하나뿐이다 — 그런데 그 길에 되돌릴 자리를
+ * 남기지 않아 **고치고 나면 되돌아갈 방법이 아예 없었다.**
+ *
+ * 조각 수정이 기본이 되면서 이 자리를 매번 지나가게 됐다.
+ */
+describe('§6-B 조각 수정은 실행 취소로 되돌아온다', () => {
+  it('예전 조각으로 돌아오고, 그 그림은 정리에서 살아남는다', async () => {
+    await openStudio()
+    await generateFirst()
+    const pageId = (await loadStudioJob(STUDIO_JOB_ID))!.doc.pages[0]!.id
+    const before = (await loadStudioJob(STUDIO_JOB_ID))!.textObjects![pageId]!.find((o) => o.blockId === 'blk_t3')!
+      .assetId
+
+    await selectTargets(/문구 3/)
+    await runEdit('조금 위로 올려 주세요.')
+    fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect(job!.textObjects![pageId]!.find((o) => o.blockId === 'blk_t3')!.assetId).not.toBe(before)
+    }, { timeout: 8000 })
+    const callsAfterEdit = calls.length
+
+    // 되돌릴 자리가 가리키는 그림은 정리 대상에서 빠져 있다 — 빠지지 않으면
+    // 실행 취소가 없는 그림을 가리키게 된다.
+    expect(heldAssets()).toContain(before)
+
+    fireEvent.click(screen.getByRole('button', { name: '실행 취소' }))
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect(job!.textObjects![pageId]!.find((o) => o.blockId === 'blk_t3')!.assetId).toBe(before)
+    }, { timeout: 8000 })
+    // 되돌리는 데 외부 호출은 없다.
+    expect(calls).toHaveLength(callsAfterEdit)
+    // 돌아간 그림이 실제로 저장소에 남아 있다.
+    expect((await getAllAssets()).map((a) => a.id)).toContain(before)
+  }, 30000)
 })
 
 // ── §6-16·17·18 되돌리기 ─────────────────────────────────────────────────────

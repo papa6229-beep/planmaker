@@ -52,6 +52,7 @@ import type { BriefDocument, BriefPage, ReferenceLayer } from '../../domain/page
 import type { Asset, EventBrief } from '../../domain/briefSchema'
 import type { RequestTeam } from '../../domain/requestTeam'
 import { loadDocument, pruneAssets, saveDocument } from '../../services/assetStore'
+import { heldAssets } from '../../services/assetHold'
 import { allRequestAssetIds } from '../../services/requestStore'
 import { allDocumentAssetIds } from '../../services/documentStore'
 import { allStudioAssetIds } from '../../services/studioStore'
@@ -283,6 +284,9 @@ export function BriefDocumentProvider({
           // The design team's product cut-outs are deliberately absent from the
           // brief document, so nothing else here knows they are in use.
           for (const id of await allStudioAssetIds()) keep.add(id)
+          // 되돌릴 칸이 가리키는 그림도 남긴다 (되돌릴 그림 지키기 Patch). 그 칸은
+          // 저장되지 않으므로 여기서 말해 주지 않으면 고아로 보인다.
+          for (const id of heldAssets()) keep.add(id)
           await pruneAssets(keep)
         })
         .catch(() => {

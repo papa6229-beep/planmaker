@@ -1404,6 +1404,10 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         if (plan.textEdits !== undefined && studio !== null) {
           const edits = plan.textEdits
           const trouble: (string | undefined)[] = Array.from<string | undefined>({ length: edits.length })
+          // 이 수정 하나가 되돌리기 한 칸이다 (조각 되돌리기 Patch). 조각을 갈아
+          // 끼우는 일은 지금까지 되돌릴 자리를 남기지 않아, AI로 고치고 나면
+          // 되돌아갈 방법이 아예 없었다 — 결과 줄도 이 길에는 없다.
+          studio.markStep()
           let changed = 0
           let done = 0
           const context = plan.textEditContext

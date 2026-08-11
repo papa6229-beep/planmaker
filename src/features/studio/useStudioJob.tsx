@@ -67,6 +67,7 @@ import type { GeneratedPageResult } from '../../domain/imageGeneration'
 import type { StudioTextObject } from '../../domain/textObjects'
 import type { CarriedWork } from '../../domain/bannerCarry'
 import { layerOrderOf, reorderLayers } from '../../domain/textLayers'
+import { holdAssets } from '../../services/assetHold'
 import type { LayerMove } from '../../domain/layerOrder'
 import type { ToneAdjust } from '../../domain/toneAdjust'
 import type { LayoutRect } from '../../domain/imageLayout'
@@ -343,6 +344,21 @@ interface StudioStep {
 /** 되돌리기가 기억하는 칸 수. 넘으면 오래된 것부터 버린다. */
 const STUDIO_HISTORY_MAX = 40
 
+/**
+ * 이 칸이 가리키는 그림들 (되돌릴 그림 지키기 Patch).
+ *
+ * 되돌릴 칸은 저장되지 않으므로, 정리는 이 그림들을 고아로 오판한다. 그래서
+ * 걸어 두어야 한다 — 걸지 않으면 실행 취소가 **없는 그림**을 가리키는 상태로
+ * 되돌아간다.
+ */
+function stepAssetIds(step: StudioStep): string[] {
+  return [
+    ...Object.values(step.productImages),
+    ...Object.values(step.textObjects).flatMap((list) => list.map((o) => o.assetId)),
+    ...Object.values(step.imageObjects).flatMap((list) => list.map((o) => o.assetId)),
+  ]
+}
+
 function snapshotOf(job: StudioJob): StudioStep {
   return {
     productImages: { ...job.productImages },
@@ -361,6 +377,17 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
   // 연결만 담는 얕은 히스토리. 문서 편집은 편집기가 이미 되돌린다.
   const [past, setPast] = useState<StudioStep[]>([])
   const [future, setFuture] = useState<StudioStep[]>([])
+
+  /**
+   * 되돌릴 칸이 가리키는 그림을 정리에서 지킨다 (되돌릴 그림 지키기 Patch).
+   *
+   * 칸은 저장되지 않으므로 정리는 그 그림들을 고아로 본다. 걸어 두지 않으면
+   * 조각 하나를 고친 뒤 몇 초 만에 예전 조각이 사라지고, 실행 취소는 없는
+   * 그림을 가리키는 상태로 되돌아간다.
+   */
+  useEffect(() => {
+    holdAssets([...past, ...future].flatMap(stepAssetIds))
+  }, [past, future])
   /**
    * 다음 변경이 되돌릴 자리 — 아직 쌓지 않은 것.
    *
