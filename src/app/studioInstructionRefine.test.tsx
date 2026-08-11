@@ -221,6 +221,9 @@ async function saveKeyByGenerating(): Promise<void> {
     const job = (await loadStudioJob(STUDIO_JOB_ID))!
     expect(job.results?.[job.doc.pages[0]!.id]).toBeTruthy()
   }, { timeout: 8000 })
+  // 결과가 저장된 것과 화면이 완성본으로 넘어간 것은 다른 순간이다 (컷아웃 갈림길
+  // 교정). 겹 방식은 저장한 뒤 조각까지 적고 나서 화면을 바꾼다.
+  await waitFor(() => expect(editPanel()).toBeTruthy(), { timeout: 8000 })
 }
 
 const editPanel = () => screen.getByRole('region', { name: 'AI 부분수정' })
@@ -300,6 +303,7 @@ describe('§9 전체 지시 다듬기', () => {
   it('writes the note only when the person applies it', async () => {
     await openStudio()
     await saveKeyByGenerating()
+    const madeWhilePreparing = imageCalls().length
     refineReply = () => overallReply('날짜 문구를 굵은 고딕으로 바꿉니다.')
     fireEvent.change(aiNoteBox(), { target: { value: '좀 더 예쁘게' } })
     fireEvent.click(refineNoteButton())
@@ -311,8 +315,9 @@ describe('§9 전체 지시 다듬기', () => {
       const job = (await loadStudioJob(STUDIO_JOB_ID))!
       expect(job.doc.project.aiNote).toBe('날짜 문구를 굵은 고딕으로 바꿉니다.')
     }, { timeout: 8000 })
-    // 적용은 생성이 아니다.
-    expect(imageCalls()).toHaveLength(1) // 키를 저장하며 한 번 만든 그것뿐
+    // 적용은 생성이 아니다 — 준비 때 나간 것 말고는 한 건도 늘지 않았다.
+    // (겹 방식은 준비에 여러 번 나간다: 배경 판 하나에 문구 겹 하나씩.)
+    expect(imageCalls().length).toBe(madeWhilePreparing)
   }, 30000)
 
   it('keeps everything as it was when the call fails', async () => {

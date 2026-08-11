@@ -315,7 +315,15 @@ describe('§6 생성 순간의 대상 목록', () => {
 // ── §6-4·5·7·8·9 요청 내용 ───────────────────────────────────────────────────
 
 describe('§6 편집 요청에 무엇이 실리는가', () => {
-  it('carries one chosen target exactly', async () => {
+  /**
+   * 문구 하나를 고르면 **그 조각만** 다시 그린다 (컷아웃 갈림길 교정).
+   *
+   * 통이미지를 다시 그리는 길과 계약이 다르다. 저쪽은 한 장 안에서 고른 것만
+   * 손대라고 **부탁**해야 하므로 "절대 범위"와 "그대로 두어야 할 것"을 적어
+   * 보낸다. 이쪽은 그럴 필요가 없다 — 나머지 조각은 요청에 실리지도 않으므로
+   * 부탁할 대상 자체가 없다. 부탁보다 구조가 강하다.
+   */
+  it('redraws only the chosen wording, and never mentions the others', async () => {
     await openStudio()
     await generateFirst()
     await selectTargets(/문구 3 — 출시기념/)
@@ -324,12 +332,14 @@ describe('§6 편집 요청에 무엇이 실리는가', () => {
     await waitFor(() => expect(calls).toHaveLength(1), { timeout: 8000 })
 
     const prompt = lastPrompt()
-    expect(prompt).toContain('## 이번 수정의 절대 범위')
-    expect(prompt).toContain('문구 3 — 출시기념')
+    // 고친 그 문구와 사람이 적은 말이 실린다.
+    expect(prompt).toContain('출시기념')
     expect(prompt).toContain('위의 20% OFF와 간격이 좁아지도록 조금 위로 이동해 주세요.')
-    // 고르지 않은 것은 "그대로 두어야 할 것"에 있다.
-    expect(prompt).toContain('## 그대로 두어야 할 것')
-    expect(prompt).toContain('문구 1')
+    // 문구 한 장을 새로 디자인하는 주문이다 — 통이미지를 고치는 주문이 아니다.
+    expect(prompt).toContain('문구 **한 개**만 새로 디자인')
+    expect(prompt).not.toContain('## 이번 수정의 절대 범위')
+    // 고르지 않은 문구는 이름조차 나가지 않는다.
+    expect(prompt).not.toContain('신제품')
   }, 25000)
 
   it('carries every target of a multiple selection', async () => {
@@ -404,7 +414,7 @@ describe('§6 실행은 사람이 확인한 뒤 정확히 한 번', () => {
       fireEvent.change(box, { target: { value: '조금 위로' } })
     }
     expect(run().disabled).toBe(false)
-    expect(calls).toHaveLength(1) // 최초 생성 한 번뿐
+    expect(calls).toHaveLength(0) // 준비는 세지 않는다. 아직 한 건도 안 나갔다.
   }, 25000)
 
   it('shows the targets, both sizes and the one-call notice before spending', async () => {
@@ -437,7 +447,7 @@ describe('§6 실행은 사람이 확인한 뒤 정확히 한 번', () => {
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
     await waitFor(() => expect(screen.getByText(/크레딧|결제/)).toBeTruthy(), { timeout: 8000 })
     await new Promise((r) => setTimeout(r, 400))
-    expect(calls).toHaveLength(2) // 생성 1 + 편집 1. 재시도 없음.
+    expect(calls).toHaveLength(1) // 편집 한 번. 재시도 없음.
   }, 25000)
 })
 
@@ -451,7 +461,8 @@ describe('§6 결과는 840으로 정착하고, 실패는 아무것도 바꾸지
     const pageId = first.doc.pages[0]!.id
     const originalAsset = first.results[pageId]!.assetId
 
-    await selectTargets(/문구 3/)
+    // 결과 줄(이전·최초·몇 번째)을 보는 검사다. 그 줄은 통이미지 수정이 만든다.
+    await selectTargets(/이미지 2/)
     await runEdit('조금 위로 올려 주세요.')
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
 
@@ -488,6 +499,14 @@ describe('§6 결과는 840으로 정착하고, 실패는 아무것도 바꾸지
 
 // ── §6-16·17·18 되돌리기 ─────────────────────────────────────────────────────
 
+/**
+ * 되돌리기 줄은 **통이미지 수정**이 만든다 (컷아웃 갈림길 교정).
+ *
+ * 조각 수정은 조각 하나를 갈아 끼우고 다시 합칠 뿐이라 결과 줄에 칸을 더하지
+ * 않는다 — 더하면 줄이 가리키는 그림과 지금 조각이 서로 다른 말을 하게 된다.
+ * 그래서 이 묶음은 이미지 대상을 고른다: 이미지에는 문구 조각이 없으므로 지금도
+ * 통이미지 수정으로 간다.
+ */
 describe('§6 되돌리기는 공짜다', () => {
   async function editOnce(): Promise<{ pageId: string; original: string; edited: string }> {
     await openStudio()
@@ -496,7 +515,7 @@ describe('§6 되돌리기는 공짜다', () => {
     const pageId = job0.doc.pages[0]!.id
     const original = job0.results[pageId]!.assetId
 
-    await selectTargets(/문구 3/)
+    await selectTargets(/이미지 2/)
     await runEdit('조금 위로 올려 주세요.')
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
     await waitFor(async () => {

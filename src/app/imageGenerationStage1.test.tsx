@@ -586,7 +586,11 @@ describe('§13-1·10·11 생성 버튼과 결과 비교 화면', () => {
     for (const [, value] of form.entries()) {
       if (typeof value === 'string') expect(value).not.toContain(FAKE_KEY)
     }
-  })
+    // 끝까지 가라앉히고 나간다 (컷아웃 갈림길 교정). 겹 방식은 첫 호출 뒤에도 더
+    // 부르고 조각을 적으므로, 여기서 멈추면 그 뒷일이 다음 검사의 새 저장소로
+    // 흘러들어 가 "아직 만들지 않았는데 결과가 있는" 화면이 된다.
+    await waitFor(() => expect(screen.getByRole('heading', { name: '완성본' })).toBeTruthy(), { timeout: 8000 })
+  }, 20000)
 
   it('opens the comparison view by itself once a result comes back', async () => {
     await seedReady()

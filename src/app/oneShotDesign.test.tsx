@@ -176,8 +176,19 @@ async function generateOnce(): Promise<FormData> {
   fireEvent.click(await screen.findByRole('button', { name: /이미지 생성하기|다시 생성/ }))
   const dialog = await screen.findByRole('dialog')
   fireEvent.click(within(dialog).getByRole('button', { name: /생성 시작|만들기|시작/ }))
-  await waitFor(() => expect(fetchSpy).toHaveBeenCalled())
-  return fetchSpy.mock.calls[0]![1].body as FormData
+  await waitFor(() => expect(imageCalls().length).toBeGreaterThan(0))
+  return imageCalls()[0]![1].body as FormData
+}
+
+/**
+ * 그림을 만드는 요청만. 갈래 묻기(`/api/access-mode`)는 우리 함수이고 값이 붙지
+ * 않는다 (서버 키 Patch) — 그것을 첫 요청으로 잡으면 본문이 아예 없다.
+ */
+function imageCalls(): [string, { body: FormData }][] {
+  return fetchSpy.mock.calls.filter((c) => !String(c[0]).includes('/api/access-mode')) as unknown as [
+    string,
+    { body: FormData },
+  ][]
 }
 
 const fileNames = (form: FormData) =>
@@ -216,17 +227,31 @@ describe('§1 상단 버튼 하나가 메인 실행이다', () => {
 
 // ── 2. 무엇을 보내고 무엇을 보내지 않는가 ────────────────────────────────────
 
-describe('§2 컷아웃이 없으면 기존 전체 AI 흐름', () => {
-  it('배치도와 제품 원본을 지금까지처럼 보낸다', async () => {
+/**
+ * **컷아웃이 없어도 겹으로 만든다** (컷아웃 갈림길 교정).
+ *
+ * 앞선 판은 컷아웃이 켜진 이미지가 하나라도 있을 때만 겹 방식으로 갔다. 그래서
+ * 컷아웃 없는 페이지에서는 사용자의 실제 제품 사진이 배치도와 함께 모델에게
+ * 넘어가 **다시 그려졌다** — 이 파일이 바로 그 동작을 "지금까지처럼"이라고
+ * 적어 두고 있었다.
+ *
+ * 종이 컷아웃은 특정 제품에만 켜는 디자인 옵션이지 "결과를 겹으로 만들지"와
+ * 아무 상관이 없다. 작업자가 그 자리에서 걸렸다: "컷아웃 방식은 그냥 하나의
+ * 선택이야… 그걸 안 썼건 완성 후에는 다 위치 크기 조절 다 가능해야 해."
+ */
+describe('§2 컷아웃이 없어도 겹으로 만든다', () => {
+  it('사용자 이미지도 배치도도 보내지 않는다 — 컷아웃이 있을 때와 같다', async () => {
     await seedJob()
     const { container } = renderStudio()
     await documentReady(container)
     const form = await generateOnce()
 
     const names = fileNames(form)
-    expect(names.some((n) => n.includes('page-layout'))).toBe(true)
-    expect(names.some((n) => n.includes('product_image'))).toBe(true)
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    // 실제 제품 사진은 모델에게 가지 않는다. 브라우저가 원본 그대로 얹는다.
+    expect(names.some((n) => n.includes('page-layout'))).toBe(false)
+    expect(names.some((n) => n.includes('product_image'))).toBe(false)
+    // 배경 판 한 번에 문구가 한 번씩 — 통이미지 한 장이 아니다.
+    await waitFor(() => expect(imageCalls().length).toBeGreaterThan(1), { timeout: 8000 })
   })
 })
 

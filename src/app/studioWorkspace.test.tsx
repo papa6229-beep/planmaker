@@ -265,6 +265,11 @@ async function generateHere(pageIndex = 0): Promise<string> {
     assetId = (await loadStudioJob(STUDIO_JOB_ID))!.results?.[pageId]?.assetId
     expect(assetId !== undefined && assetId !== before).toBe(true)
   }, { timeout: 8000 })
+  // 저장과 화면 전환은 다른 순간이다 (컷아웃 갈림길 교정) — 겹 방식은 저장한 뒤
+  // 조각까지 적고 나서 완성본으로 넘어간다.
+  await waitFor(() => expect(screen.getByRole('region', { name: 'AI 부분수정' })).toBeTruthy(), {
+    timeout: 8000,
+  })
   return assetId!
 }
 
@@ -290,8 +295,11 @@ describe('§2 작업판 좌측은 편집할 것 하나만 남긴다', () => {
     await generateHere()
     const job = await loadStudioJob(STUDIO_JOB_ID)
     expect(job!.doc.project.concept).toBe('시원하고 청량한 여름 분위기')
-    const form = calls[0]!.init.body as FormData
-    expect(String(form.get('prompt'))).toContain('시원하고 청량한 여름 분위기')
+    // 겹 방식은 한 장을 여러 번에 나눠 만든다 (컷아웃 갈림길 교정). 컨셉이 어느
+    // 요청에 실리는지는 그 나눔의 사정이고, 여기서 지켜야 할 것은 **모델에게
+    // 닿는가**다 — 한 요청도 빠짐없이 뒤져서 찾는다.
+    const prompts = calls.map((c) => String((c.init.body as FormData).get('prompt')))
+    expect(prompts.join('\n')).toContain('시원하고 청량한 여름 분위기')
   }, 25000)
 
   it('shows the planner note read-only, under its own name', async () => {

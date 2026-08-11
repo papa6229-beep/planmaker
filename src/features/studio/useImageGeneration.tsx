@@ -460,11 +460,15 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       const styleRefId = studio.styleReferenceOf(page.id)
       const note = current.project.aiNote?.trim() ?? ''
       const pageSize = { width: page.canvasWidth, height: page.canvasHeight }
+      // 기획서가 적어 둔 컨셉은 배경과 문구 **양쪽**에 간다 (컨셉 전달 교정).
+      // 겹으로 나누면서 어느 쪽에도 안 실리게 됐던 자리다.
+      const concept = current.project.concept?.trim() ?? ''
       const shared = {
         size: pageSize,
         ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
         fixed: parts.fixed,
         ...(note.length === 0 ? {} : { note }),
+        ...(concept.length === 0 ? {} : { concept }),
       }
       const plate: PlateInput = {
         ...shared,

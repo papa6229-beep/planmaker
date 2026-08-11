@@ -147,7 +147,14 @@ beforeEach(async () => {
   calls = []
   failNext = false
   responseSeq = 0
-  globalThis.fetch = vi.fn(async (_i: RequestInfo | URL, init?: RequestInit) => {
+  globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    // 갈래 묻기는 우리 함수이고 값이 붙지 않는다 (서버 키 Patch).
+    if (String(input).includes('/api/access-mode')) {
+      return new Response(JSON.stringify({ mode: 'client-key' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
     calls.push({ init: init ?? {} })
     if (failNext) {
       return new Response(JSON.stringify({ error: { code: 'insufficient_quota' } }), { status: 429 })
@@ -195,6 +202,15 @@ async function generateFirst(): Promise<void> {
   fireEvent.change(screen.getByLabelText('테스트용 OpenAI API 키'), { target: { value: KEY } })
   fireEvent.click(screen.getByRole('button', { name: '저장하고 계속' }))
   await waitFor(() => expect(screen.getByRole('heading', { name: '완성본' })).toBeTruthy(), { timeout: 8000 })
+  await waitFor(() => expect(panel()).toBeTruthy(), { timeout: 8000 })
+  /**
+   * 여기까지가 **준비**다. 장부를 비우고 시작한다 (컷아웃 갈림길 교정).
+   *
+   * 이 파일이 재는 것은 부분수정 한 번에 몇 번 나가는가이지, 준비에 몇 번 들었는가가
+   * 아니다. 겹 방식으로 바뀌면서 준비 비용이 달라졌고, 세지 않으면 그 수가 앞으로
+   * 또 바뀌어도 이 검사들은 제 할 말을 그대로 한다.
+   */
+  calls.length = 0
 }
 
 const panel = () => screen.getByRole('region', { name: 'AI 부분수정' })
@@ -208,10 +224,6 @@ function writeFor(label: RegExp, text: string): void {
   fireEvent.change(within(panel()).getByLabelText(new RegExp(`${label.source}.*수정 지시|수정 지시.*${label.source}`)), {
     target: { value: text },
   })
-}
-function lastPrompt(): string {
-  const form = calls[calls.length - 1]!.init.body as FormData
-  return String(form.get('prompt'))
 }
 function lastImageNames(): string[] {
   const form = calls[calls.length - 1]!.init.body as FormData
@@ -281,7 +293,7 @@ describe('§8 대상마다 다른 지시', () => {
 
     writeFor(/문구 5/, '얇은 글꼴로')
     expect(runButton().disabled).toBe(false)
-    expect(calls).toHaveLength(1)
+    expect(calls).toHaveLength(0)
   }, 25000)
 
   it('lists each target with its own instruction in the confirm dialog', async () => {
@@ -303,7 +315,7 @@ describe('§8 대상마다 다른 지시', () => {
     expect(text).toContain('이 문구만 미래지향적인 얇은 글꼴로 바꿔 주세요.')
     // 두 지시가 한 덩어리로 합쳐지지 않는다.
     expect(text).not.toContain('숫자가 잘 읽히는 간결한 폰트로 바꿔 주세요. 이 문구만')
-    expect(calls).toHaveLength(1) // 확인 전에는 나가지 않는다
+    expect(calls).toHaveLength(0) // 확인 전에는 나가지 않는다
   }, 25000)
 
   it('cancels without spending anything', async () => {
@@ -313,14 +325,25 @@ describe('§8 대상마다 다른 지시', () => {
     writeFor(/문구 1/, '간결한 폰트로')
     fireEvent.click(runButton())
     fireEvent.click(screen.getByRole('button', { name: '취소' }))
-    expect(calls).toHaveLength(1)
+    expect(calls).toHaveLength(0)
   }, 25000)
 })
 
 // ── 프롬프트 격리 ────────────────────────────────────────────────────────────
 
-describe('§8 프롬프트는 각 지시를 그 대상 하나로 묶는다', () => {
-  async function sendTwo(): Promise<string> {
+/**
+ * 조각 수정에서는 지시를 대상 하나로 **묶을 필요가 없다** (컷아웃 갈림길 교정).
+ *
+ * 앞선 판은 통이미지 한 장을 고쳤다. 한 장 안에서 고른 것만 손대라고 부탁해야
+ * 했으므로, 한 요청 안에 대상별 구역을 나누고 "비슷하게 생긴 것을 일괄로 쓸어
+ * 가지 말라"고 적어 보냈다. 부탁이었다.
+ *
+ * 이제는 조각마다 **요청이 따로 나간다.** 다른 문구는 그 요청에 실리지도 않으므로
+ * 섞일 자리가 없다. 부탁이 구조로 바뀐 자리다 — 그래서 여기서 재는 것도 "한
+ * 프롬프트 안에서 갈렸는가"가 아니라 "요청이 갈렸는가"다.
+ */
+describe('§8 지시는 조각마다 따로 나간다', () => {
+  async function sendTwo(): Promise<string[]> {
     await openStudio()
     await generateFirst()
     pick(/문구 1/)
@@ -330,35 +353,33 @@ describe('§8 프롬프트는 각 지시를 그 대상 하나로 묶는다', () 
     fireEvent.click(runButton())
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
     await waitFor(() => expect(calls).toHaveLength(2), { timeout: 8000 })
-    return lastPrompt()
+    return calls.map((c) => String((c.init.body as FormData).get('prompt')))
   }
 
-  it('gives each target its own section with its own instruction', async () => {
-    const prompt = await sendTwo()
-    expect(prompt).toContain('### 대상 1')
-    expect(prompt).toContain('### 대상 2')
-    const first = prompt.slice(prompt.indexOf('### 대상 1'), prompt.indexOf('### 대상 2'))
-    const second = prompt.slice(prompt.indexOf('### 대상 2'))
+  it('sends one request per target, and neither carries the other instruction', async () => {
+    const [first, second] = await sendTwo()
     expect(first).toContain('숫자가 잘 읽히는 간결한 폰트로 바꿔 주세요.')
     expect(first).not.toContain('미래지향적인')
     expect(second).toContain('이 문구만 미래지향적인 얇은 글꼴로 바꿔 주세요.')
     expect(second).not.toContain('숫자가 잘 읽히는')
   }, 25000)
 
-  it('puts the exact wording, the box and a scope limit in each section', async () => {
-    const prompt = await sendTwo()
-    const first = prompt.slice(prompt.indexOf('### 대상 1'), prompt.indexOf('### 대상 2'))
-    expect(first).toContain('08.01 ~ 08.31')
-    expect(first).toMatch(/x 100/)
-    expect(first).toContain('대상 범위 제한')
-    expect(first).toContain('한 개에만 적용합니다')
+  it('puts the exact wording and the box in each request', async () => {
+    const prompts = await sendTwo()
+    // 두 요청이 각자 자기 문구를 싣는다. 순서는 화면의 차례를 따른다.
+    expect(prompts.join('\n')).toContain('08.01 ~ 08.31')
+    // 긴 문구는 화면이 끊는 그 줄 그대로 실린다 — 한 줄로 붙어 있지 않다.
+    expect(prompts.join('\n')).toContain('가장 먼저 만나는')
+    // 고르지 않은 문구는 어느 요청에도 이름이 없다.
+    for (const prompt of prompts) expect(prompt).not.toContain('신제품 출시')
   }, 25000)
 
-  it('says not to sweep similar-looking wording along with it', async () => {
-    const prompt = await sendTwo()
-    expect(prompt).toContain('## 이번 수정의 절대 범위')
-    expect(prompt).toMatch(/비슷한 글꼴|비슷하게 보이는|비슷한 숫자/)
-    expect(prompt).toContain('일괄')
+  it('never asks to spare the others — they are not in the request at all', async () => {
+    const [first] = await sendTwo()
+    // 부탁하던 문장들이 사라졌다. 부탁할 대상이 요청에 없기 때문이다.
+    expect(first).not.toContain('## 이번 수정의 절대 범위')
+    expect(first).not.toContain('## 그대로 두어야 할 것')
+    expect(first).toContain('문구 **한 개**만 새로 디자인')
   }, 25000)
 
   it('sends the current result first and only the chosen blocks originals', async () => {
@@ -368,7 +389,7 @@ describe('§8 프롬프트는 각 지시를 그 대상 하나로 묶는다', () 
     writeFor(/이미지 2/, '조금 아래로 옮겨 주세요.')
     fireEvent.click(runButton())
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
-    await waitFor(() => expect(calls).toHaveLength(2), { timeout: 8000 })
+    await waitFor(() => expect(calls).toHaveLength(1), { timeout: 8000 })
 
     const names = lastImageNames()
     expect(names[0]).toContain('current-result')
@@ -383,18 +404,32 @@ describe('§8 프롬프트는 각 지시를 그 대상 하나로 묶는다', () 
     writeFor(/문구 1/, '간결한 폰트로')
     fireEvent.click(runButton())
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
-    await waitFor(() => expect(calls).toHaveLength(2), { timeout: 8000 })
-    expect(lastImageNames()).toHaveLength(1)
+    await waitFor(() => expect(calls).toHaveLength(1), { timeout: 8000 })
+    // 문구 하나를 고쳤을 뿐이므로 제품 원본은 한 장도 실리지 않는다.
+    expect(lastImageNames().join('|')).not.toContain('asset_')
   }, 25000)
 
-  it('spends exactly one call for two targets', async () => {
+  /**
+   * 조각 수정은 **고른 개수만큼** 나간다 (컷아웃 갈림길 교정). 통이미지 한 장을
+   * 고치던 시절에는 몇 개를 골라도 한 번이었지만, 그 한 번은 고르지 않은 것까지
+   * 다시 그릴 수 있는 한 번이었다. 지금은 고른 것만 정확히 그만큼 나간다.
+   */
+  it('spends one call per chosen piece', async () => {
     await sendTwo()
-    expect(calls).toHaveLength(2) // 최초 생성 1 + 편집 1
+    expect(calls).toHaveLength(2)
   }, 25000)
 })
 
 // ── 결과 이력 ────────────────────────────────────────────────────────────────
 
+/**
+ * 되돌리기 줄은 **통이미지 수정**이 만든다 (컷아웃 갈림길 교정).
+ *
+ * 조각 수정은 조각 하나를 갈아 끼우고 다시 합칠 뿐이라 줄에 칸을 더하지 않는다 —
+ * 더하면 줄이 가리키는 그림과 지금 조각이 서로 다른 말을 하게 된다. 그래서 이
+ * 묶음은 이미지 대상을 고른다: 이미지에는 문구 조각이 없으므로 지금도 통이미지
+ * 수정으로 간다.
+ */
 describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
   async function editOnce(label: RegExp, text: string): Promise<void> {
     const wasShowing = (await result()).assetId
@@ -425,8 +460,8 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
   it('grows to three revisions after two edits', async () => {
     await openStudio()
     await generateFirst()
-    await editOnce(/문구 1/, '간결한 폰트로')
-    await editOnce(/문구 2/, '조금 크게')
+    await editOnce(/이미지 1/, '간결한 폰트로')
+    await editOnce(/이미지 2/, '조금 크게')
     const r = await result()
     expect(revisionsOf(r)).toHaveLength(3)
     expect(cursorOf(r)).toBe(2)
@@ -436,7 +471,7 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
   it('walks back and forward without spending anything', async () => {
     await openStudio()
     await generateFirst()
-    await editOnce(/문구 1/, '간결한 폰트로')
+    await editOnce(/이미지 1/, '간결한 폰트로')
     const revisions = revisionsOf(await result())
     const spent = calls.length
 
@@ -454,7 +489,7 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
   it('can still go forward after restoring the very first result', async () => {
     await openStudio()
     await generateFirst()
-    await editOnce(/문구 1/, '간결한 폰트로')
+    await editOnce(/이미지 1/, '간결한 폰트로')
     const spent = calls.length
 
     fireEvent.click(within(panel()).getByRole('button', { name: '최초 생성본으로 복원' }))
@@ -472,7 +507,7 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
     // 한 칸일 때는 줄이 없다. 고치고 나서 나타난다.
     expect(within(panel()).queryByRole('button', { name: '이전 결과' })).toBeNull()
 
-    await editOnce(/문구 1/, '간결한 폰트로')
+    await editOnce(/이미지 1/, '간결한 폰트로')
     expect(panel().textContent).toContain('결과 2 / 2')
     expect(prev().disabled).toBe(false)
     expect(next().disabled).toBe(true)
@@ -485,14 +520,14 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
   it('cuts the future when a new edit starts from the middle', async () => {
     await openStudio()
     await generateFirst()
-    await editOnce(/문구 1/, '간결한 폰트로')
-    await editOnce(/문구 2/, '조금 크게')
+    await editOnce(/이미지 1/, '간결한 폰트로')
+    await editOnce(/이미지 2/, '조금 크게')
     expect(revisionsOf(await result())).toHaveLength(3)
 
     fireEvent.click(within(panel()).getByRole('button', { name: '이전 결과' }))
     await waitFor(async () => expect(cursorOf(await result())).toBe(1), { timeout: 8000 })
 
-    await editOnce(/문구 3/, '가운데로')
+    await editOnce(/이미지 1/, '가운데로')
     const r = await result()
     // 1(최초) + 1(첫 수정) + 새 수정 = 3. 잘려 나간 미래 하나는 사라졌다.
     expect(revisionsOf(r)).toHaveLength(3)
@@ -502,16 +537,17 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
   it('uses the image at the cursor as the first input of the next edit', async () => {
     await openStudio()
     await generateFirst()
-    await editOnce(/문구 1/, '간결한 폰트로')
+    await editOnce(/이미지 1/, '간결한 폰트로')
     fireEvent.click(within(panel()).getByRole('button', { name: '이전 결과' }))
     await waitFor(async () => expect(cursorOf(await result())).toBe(0), { timeout: 8000 })
     const atCursor = (await result()).assetId
 
-    pick(/문구 2/)
-    writeFor(/문구 2/, '조금 크게')
+    // 통이미지 수정이라야 "현재 결과 이미지"를 첫 입력으로 싣는다.
+    pick(/이미지 2/)
+    writeFor(/이미지 2/, '조금 크게')
     fireEvent.click(runButton())
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
-    await waitFor(() => expect(calls).toHaveLength(3), { timeout: 8000 })
+    await waitFor(() => expect(calls).toHaveLength(2), { timeout: 8000 })
     // 첫 입력 이미지는 지금 커서가 가리키는 그림이다.
     expect(lastImageNames()[0]).toContain('current-result')
     expect(revisionsOf(await result())[0]?.assetId).toBe(atCursor)
@@ -520,7 +556,7 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
   it('leaves the history untouched when an edit fails', async () => {
     await openStudio()
     await generateFirst()
-    await editOnce(/문구 1/, '간결한 폰트로')
+    await editOnce(/이미지 1/, '간결한 폰트로')
     const before = await result()
 
     failNext = true
@@ -539,7 +575,7 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
   it('keeps every revision at 840 by the page height', async () => {
     await openStudio()
     await generateFirst()
-    await editOnce(/문구 1/, '간결한 폰트로')
+    await editOnce(/이미지 1/, '간결한 폰트로')
     expect((await result()).workingSize).toBe('840x1488')
   }, 40000)
 

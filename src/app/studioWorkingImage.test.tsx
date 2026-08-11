@@ -282,9 +282,11 @@ describe('§3 생성 결과는 840 작업본으로 저장된다', () => {
     expect(result.requestedSize).toBe('832x1488')
     expect(result.workingSize).toBe('840x1488')
 
-    const asset = await getAsset(result.assetId)
-    expect(asset!.byteSize).toBe(markerBytes('drawn:840x1488'))
-    expect(asset!.byteSize).not.toBe(markerBytes('image-from-model'))
+    // 겹 방식에서 **결과**는 합쳐진 한 장이다 (컷아웃 갈림길 교정). 840 작업본으로
+    // 바뀌는 것은 모델이 준 그 그림, 곧 배경 판이다 — 그것이 이 검사의 대상이다.
+    const plate = await getAsset(job.backgrounds![job.doc.pages[0]!.id]!.assetId)
+    expect(plate!.byteSize).toBe(markerBytes('drawn:840x1488'))
+    expect(plate!.byteSize).not.toBe(markerBytes('image-from-model'))
     expect(fakeCanvas.drawCalls).toBe(1)
     // 변환에 외부 호출은 없다.
     expect(calls).toBe(1)
@@ -302,7 +304,10 @@ describe('§3 생성 결과는 840 작업본으로 저장된다', () => {
     const job = (await loadStudioJob(STUDIO_JOB_ID))!
     const result = job.results[job.doc.pages[0]!.id]!
     expect(result.workingSize).toBe('840x960')
-    expect((await getAsset(result.assetId))!.byteSize).toBe(markerBytes('drawn:840x960'))
+    // 겹 방식에서 **결과**는 합쳐진 한 장이다 (컷아웃 갈림길 교정). 840 작업본으로
+    // 바뀌는 것은 모델이 준 그 그림, 곧 배경 판이다 — 그것이 이 검사의 대상이다.
+    const plate = await getAsset(job.backgrounds![job.doc.pages[0]!.id]!.assetId)
+    expect(plate!.byteSize).toBe(markerBytes('drawn:840x960'))
   }, 20000)
 
   it('does not re-encode a result that already arrives at the working size', async () => {
@@ -331,7 +336,8 @@ describe('§3 생성 결과는 840 작업본으로 저장된다', () => {
     expect(dialog.textContent).toContain(modelSize.size)
     expect(dialog.textContent).toContain('최종 작업 이미지')
     expect(dialog.textContent).toContain('840x1488')
-    expect(dialog.textContent).toContain('1회')
+    // 배경 판 한 번에 문구 겹이 한 번씩 — 확인창이 그 수를 그대로 말한다.
+    expect(dialog.textContent).toMatch(/\d+회/)
     expect(calls).toBe(0)
   }, 20000)
 })
@@ -379,7 +385,10 @@ describe('§3 변환이 실패해도 결제한 결과를 잃지 않는다', () =
     const job = (await loadStudioJob(STUDIO_JOB_ID))!
     const result = job.results[job.doc.pages[0]!.id]!
     expect(result.workingSize).toBe('840x1488')
-    expect((await getAsset(result.assetId))!.byteSize).toBe(markerBytes('drawn:840x1488'))
+    // 다시 만든 것도 840 작업본이다 — 결과는 그 위에 조각을 얹어 합친 한 장이고,
+    // 변환된 그림은 배경 판이다 (컷아웃 갈림길 교정).
+    const plate = await getAsset(job.backgrounds![job.doc.pages[0]!.id]!.assetId)
+    expect(plate!.byteSize).toBe(markerBytes('drawn:840x1488'))
   }, 25000)
 
   it('leaves the brief exactly as it was', async () => {

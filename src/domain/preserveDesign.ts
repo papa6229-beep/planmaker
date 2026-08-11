@@ -90,6 +90,14 @@ export interface PlateInput {
   /** 작업자가 추가로 적은 말. */
   note?: string
   /**
+   * 기획서가 적어 둔 **이 행사의 컨셉** (컨셉 전달 교정).
+   *
+   * 한방 생성 시절에는 이 말이 프롬프트에 실려 갔는데, 겹으로 나누면서 어느
+   * 쪽에도 실리지 않게 됐다 — 배경도 문구도 "무슨 행사인지"를 모른 채 만들어졌다.
+   * 검사가 그 자리를 잡았다. 분위기를 정하는 말이므로 배경과 문구 양쪽에 간다.
+   */
+  concept?: string
+  /**
    * 레퍼런스의 **배경 구성 자체**를 최대한 살릴 것인가 (배경 색맞춤 Patch).
    *
    * 기본은 거짓 — 색감과 결만 참고하고 구성은 새로 잡는다. 참이면 같은 배경을
@@ -118,6 +126,8 @@ export interface TextLayerInput {
   /** 사진이 이미 놓인 자리 — 좌표뿐이다. */
   fixed: readonly FixedObject[]
   note?: string
+  /** 기획서의 컨셉 (컨셉 전달 교정). 배경과 같은 말을 문구도 듣는다. */
+  concept?: string
   /** 이 블록에만 붙는 작업자 주문 (블록별 주문 Patch). */
   blockNote?: string
   /** 이 블록만 참고할 그림이 붙어 있는가. 있으면 주문이 그 그림을 가리킨다. */
@@ -257,7 +267,7 @@ const ALIGN_WORD: Record<TextAlign, string> = { left: '왼쪽', center: '가운�
  * 두 번 나오거나 실물 뒤에 흰 판이 깔린다 — 지금 고치는 결함이 그것이다.
  */
 export function buildPlatePrompt(input: PlateInput): string {
-  const { size, fixed, note } = input
+  const { size, fixed, note, concept } = input
   const lines: string[] = []
 
   lines.push(
@@ -306,6 +316,9 @@ export function buildPlatePrompt(input: PlateInput): string {
       : '색감·질감·그래픽 언어를 참고하기 위한 자료입니다. 같은 이미지를 복제하지 않습니다.',
   )
 
+  const mood = (concept ?? '').trim()
+  if (mood.length > 0) lines.push('', '## 이 행사의 컨셉', mood)
+
   const trimmed = (note ?? '').trim()
   if (trimmed.length > 0) lines.push('', '## 작업자의 추가 지시', trimmed)
 
@@ -336,7 +349,7 @@ export function buildPlatePrompt(input: PlateInput): string {
  * 디자인이어야 하는가"의 근거이지 배치 지시가 아니다.
  */
 export function buildTextLayerPrompt(input: TextLayerInput): string {
-  const { size, block, siblings, fixed, backgroundAssetId, note } = input
+  const { size, block, siblings, fixed, backgroundAssetId, note, concept } = input
   const rank = importanceRanks(siblings, size).get(block.blockId) ?? 1
   const lines: string[] = []
 
@@ -433,6 +446,9 @@ export function buildTextLayerPrompt(input: TextLayerInput): string {
   if (blockNote.length > 0) {
     lines.push('', '## 이 문구에 대한 작업자의 주문', blockNote, '페이지 전체 지시보다 이 주문이 우선합니다.')
   }
+
+  const mood = (concept ?? '').trim()
+  if (mood.length > 0) lines.push('', '## 이 행사의 컨셉', mood)
 
   const trimmed = (note ?? '').trim()
   if (trimmed.length > 0) lines.push('', '## 작업자의 추가 지시 (페이지 전체)', trimmed)
