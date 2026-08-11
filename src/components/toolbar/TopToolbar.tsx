@@ -31,6 +31,7 @@ import { useImageGeneration } from '../../features/studio/useImageGeneration'
 import { countStudioStorage, resetStudioStorage, type StorageCount } from '../../services/storageReset'
 import { saveHealth, subscribeSaveHealth } from '../../services/saveHealthStore'
 import { saveStatus } from '../../domain/saveHealth'
+import { STUDIO_REF_LABEL } from '../../domain/studioFile'
 
 const TITLE_COALESCE_KEY = 'project-title'
 
@@ -67,7 +68,7 @@ export function TopToolbar({
   }
   const studioIsNewer = studio !== null && studio.lastChangeAt > editorChangedAt.current
   const { undoPageDelete, requestTeam, setRequestTeam, activePageId } = useBriefDocument()
-  const { state: ioState, startExport, startImport, busy } = useEventBriefIo()
+  const { state: ioState, startExport, startImport, busy, dismiss: dismissIo } = useEventBriefIo()
   const { saveNow } = useBriefDocument()
   const navigate = useNavigate()
   // 게이트에서 고른 팀. 편집 화면에서는 보여만 주고 바꾸지 않는다 — 여기서 팀을
@@ -401,6 +402,36 @@ export function TopToolbar({
           <span className="editor-topbar__io-note" aria-live="polite">
             {ioState.kind === 'exported' ? '기획서 파일을 저장했습니다' : ''}
           </span>
+          {/* 빠진 것이 있으면 그 자리에서 말한다 (저장 인질 Patch). 저장은 됐으므로
+              실패로 말하지 않되, 무엇이 빠졌는지 모르는 채로 넘어가게 두지 않는다. */}
+          {ioState.kind === 'exported' && ioState.dropped !== undefined && (
+            <div className="confirm-backdrop" role="presentation" onClick={dismissIo}>
+              <div
+                className="confirm"
+                role="dialog"
+                aria-modal="true"
+                aria-label="빠진 그림"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h2 className="confirm__title">저장했습니다 — 다만 {ioState.dropped.length}개가 빠졌습니다</h2>
+                <p className="confirm__body">
+                  아래 자리에 걸려 있던 그림을 이 브라우저에서 찾지 못해, 그 <b>연결만</b> 빼고 저장했습니다.
+                  나머지 작업은 그대로 담겼습니다. 이 파일을 열면 그 자리는 비어 있으니, 필요하면 다시 연결해
+                  주세요.
+                </p>
+                <ul className="confirm__list">
+                  {ioState.dropped.map((ref) => (
+                    <li key={`${ref.kind}-${ref.assetId}`}>
+                      {STUDIO_REF_LABEL[ref.kind]} · {ref.at}
+                    </li>
+                  ))}
+                </ul>
+                <div className="confirm__actions">
+                  <button type="button" className="btn btn--primary" onClick={dismissIo}>확인</button>
+                </div>
+              </div>
+            </div>
+          )}
           {/* Said once, where the file is made — not repeated in a popup or a
               toast elsewhere (타 팀 배포 §4.5). */}
           {surface === 'brief-writer' && mode === 'brief' && (

@@ -142,6 +142,113 @@ export function studioFileAssetIds(state: StudioFileState): string[] {
   ]
 }
 
+/** 어디에 걸려 있던 연결인가. 화면이 사람에게 그 자리를 알려 주는 데 쓴다. */
+export type StudioRefKind =
+  | 'productImage'
+  | 'background'
+  | 'styleRef'
+  | 'textObject'
+  | 'imageObject'
+  | 'blockReference'
+  | 'blink'
+
+export const STUDIO_REF_LABEL: Record<StudioRefKind, string> = {
+  productImage: '연결한 제품 이미지',
+  background: '배경',
+  styleRef: '디자인 스타일 레퍼런스',
+  textObject: '문구 조각',
+  imageObject: '이미지 조각',
+  blockReference: '블록 참고 그림',
+  blink: '깜빡이는 버튼 GIF',
+}
+
+/** 가리키는 그림이 사라진 연결 하나. */
+export interface DroppedRef {
+  kind: StudioRefKind
+  assetId: string
+  /** 그 연결이 걸려 있던 자리 — 블록이거나 페이지다. */
+  at: string
+}
+
+/**
+ * 가리키는 그림이 사라진 연결을 **빼낸다** (저장 인질 Patch).
+ *
+ * ## 왜 빼는가
+ *
+ * 앞선 판은 그런 연결을 하나라도 만나면 저장을 통째로 거부했다. 손상된 파일을
+ * 만들지 않겠다는 뜻이었고 그 판단 자체는 옳았지만, 대가가 너무 컸다 — 그림 하나
+ * 때문에 하루치 작업을 **저장할 방법이 아예 없어진다.** 실제로 그 자리에서 걸렸다:
+ * "이렇게 떠…"
+ *
+ * 빼고 저장하는 것은 손상이 아니다. 그 블록에 그림이 없다는 것은 **지금 화면의
+ * 사실**이고, 파일은 그 사실을 그대로 적을 뿐이다. 대신 무엇을 뺐는지 돌려주므로
+ * 부르는 쪽이 사람에게 말할 수 있다 — 조용히 빼는 것이 진짜 손상이다.
+ *
+ * 순수 함수다. 무엇이 있고 없는지는 `has`가 답한다.
+ */
+export function dropMissingAssets(
+  state: StudioFileState,
+  has: (assetId: string) => boolean,
+): { state: StudioFileState; dropped: DroppedRef[] } {
+  const dropped: DroppedRef[] = []
+  const gone = (kind: StudioRefKind, assetId: string, at: string): boolean => {
+    if (has(assetId)) return false
+    dropped.push({ kind, assetId, at })
+    return true
+  }
+
+  const productImages = Object.fromEntries(
+    Object.entries(state.productImages).filter(([blockId, id]) => !gone('productImage', id, blockId)),
+  )
+  const backgrounds = Object.fromEntries(
+    Object.entries(state.backgrounds ?? {}).filter(([pageId, bg]) => !gone('background', bg.assetId, pageId)),
+  )
+  const styleRefs = Object.fromEntries(
+    Object.entries(state.styleRefs ?? {}).filter(([pageId, id]) => !gone('styleRef', id, pageId)),
+  )
+  const textObjects = Object.fromEntries(
+    Object.entries(state.textObjects ?? {}).map(([pageId, list]) => [
+      pageId,
+      list.filter((o) => !gone('textObject', o.assetId, o.blockId)),
+    ]),
+  )
+  const imageObjects = Object.fromEntries(
+    Object.entries(state.imageObjects ?? {}).map(([pageId, list]) => [
+      pageId,
+      list.filter((o) => !gone('imageObject', o.assetId, o.blockId)),
+    ]),
+  )
+  // 주문 글은 남긴다 — 사라진 것은 참고 그림 한 장뿐이고, 적어 둔 말까지 버릴
+  // 이유가 없다.
+  const blockOrders: Record<string, BlockOrder> = {}
+  for (const [blockId, order] of Object.entries(state.blockOrders ?? {})) {
+    if (order.referenceAssetId !== undefined && gone('blockReference', order.referenceAssetId, blockId)) {
+      // 자리를 `undefined`로 두지 않고 아예 뺀다 — 없는 것과 "없다고 적힌 것"은
+      // 이 계약에서 다른 값이다.
+      const { referenceAssetId: _lost, ...rest } = order
+      blockOrders[blockId] = rest
+      continue
+    }
+    blockOrders[blockId] = order
+  }
+  // 깜빡임은 **설정을 남기고 그림만 지운다.** 켜 둔 것은 사람의 뜻이고, 그림은
+  // 화면이 다시 만들 수 있다.
+  const blink = Object.fromEntries(
+    Object.entries(state.blink ?? {}).map(([pageId, item]) => [
+      pageId,
+      item.assetId !== undefined && gone('blink', item.assetId, pageId)
+        ? { strength: item.strength }
+        : item,
+    ]),
+  )
+
+  if (dropped.length === 0) return { state, dropped }
+  return {
+    state: { ...state, productImages, backgrounds, styleRefs, textObjects, imageObjects, blockOrders, blink },
+    dropped,
+  }
+}
+
 /**
  * 불러오기에서 자산 id가 새로 발급됐을 때, 연결정보도 같은 매핑으로 함께 옮긴다.
  * 기획서 참조만 옮기고 여기를 빼면 연결이 사라진 그림을 가리키게 된다.

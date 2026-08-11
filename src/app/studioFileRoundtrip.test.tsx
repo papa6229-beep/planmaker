@@ -215,17 +215,34 @@ describe('§6-1·2·4·5 파일에 무엇이 들어가는가', () => {
     expect(state.productImages).toEqual({ blk_a: 'asset_cut_a', blk_b: 'asset_cut_a' })
   })
 
-  it('refuses to save when a linked product image has no binary', async () => {
+  /**
+   * 앞선 판은 여기서 저장을 **거부**했다. 손상된 파일을 만들지 않겠다는 뜻이었고
+   * 그 판단 자체는 옳았지만, 대가가 너무 컸다 — 그림 하나 때문에 하루치 작업을
+   * 저장할 방법이 아예 없어진다. 실제로 팀원 화면에서 그 자리에서 걸렸다
+   * (저장 인질 Patch).
+   *
+   * 이제 **끊어진 연결만 빼고 저장한다.** 손상이 아니다: 그 블록에 그림이 없다는
+   * 것은 지금 화면의 사실이고, 파일은 그 사실을 그대로 적을 뿐이다. 대신 무엇이
+   * 빠졌는지 반드시 돌려준다 — 조용히 빼는 것이 진짜 손상이다.
+   */
+  it('원본을 잃은 연결은 빼고 저장하며, 무엇이 빠졌는지 말한다', async () => {
     const job = jobWithProducts()
-    await expect(
-      packageEventDocument({
-        doc: job.doc,
-        assets: BRIEF_ASSETS(), // 제품 이미지 원본이 없다
-        previews: [new Blob([new Uint8Array([1])], { type: 'image/png' })],
-        createdAt: new Date(0).toISOString(),
-        studio: toStudioFileState(job),
-      }),
-    ).rejects.toThrow(EventBriefError)
+    const pkg = await packageEventDocument({
+      doc: job.doc,
+      assets: BRIEF_ASSETS(), // 제품 이미지 원본이 없다
+      previews: [new Blob([new Uint8Array([1])], { type: 'image/png' })],
+      createdAt: new Date(0).toISOString(),
+      studio: toStudioFileState(job),
+    })
+    // 파일은 나온다.
+    expect(pkg.blob.size).toBeGreaterThan(0)
+    // 무엇이 어디서 빠졌는지 이름으로 말한다.
+    expect(pkg.dropped?.map((d) => d.kind)).toEqual(['productImage', 'productImage'])
+    expect(pkg.dropped?.map((d) => d.at).toSorted()).toEqual(['blk_a', 'blk_b'])
+    // 저장된 작업 상태에는 죽은 연결이 남지 않는다 — 남으면 다시 열 때 또 걸린다.
+    const zip = await JSZip.loadAsync(pkg.blob)
+    const state = parseStudioFileState(JSON.parse(await zip.file('studio.json')!.async('string')))!
+    expect(state.productImages).toEqual({})
   })
 
   it('keeps a writer file exactly as it was — no studio.json, version 2.0.0', async () => {

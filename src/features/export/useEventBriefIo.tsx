@@ -23,6 +23,7 @@ import { allRequestAssetIds } from '../../services/requestStore'
 import { allStudioAssetIds } from '../../services/studioStore'
 import { hasUserWork, referencedAssetIds } from '../../domain/pageOps'
 import { packageEventDocument } from '../../services/eventBriefExport'
+import type { DroppedRef } from '../../domain/studioFile'
 import { readEventDocument, type ImportedDocument } from '../../services/eventBriefImport'
 import { renderPreviewPng } from '../../services/previewRenderer'
 import { EventBriefError } from '../../services/eventBriefArchive'
@@ -34,8 +35,15 @@ export type IoState =
   | { kind: 'export-blocked'; errors: ExportIssue[] }
   | { kind: 'export-warn'; warnings: ExportIssue[] }
   | { kind: 'exporting'; message: string }
-  /** The file has been handed to the browser; shown briefly, then cleared. */
-  | { kind: 'exported' }
+  /**
+   * The file has been handed to the browser; shown briefly, then cleared.
+   *
+   * `dropped`가 있으면 **가리키는 그림이 사라져 빼고 저장한 연결**이 있었다는
+   * 뜻이다 (저장 인질 Patch). 저장은 성공했으므로 실패로 말하지 않되, 조용히
+   * 넘어가지도 않는다 — 조용히 빼는 것이 진짜 손상이다. 이 알림은 스스로 사라지지
+   * 않는다: 사람이 읽고 닫아야 무엇이 빠졌는지 아는 채로 넘어간다.
+   */
+  | { kind: 'exported'; dropped?: DroppedRef[] }
   | { kind: 'export-failed'; message: string }
   /**
    * 교체하기 전에 묻는 자리. `saveFailed`는 **이 창에서** 파일로 저장하려다
@@ -130,13 +138,18 @@ export function EventBriefIoProvider({ children }: { children: ReactNode }) {
         previews,
         createdAt: new Date().toISOString(),
         // 작업판에서 저장한 파일에는 연결한 제품 이미지 원본과 그 연결정보가
-        // 함께 들어간다. 하나라도 원본을 찾지 못하면 여기서 저장이 실패한다.
+        // 함께 들어간다. 원본을 찾지 못한 연결은 빠지고, 무엇이 빠졌는지 아래에서
+        // 화면에 실린다 (저장 인질 Patch).
         ...(studio === null ? {} : { studio: toStudioFileState(studio.job) }),
       })
       triggerDownload(pkg.blob, fileName ?? pkg.fileName)
-      setState({ kind: 'exported' })
-      // The confirmation is a short note, not something to dismiss.
-      window.setTimeout(() => setState((s) => (s.kind === 'exported' ? { kind: 'idle' } : s)), 4000)
+      const dropped = pkg.dropped ?? []
+      setState({ kind: 'exported', ...(dropped.length === 0 ? {} : { dropped }) })
+      // The confirmation is a short note, not something to dismiss — 빠진 것이
+      // 있을 때만은 예외다. 그 줄은 사람이 읽고 닫아야 한다.
+      if (dropped.length === 0) {
+        window.setTimeout(() => setState((s) => (s.kind === 'exported' ? { kind: 'idle' } : s)), 4000)
+      }
       return null
     } catch (err) {
       const message = messageFor(err)

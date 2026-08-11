@@ -28,12 +28,19 @@ import {
   type AssetArchiveEntry,
   type EventBriefManifest,
 } from './eventBriefArchive'
-import { studioFileAssetIds, type StudioFileState } from '../domain/studioFile'
+import { dropMissingAssets, studioFileAssetIds, type DroppedRef, type StudioFileState } from '../domain/studioFile'
 
 export interface PackagedBrief {
   blob: Blob
   fileName: string
   manifest: EventBriefManifest
+  /**
+   * 가리키는 그림이 사라져 **빼고 저장한** 연결들 (저장 인질 Patch).
+   *
+   * 없으면 이 자리도 없다. 있으면 화면이 그대로 말해야 한다 — 조용히 빼는 것이
+   * 진짜 손상이다.
+   */
+  dropped?: DroppedRef[]
 }
 
 export interface PackageArgs {
@@ -167,18 +174,25 @@ export async function packageEventDocument({
 
   // 디자인팀이 연결한 실제 제품 이미지. 기획서 자산 풀 밖에 있으므로 여기서
   // 따로 모은다. 같은 이미지가 여러 블록에 연결됐어도 바이너리는 한 번만 쓴다.
+  //
+  // 가리키는 그림이 사라진 연결은 **빼고 저장한다** (저장 인질 Patch). 앞선 판은
+  // 여기서 저장을 통째로 거부했는데, 그림 하나 때문에 하루치 작업을 저장할 방법이
+  // 아예 없어졌다. 무엇을 뺐는지는 돌려주므로 화면이 사람에게 말한다.
+  let studioState = studio
+  let dropped: DroppedRef[] = []
   if (studio) {
+    const cleaned = dropMissingAssets(studio, (id) => assetById.has(id))
+    studioState = cleaned.state
+    dropped = cleaned.dropped
+  }
+  if (studioState) {
     const written = new Set(entries.map((e) => e.assetId))
-    for (const assetId of studioFileAssetIds(studio)) {
+    for (const assetId of studioFileAssetIds(studioState)) {
       if (written.has(assetId)) continue
       const stored = assetById.get(assetId)
-      if (!stored) {
-        // 연결정보가 가리키는 그림이 없으면 손상된 파일을 만들지 않는다.
-        throw new EventBriefError(
-          'ASSET_BLOB_MISSING',
-          `연결된 제품 이미지의 원본을 찾을 수 없어 저장할 수 없습니다: ${assetId}`,
-        )
-      }
+      // 위에서 걸러 냈으므로 여기 남는 것은 전부 있다. 그래도 한 번 더 본다 —
+      // 없으면 지나간다: 저장을 막는 것보다 한 장 빠진 파일이 낫다.
+      if (!stored) continue
       const path = assetArchivePath(assetId, stored.fileName, 'product')
       entries.push({
         assetId,
@@ -196,18 +210,18 @@ export async function packageEventDocument({
   const manifest = buildManifest(
     entries,
     createdAt,
-    studio ? EVENTBRIEF_STUDIO_VERSION : EVENTBRIEF_DOCUMENT_VERSION,
+    studioState ? EVENTBRIEF_STUDIO_VERSION : EVENTBRIEF_DOCUMENT_VERSION,
   )
   zip.file(MANIFEST_PATH, JSON.stringify(manifest, null, 2))
 
   // document.json is the canonical multi-page snapshot (pages, order, activePageId).
   zip.file(DOCUMENT_PATH, serializeDocument(doc))
-  if (studio) zip.file(STUDIO_PATH, JSON.stringify(studio, null, 2))
+  if (studioState) zip.file(STUDIO_PATH, JSON.stringify(studioState, null, 2))
 
   previews.forEach((preview, i) => {
     if (preview) zip.file(pagePreviewPath(i), preview)
   })
 
   const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
-  return { blob, fileName: documentFileName(doc), manifest }
+  return { blob, fileName: documentFileName(doc), manifest, ...(dropped.length === 0 ? {} : { dropped }) }
 }
