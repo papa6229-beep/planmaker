@@ -55,6 +55,53 @@ vi.mock('../features/assets/imageUtils', async () => {
 vi.mock('../services/previewRenderer', () => ({
   renderPreviewPng: async () => new Blob([new Uint8Array([137, 80, 78, 71, 1])], { type: 'image/png' }),
 }))
+
+// ── 겹 방식이 지나는 캔버스 자리들 (컷아웃 갈림길 교정) ──────────────────────
+//
+// 이 검사들은 예전에 **통이미지 한 장** 경로로만 돌았다. 갈림길이 컷아웃에서
+// 풀리면서 이제 겹 방식으로 지나가는데, 그 길은 브라우저 캔버스를 여러 번 쓴다.
+// jsdom에는 2D 캔버스가 없고 그림이 디코딩되지도 않아, 진짜 함수를 부르면 영영
+// 기다린다. 규칙은 각자의 순수 검사에서 숫자로 재고, 여기서는 흐름만 본다.
+vi.mock('../services/referenceUpload', () => ({
+  shrinkReference: async (blob: Blob) => blob,
+}))
+vi.mock('../services/photoContent', () => ({
+  PHOTO_MEASURE_MAX_SIDE: 256,
+  measurePhoto: async () => ({ natural: { width: 800, height: 800 }, box: { x: 0, y: 0, width: 1, height: 1 } }),
+}))
+vi.mock('../services/paperCutoutShape', () => ({
+  buildPaperShape: async () => null,
+  buildPaperCanvas: async () => null,
+}))
+vi.mock('../services/imageAnalysisRunner', () => ({
+  ANALYSIS_MAX_SIDE: 256,
+  analyzeImageBlob: async () => null,
+}))
+vi.mock('../services/textLayerKey', () => ({
+  removeKeyBackground: async (blob: Blob) => ({ blob, opaqueRatio: 0.2 }),
+}))
+vi.mock('../services/trimToContent', () => ({
+  trimToContent: async (blob: Blob) => ({ blob, width: 400, height: 100 }),
+}))
+vi.mock('../services/regionTone', () => ({
+  REGION_MAX_SIDE: 512,
+  analyzeRegions: async (_blob: Blob, rects: unknown[]) => rects.map(() => null),
+}))
+vi.mock('../services/compositeRenderer', () => ({
+  renderComposite: async () => new Blob([new Uint8Array([5, 5, 5, 5, 5])], { type: 'image/png' }),
+}))
+vi.mock('../services/workingImage', async () => {
+  const actual = await vi.importActual<typeof import('../services/workingImage')>('../services/workingImage')
+  return {
+    ...actual,
+    toWorkingImage: async (blob: Blob, target: { width: number; height: number }) => ({
+      blob,
+      width: target.width,
+      height: target.height,
+      reencoded: false,
+    }),
+  }
+})
 vi.mock('../services/canvasImageOps', () => ({
   measureImage: async () => ({ width: 832, height: 1472 }),
   drawToSize: async (_b: Blob, width: number, height: number) =>
@@ -199,6 +246,10 @@ async function generateFirst(): Promise<void> {
     const job = (await loadStudioJob(STUDIO_JOB_ID))!
     expect(job.results?.[job.doc.pages[0]!.id]).toBeTruthy()
   }, { timeout: 8000 })
+  // 결과가 저장된 것과 화면이 완성본으로 넘어간 것은 다른 순간이다 (컷아웃 갈림길
+  // 교정). 겹 방식은 저장한 뒤 조각까지 적고 나서 화면을 바꾸므로, 저장만 보고
+  // 이어 가면 아직 기획서 화면인 채로 부분수정 칸을 찾게 된다.
+  await waitFor(() => expect(editPanel()).toBeTruthy(), { timeout: 8000 })
 }
 
 const TEXT_IDS = ['blk_t1', 'blk_t2', 'blk_t3', 'blk_t4', 'blk_t5']

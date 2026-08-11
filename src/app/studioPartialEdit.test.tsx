@@ -46,6 +46,53 @@ vi.mock('../features/assets/imageUtils', async () => {
 vi.mock('../services/previewRenderer', () => ({
   renderPreviewPng: async () => new Blob([new Uint8Array([137, 80, 78, 71, 1])], { type: 'image/png' }),
 }))
+
+// ── 겹 방식이 지나는 캔버스 자리들 (컷아웃 갈림길 교정) ──────────────────────
+//
+// 이 검사들은 예전에 **통이미지 한 장** 경로로만 돌았다. 갈림길이 컷아웃에서
+// 풀리면서 이제 겹 방식으로 지나가는데, 그 길은 브라우저 캔버스를 여러 번 쓴다.
+// jsdom에는 2D 캔버스가 없고 그림이 디코딩되지도 않아, 진짜 함수를 부르면 영영
+// 기다린다. 규칙은 각자의 순수 검사에서 숫자로 재고, 여기서는 흐름만 본다.
+vi.mock('../services/referenceUpload', () => ({
+  shrinkReference: async (blob: Blob) => blob,
+}))
+vi.mock('../services/photoContent', () => ({
+  PHOTO_MEASURE_MAX_SIDE: 256,
+  measurePhoto: async () => ({ natural: { width: 800, height: 800 }, box: { x: 0, y: 0, width: 1, height: 1 } }),
+}))
+vi.mock('../services/paperCutoutShape', () => ({
+  buildPaperShape: async () => null,
+  buildPaperCanvas: async () => null,
+}))
+vi.mock('../services/imageAnalysisRunner', () => ({
+  ANALYSIS_MAX_SIDE: 256,
+  analyzeImageBlob: async () => null,
+}))
+vi.mock('../services/textLayerKey', () => ({
+  removeKeyBackground: async (blob: Blob) => ({ blob, opaqueRatio: 0.2 }),
+}))
+vi.mock('../services/trimToContent', () => ({
+  trimToContent: async (blob: Blob) => ({ blob, width: 400, height: 100 }),
+}))
+vi.mock('../services/regionTone', () => ({
+  REGION_MAX_SIDE: 512,
+  analyzeRegions: async (_blob: Blob, rects: unknown[]) => rects.map(() => null),
+}))
+vi.mock('../services/compositeRenderer', () => ({
+  renderComposite: async () => new Blob([new Uint8Array([5, 5, 5, 5, 5])], { type: 'image/png' }),
+}))
+vi.mock('../services/workingImage', async () => {
+  const actual = await vi.importActual<typeof import('../services/workingImage')>('../services/workingImage')
+  return {
+    ...actual,
+    toWorkingImage: async (blob: Blob, target: { width: number; height: number }) => ({
+      blob,
+      width: target.width,
+      height: target.height,
+      reencoded: false,
+    }),
+  }
+})
 const fakeCanvas = { failDraw: false, drawCalls: 0 }
 vi.mock('../services/canvasImageOps', () => ({
   measureImage: async () => ({ width: 832, height: 1472 }),
@@ -123,7 +170,14 @@ beforeEach(async () => {
   respond = okResponse
   fakeCanvas.failDraw = false
   fakeCanvas.drawCalls = 0
-  globalThis.fetch = vi.fn(async (_i: RequestInfo | URL, init?: RequestInit) => {
+  globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    // 갈래 묻기는 우리 함수이고 값이 붙지 않는다 (서버 키 Patch).
+    if (String(input).includes('/api/access-mode')) {
+      return new Response(JSON.stringify({ mode: 'client-key' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
     calls.push({ init: init ?? {} })
     return respond()
   }) as unknown as typeof fetch
@@ -160,6 +214,16 @@ async function generateFirst(): Promise<void> {
   fireEvent.change(screen.getByLabelText('테스트용 OpenAI API 키'), { target: { value: KEY } })
   fireEvent.click(screen.getByRole('button', { name: '저장하고 계속' }))
   await waitFor(() => expect(screen.getByRole('heading', { name: '완성본' })).toBeTruthy(), { timeout: 8000 })
+  await waitFor(() => expect(editPanel()).toBeTruthy(), { timeout: 8000 })
+  /**
+   * 여기까지가 **준비**다. 장부를 비우고 시작한다 (컷아웃 갈림길 교정).
+   *
+   * 이 파일이 재는 것은 "부분수정 한 번에 호출 한 번"이다. 최초 생성이 몇 번
+   * 나가는지는 이 검사의 관심이 아니고, 겹 방식으로 바뀌면서 그 수가 달라졌다.
+   * 준비에 든 호출을 세지 않으면 이 검사는 앞으로 그 수가 또 바뀌어도 제 할
+   * 말을 그대로 한다.
+   */
+  calls.length = 0
 }
 
 function editPanel(): HTMLElement {
@@ -257,7 +321,7 @@ describe('§6 편집 요청에 무엇이 실리는가', () => {
     await selectTargets(/문구 3 — 출시기념/)
     await runEdit('위의 20% OFF와 간격이 좁아지도록 조금 위로 이동해 주세요.')
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
-    await waitFor(() => expect(calls).toHaveLength(2), { timeout: 8000 })
+    await waitFor(() => expect(calls).toHaveLength(1), { timeout: 8000 })
 
     const prompt = lastPrompt()
     expect(prompt).toContain('## 이번 수정의 절대 범위')
@@ -274,7 +338,7 @@ describe('§6 편집 요청에 무엇이 실리는가', () => {
     await selectTargets(/이미지 1/, /이미지 2/, /이미지 3/)
     await runEdit('제품 세 개의 크기와 순서를 유지한 채 전체적으로 조금 아래로 이동해 주세요.')
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
-    await waitFor(() => expect(calls).toHaveLength(2), { timeout: 8000 })
+    await waitFor(() => expect(calls).toHaveLength(1), { timeout: 8000 })
 
     const prompt = lastPrompt()
     for (const label of ['이미지 1', '이미지 2', '이미지 3']) expect(prompt).toContain(label)
@@ -286,7 +350,7 @@ describe('§6 편집 요청에 무엇이 실리는가', () => {
     await selectTargets(/이미지 2/)
     await runEdit('조금 아래로 옮겨 주세요.')
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
-    await waitFor(() => expect(calls).toHaveLength(2), { timeout: 8000 })
+    await waitFor(() => expect(calls).toHaveLength(1), { timeout: 8000 })
 
     const names = lastImageNames()
     expect(names[0]).toContain('current-result')
@@ -302,7 +366,7 @@ describe('§6 편집 요청에 무엇이 실리는가', () => {
     await selectTargets(/전체 배경/)
     await runEdit('원형 광원을 조금 약하게 해 주세요.')
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
-    await waitFor(() => expect(calls).toHaveLength(2), { timeout: 8000 })
+    await waitFor(() => expect(calls).toHaveLength(1), { timeout: 8000 })
 
     const prompt = lastPrompt()
     for (const rule of EDIT_RULES) expect(prompt).toContain(rule)
@@ -360,7 +424,7 @@ describe('§6 실행은 사람이 확인한 뒤 정확히 한 번', () => {
     expect(dialog.textContent).toContain('1회')
     expect(dialog.textContent).toMatch(/주변|함께 조금/)
     // 확인 전에는 아무것도 나가지 않는다.
-    expect(calls).toHaveLength(1)
+    expect(calls).toHaveLength(0)
   }, 25000)
 
   it('sends exactly one request after approval and never retries on failure', async () => {

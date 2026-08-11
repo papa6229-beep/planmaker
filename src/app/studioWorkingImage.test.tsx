@@ -49,6 +49,41 @@ vi.mock('../services/previewRenderer', () => ({
   renderPreviewPng: async () => new Blob([new Uint8Array([137, 80, 78, 71, 1])], { type: 'image/png' }),
 }))
 
+// ── 겹 방식이 지나는 캔버스 자리들 (컷아웃 갈림길 교정) ──────────────────────
+//
+// 이 검사들은 예전에 **통이미지 한 장** 경로로만 돌았다. 갈림길이 컷아웃에서
+// 풀리면서 이제 겹 방식으로 지나가는데, 그 길은 브라우저 캔버스를 여러 번 쓴다.
+// jsdom에는 2D 캔버스가 없고 그림이 디코딩되지도 않아, 진짜 함수를 부르면 영영
+// 기다린다. 규칙은 각자의 순수 검사에서 숫자로 재고, 여기서는 흐름만 본다.
+vi.mock('../services/referenceUpload', () => ({
+  shrinkReference: async (blob: Blob) => blob,
+}))
+vi.mock('../services/photoContent', () => ({
+  PHOTO_MEASURE_MAX_SIDE: 256,
+  measurePhoto: async () => ({ natural: { width: 800, height: 800 }, box: { x: 0, y: 0, width: 1, height: 1 } }),
+}))
+vi.mock('../services/paperCutoutShape', () => ({
+  buildPaperShape: async () => null,
+  buildPaperCanvas: async () => null,
+}))
+vi.mock('../services/imageAnalysisRunner', () => ({
+  ANALYSIS_MAX_SIDE: 256,
+  analyzeImageBlob: async () => null,
+}))
+vi.mock('../services/textLayerKey', () => ({
+  removeKeyBackground: async (blob: Blob) => ({ blob, opaqueRatio: 0.2 }),
+}))
+vi.mock('../services/trimToContent', () => ({
+  trimToContent: async (blob: Blob) => ({ blob, width: 400, height: 100 }),
+}))
+vi.mock('../services/regionTone', () => ({
+  REGION_MAX_SIDE: 512,
+  analyzeRegions: async (_blob: Blob, rects: unknown[]) => rects.map(() => null),
+}))
+vi.mock('../services/compositeRenderer', () => ({
+  renderComposite: async () => new Blob([new Uint8Array([5, 5, 5, 5, 5])], { type: 'image/png' }),
+}))
+
 /**
  * 캔버스는 jsdom에 없다. 그림을 재고 다시 그리는 부분만 갈아 끼우고, 크기 규칙과
  * 저장·복구 흐름은 진짜 코드를 그대로 지나가게 한다. 실제 픽셀 확인은 브라우저
