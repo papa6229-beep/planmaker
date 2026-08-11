@@ -430,7 +430,33 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     // ── 갈림길 (§1). 작업자는 고르지 않는다 ─────────────────────────────────
     const parts = preserveParts(page, studio.job.productImages, (id) => studio.effectsOf(id).paperCutout)
 
-    if (parts.fixed.some((f) => f.cutout)) {
+    /**
+     * **얹을 것이 있으면 겹으로 만든다** (컷아웃 갈림길 교정).
+     *
+     * 앞선 판은 `parts.fixed.some((f) => f.cutout)`이었다. 종이 컷아웃이 켜진
+     * 이미지가 하나라도 있을 때만 겹 방식으로 갔다는 뜻이다. 그런데 컷아웃은
+     * **특정 제품에서만 켜는 별개의 디자인 옵션**이고, "결과를 겹으로 만들지"와
+     * 아무 상관이 없다. 작업자가 그 자리에서 걸렸다: "컷아웃 방식은 그냥 하나의
+     * 선택이야… 그걸 안 썼건 완성 후에는 다 위치 크기 조절 다 가능해야 해."
+     *
+     * 이 조건은 원래 컷아웃 전용이던 시절의 것이 그대로 남은 것이다. 그 뒤
+     * `preserveParts`가 **모든 이미지 블록**을 고정으로 다루도록 넓어졌는데
+     * (바로 위 주석: "앞선 판은 컷아웃만 지키고 일반 이미지는 모델에게 맡겼는데,
+     * 맡긴 쪽이 이동하고 확대되고 다시 그려졌다"), 문을 지키는 이 줄은 같이
+     * 넓히지 못했다. 그래서 컷아웃 없는 페이지에서는 고치겠다던 그 문제가 그대로
+     * 살아 있었다 — 실제 제품 사진이 모델에게 넘어가 다시 그려졌다.
+     *
+     * 겹으로 만들지 않으면 잃는 것이 셋이다:
+     *
+     *  1. 실제 제품 사진이 AI에게 넘어가 위치·크기가 바뀐 채로 돌아온다
+     *  2. 완성 후 조각을 옮기거나 크기를 바꿀 수 없다 (조각이 아예 없다)
+     *  3. **배너를 만들 수 없다** — 배너는 조각을 서랍에서 꺼내 얹는 일이라,
+     *     꺼낼 조각이 없으면 기능이 통째로 죽는다
+     *
+     * 얹을 것이 하나도 없는 페이지 — 이미지도 문구도 없는 빈 장 — 에서만 예전
+     * 길로 간다. 그때는 겹이라고 할 것이 없어서 결과가 어차피 같다.
+     */
+    if (parts.fixed.length > 0 || parts.texts.length > 0) {
       const styleRefId = studio.styleReferenceOf(page.id)
       const note = current.project.aiNote?.trim() ?? ''
       const pageSize = { width: page.canvasWidth, height: page.canvasHeight }
