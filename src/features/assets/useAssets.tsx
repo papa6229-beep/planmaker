@@ -22,6 +22,8 @@ import { useBriefEditor } from '../editor/useBriefEditor'
 import { createId } from '../../domain/factory'
 import type { Asset, ImageMimeType } from '../../domain/briefSchema'
 import { isAcceptedImage, isAcceptedMime, readImageSize } from './imageUtils'
+import { analyzeImageBlob } from '../../services/imageAnalysisRunner'
+import { shadowSuitsShape } from '../../domain/shadowFit'
 import { useStudioJob } from '../studio/useStudioJob'
 import { getAllAssets, putAsset } from '../../services/assetStore'
 
@@ -104,6 +106,16 @@ export function AssetsProvider({ children }: { children: ReactNode }) {
         // 남고, 연결은 Studio 작업자료에만 적힌다 (첫 사용 흐름 §7).
         if (studio !== null && options.targetBlockId !== undefined) {
           studio.setProductImage(options.targetBlockId, id)
+          // 투명한 구멍이 많은 그림(로고·글자)에는 그림자를 끄고 시작한다
+          // (그림자 Patch). 접지 그림자는 **바닥에 놓인 덩어리**를 가정하는데,
+          // 구멍 뚫린 형태에서는 그 가정이 틀려 글자 아래에 정체 모를 검은
+          // 타원이 생긴다.
+          //
+          // 어림짐작이므로 **처음 값만** 정한다. 블록의 `그림자` 스위치가 바로
+          // 옆에 있어 한 번에 되돌릴 수 있다.
+          if (!shadowSuitsShape(await analyzeImageBlob(file))) {
+            studio.setEffects(options.targetBlockId, { shadow: false })
+          }
           index += 1
           continue
         }

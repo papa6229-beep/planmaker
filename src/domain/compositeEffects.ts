@@ -19,6 +19,17 @@ export interface CompositeEffects {
   contactShadow: number
   /** 벽 그림자 — 광원 반대편으로 밀린 낮은 불투명도의 그림자 (§9.2). */
   wallShadow: number
+  /**
+   * 그림자를 깔 것인가 (그림자 Patch).
+   *
+   * 세기 둘(접지·벽) 위에 있는 스위치 하나다. 세기를 0으로 내리는 것과 결과는
+   * 같지만, 껐다 켰을 때 **맞춰 둔 세기가 그대로 돌아온다** — 0으로 내리면
+   * 그 값은 사라진다.
+   *
+   * 투명한 구멍이 많은 그림(로고·글자)에는 처음부터 꺼진 채로 온다. 그 판단은
+   * `shadowFit.ts`가 하고, 여기 적히는 것은 그 결과뿐이다.
+   */
+  shadow: boolean
   /** 색상 통일 — 배경 평균색 기반의 약한 그레이딩 (§9.3). */
   grading: number
   /** 림라이트 — 외곽에만 얹는 약한 빛 (§9.4). */
@@ -41,7 +52,10 @@ export interface CompositeEffects {
 }
 
 /** 세기로 조절하는 항목만 — 종이 컷아웃은 체크 하나라 여기 끼지 않는다. */
-export type CompositeStrengthKey = Exclude<keyof CompositeEffects, 'paperCutout' | 'paperWeight' | 'paperOpacity'>
+export type CompositeStrengthKey = Exclude<
+  keyof CompositeEffects,
+  'paperCutout' | 'paperWeight' | 'paperOpacity' | 'shadow'
+>
 
 /**
  * 아무것도 만지지 않았을 때의 값.
@@ -54,6 +68,7 @@ export const DEFAULT_COMPOSITE_EFFECTS: CompositeEffects = {
   edge: 0.5,
   contactShadow: 0.7,
   wallShadow: 0.35,
+  shadow: true,
   grading: 0.25,
   rimLight: 0.2,
   paperCutout: false,
@@ -91,6 +106,10 @@ export function normalizeEffects(raw: unknown): CompositeEffects {
     edge: clamp01(value.edge, DEFAULT_COMPOSITE_EFFECTS.edge),
     contactShadow: clamp01(value.contactShadow, DEFAULT_COMPOSITE_EFFECTS.contactShadow),
     wallShadow: clamp01(value.wallShadow, DEFAULT_COMPOSITE_EFFECTS.wallShadow),
+    // 여기만 `paperCutout`과 반대다. 모르는 값은 **켜짐**이어야 한다 — 지금까지
+    // 만든 작업 파일에는 이 항목이 없고, 꺼진 것으로 읽으면 예전 파일을 여는
+    // 순간 그림자가 통째로 사라진다.
+    shadow: value.shadow !== false,
     grading: clamp01(value.grading, DEFAULT_COMPOSITE_EFFECTS.grading),
     rimLight: clamp01(value.rimLight, DEFAULT_COMPOSITE_EFFECTS.rimLight),
     // 모르는 값은 꺼짐이다. 예전 작업에 없던 항목을 켜진 것으로 읽으면, 열어

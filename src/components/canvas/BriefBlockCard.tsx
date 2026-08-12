@@ -158,6 +158,14 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   const [content, setContent] = useState<PhotoContent | null>(null)
   /** 이 이미지에 종이 컷아웃이 걸려 있는가 (Studio Patch §2). */
   const paperOn = photo && studio !== null && studio.effectsOf(block.id).paperCutout
+  /**
+   * 이 이미지에 그림자를 깔 것인가 (그림자 Patch).
+   *
+   * 스위치가 여기 있는 이유는, 어색한 그림자를 발견하는 자리가 바로 이 블록이기
+   * 때문이다 — 그림을 올리고 그 그림을 보면서 안다. 우측 패널까지 갔다 오는 동안
+   * 무엇을 보고 있었는지 놓친다.
+   */
+  const shadowOn = photo && studio !== null && studio.effectsOf(block.id).shadow
   /** 종이 테두리의 두께 (한방 생성 Patch §3). 모르는 값은 보통으로 읽힌다. */
   const paperWeight = studio === null ? DEFAULT_PAPER_WEIGHT : studio.effectsOf(block.id).paperWeight
   const paperOpacity = studio === null ? DEFAULT_PAPER_OPACITY : studio.effectsOf(block.id).paperOpacity
@@ -478,6 +486,18 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
             onChange={() => studio.setEffects(block.id, { paperCutout: !paperOn })}
           />
           종이 컷아웃
+        </label>
+      )}
+      {/* 그림자 — 투명한 구멍이 많은 그림에서는 처음부터 꺼진 채로 온다
+          (그림자 Patch). 어림짐작이므로 여기서 바로 되돌릴 수 있어야 한다. */}
+      {photo && studio !== null && (
+        <label className="block-toolbar__check">
+          <input
+            type="checkbox"
+            checked={shadowOn}
+            onChange={() => studio.setEffects(block.id, { shadow: !shadowOn })}
+          />
+          그림자
         </label>
       )}
       {/* 두께와 진하기는 켠 자리에만 나온다. 꺼 둔 블록에 보여 주면 무엇을

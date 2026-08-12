@@ -76,6 +76,18 @@ export interface ImageAnalysis {
   opaqueRatio: number
   /** 불투명 영역의 경계 (픽셀 좌표). 전부 투명하면 `null`. */
   bounds: OpaqueBounds | null
+  /**
+   * 실루엣이 얼마나 **찼는가** 0..1 — 불투명 화소가 그 경계 상자를 채운 비율
+   * (그림자 Patch).
+   *
+   * `opaqueRatio`와 다르다. 저쪽은 그림 전체에서 제품이 차지하는 넓이이고,
+   * 이쪽은 **제품이 있는 자리 안에서** 얼마나 뚫려 있는가다. 작게 찍힌 병은
+   * `opaqueRatio`가 낮아도 이 값은 높고, 화면을 가득 채운 로고는 그 반대다.
+   *
+   * 덩어리 하나를 가정하는 효과(접지 그림자)가 이 그림에 어울리는지를 여기서
+   * 가른다. 규칙 자체는 `shadowFit.ts`에 있다 — 여기는 재기만 한다.
+   */
+  fill: number
   light: LightEstimate
 }
 
@@ -235,6 +247,7 @@ export function analyzeCutout(pixels: PixelBuffer): ImageAnalysis | null {
     temperature: clampUnit((average.r - average.b) / Math.max(1, average.r + average.b)),
     opaqueRatio: opaque / total,
     bounds: { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 },
+    fill: opaque / Math.max(1, (maxX - minX + 1) * (maxY - minY + 1)),
     // 밝은 쪽에 빛이 있다고 본다. 왼쪽이 밝으면 `x`가 음수 — 빛이 왼쪽에서 온다.
     light: {
       x: horizontalBase > 0 ? clampUnit((right - left) / horizontalBase) : 0,
@@ -284,6 +297,9 @@ export function mergePageAnalysis(list: readonly ImageAnalysis[]): ImageAnalysis
     temperature: mean((a) => a.temperature),
     opaqueRatio: mean((a) => a.opaqueRatio),
     bounds: null,
+    // 경계가 없으므로 실루엣도 없다. 여러 장을 섞은 값에 "얼마나 찼는가"를
+    // 말할 자리는 없다 — 그림자를 켤지는 언제나 한 장을 보고 정한다.
+    fill: 0,
     light: { x: mean((a) => a.light.x), y: mean((a) => a.light.y), confidence: 'low' },
   }
 }

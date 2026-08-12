@@ -237,7 +237,10 @@ async function drawLayer(
   }
 
   // ── 그림자: 벽이 먼저, 접지가 그 위 (§9.2) ────────────────────────────────
-  if (shape !== null && effects.wallShadow > 0) {
+  //
+  // 스위치가 꺼져 있으면 둘 다 건너뛴다 (그림자 Patch). 세기를 0으로 내리는 것과
+  // 결과는 같지만, 스위치는 맞춰 둔 세기를 지우지 않고 잠시 덮어 둔다.
+  if (shape !== null && effects.shadow && effects.wallShadow > 0) {
     const wall = wallShadow(layer.rect, light, effects.wallShadow)
     ctx.save()
     ctx.globalAlpha = wall.opacity
@@ -245,7 +248,7 @@ async function drawLayer(
     ctx.drawImage(shape, fit.dest.x + wall.dx, fit.dest.y + wall.dy, fit.dest.width, fit.dest.height)
     ctx.restore()
   }
-  if (effects.contactShadow > 0) {
+  if (effects.shadow && effects.contactShadow > 0) {
     const contact = contactShadow(layer.rect, light, effects.contactShadow)
     ctx.save()
     ctx.globalAlpha = contact.opacity
