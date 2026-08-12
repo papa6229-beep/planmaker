@@ -114,7 +114,12 @@ import { createId } from '../../domain/factory'
 import type { BriefPage } from '../../domain/pageSchema'
 import type { LayoutRect } from '../../domain/imageLayout'
 import type { ToneAdjust } from '../../domain/toneAdjust'
-import { buildTextEditPrompt, planTextEditInputs } from '../../domain/preserveDesign'
+import {
+  buildPlateEditPrompt,
+  buildTextEditPrompt,
+  planPlateEditInputs,
+  planTextEditInputs,
+} from '../../domain/preserveDesign'
 
 /** 중앙 패널이 무엇을 보여 주는가. 참고 이미지 보기와는 아무 관계가 없다. */
 export type StudioCenterView = 'brief' | 'compare'
@@ -182,6 +187,26 @@ interface GenerationPlan {
     blockNote?: string
     referenceAssetId?: string
   }[]
+  /**
+   * 배경 판 하나만 다시 그리는 길 (배경만 다시 그리기 Patch).
+   *
+   * `전체 배경`을 고르면 여기로 온다. 나가는 것은 **배경 판 한 장**이고 돌아온
+   * 그림도 배경 판 한 장이다. 완성본은 그것을 깔고 조각을 다시 얹어 만든다 —
+   * 그래서 다시 합쳐도 수정이 남고, 조각은 애초에 나가지 않으므로 변형될 수가
+   * 없다.
+   */
+  backgroundEdit?: {
+    /** 지금 깔려 있는 배경 판. */
+    assetId: string
+    instruction: string
+    /** 이 판을 주문할 규격. 페이지 규격 그대로다. */
+    size: string
+    styleReferenceAssetId?: string
+    /** 비워 둘 자리 — 첫 주문과 같은 규칙을 다시 말한다. */
+    fixed: readonly { rect: LayoutRect; cutout: boolean }[]
+    pageSize: { width: number; height: number }
+    concept?: string
+  }
   /**
    * 부분수정 요청이 함께 볼 것 (부분수정 재료 Patch).
    *
@@ -1401,8 +1426,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         //
         // 통이미지를 다시 그리지 않으므로 배경도 사진도 고르지 않은 문구도 손대지
         // 않는다. 하나가 실패해도 나머지는 그대로 간다 — 값을 이미 치렀다.
-        if (plan.textEdits !== undefined && studio !== null) {
-          const edits = plan.textEdits
+        if ((plan.textEdits !== undefined || plan.backgroundEdit !== undefined) && studio !== null) {
+          const edits = plan.textEdits ?? []
           const trouble: (string | undefined)[] = Array.from<string | undefined>({ length: edits.length })
           // 이 수정 하나가 되돌리기 한 칸이다 (조각 되돌리기 Patch). 조각을 갈아
           // 끼우는 일은 지금까지 되돌릴 자리를 남기지 않아, AI로 고치고 나면
@@ -1411,7 +1436,45 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           let changed = 0
           let done = 0
           const context = plan.textEditContext
-          setState({ kind: 'running', done, total: edits.length })
+          const bg = plan.backgroundEdit
+          const total = edits.length + (bg === undefined ? 0 : 1)
+          setState({ kind: 'running', done, total })
+          const bgTrouble: string[] = []
+
+          // ── 배경 판 하나만 다시 그리기 (배경만 다시 그리기 Patch) ───────────
+          //
+          // 나가는 것은 지금의 배경 판 한 장뿐이다. 조각은 보내지 않으므로 모델이
+          // 다시 그릴 수도 없고, 판 자체가 바뀌므로 다시 합쳐도 수정이 남는다.
+          if (bg !== undefined) {
+            const answer = await requestLayer(
+              plan,
+              auth,
+              'background',
+              planPlateEditInputs({
+                currentAssetId: bg.assetId,
+                ...(bg.styleReferenceAssetId === undefined
+                  ? {}
+                  : { styleReferenceAssetId: bg.styleReferenceAssetId }),
+              }),
+              buildPlateEditPrompt({
+                size: bg.pageSize,
+                instruction: bg.instruction,
+                fixed: bg.fixed,
+                styleReference: bg.styleReferenceAssetId !== undefined,
+                ...(bg.concept === undefined ? {} : { concept: bg.concept }),
+              }),
+              bg.size,
+            )
+            if ('blob' in answer) {
+              const stored = await storePlate(plan, answer)
+              if (stored === undefined) bgTrouble.push('전체 배경: 새 배경을 저장하지 못했습니다.')
+              else changed += 1
+            } else {
+              bgTrouble.push(`전체 배경: ${errorTextFor(answer.code)}`)
+            }
+            done += 1
+            setState({ kind: 'running', done, total })
+          }
           // 고칠 자리마다 그 아래에 실제로 깔려 있는 색. 외부 호출 0건이다.
           const tones = await measureEditTones(plan.pageId, edits.map((e) => e.rect))
           const fixOne = async (edit: (typeof edits)[number], index: number): Promise<void> => {
@@ -1483,11 +1546,11 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
               batch.map(async (edit, i) => {
                 await fixOne(edit, at + i)
                 done += 1
-                setState({ kind: 'running', done, total: edits.length })
+                setState({ kind: 'running', done, total })
               }),
             )
           }
-          const problems = trouble.filter((t): t is string => t !== undefined)
+          const problems = [...bgTrouble, ...trouble.filter((t): t is string => t !== undefined)]
           if (changed > 0) await recomposePage(plan.pageId)
           setSelectedTargetIds([])
           setInstructions({})
@@ -1495,7 +1558,10 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           setState(
             problems.length === 0
               ? { kind: 'idle' }
-              : { kind: 'failed', message: `문구 ${String(problems.length)}개를 고치지 못했습니다 — ${problems.join(' / ')}` },
+              : {
+                  kind: 'failed',
+                  message: `${String(problems.length)}개를 고치지 못했습니다 — ${problems.join(' / ')}`,
+                },
           )
           return
         }
@@ -1740,15 +1806,26 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       item,
       object: objects.find((o) => o.blockId === item.target.blockId),
     }))
-    if (picked.length > 0 && picked.every((p) => p.object !== undefined)) {
+    // `전체 배경`은 조각이 아니지만 조각 길로 간다 (배경만 다시 그리기 Patch) —
+    // 배경 판 한 장을 보내고 배경 판 한 장을 받으므로, 문구 조각과 같은 성질이다.
+    const bgPicked = picked.filter((p) => p.item.target.kind === 'background')
+    const textPicked = picked.filter((p) => p.object !== undefined)
+    // 남는 것은 이미지·컷아웃뿐이다. 그쪽은 아직 통이미지 길이다.
+    const leftover = picked.filter((p) => p.object === undefined && p.item.target.kind !== 'background')
+    const plate = studio.backgroundOf(currentResult.pageId)
+    // 배경을 고르려면 판이 있어야 한다. 이 Patch 이전에 만든 결과에는 판이 없고,
+    // 없는 판을 고칠 수는 없으므로 그때는 지금까지의 통이미지 길로 간다.
+    const pieceOnly =
+      picked.length > 0 && leftover.length === 0 && (bgPicked.length === 0 || plate !== undefined)
+    if (pieceOnly) {
       // 첫 생성이 보는 것을 그대로 챙긴다 (부분수정 재료 Patch). 새로 계산할 것이
       // 없다 — 스타일 레퍼런스도, 배경도, 블록 주문도 이미 저장되어 있다.
       const pageSize = { width: page.canvasWidth, height: page.canvasHeight }
       const styleRefId = studio.styleReferenceOf(currentResult.pageId)
-      const background = studio.backgroundOf(currentResult.pageId)
+      const background = plate
       const fixed = preserveParts(page, studio.job.productImages, (id) => studio.effectsOf(id).paperCutout).fixed
 
-      const textEdits = picked.map(({ item, object }) => {
+      const textEdits = textPicked.map(({ item, object }) => {
         const canvas = textLayerCanvas(object!.rect)
         const resolved = resolveGptImageSize(canvas.width, canvas.height)
         const content = item.target.content ?? ''
@@ -1770,33 +1847,60 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           ...(order.referenceAssetId === undefined ? {} : { referenceAssetId: order.referenceAssetId }),
         }
       })
-      const first = textEdits[0]!
+      const concept = (current.project.concept ?? '').trim()
+      const backgroundEdit =
+        bgPicked.length === 0 || background === undefined
+          ? undefined
+          : {
+              assetId: background.assetId,
+              instruction: bgPicked[0]!.item.instruction,
+              size: size.size,
+              pageSize,
+              fixed: fixed.map((f) => ({ rect: f.rect, cutout: f.cutout })),
+              ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
+              ...(concept.length === 0 ? {} : { concept }),
+            }
+      const first = textEdits[0]
+      // 확인창이 읽는 주문. 문구가 있으면 그 첫 장을, 배경만 골랐으면 배경 주문을
+      // 보여 준다 — 사람이 실제로 나갈 말을 읽는 자리다.
+      const shownPrompt =
+        first !== undefined
+          ? buildTextEditPrompt({
+              size: { width: first.rect.width, height: first.rect.height },
+              pageSize,
+              content: first.content,
+              instruction: first.instruction,
+              rect: first.rect,
+              lines: first.lines,
+              styleReference: styleRefId !== undefined,
+              background: background !== undefined,
+              blockReference: first.referenceAssetId !== undefined,
+              blockNote: first.blockNote,
+              fixed,
+            })
+          : buildPlateEditPrompt({
+              size: pageSize,
+              instruction: backgroundEdit?.instruction ?? '',
+              fixed: backgroundEdit?.fixed ?? [],
+              styleReference: styleRefId !== undefined,
+              ...(concept.length === 0 ? {} : { concept }),
+            })
       return {
         plan: {
           kind: 'edit',
           mode: 'preserve',
           fixedBlockIds: [],
-          // 고른 문구 하나에 한 번씩. 확인창이 이 수를 그대로 말한다.
-          calls: textEdits.length,
+          // 고른 조각 하나에 한 번씩, 배경을 골랐으면 거기에 한 번 더.
+          // 확인창이 이 수를 그대로 말한다.
+          calls: textEdits.length + (backgroundEdit === undefined ? 0 : 1),
           pageId: currentResult.pageId,
-          prompt: buildTextEditPrompt({
-            size: { width: first.rect.width, height: first.rect.height },
-            pageSize,
-            content: first.content,
-            instruction: first.instruction,
-            rect: first.rect,
-            lines: first.lines,
-            styleReference: styleRefId !== undefined,
-            background: background !== undefined,
-            blockReference: first.referenceAssetId !== undefined,
-            blockNote: first.blockNote,
-            fixed,
-          }),
+          prompt: shownPrompt,
           size: size.size,
           working,
           inputs: [],
           fingerprint: currentResult.sourceFingerprint,
-          textEdits,
+          ...(textEdits.length === 0 ? {} : { textEdits }),
+          ...(backgroundEdit === undefined ? {} : { backgroundEdit }),
           textEditContext: {
             pageSize,
             ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),

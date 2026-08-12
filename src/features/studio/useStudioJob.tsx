@@ -334,6 +334,14 @@ function emptyJob(now: number): StudioJob {
  */
 interface StudioStep {
   productImages: Record<string, string>
+  /**
+   * 페이지별 배경 판 (배경만 다시 그리기 Patch).
+   *
+   * 배경을 고치는 일이 조각을 고치는 일과 같아지면서 이 칸에도 들어왔다. 없으면
+   * 배경을 다시 그린 뒤의 `실행 취소`가 조각만 되돌리고 판은 새 것으로 남는다 —
+   * 사람이 보기에는 되돌리기가 아무 일도 안 한 것이다.
+   */
+  backgrounds: Record<string, StudioBackground>
   textObjects: Record<string, StudioTextObject[]>
   imageObjects: Record<string, StudioTextObject[]>
   objectTones: Record<string, ToneAdjust>
@@ -356,12 +364,14 @@ function stepAssetIds(step: StudioStep): string[] {
     ...Object.values(step.productImages),
     ...Object.values(step.textObjects).flatMap((list) => list.map((o) => o.assetId)),
     ...Object.values(step.imageObjects).flatMap((list) => list.map((o) => o.assetId)),
+    ...Object.values(step.backgrounds).map((b) => b.assetId),
   ]
 }
 
 function snapshotOf(job: StudioJob): StudioStep {
   return {
     productImages: { ...job.productImages },
+    backgrounds: { ...job.backgrounds },
     textObjects: { ...job.textObjects },
     imageObjects: { ...job.imageObjects },
     objectTones: { ...job.objectTones },
@@ -476,6 +486,7 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       void commit({
         ...current,
         productImages: { ...step.productImages },
+        backgrounds: { ...step.backgrounds },
         textObjects: { ...step.textObjects },
         imageObjects: { ...step.imageObjects },
         objectTones: { ...step.objectTones },

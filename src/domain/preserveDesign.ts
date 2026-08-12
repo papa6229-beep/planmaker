@@ -335,6 +335,91 @@ export function buildPlatePrompt(input: PlateInput): string {
 }
 
 /**
+ * 1-b) 배경 판 **고치기** 주문 (배경만 다시 그리기 Patch).
+ *
+ * 지금까지 `전체 배경`을 고르면 완성된 통이미지 한 장을 통째로 다시 그렸다. 그
+ * 길에는 두 가지 결함이 붙어 있었다.
+ *
+ *  - **다시 합치면 사라진다.** 완성본은 배경 판 + 조각들로 그때그때 다시 합쳐
+ *    지는데, 통이미지 수정은 배경 판을 바꾸지 않는다. 그래서 조각 하나만 옮겨도
+ *    수정 전 배경이 돌아온다.
+ *  - **고정이 지켜지지 않는다.** 통이미지를 보내면 그 안의 제품 사진까지 모델이
+ *    다시 그린다. "고정"이라고 적어 보내도 늘어나거나 변형된다.
+ *
+ * 둘 다 같은 뿌리다 — 배경을 고치라면서 **배경이 아닌 것까지** 보냈다. 그래서
+ * 여기서는 배경 판 한 장만 보내고 배경 판 한 장만 받는다. 조각은 애초에 나가지
+ * 않으므로 변형될 수가 없고, 판이 바뀌었으므로 다시 합쳐도 수정이 남는다.
+ */
+export function buildPlateEditPrompt(input: {
+  size: { width: number; height: number }
+  instruction: string
+  /** 나중에 실물이 놓일 자리 — 좌표만. 첫 주문과 같은 규칙이다. */
+  fixed: readonly { rect: LayoutRect; cutout: boolean }[]
+  styleReference?: boolean
+  concept?: string
+}): string {
+  const lines: string[] = [
+    '이벤트 페이지의 **배경 레이어**를 고쳐 주세요.',
+    '보내 드린 1번 그림이 지금의 배경입니다. 완성 디자인이 아니라, 완성 디자인의 맨 뒤에 깔리는 판입니다.',
+    `크기는 가로 ${String(input.size.width)}, 세로 ${String(input.size.height)} 비율이고 화면 전체를 채웁니다.`,
+    '',
+    '## 작업자의 수정 지시',
+    input.instruction.trim(),
+  ]
+
+  if (input.fixed.length > 0) {
+    lines.push('', '## 비워 둘 자리 (이 배경 위에 실물 사진이 그대로 놓입니다)')
+    for (const item of input.fixed) {
+      lines.push(`- ${item.cutout ? '오려 붙인 컷아웃' : '사진'} · ${region(item.rect, input.size)}`)
+    }
+    lines.push(
+      '이 자리에 **인물·제품·로고·실루엣을 새로 만들지 않습니다.**',
+      '흰 패널, 흰 카드, 액자, 테두리 상자처럼 "자리를 표시하는 판"도 만들지 않습니다.',
+    )
+  }
+
+  const mood = (input.concept ?? '').trim()
+  if (mood.length > 0) lines.push('', '## 이 행사의 컨셉', mood)
+
+  lines.push(
+    '',
+    '## 넣지 말 것',
+    '- 글자와 문구 (문구는 따로 얹혀 있습니다)',
+    '- 사람, 제품, 로고',
+    '- 워터마크',
+  )
+
+  return lines.join('\n')
+}
+
+/** 배경 판을 고치는 요청에 실리는 그림 — 지금 판, 그리고 있으면 레퍼런스. */
+export function planPlateEditInputs(input: {
+  /** 고칠 배경 판의 지금 그림. 이 요청의 주인공이라 언제나 1번이다. */
+  currentAssetId: string
+  styleReferenceAssetId?: string | undefined
+}): GenerationInputImage[] {
+  const images: GenerationInputImage[] = [
+    {
+      index: 1,
+      role: 'page_layout',
+      assetId: input.currentAssetId,
+      fileName: 'current-plate.png',
+      label: '지금의 배경 판 — 이것을 고칩니다.',
+    },
+  ]
+  if (input.styleReferenceAssetId !== undefined) {
+    images.push({
+      index: images.length + 1,
+      role: 'page_reference',
+      assetId: input.styleReferenceAssetId,
+      fileName: 'style-reference.png',
+      label: '디자인 스타일 레퍼런스 — 색감과 결의 참고용입니다.',
+    })
+  }
+  return images
+}
+
+/**
  * 2) 문구·버튼 한 장 주문 (블록별 문구 Patch).
  *
  * 단색 마젠타 위에 **이 문구 하나만** 그린 한 장이다. 투명 배경은 이 모델이

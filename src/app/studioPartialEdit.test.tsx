@@ -373,10 +373,17 @@ describe('§6 편집 요청에 무엇이 실리는가', () => {
     expect(names.join('|')).not.toContain('asset_pb')
   }, 25000)
 
+  /**
+   * 대상이 `전체 배경`에서 `이미지`로 바뀌었다 (배경만 다시 그리기 Patch).
+   *
+   * 배경은 이제 통이미지 길로 가지 않는다 — 배경 판 한 장만 보내고 한 장만 받는다.
+   * 통이미지 길에 남은 것은 이미지·컷아웃이고, "고르지 않은 것을 건드리지 마라"는
+   * 그 길에서 여전히 지켜져야 한다.
+   */
   it('always carries the rules that protect what was not chosen', async () => {
     await openStudio()
     await generateFirst()
-    await selectTargets(/전체 배경/)
+    await selectTargets(/이미지 2/)
     await runEdit('원형 광원을 조금 약하게 해 주세요.')
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
     await waitFor(() => expect(calls).toHaveLength(1), { timeout: 8000 })
@@ -656,5 +663,89 @@ describe('§6 키와 표면 경계', () => {
     expect(screen.queryByRole('region', { name: 'AI 부분수정' })).toBeNull()
     await generateFirst()
     expect(screen.getByRole('region', { name: 'AI 부분수정' })).toBeTruthy()
+  }, 25000)
+})
+
+// ── §9 배경만 다시 그린다 ────────────────────────────────────────────────────
+
+/**
+ * `전체 배경`은 통이미지 길에서 내려왔다 (배경만 다시 그리기 Patch).
+ *
+ * 앞선 판은 완성본 한 장을 통째로 다시 그렸는데, 거기에 결함 둘이 붙어 있었다.
+ *
+ *  - **다시 합치면 사라진다.** 완성본은 배경 판 + 조각으로 그때그때 다시 합쳐
+ *    지는데, 통이미지 수정은 배경 판을 바꾸지 않았다. 조각 하나만 옮겨도 수정 전
+ *    배경이 돌아왔다.
+ *  - **고정이 지켜지지 않는다.** 통이미지를 보내면 그 안의 제품 사진까지 모델이
+ *    다시 그린다. "고정"이라고 적어 보내도 늘어나거나 변형됐다.
+ *
+ * 둘 다 같은 뿌리다 — 배경을 고치라면서 배경이 아닌 것까지 보냈다. 그래서 여기서
+ * 재는 것은 **무엇이 나가고 무엇이 바뀌는가** 하나다.
+ */
+describe('§9 배경은 판 한 장만 오간다', () => {
+  const pageIdOf = async () => (await loadStudioJob(STUDIO_JOB_ID))!.doc.pages[0]!.id
+  const plateOf = async () => {
+    const job = (await loadStudioJob(STUDIO_JOB_ID))!
+    return job.backgrounds?.[job.doc.pages[0]!.id]?.assetId
+  }
+
+  it('나가는 것은 배경 판이다 — 완성본도 제품 사진도 가지 않는다', async () => {
+    await openStudio()
+    await generateFirst()
+    await selectTargets(/전체 배경/)
+    await runEdit('원형 광원을 조금 약하게 해 주세요.')
+    fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
+    await waitFor(() => expect(calls).toHaveLength(1), { timeout: 8000 })
+
+    const names = lastImageNames().join('|')
+    expect(names).toContain('current-plate')
+    // 완성본이 나가면 그 안의 제품 사진이 다시 그려진다 — 그것이 "고정"이 깨지던 길이다.
+    expect(names).not.toContain('current-result')
+    expect(names).not.toContain('asset_pa')
+    expect(names).not.toContain('asset_pb')
+    expect(names).not.toContain('asset_logo')
+
+    const prompt = lastPrompt()
+    expect(prompt).toContain('배경 레이어')
+    expect(prompt).toContain('원형 광원을 조금 약하게 해 주세요.')
+  }, 25000)
+
+  it('배경 판 자체가 바뀐다 — 그래서 다시 합쳐도 수정이 남는다', async () => {
+    await openStudio()
+    await generateFirst()
+    const before = await plateOf()
+    expect(before).toBeTruthy()
+
+    await selectTargets(/전체 배경/)
+    await runEdit('조금 더 어둡게 해 주세요.')
+    fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
+    await waitFor(async () => expect(await plateOf()).not.toBe(before), { timeout: 8000 })
+  }, 25000)
+
+  it('되돌리기 한 번이면 예전 판으로 돌아온다', async () => {
+    await openStudio()
+    await generateFirst()
+    const before = await plateOf()
+
+    await selectTargets(/전체 배경/)
+    await runEdit('조금 더 밝게 해 주세요.')
+    fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
+    await waitFor(async () => expect(await plateOf()).not.toBe(before), { timeout: 8000 })
+
+    fireEvent.click(screen.getByRole('button', { name: '실행 취소' }))
+    await waitFor(async () => expect(await plateOf()).toBe(before), { timeout: 8000 })
+  }, 25000)
+
+  it('배경 하나면 호출도 한 번이다', async () => {
+    await openStudio()
+    await generateFirst()
+    await selectTargets(/전체 배경/)
+    await runEdit('색을 조금 따뜻하게.')
+    // 확인창이 말하는 수와 실제로 나가는 수가 같아야 한다.
+    expect(screen.getByRole('dialog').textContent).toContain('1')
+    fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
+    await waitFor(async () => expect(await plateOf()).toBeTruthy(), { timeout: 8000 })
+    await waitFor(() => expect(calls).toHaveLength(1), { timeout: 8000 })
+    expect(await pageIdOf()).toBeTruthy()
   }, 25000)
 })
