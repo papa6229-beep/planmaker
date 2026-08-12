@@ -35,6 +35,7 @@ import { ConceptField } from '../components/concept/ConceptField'
 import { AiNoteField, DesignerNoteField, TeamNoteField } from '../components/concept/HandoffNotes'
 import { GenerationRequestPreview } from '../components/studio/GenerationRequestPreview'
 import { ReadyPanel } from '../components/studio/ReadyPanel'
+import { AlignTools } from '../components/studio/AlignTools'
 import { BlockLayerTools } from '../components/studio/BlockLayerTools'
 import { BackgroundTools } from '../components/studio/BackgroundTools'
 import { StyleReferenceTools } from '../components/studio/StyleReferenceTools'
@@ -346,6 +347,9 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
               </>
             ) : (
               <>
+                {/* 줄 맞춤은 상자의 종류를 가리지 않는다 (정렬 Patch) — 무엇을
+                    골랐든 맨 위에 선다. */}
+                <AlignTools />
                 {/* 고른 블록의 배치 — 맞춤 방식과 레이어 순서 (§3.1, §4). */}
                 <BlockLayerTools />
                 {/* 생성 **전**에 이 블록에만 붙이는 주문 (블록별 주문 Patch). */}

@@ -36,6 +36,7 @@ import {
 import { CARD_CHROME_Y, CARD_PADDING_X, emphasisForBlockSize, fitBlockToText, fitTextSize } from '../../domain/textFit'
 import { reorderBlocks, type LayerMove } from '../../domain/layerOrder'
 import { boundedDelta, clampCanvasHeight, clampPosition, freeDelta, type Rect } from './canvasGeometry'
+import { alignRects, type AlignMove } from '../../domain/alignBlocks'
 
 /** Default title so a fresh brief still passes validation (needs a title). */
 export const DEFAULT_BRIEF_TITLE = '새 기획서'
@@ -123,6 +124,8 @@ export type EditorAction =
   | { type: 'SET_PROJECT_TITLE'; title: string; coalesceKey?: string }
   | { type: 'SET_CANVAS_HEIGHT'; height: number; coalesceKey?: string }
   | { type: 'SET_TEXT_ALIGN'; blockId: string; align: TextAlign }
+  /** 고른 상자들을 줄 맞춰 세운다 (정렬 Patch). 한 번이 되돌리기 한 칸이다. */
+  | { type: 'ALIGN_SELECTED'; move: AlignMove }
   | { type: 'REORDER_BLOCK'; blockId: string; move: LayerMove }
   | { type: 'NEW_BRIEF' }
 
@@ -723,6 +726,47 @@ function setTextAlign(state: EditorState, blockId: string, align: TextAlign): Ed
 }
 
 /**
+ * 고른 상자들을 줄 맞춰 세운다 (정렬 Patch).
+ *
+ * 좌표만 바뀐다 — 크기도, 순서도, 무엇이 골라져 있는지도 그대로다. 기준은
+ * `alignRects`가 정한다: 하나면 캔버스, 여럿이면 마지막에 고른 것.
+ *
+ * 자유 배치가 아니면 지금까지처럼 지면 안으로 가둔다. 가두는 규칙이 옮기기와
+ * 다르면, 끌어서 옮긴 자리와 줄 맞춘 자리가 서로 다른 곳이 된다.
+ */
+function alignSelected(state: EditorState, move: AlignMove): EditorState {
+  const picked = state.selectedIds
+    .map((id) => state.brief.blocks.find((b) => b.id === id))
+    .filter((b): b is BriefBlock => b !== undefined)
+  if (picked.length === 0) return state
+
+  const { canvasWidth, canvasHeight } = state.brief.project
+  const placed = alignRects(picked.map((b) => ({ ...b.position })), move, {
+    width: canvasWidth,
+    height: canvasHeight,
+  })
+
+  const next = new Map<string, BriefBlock['position']>()
+  picked.forEach((block, i) => {
+    const rect = placed[i]
+    if (rect === undefined) return
+    next.set(
+      block.id,
+      state.freePlacement === true
+        ? { ...block.position, x: rect.x, y: rect.y }
+        : { ...block.position, ...clampPosition({ ...block.position, x: rect.x, y: rect.y }, canvasWidth, canvasHeight) },
+    )
+  })
+  if (next.size === 0) return state
+
+  const blocks = state.brief.blocks.map((b) => {
+    const position = next.get(b.id)
+    return position === undefined ? b : { ...b, position }
+  })
+  return withBlocks(state, blocks)
+}
+
+/**
  * Sets how long this page is (손검수 2 §3). The width stays 840; only the page
  * the user is looking at changes, and the document's sync writes it back to
  * that page alone.
@@ -811,6 +855,8 @@ export function briefReducer(state: EditorState, action: EditorAction): EditorSt
       return removeBlockAsset(state, action.blockId)
     case 'SET_PROJECT_TITLE':
       return setProjectTitle(state, action.title)
+    case 'ALIGN_SELECTED':
+      return alignSelected(state, action.move)
     case 'SET_TEXT_ALIGN':
       return setTextAlign(state, action.blockId, action.align)
     case 'REORDER_BLOCK':

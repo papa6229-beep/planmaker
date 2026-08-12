@@ -24,6 +24,7 @@ import {
 import { isPairedLinkUrl, withLinkPartners, type TextAlign } from '../../domain/simpleBlocks'
 import type { ImageFit } from '../../domain/imageLayout'
 import type { LayerMove } from '../../domain/layerOrder'
+import type { AlignMove } from '../../domain/alignBlocks'
 import type { Rect } from './canvasGeometry'
 
 /**
@@ -87,6 +88,13 @@ export interface BriefEditorApi {
   /** Sets the open page's length; one drag collapses into one undo step. */
   setCanvasHeight: (height: number, coalesceKey?: string) => void
   setTextAlign: (blockId: string, align: TextAlign) => void
+  /**
+   * 고른 상자들을 줄 맞춰 세운다 (정렬 Patch).
+   *
+   * 기준은 하나면 캔버스, 여럿이면 **마지막에 고른 것**이다. 한 번의 정렬이
+   * 되돌리기 한 칸이다 — 여러 상자가 움직여도 한 번에 되돌아온다.
+   */
+  alignSelected: (move: AlignMove) => void
   /** 그림이 블록 안에 놓이는 방식 — 전체 보이기 · 블록 채우기 (§3.1). */
   setImageFit: (blockId: string, fit: ImageFit) => void
   /** 레이어 순서를 한 걸음 옮긴다 (§4). */
@@ -188,6 +196,7 @@ export function BriefEditorProvider({
           ? { type: 'SET_CANVAS_HEIGHT', height }
           : { type: 'SET_CANVAS_HEIGHT', height, coalesceKey }),
       setTextAlign: (blockId, align) => dispatch({ type: 'SET_TEXT_ALIGN', blockId, align }),
+      alignSelected: (move) => dispatch({ type: 'ALIGN_SELECTED', move }),
       setImageFit: (blockId, fit) => dispatch({ type: 'UPDATE_BLOCK', blockId, patch: { image: { fit } } }),
       reorderBlock: (blockId, move) => dispatch({ type: 'REORDER_BLOCK', blockId, move }),
       freePlacement: state.freePlacement === true,
