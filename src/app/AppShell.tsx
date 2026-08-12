@@ -35,7 +35,7 @@ import { ConceptField } from '../components/concept/ConceptField'
 import { AiNoteField, DesignerNoteField, TeamNoteField } from '../components/concept/HandoffNotes'
 import { GenerationRequestPreview } from '../components/studio/GenerationRequestPreview'
 import { ReadyPanel } from '../components/studio/ReadyPanel'
-import { AlignTools } from '../components/studio/AlignTools'
+import { AlignTools, ResultAlignTools } from '../components/studio/AlignTools'
 import { BlockLayerTools } from '../components/studio/BlockLayerTools'
 import { BackgroundTools } from '../components/studio/BackgroundTools'
 import { StyleReferenceTools } from '../components/studio/StyleReferenceTools'
@@ -339,6 +339,9 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
             <BannerDrawer />
             {compare ? (
               <>
+                {/* 눈대중이 실제로 일어나는 자리는 여기다 (정렬 Patch) — 만들고
+                    나서 조각을 하나씩 끌어 맞추는 화면. */}
+                <ResultAlignTools />
                 <EditPanel />
                 {/* 결과 전체의 톤 (톤 조절 Patch). */}
                 <ToneAdjustPanel />

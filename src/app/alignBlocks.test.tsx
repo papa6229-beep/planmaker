@@ -9,22 +9,24 @@
  * 기준이다 — 하나면 캔버스, 여럿이면 마지막에 고른 것.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
 import { StudioJobProvider, useStudioJob } from '../features/studio/useStudioJob'
-import { createStudioJob, withSource } from '../domain/studioJob'
+import { createStudioJob, withSource, type StudioJob } from '../domain/studioJob'
 import { alignRects, alignNeeds, ALIGN_MOVES } from '../domain/alignBlocks'
-import { clearAll, resetAssetStoreForTests } from '../services/assetStore'
+import { clearAll, putAsset, resetAssetStoreForTests } from '../services/assetStore'
 import { clearAllDocuments, resetDocumentStoreForTests } from '../services/documentStore'
 import {
   clearAllStudioJobs,
+  loadStudioJob,
   resetStudioStoreForTests,
   saveStudioJob,
   STUDIO_JOB_ID,
 } from '../services/studioStore'
+import { documentFingerprint } from '../domain/documentFingerprint'
 import { resetFoldsForTests } from '../components/studio/PanelFold'
 import { createEmptyDocument } from '../domain/pageSchema'
 import { createBlock, createEmptyProject } from '../domain/factory'
@@ -41,6 +43,24 @@ vi.mock('../features/assets/imageUtils', async () => {
 vi.mock('../services/previewRenderer', () => ({
   renderPreviewPng: async () => new Blob([new Uint8Array([9])], { type: 'image/png' }),
 }))
+// 완성본을 다시 합치는 일은 캔버스의 몫이다. 여기서 묻는 것은 자리이지 화소가 아니다.
+vi.mock('../services/compositeRenderer', () => ({
+  renderComposite: async () => new Blob([new Uint8Array([5])], { type: 'image/png' }),
+}))
+vi.mock('../services/compositeSources', () => ({
+  collectCompositeSources: async () => ({
+    blobs: new Map(),
+    analyses: new Map(),
+    papers: new Map(),
+    boxes: new Map(),
+  }),
+}))
+
+// 화면 검사는 트리를 직접 뒤진다(`document.querySelectorAll`). 걷어 내지 않으면
+// 지난 검사의 트리가 그대로 남아 같은 이름이 둘씩 잡힌다.
+afterEach(() => {
+  cleanup()
+})
 
 const CANVAS = { width: 840, height: 1000 }
 
@@ -161,6 +181,12 @@ function sampleDoc(): BriefDocument {
   return doc
 }
 
+function Harness() {
+  const studio = useStudioJob()
+  if (studio === null) return null
+  return <AppShell mode="studio" binding={studio.binding} />
+}
+
 describe('§A3 화면에서 줄을 맞춘다', () => {
   beforeEach(async () => {
     resetAssetStoreForTests()
@@ -175,12 +201,6 @@ describe('§A3 화면에서 줄을 맞춘다', () => {
     // 빈 문서를 열고, 상자가 하나도 나오지 않는다.
     await saveStudioJob(withSource(createStudioJob(doc, 1, STUDIO_JOB_ID), doc, 1, 'a.eventbrief'))
   })
-
-  function Harness() {
-    const studio = useStudioJob()
-    if (studio === null) return null
-    return <AppShell mode="studio" binding={studio.binding} />
-  }
 
   async function openEditor() {
     render(
@@ -257,6 +277,127 @@ describe('§A3 화면에서 줄을 맞춘다', () => {
     fireEvent.pointerDown(cards()[0]!, { button: 0 })
     fireEvent.click(await screen.findByRole('button', { name: '가로 가운데 맞춤' }))
     await waitFor(() => expect(cards()[0]!.style.left).toBe('370px'))
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+})
+
+// ── 완성본 ──────────────────────────────────────────────────────────────────
+
+/**
+ * §A4 눈대중이 실제로 일어나는 자리는 여기다.
+ *
+ * 첫 판은 이 칸을 기획서 캔버스에만 뒀는데, 작업자가 자리를 맞추는 것은 만들고
+ * 난 **뒤**다 — 완성본 위의 조각을 하나씩 끌어 맞춘다. 그래서 같은 칸이 이쪽에도
+ * 선다. 움직이는 것은 블록이 아니라 조각이고, 자리는 작업 파일에 적힌다.
+ */
+function finishedJob(): StudioJob {
+  const doc = sampleDoc()
+  const pageId = doc.pages[0]!.id
+  const job = withSource(createStudioJob(doc, 1, STUDIO_JOB_ID), doc, 1, 'a.eventbrief')
+  return {
+    ...job,
+    backgrounds: { [pageId]: { assetId: 'asset_bg', source: 'ai' as const } },
+    results: {
+      [pageId]: {
+        pageId,
+        assetId: 'asset_result',
+        model: 'gpt-image-2',
+        quality: 'medium' as const,
+        requestedSize: '832x1104',
+        sourceFingerprint: documentFingerprint(doc),
+        createdAt: 1,
+      },
+    },
+    // 화면에 서는 차례는 `layer` 오름차순이다 — 가·나·다 순으로 세운다.
+    textObjects: {
+      [pageId]: [
+        { blockId: 'blk_a', assetId: 'asset_t1', rect: { x: 100, y: 100, width: 200, height: 80 }, layer: 1 },
+        { blockId: 'blk_b', assetId: 'asset_t2', rect: { x: 500, y: 300, width: 150, height: 60 }, layer: 2 },
+        { blockId: 'blk_c', assetId: 'asset_t3', rect: { x: 300, y: 600, width: 120, height: 50 }, layer: 3 },
+      ],
+    },
+  }
+}
+
+describe('§A4 완성본에서 조각을 줄 맞춘다', () => {
+  let fetchSpy = vi.fn()
+
+  beforeEach(async () => {
+    fetchSpy = vi.fn()
+    globalThis.fetch = fetchSpy as unknown as typeof fetch
+    resetAssetStoreForTests()
+    resetDocumentStoreForTests()
+    resetStudioStoreForTests()
+    resetFoldsForTests()
+    await clearAll()
+    await clearAllDocuments()
+    await clearAllStudioJobs()
+    await saveStudioJob(finishedJob())
+    for (const id of ['asset_bg', 'asset_result', 'asset_t1', 'asset_t2', 'asset_t3']) {
+      await putAsset({
+        id,
+        blob: new Blob([new Uint8Array([137, 80, 78, 71, 3])], { type: 'image/png' }),
+        fileName: `${id}.png`,
+        mimeType: 'image/png',
+        byteSize: 5,
+      })
+    }
+  })
+
+  const pieces = () => document.querySelectorAll<HTMLElement>('.result-objects .result-object')
+
+  async function openResult() {
+    render(
+      <MemoryRouter initialEntries={['/studio']}>
+        <StudioJobProvider>
+          <Harness />
+        </StudioJobProvider>
+      </MemoryRouter>,
+    )
+    fireEvent.click(await screen.findByRole('radio', { name: '완성본' }, { timeout: 8000 }))
+    await waitFor(() => expect(pieces().length).toBe(3), { timeout: 8000 })
+  }
+
+  /** 작업 파일에 적힌 조각의 왼쪽 자리 — 화면의 백분율이 아니라 이것이 사실이다. */
+  async function lefts(): Promise<number[]> {
+    const job = await loadStudioJob(STUDIO_JOB_ID)
+    const page = Object.keys(job?.textObjects ?? {})[0] ?? ''
+    return (job?.textObjects?.[page] ?? []).map((o) => o.rect.x)
+  }
+
+  it('여럿을 고르면 마지막에 고른 조각에 맞춘다', async () => {
+    await openResult()
+    fireEvent.pointerDown(pieces()[1]!, { button: 0 })
+    fireEvent.pointerDown(pieces()[2]!, { button: 0, shiftKey: true })
+    fireEvent.pointerDown(pieces()[0]!, { button: 0, shiftKey: true })
+
+    fireEvent.click(await screen.findByRole('button', { name: '왼쪽 맞춤' }))
+    await waitFor(async () => expect(await lefts()).toEqual([100, 100, 100]), { timeout: 8000 })
+
+    // 한 번 더 맞춘다. **두 번째** 정렬도 제 칸을 남기는지가 여기서 갈린다 —
+    // 남기지 않으면 되돌리기 한 번이 두 번의 정렬을 함께 지운다.
+    // 기준(`blk_a`)의 오른쪽 끝은 300이므로 저마다 폭만큼 물러선다.
+    fireEvent.click(screen.getByRole('button', { name: '오른쪽 맞춤' }))
+    await waitFor(async () => expect(await lefts()).toEqual([100, 150, 180]), { timeout: 8000 })
+
+    // 조각 둘이 함께 움직였어도 되돌리기는 한 칸이다.
+    fireEvent.click(screen.getByRole('button', { name: '실행 취소' }))
+    await waitFor(async () => expect(await lefts()).toEqual([100, 100, 100]), { timeout: 8000 })
+  })
+
+  it('조각 하나만 고르면 캔버스가 기준이다', async () => {
+    await openResult()
+    fireEvent.pointerDown(pieces()[1]!, { button: 0 })
+    fireEvent.click(await screen.findByRole('button', { name: '가로 가운데 맞춤' }))
+    // 840 캔버스에서 폭 150짜리의 가운데는 345다. 나머지는 제자리.
+    await waitFor(async () => expect(await lefts()).toEqual([100, 345, 300]), { timeout: 8000 })
+  })
+
+  it('조각을 옮기는 데 모델을 부르지 않는다', async () => {
+    await openResult()
+    fireEvent.pointerDown(pieces()[1]!, { button: 0 })
+    fireEvent.click(await screen.findByRole('button', { name: '가로 가운데 맞춤' }))
+    await waitFor(async () => expect((await lefts())[1]).toBe(345), { timeout: 8000 })
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 })
