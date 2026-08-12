@@ -279,10 +279,24 @@ const openMenu = () => fireEvent.click(menuButton())
 // ── 좌측: 무엇을 지우고 무엇을 남기는가 ──────────────────────────────────────
 
 describe('§2 작업판 좌측은 편집할 것 하나만 남긴다', () => {
-  it('has no concept field on the studio surface', async () => {
+  /**
+   * 규칙이 바뀐 것이 아니라 **좁아졌다** (전달 누락 Patch).
+   *
+   * 원래 지키려던 것은 "작업판에서 편집하는 지시 입력창은 하나뿐"이다. 그런데
+   * 앞선 판은 그것을 "컨셉이라는 말이 화면에 아예 없다"로 지켰고, 그 바람에
+   * 기획서가 적어 보낸 컨셉을 **AI는 읽는데 사람은 못 읽는** 상태가 됐다.
+   * 이제 읽기 전용으로는 오되, 고칠 수 있는 칸은 여전히 하나뿐이다.
+   */
+  it('lets the planner concept arrive, but never as a second editable field', async () => {
     await openStudio()
-    expect(screen.queryByLabelText('원하는 분위기·컨셉')).toBeNull()
-    expect(screen.queryByText('원하는 분위기·컨셉')).toBeNull()
+    // 온다 — 읽을 수 있다.
+    const mood = screen.getByRole('region', { name: '원하는 분위기·컨셉' })
+    expect(mood.textContent).toContain('시원하고 청량한 여름 분위기')
+    // 그러나 고칠 수는 없다.
+    expect(within(mood).queryAllByRole('textbox')).toHaveLength(0)
+    // 작업판에서 편집하는 지시 입력창은 여전히 이것 하나뿐이다.
+    expect(document.querySelectorAll('.side-left textarea')).toHaveLength(1)
+    expect(screen.getByLabelText('AI에게 추가로 전달할 말')).toBeTruthy()
   }, 25000)
 
   it('keeps the concept field on the writer surface', async () => {
@@ -309,15 +323,28 @@ describe('§2 작업판 좌측은 편집할 것 하나만 남긴다', () => {
     expect(within(note).queryAllByRole('textbox')).toHaveLength(0)
   }, 25000)
 
-  it('hides the planner note entirely when the planner left none', async () => {
+  it('shows only what actually came — the empty half leaves no room behind', async () => {
     const doc = sampleDoc()
     doc.project.designerNote = ''
     let job = withSource(createStudioJob(doc, 1, STUDIO_JOB_ID), doc, 1, 'a.eventbrief')
     job = linkProductImage(job, 'blk_i1', 'asset_p1')
     await saveStudioJob(job)
     await openStudio()
+    // 전달사항은 비었으므로 그 자리는 아예 없다. 컨셉은 왔으므로 남는다.
     expect(screen.queryByRole('region', { name: '기획서 전달사항' })).toBeNull()
-    expect(screen.queryByRole('region', { name: '작성자가 전달한 말' })).toBeNull()
+    expect(screen.getByRole('region', { name: '원하는 분위기·컨셉' })).toBeTruthy()
+    expect(document.querySelectorAll('.concept--readonly')).toHaveLength(1)
+  }, 25000)
+
+  it('hides the whole panel when the planner left nothing at all', async () => {
+    const doc = sampleDoc()
+    doc.project.designerNote = ''
+    doc.project.concept = ''
+    let job = withSource(createStudioJob(doc, 1, STUDIO_JOB_ID), doc, 1, 'a.eventbrief')
+    job = linkProductImage(job, 'blk_i1', 'asset_p1')
+    await saveStudioJob(job)
+    await openStudio()
+    expect(screen.queryByRole('button', { name: /기획서에서 온 말/ })).toBeNull()
     expect(document.querySelectorAll('.concept--readonly')).toHaveLength(0)
     // 편집할 메모는 그대로 하나 있다.
     expect(screen.getByLabelText('AI에게 추가로 전달할 말')).toBeTruthy()

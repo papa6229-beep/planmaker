@@ -126,3 +126,26 @@ describe('화면이 쓴 클래스에는 스타일이 있다', () => {
     expect(defined.size).toBeGreaterThan(200)
   })
 })
+
+/**
+ * 왼쪽 칸의 바닥 (전달 누락 Patch).
+ *
+ * jsdom에는 배치가 없어 "팔레트가 짓눌렸는가"를 픽셀로 잴 수 없다. 그래서 규칙
+ * 자체를 붙든다 — 짓눌림을 막는 것은 `min-height` 한 줄이고, 그 줄이 사라지면
+ * 세로가 짧은 화면에서 `무엇을 넣을까요?`가 다시 한 줄로 접힌다.
+ */
+describe('왼쪽 칸은 팔레트를 짓누르지 않는다', () => {
+  const css = readFileSync(CSS_PATH, 'utf8')
+
+  it('팔레트에 최소 높이가 있다', () => {
+    const rule = /\.side-left \.palette \{([^}]*)\}/.exec(css)?.[1] ?? ''
+    expect(rule).toContain('min-height')
+    // 0은 바닥이 아니다 — 앞선 판이 `min-height: 0`이라 한 줄까지 접혔다.
+    expect(/min-height:\s*0/.test(rule)).toBe(false)
+  })
+
+  it('넘치면 칸 전체가 스크롤된다', () => {
+    const rule = /\.side-left \{([^}]*)\}/.exec(css)?.[1] ?? ''
+    expect(rule).toContain('overflow-y: auto')
+  })
+})

@@ -274,15 +274,22 @@ button { font-family: inherit; }
 }
 .inspector { border-left: 1px solid var(--color-border); }
 
-/* Left column: 도움 도구 (reference tools) fixed on top, palette scrolls below. */
+/* Left column: 도움 도구 (reference tools) fixed on top, palette scrolls below.
+
+   팔레트에 **바닥**이 있다 (전달 누락 Patch). 앞선 판은 팔레트만 `flex:1`이라
+   형제들(스타일 레퍼런스 미리보기·배경 미리보기·메모 칸)이 높이를 다 먹으면
+   팔레트가 한 줄로 짓눌렸다 — 세로가 짧은 화면에서 실제로 그렇게 됐고, "블록
+   넣는 자리가 보이지도 않는다"가 그것이다. 바닥을 주면 그럴 수 없고, 그래도
+   넘치면 칸 전체가 스크롤된다. */
 .side-left {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow-y: auto;
   border-right: 1px solid var(--color-border);
   background: var(--color-panel);
 }
-.side-left .palette { flex: 1; min-height: 0; border-right: 0; }
+.side-left .palette { flex: 1 1 auto; min-height: 240px; border-right: 0; }
 
 /* Center column: page filmstrip + reference controls on top, stage fills the rest. */
 .workspace__center { display: flex; flex-direction: column; min-width: 0; min-height: 0; }

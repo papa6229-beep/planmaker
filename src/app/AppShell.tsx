@@ -36,6 +36,7 @@ import { AiNoteField, DesignerNoteField, TeamNoteField } from '../components/con
 import { GenerationRequestPreview } from '../components/studio/GenerationRequestPreview'
 import { ReadyPanel } from '../components/studio/ReadyPanel'
 import { AlignTools, ResultAlignTools } from '../components/studio/AlignTools'
+import { BriefHandoff } from '../components/studio/BriefHandoff'
 import { BlockLayerTools } from '../components/studio/BlockLayerTools'
 import { BackgroundTools } from '../components/studio/BackgroundTools'
 import { StyleReferenceTools } from '../components/studio/StyleReferenceTools'
@@ -277,6 +278,10 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
           {mode === 'studio' ? <StyleReferenceTools /> : <ReferenceTools />}
           {/* 배경은 결과에 남고 스타일 레퍼런스는 참고로만 간다. */}
           {mode === 'studio' && <BackgroundTools />}
+          {/* 기획서에서 온 말은 **팔레트 위**에 선다 (전달 누락 Patch). 받은 말을
+              읽는 것이 작업의 첫 걸음이고, 첫 걸음이 스크롤 아래에 있으면 없는
+              것과 같다. 온 말이 없으면 칸도 없다. */}
+          {mode === 'studio' && <BriefHandoff />}
           <BlockPalette />
           {/* 메모는 접어 둔다 (왼쪽 정리 Patch).
               앞선 판은 셋(컨셉·전달사항·팀 메모)이 모두 펼쳐진 채였고, 그 높이가

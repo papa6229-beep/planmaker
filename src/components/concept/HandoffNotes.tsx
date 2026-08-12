@@ -81,27 +81,19 @@ export function TeamNoteField() {
 }
 
 /**
- * 작업판에서만: 기획서가 지니고 온 부탁을 읽고, AI에게 줄 지시를 따로 적는다.
+ * 작업판에서만: AI에게 줄 지시를 적는다.
  *
- * 작성자가 남긴 말은 기획서 원문이므로 지우지도 고치지도 않는다. 다만 남긴 말이
- * 없을 때는 자리 자체를 비운다 — "없습니다"라는 한 줄도 왼쪽에서는 자리를
- * 차지하고, 작업자가 읽어야 할 것은 있을 때만 있으면 된다 (실작업 UI 마감 §2.2).
- *
- * 작업판에서 작업자가 편집하는 지시 입력창은 아래 하나뿐이다 (§2.3).
+ * 작업판에서 작업자가 **편집하는** 지시 입력창은 이것 하나뿐이다 (실작업 UI 마감
+ * §2.3). 기획서에서 온 말(컨셉·전달사항)은 고칠 것이 아니라 읽을 것이므로 다른
+ * 칸이 맡는다 — `BriefHandoff`가 팔레트 위에서 읽기 전용으로 보여 준다 (전달 누락
+ * Patch). 앞선 판은 전달사항만 이 칸이 인용했고, 그래서 컨셉은 어디에도 없었고
+ * 전달사항은 팔레트 아래에 파묻혀 있었다.
  */
 export function AiNoteField() {
-  const { designerNote, aiNote, setAiNote } = useBriefDocument()
-  const handoff = designerNote.trim()
+  const { aiNote, setAiNote } = useBriefDocument()
 
   return (
     <>
-      {handoff.length > 0 && (
-        <section className="concept concept--readonly" aria-label="기획서 전달사항">
-          <h2 className="concept__title">기획서 전달사항</h2>
-          <p className="concept__quote">{handoff}</p>
-        </section>
-      )}
-
       <section className="concept">
         <label className="concept__title" htmlFor="ai-note-input">AI에게 추가로 전달할 말</label>
         <p className="concept__hint">현재 작업에서 AI가 추가로 지켜야 할 내용을 적어 주세요.</p>
