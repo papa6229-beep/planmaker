@@ -31,6 +31,8 @@ import {
   STUDIO_JOB_ID,
 } from '../services/studioStore'
 import { createStudioJob, linkProductImage, withSource, revisionsOf, cursorOf } from '../domain/studioJob'
+import { buildEditTargets } from '../domain/editTargets'
+import { documentFingerprint } from '../domain/documentFingerprint'
 import { createEmptyDocument } from '../domain/pageSchema'
 import { createBlock, createEmptyProject } from '../domain/factory'
 import type { BriefDocument } from '../domain/pageSchema'
@@ -213,8 +215,54 @@ async function generateFirst(): Promise<void> {
   calls.length = 0
 }
 
+/**
+ * 조각이 없는 **예전 결과**를 열어 둔다 (조각 수정 Patch).
+ *
+ * 문구도 이미지도 배경도 이제 조각으로 고친다. 통이미지 수정으로 가는 길은 하나만
+ * 남았다 — 조각이 아직 없던 시절에 만든 결과. 결과 줄(이전·최초·몇 번째)은 그
+ * 길이 만드는 것이므로, 그 줄을 재려면 그런 파일을 열어야 한다.
+ */
+async function openOldResult(): Promise<void> {
+  const doc = sampleDoc()
+  const pageId = doc.pages[0]!.id
+  await putAsset(storedAsset('asset_old', 9))
+  await saveStudioJob({
+    ...readyJob(),
+    doc,
+    results: {
+      [pageId]: {
+        pageId,
+        assetId: 'asset_old',
+        model: 'gpt-image-2',
+        quality: 'medium',
+        requestedSize: '832x1472',
+        workingSize: '840x1488',
+        sourceFingerprint: documentFingerprint(doc),
+        // 대상 목록은 생성된 순간에 얼어붙어 결과에 찍힌다.
+        targets: buildEditTargets(doc, readyJob(), pageId),
+        createdAt: 1,
+      },
+    },
+  })
+  await openStudio()
+  fireEvent.click(await screen.findByRole('radio', { name: '완성본' }, { timeout: 8000 }))
+  await waitFor(() => expect(panel()).toBeTruthy(), { timeout: 8000 })
+  sessionStorage.setItem('planmaker.openai-key', KEY)
+  calls.length = 0
+}
+
 const panel = () => screen.getByRole('region', { name: 'AI 부분수정' })
 const runButton = () => within(panel()).getByRole('button', { name: 'AI 부분수정 실행' }) as HTMLButtonElement
+/**
+ * 실행을 누르고 **확인창이 뜰 때까지** 기다린다 (조각 수정 Patch).
+ *
+ * 계획을 세우면서 조각의 알파를 읽으므로 창이 한 박자 늦게 뜬다. 외부로 나가는
+ * 것은 없다 — 브라우저가 자기 저장소의 그림을 읽을 뿐이다.
+ */
+async function openConfirm(): Promise<void> {
+  fireEvent.click(runButton())
+  await screen.findByRole('dialog', { name: 'AI 부분수정' })
+}
 const instructionBoxes = () => within(panel()).queryAllByRole('textbox')
 
 function pick(label: RegExp): void {
@@ -303,7 +351,7 @@ describe('§8 대상마다 다른 지시', () => {
     pick(/문구 5/)
     writeFor(/문구 1/, '숫자가 잘 읽히는 간결한 폰트로 바꿔 주세요.')
     writeFor(/문구 5/, '이 문구만 미래지향적인 얇은 글꼴로 바꿔 주세요.')
-    fireEvent.click(runButton())
+    await openConfirm()
 
     const dialog = screen.getByRole('dialog', { name: 'AI 부분수정' })
     const items = within(dialog).getAllByRole('listitem')
@@ -323,7 +371,7 @@ describe('§8 대상마다 다른 지시', () => {
     await generateFirst()
     pick(/문구 1/)
     writeFor(/문구 1/, '간결한 폰트로')
-    fireEvent.click(runButton())
+    await openConfirm()
     fireEvent.click(screen.getByRole('button', { name: '취소' }))
     expect(calls).toHaveLength(0)
   }, 25000)
@@ -350,7 +398,7 @@ describe('§8 지시는 조각마다 따로 나간다', () => {
     pick(/문구 5/)
     writeFor(/문구 1/, '숫자가 잘 읽히는 간결한 폰트로 바꿔 주세요.')
     writeFor(/문구 5/, '이 문구만 미래지향적인 얇은 글꼴로 바꿔 주세요.')
-    fireEvent.click(runButton())
+    await openConfirm()
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
     await waitFor(() => expect(calls).toHaveLength(2), { timeout: 8000 })
     return calls.map((c) => String((c.init.body as FormData).get('prompt')))
@@ -382,19 +430,21 @@ describe('§8 지시는 조각마다 따로 나간다', () => {
     expect(first).toContain('문구 **한 개**만 새로 디자인')
   }, 25000)
 
-  it('sends the current result first and only the chosen blocks originals', async () => {
+  it('sends only that one piece — not the finished page, not its neighbours', async () => {
     await openStudio()
     await generateFirst()
     pick(/이미지 2/)
     writeFor(/이미지 2/, '조금 아래로 옮겨 주세요.')
-    fireEvent.click(runButton())
+    await openConfirm()
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
     await waitFor(() => expect(calls).toHaveLength(1), { timeout: 8000 })
 
-    const names = lastImageNames()
-    expect(names[0]).toContain('current-result')
-    expect(names.join('|')).toContain('asset_pa')
-    expect(names.join('|')).not.toContain('asset_logo')
+    // 조각 하나만 오간다 (조각 수정 Patch). 완성본을 보내면 그 안의 다른 조각까지
+    // 다시 그려진다 — "고정"이 지켜지지 않던 자리다.
+    const names = lastImageNames().join('|')
+    expect(names).toContain('current-piece')
+    expect(names).not.toContain('current-result')
+    expect(names).not.toContain('asset_logo')
   }, 25000)
 
   it('sends no product original when only wording was chosen', async () => {
@@ -402,7 +452,7 @@ describe('§8 지시는 조각마다 따로 나간다', () => {
     await generateFirst()
     pick(/문구 1/)
     writeFor(/문구 1/, '간결한 폰트로')
-    fireEvent.click(runButton())
+    await openConfirm()
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
     await waitFor(() => expect(calls).toHaveLength(1), { timeout: 8000 })
     // 문구 하나를 고쳤을 뿐이므로 제품 원본은 한 장도 실리지 않는다.
@@ -427,15 +477,15 @@ describe('§8 지시는 조각마다 따로 나간다', () => {
  *
  * 조각 수정은 조각 하나를 갈아 끼우고 다시 합칠 뿐이라 줄에 칸을 더하지 않는다 —
  * 더하면 줄이 가리키는 그림과 지금 조각이 서로 다른 말을 하게 된다. 그래서 이
- * 묶음은 이미지 대상을 고른다: 이미지에는 문구 조각이 없으므로 지금도 통이미지
- * 수정으로 간다.
+ * 묶음은 **조각이 없는 예전 결과**를 연다 (조각 수정 Patch): 통이미지 수정으로
+ * 가는 길이 이제 거기 하나뿐이다.
  */
 describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
   async function editOnce(label: RegExp, text: string): Promise<void> {
     const wasShowing = (await result()).assetId
     pick(label)
     writeFor(label, text)
-    fireEvent.click(runButton())
+    await openConfirm()
     const before = calls.length
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
     await waitFor(() => expect(calls.length).toBe(before + 1), { timeout: 8000 })
@@ -444,8 +494,7 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
   }
 
   it('starts with one revision at cursor 0', async () => {
-    await openStudio()
-    await generateFirst()
+    await openOldResult()
     const r = await result()
     expect(revisionsOf(r)).toHaveLength(1)
     expect(cursorOf(r)).toBe(0)
@@ -458,8 +507,7 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
   }, 25000)
 
   it('grows to three revisions after two edits', async () => {
-    await openStudio()
-    await generateFirst()
+    await openOldResult()
     await editOnce(/이미지 1/, '간결한 폰트로')
     await editOnce(/이미지 2/, '조금 크게')
     const r = await result()
@@ -469,8 +517,7 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
   }, 40000)
 
   it('walks back and forward without spending anything', async () => {
-    await openStudio()
-    await generateFirst()
+    await openOldResult()
     await editOnce(/이미지 1/, '간결한 폰트로')
     const revisions = revisionsOf(await result())
     const spent = calls.length
@@ -487,8 +534,7 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
   }, 40000)
 
   it('can still go forward after restoring the very first result', async () => {
-    await openStudio()
-    await generateFirst()
+    await openOldResult()
     await editOnce(/이미지 1/, '간결한 폰트로')
     const spent = calls.length
 
@@ -500,8 +546,7 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
   }, 40000)
 
   it('disables the ends and keeps all revisions safe from the sweep', async () => {
-    await openStudio()
-    await generateFirst()
+    await openOldResult()
     const prev = () => within(panel()).getByRole('button', { name: '이전 결과' }) as HTMLButtonElement
     const next = () => within(panel()).getByRole('button', { name: '다음 결과' }) as HTMLButtonElement
     // 한 칸일 때는 줄이 없다. 고치고 나서 나타난다.
@@ -518,8 +563,7 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
   }, 40000)
 
   it('cuts the future when a new edit starts from the middle', async () => {
-    await openStudio()
-    await generateFirst()
+    await openOldResult()
     await editOnce(/이미지 1/, '간결한 폰트로')
     await editOnce(/이미지 2/, '조금 크게')
     expect(revisionsOf(await result())).toHaveLength(3)
@@ -535,8 +579,7 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
   }, 50000)
 
   it('uses the image at the cursor as the first input of the next edit', async () => {
-    await openStudio()
-    await generateFirst()
+    await openOldResult()
     await editOnce(/이미지 1/, '간결한 폰트로')
     fireEvent.click(within(panel()).getByRole('button', { name: '이전 결과' }))
     await waitFor(async () => expect(cursorOf(await result())).toBe(0), { timeout: 8000 })
@@ -545,7 +588,7 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
     // 통이미지 수정이라야 "현재 결과 이미지"를 첫 입력으로 싣는다.
     pick(/이미지 2/)
     writeFor(/이미지 2/, '조금 크게')
-    fireEvent.click(runButton())
+    await openConfirm()
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
     await waitFor(() => expect(calls).toHaveLength(2), { timeout: 8000 })
     // 첫 입력 이미지는 지금 커서가 가리키는 그림이다.
@@ -554,15 +597,14 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
   }, 50000)
 
   it('leaves the history untouched when an edit fails', async () => {
-    await openStudio()
-    await generateFirst()
+    await openOldResult()
     await editOnce(/이미지 1/, '간결한 폰트로')
     const before = await result()
 
     failNext = true
     pick(/문구 2/)
     writeFor(/문구 2/, '조금 크게')
-    fireEvent.click(runButton())
+    await openConfirm()
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
     await waitFor(() => expect(screen.getByText(/크레딧|결제/)).toBeTruthy(), { timeout: 8000 })
 
@@ -573,8 +615,7 @@ describe('§8 결과는 앞뒤로 오갈 수 있는 줄이다', () => {
   }, 40000)
 
   it('keeps every revision at 840 by the page height', async () => {
-    await openStudio()
-    await generateFirst()
+    await openOldResult()
     await editOnce(/이미지 1/, '간결한 폰트로')
     expect((await result()).workingSize).toBe('840x1488')
   }, 40000)

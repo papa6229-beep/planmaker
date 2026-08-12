@@ -420,6 +420,96 @@ export function planPlateEditInputs(input: {
 }
 
 /**
+ * 1-c) 이미지 조각 하나 **고치기** 주문 (조각 수정 Patch).
+ *
+ * 작업자의 말 그대로다: "일반 이미지는 부분수정으로 색상, 구도 등을 우리가 웹에
+ * 이미지 첨부하고 수정 요청한 것처럼 변경되게." 그러니 보내는 것도 그 그림
+ * **한 장**이다. 완성본을 보내면 그 안의 다른 조각까지 다시 그려진다.
+ *
+ * ## 투명한 데가 있었는가
+ *
+ * 이 하나로 주문이 갈린다.
+ *
+ *  - **없었다** (사각형 사진): 그대로 사각형으로 받는다. 배경을 따로 말할 것이
+ *    없다.
+ *  - **있었다** (누끼·컷아웃): 투명한 자리를 마젠타 단색으로 채워 달라고 하고,
+ *    브라우저가 그 색을 걷어 낸다. `gpt-image-2`는 투명 배경 요청을 거절하므로
+ *    (`Transparent background is not supported for this model.`) 문구 조각이 쓰는
+ *    그 방법을 그대로 쓴다. 이것이 없으면 컷아웃을 한 번 고치는 순간 사각형이
+ *    되어, 종이 테두리가 제품이 아니라 네모를 두른다.
+ */
+export function buildImageEditPrompt(input: {
+  size: { width: number; height: number }
+  instruction: string
+  /** 원본에 투명한 데가 있었는가. 있었으면 결과에도 있어야 한다. */
+  keepAlpha: boolean
+  /** 무엇인지 — `이미지 2 — 제품 A` 처럼. 없으면 적지 않는다. */
+  label?: string
+}): string {
+  const lines: string[] = [
+    '보내 드린 1번 그림 **한 장만** 고쳐 주세요.',
+    '완성된 페이지의 일부가 아니라, 그 자리에 놓일 그림 하나입니다.',
+    `크기는 가로 ${String(input.size.width)}, 세로 ${String(input.size.height)} 비율 그대로입니다.`,
+  ]
+  const what = (input.label ?? '').trim()
+  if (what.length > 0) lines.push(`이 그림은 "${what}" 자리에 놓입니다.`)
+
+  lines.push('', '## 작업자의 수정 지시', input.instruction.trim())
+
+  if (input.keepAlpha) {
+    lines.push(
+      '',
+      '## 배경',
+      `원본은 배경이 비어 있는 그림입니다. 비어 있던 자리는 **단색 마젠타(${TEXT_KEY_HEX})** 한 가지로 빈틈없이 채워 주세요.`,
+      '마젠타는 나중에 지워지고, 남은 그림만 원래 자리에 갈아 끼워집니다.',
+      '그림자·반사·테두리를 마젠타 위에 그리지 않습니다. 지워질 색 위에 그린 것은 함께 사라집니다.',
+      '**피사체 안에는 마젠타를 쓰지 않습니다.** 그 부분이 구멍이 됩니다.',
+    )
+  }
+
+  lines.push(
+    '',
+    '## 그대로 둘 것',
+    '- 화면 안에서 피사체가 놓인 자리와 크기 — 가장자리에 맞춰 꽉 채웁니다.',
+    '- 지시에 없는 것 (다른 부분은 원본 그대로)',
+    '',
+    '## 넣지 말 것',
+    '- 글자와 문구',
+    '- 액자, 테두리, 배경 판',
+    '- 워터마크',
+  )
+
+  return lines.join('\n')
+}
+
+/** 이미지 조각을 고치는 요청에 실리는 그림 — 지금 그 조각, 그리고 참고 자료. */
+export function planImageEditInputs(input: {
+  /** 고칠 조각의 지금 그림. 이 요청의 주인공이라 언제나 1번이다. */
+  currentAssetId: string
+  blockReferenceAssetId?: string | undefined
+}): GenerationInputImage[] {
+  const images: GenerationInputImage[] = [
+    {
+      index: 1,
+      role: 'page_layout',
+      assetId: input.currentAssetId,
+      fileName: 'current-piece.png',
+      label: '지금의 그림 — 이것을 고칩니다.',
+    },
+  ]
+  if (input.blockReferenceAssetId !== undefined) {
+    images.push({
+      index: images.length + 1,
+      role: 'page_reference',
+      assetId: input.blockReferenceAssetId,
+      fileName: 'block-reference.png',
+      label: '이 자리만을 위한 참고 그림 — 이런 모양·구성으로 만들어 달라는 뜻입니다.',
+    })
+  }
+  return images
+}
+
+/**
  * 2) 문구·버튼 한 장 주문 (블록별 문구 Patch).
  *
  * 단색 마젠타 위에 **이 문구 하나만** 그린 한 장이다. 투명 배경은 이 모델이

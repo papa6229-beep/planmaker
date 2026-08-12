@@ -115,8 +115,10 @@ import type { BriefPage } from '../../domain/pageSchema'
 import type { LayoutRect } from '../../domain/imageLayout'
 import type { ToneAdjust } from '../../domain/toneAdjust'
 import {
+  buildImageEditPrompt,
   buildPlateEditPrompt,
   buildTextEditPrompt,
+  planImageEditInputs,
   planPlateEditInputs,
   planTextEditInputs,
 } from '../../domain/preserveDesign'
@@ -185,6 +187,25 @@ interface GenerationPlan {
     lines: readonly string[]
     /** 이 블록에 붙여 둔 주문·참고 그림 (부분수정 재료 Patch). */
     blockNote?: string
+    referenceAssetId?: string
+  }[]
+  /**
+   * 이미지 조각 하나만 다시 그리는 길 (조각 수정 Patch).
+   *
+   * 나가는 것은 그 조각의 지금 그림 한 장이다. 완성본을 보내면 그 안의 다른
+   * 조각까지 다시 그려진다 — "고정"이 지켜지지 않던 것이 그 길이다.
+   */
+  imageEdits?: {
+    blockId: string
+    /** 지금 이 조각이 그리는 그림. */
+    assetId: string
+    rect: LayoutRect
+    instruction: string
+    size: string
+    /** 원본에 투명한 데가 있었는가. 있었으면 결과에도 있어야 한다. */
+    keepAlpha: boolean
+    label: string
+    /** 이 블록에만 붙여 둔 참고 그림. */
     referenceAssetId?: string
   }[]
   /**
@@ -315,7 +336,7 @@ export interface ImageGenerationApi {
   canEdit: boolean
   /** 실행할 수 없는 이유 — 없으면 `null`. */
   editBlockedReason: string | null
-  beginEdit: () => void
+  beginEdit: () => void | Promise<void>
   confirmEdit: () => void
 
   /** 결과의 줄 — 앞뒤 이동은 전부 외부 호출 0건. */
@@ -338,6 +359,15 @@ const ImageGenerationContext = createContext<ImageGenerationApi | null>(null)
  * 그림이면 얹지 않고 그 사실을 말한다.
  */
 const FOREGROUND_MAX_OPAQUE = 0.92
+
+/**
+ * 이 이상 불투명하면 **투명한 데가 없었다**고 본다 (조각 수정 Patch).
+ *
+ * 사각형 사진은 1.0에 붙고, 누끼는 그보다 훨씬 낮다. 0.98을 두는 것은 가장자리
+ * 한 줄이 반투명한 사진을 누끼로 오해하지 않기 위해서다 — 오해하면 멀쩡한 사진에
+ * 마젠타를 걷어 내라고 시켜 구멍이 난다.
+ */
+const OPAQUE_ENOUGH = 0.98
 
 /**
  * 문구 겹을 한 번에 몇 장까지 함께 보내는가 (겹 방식 속도 교정).
@@ -1426,8 +1456,12 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         //
         // 통이미지를 다시 그리지 않으므로 배경도 사진도 고르지 않은 문구도 손대지
         // 않는다. 하나가 실패해도 나머지는 그대로 간다 — 값을 이미 치렀다.
-        if ((plan.textEdits !== undefined || plan.backgroundEdit !== undefined) && studio !== null) {
+        if (
+          (plan.textEdits !== undefined || plan.imageEdits !== undefined || plan.backgroundEdit !== undefined) &&
+          studio !== null
+        ) {
           const edits = plan.textEdits ?? []
+          const pieces = plan.imageEdits ?? []
           const trouble: (string | undefined)[] = Array.from<string | undefined>({ length: edits.length })
           // 이 수정 하나가 되돌리기 한 칸이다 (조각 되돌리기 Patch). 조각을 갈아
           // 끼우는 일은 지금까지 되돌릴 자리를 남기지 않아, AI로 고치고 나면
@@ -1437,7 +1471,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           let done = 0
           const context = plan.textEditContext
           const bg = plan.backgroundEdit
-          const total = edits.length + (bg === undefined ? 0 : 1)
+          const total = edits.length + pieces.length + (bg === undefined ? 0 : 1)
           setState({ kind: 'running', done, total })
           const bgTrouble: string[] = []
 
@@ -1538,6 +1572,67 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             changed += 1
           }
 
+          // ── 이미지 조각 하나씩 다시 그리기 (조각 수정 Patch) ───────────────
+          //
+          // 나가는 것은 그 조각의 지금 그림 한 장뿐이다. 옆 조각도 배경도 보내지
+          // 않으므로 그것들이 다시 그려질 수가 없다 — "고정"이 깨지던 자리가 여기다.
+          const pieceTrouble: string[] = []
+          const fixPiece = async (edit: (typeof pieces)[number]): Promise<void> => {
+            const answer = await requestLayer(
+              plan,
+              auth,
+              'edit',
+              planImageEditInputs({
+                currentAssetId: edit.assetId,
+                ...(edit.referenceAssetId === undefined ? {} : { blockReferenceAssetId: edit.referenceAssetId }),
+              }),
+              buildImageEditPrompt({
+                size: { width: edit.rect.width, height: edit.rect.height },
+                instruction: edit.instruction,
+                keepAlpha: edit.keepAlpha,
+                label: edit.label,
+              }),
+              edit.size,
+            )
+            if (!('blob' in answer)) {
+              pieceTrouble.push(`${edit.label}: ${errorTextFor(answer.code)}`)
+              return
+            }
+            // 투명한 데가 있던 그림만 단색을 걷어 낸다. 사각형 사진에 이것을
+            // 돌리면 걷어 낼 색이 없는데도 무언가를 지우려다 구멍이 난다.
+            let blob = answer.blob
+            if (edit.keepAlpha) {
+              const keyed = await removeKeyBackground(answer.blob)
+              if (keyed === null || keyed.opaqueRatio > FOREGROUND_MAX_OPAQUE) {
+                pieceTrouble.push(`${edit.label}: 임시 배경을 걷어 내지 못했습니다.`)
+                return
+              }
+              blob = keyed.blob
+            }
+            const assetId = createId('asset')
+            await putAsset({
+              id: assetId,
+              blob,
+              fileName: `piece-${edit.blockId}.png`,
+              mimeType: 'image/png',
+              byteSize: blob.size,
+            })
+            // 자리도 크기도 각도도 그대로. 원본 연결(`productImages`)도 그대로 —
+            // 조각만 새 그림을 가리킨다.
+            await studio.replaceImageObjectAsset(plan.pageId, edit.blockId, assetId)
+            changed += 1
+          }
+          for (let at = 0; at < pieces.length; at += TEXT_LAYER_BATCH) {
+            const batch = pieces.slice(at, at + TEXT_LAYER_BATCH)
+            await Promise.all(
+              batch.map(async (edit) => {
+                await fixPiece(edit)
+                done += 1
+                setState({ kind: 'running', done, total })
+              }),
+            )
+          }
+
           // 고칠 조각들도 서로 독립이다 — 생성과 같은 이유로 함께 나간다
           // (겹 방식 속도 교정). 하나가 실패해도 나머지는 그대로 간다.
           for (let at = 0; at < edits.length; at += TEXT_LAYER_BATCH) {
@@ -1550,7 +1645,11 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
               }),
             )
           }
-          const problems = [...bgTrouble, ...trouble.filter((t): t is string => t !== undefined)]
+          const problems = [
+            ...bgTrouble,
+            ...pieceTrouble,
+            ...trouble.filter((t): t is string => t !== undefined),
+          ]
           if (changed > 0) await recomposePage(plan.pageId)
           setSelectedTargetIds([])
           setInstructions({})
@@ -1783,7 +1882,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
    * 원본이다. 고르지 않은 자리의 원본은 보내지 않는다 — 보내면 모델이 그것도
    * 손대도 된다고 읽을 수 있다.
    */
-  const planEdit = useCallback((): { plan: GenerationPlan } | { blocked: string } => {
+  const planEdit = useCallback(async (): Promise<{ plan: GenerationPlan } | { blocked: string }> => {
     if (studio === null || currentResult === undefined) return { blocked: errorTextFor('unknown') }
     if (editItems.length === 0) return { blocked: errorTextFor('target_not_found') }
 
@@ -1810,8 +1909,20 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     // 배경 판 한 장을 보내고 배경 판 한 장을 받으므로, 문구 조각과 같은 성질이다.
     const bgPicked = picked.filter((p) => p.item.target.kind === 'background')
     const textPicked = picked.filter((p) => p.object !== undefined)
-    // 남는 것은 이미지·컷아웃뿐이다. 그쪽은 아직 통이미지 길이다.
-    const leftover = picked.filter((p) => p.object === undefined && p.item.target.kind !== 'background')
+    // 이미지·컷아웃도 조각이 있으면 조각 길로 간다 (조각 수정 Patch).
+    const pieces = studio.imageObjectsOf(currentResult.pageId)
+    const imagePicked = picked
+      .filter((p) => p.object === undefined && p.item.target.kind === 'image')
+      .map((p) => ({ ...p, piece: pieces.find((o) => o.blockId === p.item.target.blockId) }))
+      .filter((p): p is typeof p & { piece: NonNullable<(typeof p)['piece']> } => p.piece !== undefined)
+    // 남는 것은 조각이 없는 자리뿐이다 — 이 Patch 이전에 만든 결과. 그쪽은
+    // 갈아 끼울 조각 자체가 없으므로 지금까지의 통이미지 길로 간다.
+    const claimed = new Set([
+      ...textPicked.map((p) => p.item.target.targetId),
+      ...bgPicked.map((p) => p.item.target.targetId),
+      ...imagePicked.map((p) => p.item.target.targetId),
+    ])
+    const leftover = picked.filter((p) => !claimed.has(p.item.target.targetId))
     const plate = studio.backgroundOf(currentResult.pageId)
     // 배경을 고르려면 판이 있어야 한다. 이 Patch 이전에 만든 결과에는 판이 없고,
     // 없는 판을 고칠 수는 없으므로 그때는 지금까지의 통이미지 길로 간다.
@@ -1847,6 +1958,30 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           ...(order.referenceAssetId === undefined ? {} : { referenceAssetId: order.referenceAssetId }),
         }
       })
+      // 조각마다 투명한 데가 있었는지 읽는다. 있었으면 결과에도 있어야 한다 —
+      // 없으면 컷아웃을 한 번 고치는 순간 네모가 되어, 종이 테두리가 제품이
+      // 아니라 사각형을 두른다. 브라우저가 읽는 값이라 외부 호출은 0건이다.
+      const imageEdits = await Promise.all(
+        imagePicked.map(async ({ item, piece }) => {
+          const canvas = textLayerCanvas(piece.rect)
+          const resolved = resolveGptImageSize(canvas.width, canvas.height)
+          const asset = await getAsset(piece.assetId)
+          const analysis = asset === undefined ? null : await analyzeImageBlob(asset.blob)
+          const order = studio.blockOrderOf(piece.blockId)
+          return {
+            blockId: piece.blockId,
+            assetId: piece.assetId,
+            rect: piece.rect,
+            instruction: item.instruction,
+            size: resolved.ok ? resolved.size : size.size,
+            // 못 읽었으면 **없었다**고 본다. 사각형 사진이 훨씬 흔하고, 잘못 켜면
+            // 멀쩡한 사진에서 마젠타를 걷어 내다 구멍이 난다.
+            keepAlpha: analysis !== null && analysis.opaqueRatio < OPAQUE_ENOUGH,
+            label: item.target.label,
+            ...(order.referenceAssetId === undefined ? {} : { referenceAssetId: order.referenceAssetId }),
+          }
+        }),
+      )
       const concept = (current.project.concept ?? '').trim()
       const backgroundEdit =
         bgPicked.length === 0 || background === undefined
@@ -1878,6 +2013,13 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
               blockNote: first.blockNote,
               fixed,
             })
+          : imageEdits[0] !== undefined
+          ? buildImageEditPrompt({
+              size: { width: imageEdits[0].rect.width, height: imageEdits[0].rect.height },
+              instruction: imageEdits[0].instruction,
+              keepAlpha: imageEdits[0].keepAlpha,
+              label: imageEdits[0].label,
+            })
           : buildPlateEditPrompt({
               size: pageSize,
               instruction: backgroundEdit?.instruction ?? '',
@@ -1892,7 +2034,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           fixedBlockIds: [],
           // 고른 조각 하나에 한 번씩, 배경을 골랐으면 거기에 한 번 더.
           // 확인창이 이 수를 그대로 말한다.
-          calls: textEdits.length + (backgroundEdit === undefined ? 0 : 1),
+          calls: textEdits.length + imageEdits.length + (backgroundEdit === undefined ? 0 : 1),
           pageId: currentResult.pageId,
           prompt: shownPrompt,
           size: size.size,
@@ -1900,6 +2042,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           inputs: [],
           fingerprint: currentResult.sourceFingerprint,
           ...(textEdits.length === 0 ? {} : { textEdits }),
+          ...(imageEdits.length === 0 ? {} : { imageEdits }),
           ...(backgroundEdit === undefined ? {} : { backgroundEdit }),
           textEditContext: {
             pageSize,
@@ -1954,9 +2097,11 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     }
   }, [studio, currentResult, editTargets, editItems, getDocument])
 
-  const beginEdit = useCallback(() => {
+  const beginEdit = useCallback(async () => {
     if (runningRef.current || !canEdit) return
-    const planned = planEdit()
+    // 조각의 알파를 읽어야 주문이 갈린다 (조각 수정 Patch) — 그래서 계획을 세우는
+    // 일이 비동기다. 외부로 나가는 것은 없다.
+    const planned = await planEdit()
     if ('blocked' in planned) {
       setState({ kind: 'blocked', message: planned.blocked })
       return

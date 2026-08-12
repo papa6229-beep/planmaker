@@ -34,6 +34,7 @@ import {
 } from '../services/studioStore'
 import { createStudioJob, linkProductImage, withSource } from '../domain/studioJob'
 import { buildEditTargets, BACKGROUND_TARGET_ID } from '../domain/editTargets'
+import { documentFingerprint } from '../domain/documentFingerprint'
 import { buildEditPrompt, EDIT_RULES } from '../domain/editPrompt'
 import { heldAssets, resetAssetHoldForTests } from '../services/assetHold'
 import { createEmptyDocument } from '../domain/pageSchema'
@@ -65,9 +66,30 @@ vi.mock('../services/paperCutoutShape', () => ({
   buildPaperShape: async () => null,
   buildPaperCanvas: async () => null,
 }))
+/**
+ * 조각에 투명한 데가 있었는가 (조각 수정 Patch).
+ *
+ * 이 하나로 조각 수정 주문이 갈린다. 화소를 세는 규칙은 `imageAnalysis`의 순수
+ * 검사가 붙들고, 여기서는 그 값이 흐름을 어떻게 가르는지만 본다.
+ */
+let pieceOpaque: number | null = null
 vi.mock('../services/imageAnalysisRunner', () => ({
   ANALYSIS_MAX_SIDE: 256,
-  analyzeImageBlob: async () => null,
+  analyzeImageBlob: async () =>
+    pieceOpaque === null
+      ? null
+      : {
+          palette: [{ hex: '#b47040', share: 1 }],
+          average: { r: 180, g: 112, b: 64 },
+          brightness: 0.5,
+          contrast: 0.4,
+          saturation: 0.6,
+          temperature: 0.3,
+          opaqueRatio: pieceOpaque,
+          bounds: { x: 0, y: 0, width: 10, height: 10 },
+          fill: 1,
+          light: { x: 0, y: 0, confidence: 'low' as const },
+        },
 }))
 vi.mock('../services/textLayerKey', () => ({
   removeKeyBackground: async (blob: Blob) => ({ blob, opaqueRatio: 0.2 }),
@@ -167,6 +189,7 @@ function okResponse(): Promise<Response> {
 }
 
 beforeEach(async () => {
+  pieceOpaque = null
   // 앞 검사가 걸어 둔 그림이 다음 검사로 새지 않게 한다 (되돌릴 그림 지키기 Patch).
   resetAssetHoldForTests()
   calls = []
@@ -229,6 +252,43 @@ async function generateFirst(): Promise<void> {
   calls.length = 0
 }
 
+/**
+ * 조각이 없는 **예전 결과**를 열어 둔다 (조각 수정 Patch).
+ *
+ * 조각 수정이 기본이 되면서, 통이미지 수정으로 가는 길은 하나만 남았다 — 조각이
+ * 아직 없던 시절에 만든 결과. 그 길이 살아 있는지는 그런 파일을 실제로 열어 봐야
+ * 알 수 있다. 배경 판도 문구·이미지 조각도 없이 결과 한 장만 있는 작업이다.
+ */
+async function openOldResult(): Promise<string> {
+  const doc = sampleDoc()
+  const pageId = doc.pages[0]!.id
+  await putAsset(storedAsset('asset_old', 9))
+  await saveStudioJob({
+    ...readyJob(doc),
+    results: {
+      [pageId]: {
+        pageId,
+        assetId: 'asset_old',
+        model: 'gpt-image-2',
+        quality: 'medium',
+        requestedSize: '832x1472',
+        workingSize: '840x1488',
+        sourceFingerprint: documentFingerprint(doc),
+        // 대상 목록은 생성된 순간에 얼어붙어 결과에 찍힌다. 예전 파일에도 이것은
+        // 있으므로 여기서도 찍어 둔다 — 없으면 고칠 대상 자체가 없다.
+        targets: buildEditTargets(doc, readyJob(doc), pageId),
+        createdAt: 1,
+      },
+    },
+  })
+  await openStudio()
+  fireEvent.click(await screen.findByRole('radio', { name: '완성본' }, { timeout: 8000 }))
+  await waitFor(() => expect(editPanel()).toBeTruthy(), { timeout: 8000 })
+  sessionStorage.setItem('planmaker.openai-key', KEY)
+  calls.length = 0
+  return pageId
+}
+
 function editPanel(): HTMLElement {
   return screen.getByRole('region', { name: 'AI 부분수정' })
 }
@@ -243,6 +303,9 @@ async function runEdit(instruction: string): Promise<void> {
     fireEvent.change(box, { target: { value: instruction } })
   }
   fireEvent.click(within(editPanel()).getByRole('button', { name: 'AI 부분수정 실행' }))
+  // 확인창은 한 박자 늦게 뜬다 (조각 수정 Patch) — 계획을 세우면서 조각의 알파를
+  // 읽기 때문이다. 외부로 나가는 것은 없다.
+  await screen.findByRole('button', { name: '수정 시작' })
 }
 
 /** 마지막 요청의 프롬프트. */
@@ -345,19 +408,33 @@ describe('§6 편집 요청에 무엇이 실리는가', () => {
     expect(prompt).not.toContain('신제품')
   }, 25000)
 
+  /**
+   * 셋을 고르면 **셋을 따로** 고친다 (조각 수정 Patch).
+   *
+   * 앞선 판은 통이미지 한 장을 다시 그리면서 세 이름을 한 주문에 실었다. 그러면
+   * 고르지 않은 것까지 같은 그림 안에서 다시 그려진다 — "고정"이 지켜지지 않던
+   * 자리가 여기다. 이제 조각마다 제 그림 한 장만 오간다.
+   */
   it('carries every target of a multiple selection', async () => {
     await openStudio()
     await generateFirst()
     await selectTargets(/이미지 1/, /이미지 2/, /이미지 3/)
     await runEdit('제품 세 개의 크기와 순서를 유지한 채 전체적으로 조금 아래로 이동해 주세요.')
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
-    await waitFor(() => expect(calls).toHaveLength(1), { timeout: 8000 })
+    await waitFor(() => expect(calls).toHaveLength(3), { timeout: 8000 })
 
-    const prompt = lastPrompt()
-    for (const label of ['이미지 1', '이미지 2', '이미지 3']) expect(prompt).toContain(label)
+    // 셋 다 제 이름으로 한 번씩 나갔다.
+    const prompts = calls.map((c) => String((c.init.body as FormData).get('prompt')))
+    for (const label of ['이미지 1', '이미지 2', '이미지 3']) {
+      expect(prompts.filter((p) => p.includes(label))).toHaveLength(1)
+    }
+    // 그리고 한 주문에 남의 이름이 섞여 있지 않다.
+    for (const prompt of prompts) {
+      expect(['이미지 1', '이미지 2', '이미지 3'].filter((l) => prompt.includes(l))).toHaveLength(1)
+    }
   }, 25000)
 
-  it('sends the current result image first, then only the chosen blocks own originals', async () => {
+  it('sends only that one piece — not the finished page, not its neighbours', async () => {
     await openStudio()
     await generateFirst()
     await selectTargets(/이미지 2/)
@@ -365,24 +442,23 @@ describe('§6 편집 요청에 무엇이 실리는가', () => {
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
     await waitFor(() => expect(calls).toHaveLength(1), { timeout: 8000 })
 
-    const names = lastImageNames()
-    expect(names[0]).toContain('current-result')
-    // 고른 자리의 원본만 — 고르지 않은 로고와 제품 B는 가지 않는다.
-    expect(names.join('|')).toContain('asset_pa')
-    expect(names.join('|')).not.toContain('asset_logo')
-    expect(names.join('|')).not.toContain('asset_pb')
+    const names = lastImageNames().join('|')
+    // 나가는 것은 그 조각의 지금 그림 하나뿐이다.
+    expect(names).toContain('current-piece')
+    // 완성본이 나가면 그 안의 다른 조각까지 다시 그려진다 — 그 길을 닫았다.
+    expect(names).not.toContain('current-result')
+    expect(names).not.toContain('asset_logo')
+    expect(names).not.toContain('asset_pb')
   }, 25000)
 
   /**
-   * 대상이 `전체 배경`에서 `이미지`로 바뀌었다 (배경만 다시 그리기 Patch).
+   * 통이미지 길에 남은 것은 **조각이 없는 예전 결과**뿐이다 (조각 수정 Patch).
    *
-   * 배경은 이제 통이미지 길로 가지 않는다 — 배경 판 한 장만 보내고 한 장만 받는다.
-   * 통이미지 길에 남은 것은 이미지·컷아웃이고, "고르지 않은 것을 건드리지 마라"는
-   * 그 길에서 여전히 지켜져야 한다.
+   * 문구도 이미지도 배경도 이제 조각으로 간다. 그래도 이 규칙은 지켜져야 한다 —
+   * 예전 파일을 열어 고치는 사람에게는 그 길이 지금도 유일한 길이다.
    */
   it('always carries the rules that protect what was not chosen', async () => {
-    await openStudio()
-    await generateFirst()
+    await openOldResult()
     await selectTargets(/이미지 2/)
     await runEdit('원형 광원을 조금 약하게 해 주세요.')
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
@@ -465,13 +541,11 @@ describe('§6 실행은 사람이 확인한 뒤 정확히 한 번', () => {
 
 describe('§6 결과는 840으로 정착하고, 실패는 아무것도 바꾸지 않는다', () => {
   it('settles the edited result at 840 by the page height', async () => {
-    await openStudio()
-    await generateFirst()
-    const first = (await loadStudioJob(STUDIO_JOB_ID))!
-    const pageId = first.doc.pages[0]!.id
-    const originalAsset = first.results[pageId]!.assetId
+    // 결과 줄(이전·최초·몇 번째)은 통이미지 수정이 만든다. 그 길이 남은 자리는
+    // 조각이 없는 예전 결과뿐이므로, 거기서 잰다 (조각 수정 Patch).
+    const pageId = await openOldResult()
+    const originalAsset = (await loadStudioJob(STUDIO_JOB_ID))!.results[pageId]!.assetId
 
-    // 결과 줄(이전·최초·몇 번째)을 보는 검사다. 그 줄은 통이미지 수정이 만든다.
     await selectTargets(/이미지 2/)
     await runEdit('조금 위로 올려 주세요.')
     fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
@@ -556,16 +630,13 @@ describe('§6-B 조각 수정은 실행 취소로 되돌아온다', () => {
  *
  * 조각 수정은 조각 하나를 갈아 끼우고 다시 합칠 뿐이라 결과 줄에 칸을 더하지
  * 않는다 — 더하면 줄이 가리키는 그림과 지금 조각이 서로 다른 말을 하게 된다.
- * 그래서 이 묶음은 이미지 대상을 고른다: 이미지에는 문구 조각이 없으므로 지금도
- * 통이미지 수정으로 간다.
+ * 그래서 이 묶음은 **조각이 없는 예전 결과**를 연다 (조각 수정 Patch): 통이미지
+ * 수정으로 가는 길이 이제 거기 하나뿐이다.
  */
 describe('§6 되돌리기는 공짜다', () => {
   async function editOnce(): Promise<{ pageId: string; original: string; edited: string }> {
-    await openStudio()
-    await generateFirst()
-    const job0 = (await loadStudioJob(STUDIO_JOB_ID))!
-    const pageId = job0.doc.pages[0]!.id
-    const original = job0.results[pageId]!.assetId
+    const pageId = await openOldResult()
+    const original = (await loadStudioJob(STUDIO_JOB_ID))!.results[pageId]!.assetId
 
     await selectTargets(/이미지 2/)
     await runEdit('조금 위로 올려 주세요.')
@@ -747,5 +818,93 @@ describe('§9 배경은 판 한 장만 오간다', () => {
     await waitFor(async () => expect(await plateOf()).toBeTruthy(), { timeout: 8000 })
     await waitFor(() => expect(calls).toHaveLength(1), { timeout: 8000 })
     expect(await pageIdOf()).toBeTruthy()
+  }, 25000)
+})
+
+// ── §10 이미지 조각도 조각으로 고친다 ────────────────────────────────────────
+
+/**
+ * 작업자의 말 그대로다: "컷아웃이건 일반 이미지건 완성된 이미지에서 조각마다 다
+ * 개별 수정이 가능해야 한다."
+ *
+ * 그리고 그 반대편에 결함이 있었다. 통이미지를 보내면 **고르지 않은 조각까지**
+ * 모델이 다시 그린다 — 주문에 "고정"이라고 몇 번을 적어도 상하로 늘어났다.
+ * 조각 하나만 보내면 그럴 수가 없다. 여기서 재는 것은 그 하나다.
+ */
+describe('§10 이미지 조각은 제 그림 한 장만 오간다', () => {
+  const pieceAssetOf = async (blockId: string) => {
+    const job = (await loadStudioJob(STUDIO_JOB_ID))!
+    return job.imageObjects?.[job.doc.pages[0]!.id]?.find((o) => o.blockId === blockId)?.assetId
+  }
+
+  it('조각의 그림만 갈아 끼우고, 원본 연결은 손대지 않는다', async () => {
+    await openStudio()
+    await generateFirst()
+    const before = await pieceAssetOf('blk_i2')
+    expect(before).toBeTruthy()
+
+    await selectTargets(/이미지 2/)
+    await runEdit('색을 조금 따뜻하게 해 주세요.')
+    fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
+    await waitFor(async () => expect(await pieceAssetOf('blk_i2')).not.toBe(before), { timeout: 8000 })
+
+    // 처음 올린 그림은 그대로 남는다 — 조각을 지우면 그것이 돌아온다.
+    const job = (await loadStudioJob(STUDIO_JOB_ID))!
+    expect(job.productImages.blk_i2).toBe('asset_pa')
+    // 옆 조각은 손대지 않았다.
+    expect(await pieceAssetOf('blk_i1')).toBe('asset_logo')
+  }, 25000)
+
+  it('투명한 데가 있던 그림에만 임시 배경을 시킨다', async () => {
+    pieceOpaque = 0.4 // 누끼 — 배경이 비어 있다
+    await openStudio()
+    await generateFirst()
+    await selectTargets(/이미지 2/)
+    await runEdit('색을 조금 따뜻하게.')
+    fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
+    await waitFor(() => expect(calls).toHaveLength(1), { timeout: 8000 })
+    expect(lastPrompt()).toContain('마젠타')
+  }, 25000)
+
+  it('사각형 사진에는 시키지 않는다 — 걷어 낼 색이 없는데 걷어 내면 구멍이 난다', async () => {
+    pieceOpaque = 1 // 꽉 찬 사각형 사진
+    await openStudio()
+    await generateFirst()
+    await selectTargets(/이미지 2/)
+    await runEdit('색을 조금 따뜻하게.')
+    fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
+    await waitFor(() => expect(calls).toHaveLength(1), { timeout: 8000 })
+    expect(lastPrompt()).not.toContain('마젠타')
+  }, 25000)
+
+  it('실행 취소 한 번이면 예전 조각으로 돌아온다', async () => {
+    await openStudio()
+    await generateFirst()
+    const before = await pieceAssetOf('blk_i2')
+
+    await selectTargets(/이미지 2/)
+    await runEdit('색을 조금 따뜻하게.')
+    fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
+    await waitFor(async () => expect(await pieceAssetOf('blk_i2')).not.toBe(before), { timeout: 8000 })
+
+    fireEvent.click(screen.getByRole('button', { name: '실행 취소' }))
+    await waitFor(async () => expect(await pieceAssetOf('blk_i2')).toBe(before), { timeout: 8000 })
+  }, 25000)
+
+  it('문구와 이미지를 함께 골라도 각자 한 번씩만 나간다', async () => {
+    await openStudio()
+    await generateFirst()
+    await selectTargets(/문구 3/, /이미지 2/)
+    await runEdit('조금 더 눈에 띄게.')
+    fireEvent.click(screen.getByRole('button', { name: '수정 시작' }))
+    await waitFor(() => expect(calls).toHaveLength(2), { timeout: 8000 })
+
+    const names = calls.map((c) =>
+      (c.init.body as FormData).getAll('images[]').map((f) => (f as File).name).join('|'),
+    )
+    expect(names.filter((n) => n.includes('current-text'))).toHaveLength(1)
+    expect(names.filter((n) => n.includes('current-piece'))).toHaveLength(1)
+    // 완성본은 어느 쪽에도 실리지 않는다.
+    expect(names.join('|')).not.toContain('current-result')
   }, 25000)
 })

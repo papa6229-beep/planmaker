@@ -198,6 +198,14 @@ export interface StudioJobApi {
   moveTextObject: (pageId: string, blockId: string, rect: LayoutRect) => void
   replaceTextObjectAsset: (pageId: string, blockId: string, assetId: string) => Promise<void>
   /**
+   * 이미지 조각이 그리는 그림을 갈아 끼운다 (조각 수정 Patch).
+   *
+   * 자리도 크기도 각도도 그대로다. **원본 자산은 손대지 않는다** — 연결
+   * (`productImages`)은 그대로 남고 조각만 새 그림을 가리킨다. 그래서 조각을
+   * 지우거나 서랍에서 다시 꺼내면 처음 올린 그림이 그대로 돌아온다.
+   */
+  replaceImageObjectAsset: (pageId: string, blockId: string, assetId: string) => Promise<void>
+  /**
    * 이 페이지의 이미지 편집 오브젝트 (블록 연결 Patch).
    *
    * 기획서의 이미지·컷아웃 블록 하나당 하나다. 문구 오브젝트와 같은 모양을 쓰고
@@ -666,6 +674,8 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
         }),
       moveImageObject: (pageId, blockId, rect) =>
         void mutate((j) => withImageObject(j, pageId, blockId, { rect }, Date.now())),
+      replaceImageObjectAsset: (pageId, blockId, assetId) =>
+        mutate((j) => withImageObject(j, pageId, blockId, { assetId }, Date.now())),
       reorderObject: (pageId, blockId, move) =>
         mutate((j) => {
           const images = imageObjectsOf(j, pageId)

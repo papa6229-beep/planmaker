@@ -252,7 +252,7 @@ export function EditPanel() {
           type="button"
           className="btn btn--primary"
           disabled={!generation.canEdit || busy}
-          onClick={generation.beginEdit}
+          onClick={() => void generation.beginEdit()}
         >
           AI 부분수정 실행
         </button>
