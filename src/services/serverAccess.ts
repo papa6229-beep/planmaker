@@ -48,15 +48,42 @@ export type AccessFailureCode = 'missing_api_key' | 'access_denied' | 'server_no
 export interface ServerEnv {
   apiKey?: string | undefined
   accessCode?: string | undefined
+  /**
+   * 어느 공급자로 이미지를 만드는가 (로컬 provider 1차).
+   *
+   * **자격과는 아무 상관이 없다.** 이 값이 무엇이든 `accessModeOf`와
+   * `resolveApiKey`는 지금까지와 똑같이 동작한다 — 키가 어디서 오는가와 그림을
+   * 누가 그리는가는 다른 질문이고, 한 번에 둘을 바꾸면 어느 쪽이 깨졌는지 알 수
+   * 없다. 읽는 곳은 `imageProviderSelect.ts` 하나뿐이다.
+   */
+  imageProvider?: string | undefined
+  localImageApiUrl?: string | undefined
+  localImageModel?: string | undefined
+  localImageTimeoutMs?: string | undefined
+  localImageApiKey?: string | undefined
 }
 
 /** 환경변수에서 쓸 것만 골라 다듬는다. 공백만 있는 값은 없는 것과 같다. */
 export function readServerEnv(env: Record<string, string | undefined>): ServerEnv {
-  const apiKey = env.OPENAI_API_KEY?.trim()
-  const accessCode = env.PLANMAKER_ACCESS_CODE?.trim()
+  const pick = (name: string): string | undefined => {
+    const value = env[name]?.trim()
+    return value !== undefined && value.length > 0 ? value : undefined
+  }
+  const apiKey = pick('OPENAI_API_KEY')
+  const accessCode = pick('PLANMAKER_ACCESS_CODE')
+  const imageProvider = pick('IMAGE_PROVIDER')
+  const localImageApiUrl = pick('LOCAL_IMAGE_API_URL')
+  const localImageModel = pick('LOCAL_IMAGE_MODEL')
+  const localImageTimeoutMs = pick('LOCAL_IMAGE_TIMEOUT_MS')
+  const localImageApiKey = pick('LOCAL_IMAGE_API_KEY')
   return {
-    ...(apiKey !== undefined && apiKey.length > 0 ? { apiKey } : {}),
-    ...(accessCode !== undefined && accessCode.length > 0 ? { accessCode } : {}),
+    ...(apiKey === undefined ? {} : { apiKey }),
+    ...(accessCode === undefined ? {} : { accessCode }),
+    ...(imageProvider === undefined ? {} : { imageProvider }),
+    ...(localImageApiUrl === undefined ? {} : { localImageApiUrl }),
+    ...(localImageModel === undefined ? {} : { localImageModel }),
+    ...(localImageTimeoutMs === undefined ? {} : { localImageTimeoutMs }),
+    ...(localImageApiKey === undefined ? {} : { localImageApiKey }),
   }
 }
 

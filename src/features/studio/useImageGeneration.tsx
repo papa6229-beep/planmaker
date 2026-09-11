@@ -95,6 +95,7 @@ import {
   errorTextFor,
   httpFailureCode,
   FIELD_IMAGES,
+  FIELD_INTENT,
   FIELD_PROMPT,
   FIELD_SIZE,
   GENERATE_IMAGE_PATH,
@@ -745,6 +746,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     blob: Blob
     mimeType: string
     requestedSize: string
+    /** 이 그림을 실제로 만든 모델. 서버가 말해 줬을 때만 있다. */
+    model?: string
     requestId?: string
     /** `preserve`에서 저장해 둔 배경 플레이트. 다시 만들 때 재사용한다. */
     plateAssetId?: string
@@ -1020,7 +1023,9 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     const result: GeneratedPageResult = {
       pageId: paid.plan.pageId,
       assetId,
-      model: IMAGE_MODEL,
+      // 공급자가 자기 이름을 말했으면 그것을 남긴다 — 화면이 이 값을 그대로
+      // 보여 주므로, 상수로 굳히면 로컬로 만든 그림에 OpenAI 이름이 붙는다.
+      model: paid.model ?? IMAGE_MODEL,
       quality: IMAGE_QUALITY,
       requestedSize: paid.requestedSize,
       workingSize: sizeLabel(finalSize),
@@ -1360,10 +1365,15 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       prompt: string,
       /** 이 요청만의 판 크기. 없으면 계획의 페이지 규격 그대로다. */
       sizeOverride?: string,
-    ): Promise<{ blob: Blob; mimeType: string; requestedSize: string; requestId?: string } | { code?: string }> => {
+    ): Promise<
+      { blob: Blob; mimeType: string; requestedSize: string; model?: string; requestId?: string } | { code?: string }
+    > => {
       const form = new FormData()
       form.set(FIELD_PROMPT, prompt)
       form.set(FIELD_SIZE, sizeOverride ?? plan.size)
+      // 이 요청이 어느 겹인가 (로컬 provider 1차). 장부에 적는 그 갈래 그대로다.
+      // OpenAI 경로는 이 값을 읽지 않으므로 나가는 요청은 달라지지 않는다.
+      form.set(FIELD_INTENT, kind)
       // 투명 배경은 요청하지 않는다. `gpt-image-2`가 거절한다 —
       // `param: background`, `Transparent background is not supported for this
       // model.` 대신 단색 위에 글자를 받아 브라우저가 그 단색을 걷어 낸다.
@@ -1387,7 +1397,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       }
       const body = payload as {
         image?: { b64?: string; mimeType?: string }
-        metadata?: { requestedSize?: string; requestId?: string; usage?: unknown }
+        metadata?: { model?: string; requestedSize?: string; requestId?: string; usage?: unknown }
       } | null
 
       // 여기까지 왔으면 값은 이미 치렀다 — 그림을 못 받았더라도. 그래서 장부는
@@ -1404,6 +1414,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         blob: blobFromBase64(b64, mimeType),
         mimeType,
         requestedSize: body?.metadata?.requestedSize ?? sizeOverride ?? plan.size,
+        // 서버가 말해 준 모델 이름. 없으면 부르는 쪽이 지금까지의 상수를 쓴다.
+        ...(body?.metadata?.model === undefined ? {} : { model: body.metadata.model }),
         ...(body?.metadata?.requestId === undefined ? {} : { requestId: body.metadata.requestId }),
       }
     },
@@ -1678,6 +1690,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           blob: first.blob,
           mimeType: first.mimeType,
           requestedSize: first.requestedSize,
+          ...(first.model === undefined ? {} : { model: first.model }),
           ...(first.requestId === undefined ? {} : { requestId: first.requestId }),
         }
 

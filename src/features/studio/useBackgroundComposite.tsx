@@ -35,6 +35,7 @@ import { getBlockTypeMeta } from '../../domain/blockTypes'
 import {
   errorTextFor,
   FIELD_IMAGES,
+  FIELD_INTENT,
   FIELD_PROMPT,
   FIELD_SIZE,
   GENERATE_IMAGE_PATH,
@@ -239,6 +240,9 @@ export function BackgroundCompositeProvider({ children }: { children: ReactNode 
         const form = new FormData()
         form.set(FIELD_PROMPT, body.prompt)
         form.set(FIELD_SIZE, resolved.size)
+        // 이 길이 만드는 것은 언제나 배경 한 장이다 (로컬 provider 1차).
+        // 장부에 적는 갈래와 같은 값이고, OpenAI 경로는 이 값을 읽지 않는다.
+        form.set(FIELD_INTENT, 'background')
         // 붙일 수 있는 그림은 스타일 레퍼런스 하나뿐이다. 제품·인물·로고·종이
         // 컷아웃 원본이 여기 실릴 길은 없다 — 목록을 만드는 함수의 인자가 그것
         // 하나다. 레퍼런스가 없으면 칸이 비고, 서버 함수는 생성 경로로 나간다.

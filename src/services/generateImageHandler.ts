@@ -20,6 +20,7 @@
 import {
   FIELD_BACKGROUND,
   FIELD_IMAGES,
+  FIELD_INTENT,
   FIELD_PROMPT,
   FIELD_SIZE,
   IMAGE_MODEL,
@@ -29,12 +30,19 @@ import {
   type GenerateImageSuccess,
   type ImageGenerationErrorCode,
 } from '../domain/imageGeneration.js'
+import { readImageIntent, type ImageProvider } from '../domain/imageProvider.js'
 import { ImageProviderError, requestOpenAiImage } from './openAiImageClient.js'
 import { resolveApiKey, type ServerEnv } from './serverAccess.js'
 
 export interface HandlerDeps {
-  /** 검사에서 공급자 호출을 가로채기 위한 이음매. */
-  requestImage?: typeof requestOpenAiImage
+  /**
+   * 이 요청을 실제로 내보내는 공급자.
+   *
+   * 원래는 검사에서 공급자 호출을 가로채려고 둔 이음매였다. 로컬 provider가
+   * 붙는 자리도 여기다 — 새 길을 뚫는 대신 이미 뚫려 있고 검사가 매일 지나는
+   * 길에 구현 하나를 더 얹는다. 없으면 지금까지처럼 OpenAI로 나간다.
+   */
+  requestImage?: ImageProvider
   fetch?: typeof fetch
   /**
    * 서버가 쥔 값. **기본은 비어 있다** — 환경을 읽는 일은 `api/*.ts`가 맡는다.
@@ -99,6 +107,9 @@ export async function handleGenerateImage(request: Request, deps: HandlerDeps = 
   // 아는 값 하나만 통과시킨다. 모르는 값은 조용히 무시하고 지금까지의 요청 그대로
   // 나간다 — 이 필드는 전경 문구 레이어 하나를 위해 생겼다.
   const transparent = form.get(FIELD_BACKGROUND) === 'transparent'
+  // 힌트 하나. 아는 값이 아니면 없는 것으로 본다 — 이 값 때문에 생성이 막히는
+  // 일은 없어야 한다. OpenAI 경로는 이 값을 읽지 않는다.
+  const intent = readImageIntent(form.get(FIELD_INTENT))
 
   const send = deps.requestImage ?? requestOpenAiImage
   try {
@@ -109,13 +120,16 @@ export async function handleGenerateImage(request: Request, deps: HandlerDeps = 
         size,
         images: images.map((file) => ({ fileName: file.name, blob: file })),
         ...(transparent ? { background: 'transparent' as const } : {}),
+        ...(intent === undefined ? {} : { intent }),
       },
       deps.fetch === undefined ? {} : { fetch: deps.fetch },
     )
     const body: GenerateImageSuccess = {
       image: { b64: result.b64, mimeType: result.mimeType },
       metadata: {
-        model: IMAGE_MODEL,
+        // 공급자가 자기 이름을 말했으면 그것을 적는다. 말하지 않았으면 지금까지의
+        // 상수다 — OpenAI는 응답에 모델 이름을 담지 않으므로 언제나 이쪽이다.
+        model: result.model ?? IMAGE_MODEL,
         quality: IMAGE_QUALITY,
         requestedSize: size,
         ...(result.requestId === undefined ? {} : { requestId: result.requestId }),

@@ -25,6 +25,19 @@ import {
   IMAGE_QUALITY,
   type ImageGenerationErrorCode,
 } from '../domain/imageGeneration.js'
+import {
+  ImageProviderError,
+  safeProviderDetail,
+  type ImageProviderRequest,
+  type ImageProviderResult,
+} from '../domain/imageProvider.js'
+
+/**
+ * 실패와 그 손질은 공급자 공통이라 `domain/imageProvider.ts`로 옮겼다. 부르는
+ * 쪽이 달라지지 않도록 여기서 같은 이름으로 다시 내보낸다 — `instanceof`가
+ * 가리키는 클래스도 하나 그대로다.
+ */
+export { ImageProviderError, safeProviderDetail }
 
 const OPENAI_IMAGE_EDITS_URL = 'https://api.openai.com/v1/images/edits'
 /**
@@ -37,102 +50,21 @@ const OPENAI_IMAGE_EDITS_URL = 'https://api.openai.com/v1/images/edits'
  */
 const OPENAI_IMAGE_GENERATIONS_URL = 'https://api.openai.com/v1/images/generations'
 
-export interface OpenAiInputImage {
-  fileName: string
-  blob: Blob
-}
-
-export interface OpenAiImageRequest {
-  apiKey: string
-  prompt: string
-  /** `가로x세로` — `resolveGptImageSize`가 만든 값. */
-  size: string
-  images: readonly OpenAiInputImage[]
-  /**
-   * 배경을 투명하게 받을 것인가 (한방 생성 Patch 2).
-   *
-   * 값이 없으면 아무것도 보내지 않는다 — 지금까지의 요청 바이트가 한 글자도
-   * 달라지지 않도록. `png` 출력에서만 뜻이 있고, 우리는 언제나 `png`다.
-   */
-  background?: 'transparent'
-}
-
-export interface OpenAiImageResult {
-  b64: string
-  mimeType: string
-  requestId?: string
-  /** 공급자가 준 사용량 그대로. 비용을 여기서 계산하지 않는다. */
-  usage?: unknown
-}
-
 /**
- * 실패 하나. **공급자가 보낸 문장은 담지 않는다** — 그 안에 키가 그대로 들어
- * 있는 경우가 있고, 한 번 객체에 담기면 로그·화면·오류 보고 어디로든 새어 나간다.
- * 남기는 것은 우리가 분류한 코드와, 조사에 쓸 요청 id뿐이다.
+ * 이 파일의 요청·응답 모양은 이제 공급자 공통 계약 그대로다 (로컬 provider 1차).
+ *
+ * 이름을 남겨 두는 것은 부르는 쪽을 고치지 않기 위해서다. 모양이 하나여야
+ * `handleGenerateImage`가 어느 공급자를 받든 같은 코드로 지나간다.
+ *
+ * `intent`는 여기 실려 오지만 **OpenAI 요청에는 실리지 않는다** — 아래에서 폼에
+ * 넣는 이름이 정해져 있고 거기 없다. 지금까지의 요청 바이트가 한 글자도 달라지지
+ * 않는다는 뜻이다.
+ *
+ * 그림 한 장의 모양(`ImageProviderInput`)은 이름을 남기지 않았다. 부르는 곳이
+ * 없는 이름을 남겨 두면 다음 사람이 둘 중 어느 쪽을 써야 하는지 묻게 된다.
  */
-export class ImageProviderError extends Error {
-  readonly code: ImageGenerationErrorCode
-  readonly status: number
-  readonly requestId?: string
-  /**
-   * 공급자가 붙인 분류값 (`error.code` / `error.type`) 그대로 — **짧은 이름뿐**.
-   *
-   * 문장은 여전히 담지 않는다. 담지 않는 이유는 그 안에 키가 섞여 나온 적이
-   * 있어서이고, 그 위험은 이름표에는 없다. 이것이 없으면 400을 받았을 때
-   * 무엇이 잘못됐는지 알 길이 아예 없다 — 우리 분류는 모든 400을 한 칸에 넣는다.
-   */
-  readonly providerCode?: string
-  readonly providerType?: string
-  /** 어느 요청 항목이 문제였는가 (`error.param`). 값이 아니라 **이름**이다. */
-  readonly providerParam?: string
-  /** 남겨도 되는 만큼만 손질한 설명 — `safeProviderDetail`을 지난 문자열. */
-  readonly providerDetail?: string
-
-  constructor(
-    code: ImageGenerationErrorCode,
-    status: number,
-    requestId?: string,
-    provider?: { code?: string; type?: string; param?: string; detail?: string },
-  ) {
-    super(`image provider failed: ${code}`)
-    this.name = 'ImageProviderError'
-    this.code = code
-    this.status = status
-    if (requestId !== undefined) this.requestId = requestId
-    if (provider?.code !== undefined) this.providerCode = provider.code
-    if (provider?.type !== undefined) this.providerType = provider.type
-    if (provider?.param !== undefined) this.providerParam = provider.param
-    if (provider?.detail !== undefined) this.providerDetail = provider.detail
-  }
-}
-
-/**
- * 공급자 설명 중 **남겨도 되는 만큼**.
- *
- * 원문을 그대로 담지 않는 규칙은 그대로다 — 그 안에 키가 실려 온 적이 있기
- * 때문이다. 그렇다고 통째로 버리면 `invalid_value`가 어느 값을 가리키는지 알
- * 길이 없어, 다음 실제 생성에서도 같은 자리에 서게 된다.
- *
- * 그래서 지우고 남긴다.
- *
- *  - 키 모양(`sk-…`, `Bearer …`)은 통째로
- *  - 40자 넘게 이어지는 토큰은 무엇이든 (키든 base64든)
- *  - 따옴표 안이 40자 넘으면 — 우리가 보낸 글이 되돌아온 것이다
- *  - 첫 줄만, 200자까지
- *
- * 남는 것은 `Invalid value: 'transparent'. Supported values are: …` 같은 짧은
- * 문장이다. 키도, 프롬프트도, 이미지도 여기 남지 않는다.
- */
-export function safeProviderDetail(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined
-  const redacted = (value.split('\n')[0] ?? '')
-    .replace(/\b(?:sk|rk|org|proj)[-_][A-Za-z0-9_-]{6,}/gi, '[redacted]')
-    .replace(/\bBearer\s+\S+/gi, '[redacted]')
-    .replace(/[A-Za-z0-9+/=_-]{40,}/g, '[redacted]')
-    .replace(/(['"])[^'"]{40,}?\1/g, '$1[redacted]$1')
-    .trim()
-  return redacted.length === 0 ? undefined : redacted.slice(0, 200)
-}
+export type OpenAiImageRequest = ImageProviderRequest
+export type OpenAiImageResult = ImageProviderResult
 
 /** 공급자의 상태 코드와 오류 코드를 우리 분류로 옮긴다. */
 export function classifyProviderError(status: number, providerCode: unknown): ImageGenerationErrorCode {
