@@ -26,6 +26,7 @@ import {
 } from '../domain/imageProvider'
 import { USAGE_KINDS } from '../domain/imageUsage'
 import { API_KEY_HEADER, FIELD_INTENT, IMAGE_MODEL } from '../domain/imageGeneration'
+import { ACCESS_CODE_HEADER, encodeAccessCode } from '../domain/serverAccess'
 import {
   classifyLocalStatus,
   createLocalImageClient,
@@ -37,7 +38,7 @@ import {
   LOCAL_FIELD_SIZE,
 } from '../services/localImageClient'
 import { readProviderSetting, resolveImageProvider } from '../services/imageProviderSelect'
-import { readServerEnv } from '../services/serverAccess'
+import { accessModeOf, readServerEnv } from '../services/serverAccess'
 import { requestOpenAiImage } from '../services/openAiImageClient'
 import { handleGenerateImage } from '../services/generateImageHandler'
 
@@ -405,5 +406,121 @@ describe('§L7 OpenAI로 나가는 요청은 그대로다', () => {
     const sent = JSON.parse(calls[0]!.init.body as string) as Record<string, unknown>
     expect(sent).not.toHaveProperty('intent')
     expect(sent.model).toBe(IMAGE_MODEL)
+  })
+})
+
+// ── §L8 운영 배포 그대로 — 암구호 뒤에서 공급자만 바뀐다 ───────────────────
+
+/**
+ * 여기서 확인하는 것이 이 작업의 요점이다.
+ *
+ * **접근 인증과 공급자 자격은 다른 것이다.** 팀원이 우측 API 버튼으로 넣는
+ * 암구호는 "이 사람이 PLANMAKER의 AI 기능을 써도 되는가"이고, OpenAI 키와
+ * `LOCAL_IMAGE_API_KEY`는 각 공급자가 자기 문을 여는 값이다. 셋을 한 칸에 두면
+ * 공급자를 바꿀 때마다 로그인 방식이 함께 흔들린다.
+ *
+ * 그래서 `serverAccess.ts`는 한 줄도 고치지 않았다. 운영 배포는
+ * `OPENAI_API_KEY`와 `PLANMAKER_ACCESS_CODE`를 그대로 쥐고 있고 — 그 키는 지시
+ * 다듬기가 계속 쓴다 — 화면은 지금까지처럼 암구호를 묻는다. 달라지는 것은
+ * 암구호를 통과한 **뒤**, 이미지 한 장이 어느 주소로 나가는가 하나뿐이다.
+ */
+describe('§L8 접속 암구호는 그대로, 그 뒤에서 공급자만 바뀐다', () => {
+  const SERVER_OPENAI_KEY = 'sk-server-openai-0000000000'
+  const ACCESS_CODE = 'planmaker-2026'
+  const LOCAL_KEY = 'local-adapter-secret-1'
+
+  /** 운영 배포에 로컬 공급자만 얹은 환경. 기존 두 값은 그대로 있다. */
+  const localEnv = () =>
+    readServerEnv({
+      OPENAI_API_KEY: SERVER_OPENAI_KEY,
+      PLANMAKER_ACCESS_CODE: ACCESS_CODE,
+      IMAGE_PROVIDER: 'local',
+      LOCAL_IMAGE_API_URL: LOCAL_URL,
+      LOCAL_IMAGE_API_KEY: LOCAL_KEY,
+    })
+
+  /** 암구호만 싣는다 — 작업자는 OpenAI 키를 갖고 있지 않다. */
+  function codeOnlyRequest(code: string): Request {
+    const form = new FormData()
+    form.set('prompt', '배경 한 장')
+    form.set('size', '832x992')
+    form.set(FIELD_INTENT, 'plate')
+    return new Request('https://planmaker.local/api/generate-image', {
+      method: 'POST',
+      headers: { [ACCESS_CODE_HEADER]: encodeAccessCode(code) },
+      body: form,
+    })
+  }
+
+  it('화면은 여전히 암구호를 묻는다 — 공급자가 바뀌어도 갈래는 server-key다', () => {
+    // 우측 API 버튼이 키 입력칸이 아니라 암구호 칸을 띄우는 근거가 이 값이다.
+    expect(accessModeOf(localEnv())).toBe('server-key')
+  })
+
+  it('C. 올바른 암구호면 OpenAI 키 없이 로컬로 나간다', async () => {
+    const env = localEnv()
+    const { calls, stub } = recorder(() =>
+      jsonReply({ b64: 'AAAA', mimeType: 'image/png', model: 'qwen-image-edit-2511' }),
+    )
+    const response = await handleGenerateImage(codeOnlyRequest(ACCESS_CODE), {
+      env,
+      requestImage: resolveImageProvider(env)!,
+      fetch: stub,
+    })
+
+    expect(response.status).toBe(200)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.url).toBe(LOCAL_URL)
+    // 갈래 힌트도 그대로 실려 간다.
+    expect((calls[0]!.init.body as FormData).get(LOCAL_FIELD_INTENT)).toBe('plate')
+    // 로컬이 말한 이름이 화면까지 간다 — gpt-image-2라고 적히지 않는다.
+    expect(((await response.json()) as { metadata: { model: string } }).metadata.model).toBe(
+      'qwen-image-edit-2511',
+    )
+  })
+
+  it('D. 암구호가 틀리거나 없으면 공급자까지 가지 않는다', async () => {
+    const missing = new Request('https://planmaker.local/api/generate-image', {
+      method: 'POST',
+      body: new FormData(),
+    })
+    for (const request of [codeOnlyRequest('틀린암구호'), missing]) {
+      const env = localEnv()
+      const { calls, stub } = recorder(() => jsonReply({ b64: 'AAAA', mimeType: 'image/png' }))
+      const response = await handleGenerateImage(request, {
+        env,
+        requestImage: resolveImageProvider(env)!,
+        fetch: stub,
+      })
+      expect(response.status).toBe(401)
+      expect(((await response.json()) as { error: { code: string } }).error.code).toBe('access_denied')
+      // 문을 통과하지 못한 요청은 GPU를 건드리지 않는다.
+      expect(calls).toHaveLength(0)
+    }
+  })
+
+  it('E. adapter 인증은 LOCAL_IMAGE_API_KEY 하나뿐 — 서버 OpenAI 키는 나가지 않는다', async () => {
+    const env = localEnv()
+    const { calls, stub } = recorder(() => jsonReply({ b64: 'AAAA', mimeType: 'image/png' }))
+    const response = await handleGenerateImage(codeOnlyRequest(ACCESS_CODE), {
+      env,
+      requestImage: resolveImageProvider(env)!,
+      fetch: stub,
+    })
+    expect(response.status).toBe(200)
+
+    const sent = calls[0]!
+    expect((sent.init.headers as Record<string, string>).Authorization).toBe(`Bearer ${LOCAL_KEY}`)
+    // 서버가 쥔 OpenAI 키는 헤더에도 폼에도 없다.
+    expect(JSON.stringify(sent.init.headers)).not.toContain(SERVER_OPENAI_KEY)
+    const form = sent.init.body as FormData
+    for (const key of form.keys()) {
+      expect(String(form.get(key))).not.toContain(SERVER_OPENAI_KEY)
+    }
+    // 브라우저로 돌아가는 응답에도 두 비밀 어느 쪽도 실리지 않는다.
+    const shown = JSON.stringify(await response.json())
+    expect(shown).not.toContain(SERVER_OPENAI_KEY)
+    expect(shown).not.toContain(LOCAL_KEY)
+    expect(shown).not.toContain(ACCESS_CODE)
   })
 })
