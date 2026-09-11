@@ -37,9 +37,24 @@ export const FIELD_IMAGES = 'images[]'
  * 지금까지처럼 불투명이다 — 기존 요청은 이 필드를 보내지 않으므로 그대로다.
  */
 export const FIELD_BACKGROUND = 'background'
+/**
+ * 이 요청이 어느 겹인가 (로컬 provider 1차).
+ *
+ * 브라우저는 이미 알고 있다 — 장부에 적는 그 갈래(`UsageKind`)가 그대로 실린다.
+ * 값은 힌트일 뿐이라 없어도 요청은 성립하고, **OpenAI 경로는 이 값을 읽지 않는다.**
+ * 로컬 공급자가 배경용·문구용 설정을 스스로 고를 수 있게 하려고 둔 한 칸이다.
+ */
+export const FIELD_INTENT = 'intent'
 
 export interface ImageGenerationMetadata {
-  model: typeof IMAGE_MODEL
+  /**
+   * 이 그림을 실제로 만든 모델 (로컬 provider 1차).
+   *
+   * 예전에는 `gpt-image-2` 한 값으로 굳어 있었다. 공급자가 갈리면서 그 값이
+   * 거짓이 될 수 있어 문자열로 넓힌다 — 화면(`ResultCompare`)이 이 값을 그대로
+   * 보여 주므로, 굳혀 두면 로컬로 만든 그림에 OpenAI 이름이 붙는다.
+   */
+  model: string
   quality: typeof IMAGE_QUALITY
   /** 모델에게 요청한 크기 — 두 변이 16의 배수라 840이 될 수 없다. */
   requestedSize: string

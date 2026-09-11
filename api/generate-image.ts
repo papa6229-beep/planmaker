@@ -18,6 +18,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { handleGenerateImage } from '../src/services/generateImageHandler.js'
+import { resolveImageProvider } from '../src/services/imageProviderSelect.js'
 import { readServerEnv } from '../src/services/serverAccess.js'
 
 /**
@@ -58,9 +59,15 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const chunks: Buffer[] = []
   for await (const chunk of req) chunks.push(chunk as Buffer)
 
+  // 환경을 읽는 곳은 여기 한 줄뿐이다 (서버 키 Patch).
+  const env = readServerEnv(process.env)
+  // 어느 공급자로 나갈 것인가 (로컬 provider 1차). `undefined`면 지금까지의
+  // OpenAI 경로 그대로다 — 아래 handler가 `?? requestOpenAiImage`로 받는다.
+  const provider = resolveImageProvider(env)
+
   const response = await handleGenerateImage(toRequest(req, Buffer.concat(chunks)), {
-    // 환경을 읽는 곳은 여기 한 줄뿐이다 (서버 키 Patch).
-    env: readServerEnv(process.env),
+    env,
+    ...(provider === undefined ? {} : { requestImage: provider }),
     log: (entry) => {
       // 키도, 공급자 원문도 없다. 조사에 필요한 것만.
       console.error('[generate-image]', JSON.stringify(entry))
