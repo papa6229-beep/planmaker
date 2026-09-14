@@ -1,0 +1,26 @@
+# PLANMAKER self-host — systemd 서비스 예시.
+# 서버에서 /etc/systemd/system/planmaker.service 로 복사한 뒤 경로와 사용자를 맞춘다.
+#
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now planmaker
+#   journalctl -u planmaker -f
+#
+# node 경로가 다르면(nvm 등) `which node` 결과로 ExecStart를 바꾼다.
+
+[Unit]
+Description=PLANMAKER (self-hosted Studio + API)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=planmaker
+WorkingDirectory=/opt/planmaker
+# 값이 채워진 설정 파일. 저장소 밖에 둔다 (chmod 600).
+EnvironmentFile=/etc/planmaker/planmaker.env
+ExecStart=/usr/bin/node selfhost/server.mjs
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

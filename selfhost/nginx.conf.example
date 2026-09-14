@@ -1,0 +1,32 @@
+# PLANMAKER self-host — (선택) selfhost/server.mjs 앞에 nginx를 둘 때의 설정 예시.
+# http 전용이다.
+#
+# 대기시간을 일부러 길게 둔다. 이미지 한 장이 몇 분씩 걸리는데, nginx 기본값
+# (proxy_read_timeout 60초)이면 그림이 오기 전에 요청이 끊긴다.
+#
+# 순서를 지킨다: LOCAL_IMAGE_TIMEOUT_MS(예: 15분) < nginx 대기시간(20분).
+# 그래야 "생성이 너무 오래 걸렸다"는 판단을 nginx가 아니라 PLANMAKER가 내리고,
+# 화면에 원인이 남는다.
+
+server {
+    listen 80;
+    server_name _;
+
+    # 참고 이미지가 요청 본문에 실린다. nginx 기본값은 1MB라 그대로면 413으로 막힌다.
+    client_max_body_size 50m;
+    client_body_timeout 600s;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Connection "";
+
+        proxy_connect_timeout 60s;
+        # 최소 10분 이상. 여기서는 20분.
+        proxy_send_timeout 1200s;
+        proxy_read_timeout 1200s;
+        send_timeout 1200s;
+    }
+}
