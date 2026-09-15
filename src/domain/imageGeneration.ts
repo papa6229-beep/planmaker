@@ -46,6 +46,16 @@ export const FIELD_BACKGROUND = 'background'
  */
 export const FIELD_INTENT = 'intent'
 
+/**
+ * 작업자가 쓴 말 그대로와, 그 말과 함께 볼 레퍼런스 그림 한 장 (직접 전달 Patch).
+ *
+ * 첫 생성의 배경 요청에만 실린다. 로컬 공급자는 이 둘이 다 있으면 긴 주문 대신
+ * **이 말과 이 그림만** 보낸다 — 번역도 덧붙이는 규칙도 없이. OpenAI 경로는 이
+ * 두 칸을 읽지 않는다.
+ */
+export const FIELD_NOTE = 'note'
+export const FIELD_REFERENCE = 'reference'
+
 export interface ImageGenerationMetadata {
   /**
    * 이 그림을 실제로 만든 모델 (로컬 provider 1차).

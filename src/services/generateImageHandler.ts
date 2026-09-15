@@ -21,7 +21,9 @@ import {
   FIELD_BACKGROUND,
   FIELD_IMAGES,
   FIELD_INTENT,
+  FIELD_NOTE,
   FIELD_PROMPT,
+  FIELD_REFERENCE,
   FIELD_SIZE,
   IMAGE_MODEL,
   IMAGE_QUALITY,
@@ -110,6 +112,14 @@ export async function handleGenerateImage(request: Request, deps: HandlerDeps = 
   // 힌트 하나. 아는 값이 아니면 없는 것으로 본다 — 이 값 때문에 생성이 막히는
   // 일은 없어야 한다. OpenAI 경로는 이 값을 읽지 않는다.
   const intent = readImageIntent(form.get(FIELD_INTENT))
+  // 작업자의 말과 레퍼런스 한 장. **둘 다 있을 때만** 넘긴다 — 하나만 있으면
+  // 지금까지의 요청 그대로 간다.
+  const note = form.get(FIELD_NOTE)
+  const reference = form.get(FIELD_REFERENCE)
+  const direct =
+    typeof note === 'string' && note.trim().length > 0 && reference !== null && typeof reference !== 'string'
+      ? { note: note.trim(), reference: { fileName: reference.name, blob: reference } }
+      : undefined
 
   const send = deps.requestImage ?? requestOpenAiImage
   try {
@@ -121,6 +131,7 @@ export async function handleGenerateImage(request: Request, deps: HandlerDeps = 
         images: images.map((file) => ({ fileName: file.name, blob: file })),
         ...(transparent ? { background: 'transparent' as const } : {}),
         ...(intent === undefined ? {} : { intent }),
+        ...(direct === undefined ? {} : { direct }),
       },
       deps.fetch === undefined ? {} : { fetch: deps.fetch },
     )

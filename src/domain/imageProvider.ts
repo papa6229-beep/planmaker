@@ -70,6 +70,13 @@ export interface ImageProviderRequest {
   background?: 'transparent'
   /** 이 요청이 어느 겹인가. 없어도 요청은 성립한다. */
   intent?: ImageIntent
+  /**
+   * 작업자가 쓴 말 그대로 + 레퍼런스 그림 한 장 (직접 전달 Patch).
+   *
+   * 둘 다 있을 때만 생긴다. 로컬 provider는 이것이 있으면 `prompt`와 `images`
+   * 대신 이것만 보낸다. OpenAI provider는 읽지 않는다.
+   */
+  direct?: { note: string; reference: ImageProviderInput }
 }
 
 export interface ImageProviderResult {

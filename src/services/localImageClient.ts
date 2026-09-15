@@ -115,15 +115,21 @@ export function createLocalImageClient(config: LocalImageConfig): ImageProvider 
   return async (request, deps = {}): Promise<ImageProviderResult> => {
     const doFetch = deps.fetch ?? fetch
 
+    // 작업자의 말과 레퍼런스가 함께 왔으면 **그것만** 보낸다 (직접 전달 Patch).
+    // 브라우저가 지은 긴 주문도, 번역도, 덧붙이는 규칙도 없다 — 모델이 작업자의
+    // 말을 알아듣는지부터 본다.
+    const prompt = request.direct?.note ?? request.prompt
+    const images = request.direct === undefined ? request.images : [request.direct.reference]
+
     const form = new FormData()
-    form.set(LOCAL_FIELD_PROMPT, request.prompt)
+    form.set(LOCAL_FIELD_PROMPT, prompt)
     form.set(LOCAL_FIELD_SIZE, request.size)
     if (request.intent !== undefined) form.set(LOCAL_FIELD_INTENT, request.intent)
     if (config.model !== undefined && config.model.length > 0) form.set(LOCAL_FIELD_MODEL, config.model)
     if (request.background === 'transparent') form.set(LOCAL_FIELD_BACKGROUND, 'transparent')
     // 파일명을 그대로 옮긴다. 이름이 곧 역할이라, 어느 장이 스타일 레퍼런스이고
     // 어느 장이 고칠 조각인지 엔진 쪽이 알아볼 수 있는 유일한 단서다.
-    for (const image of request.images) {
+    for (const image of images) {
       form.append(LOCAL_FIELD_IMAGES, new File([image.blob], image.fileName, { type: image.blob.type || 'image/png' }))
     }
 

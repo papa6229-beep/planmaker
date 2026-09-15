@@ -96,7 +96,9 @@ import {
   httpFailureCode,
   FIELD_IMAGES,
   FIELD_INTENT,
+  FIELD_NOTE,
   FIELD_PROMPT,
+  FIELD_REFERENCE,
   FIELD_SIZE,
   GENERATE_IMAGE_PATH,
   IMAGE_CALLS_PER_CLICK,
@@ -1365,6 +1367,11 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       prompt: string,
       /** 이 요청만의 판 크기. 없으면 계획의 페이지 규격 그대로다. */
       sizeOverride?: string,
+      /**
+       * 작업자가 쓴 말 그대로와 레퍼런스 한 장 (직접 전달 Patch). 첫 생성의 배경
+       * 요청에만 붙는다. 서버가 로컬 공급자일 때만 이것을 쓴다.
+       */
+      direct?: { note: string; referenceAssetId: string },
     ): Promise<
       { blob: Blob; mimeType: string; requestedSize: string; model?: string; requestId?: string } | { code?: string }
     > => {
@@ -1379,6 +1386,14 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       // model.` 대신 단색 위에 글자를 받아 브라우저가 그 단색을 걷어 낸다.
       for (const file of await collectImages(plan, inputs)) {
         form.append(FIELD_IMAGES, new File([file.blob], file.fileName, { type: file.blob.type || 'image/png' }))
+      }
+      if (direct !== undefined) {
+        const reference = await getAsset(direct.referenceAssetId)
+        if (reference !== undefined) {
+          const blob = await shrinkReference(reference.blob)
+          form.set(FIELD_NOTE, direct.note)
+          form.set(FIELD_REFERENCE, new File([blob], 'style-reference.png', { type: blob.type || 'image/png' }))
+        }
       }
 
       // 자격은 이 요청의 헤더에만 실린다 — 주소에도, 본문에도 없다.
@@ -1677,7 +1692,21 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           return
         }
 
-        const first = await requestLayer(plan, auth, 'plate', plan.inputs, await platePrompt(plan))
+        // 작업자의 말과 레퍼런스를 따로 실어 둔다 (직접 전달 Patch). 빈 페이지도
+        // 마찬가지다 — 그 길은 지금까지 레퍼런스를 아예 보내지 않았다.
+        const directNote = getDocument().project.aiNote?.trim() ?? ''
+        const directRef = studio?.styleReferenceOf(plan.pageId)
+        const first = await requestLayer(
+          plan,
+          auth,
+          'plate',
+          plan.inputs,
+          await platePrompt(plan),
+          undefined,
+          directNote.length > 0 && directRef !== undefined
+            ? { note: directNote, referenceAssetId: directRef }
+            : undefined,
+        )
         if (!('blob' in first)) {
           setState({ kind: 'failed', message: errorTextFor(first.code) })
           return
