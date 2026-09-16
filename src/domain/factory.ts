@@ -18,16 +18,36 @@ import {
 let idCounter = 0
 
 /**
- * Generates a locally-unique id. Uses `crypto.randomUUID` when available and
- * falls back to a deterministic counter (e.g. in older environments / SSR).
+ * 어디서도 겹치지 않는 id 한 개 (id 충돌 Patch, 2026-09-16).
+ *
+ * 앞선 판은 `crypto.randomUUID`가 없으면 **모듈 안의 카운터**로 떨어졌다.
+ * `randomUUID`는 보안 컨텍스트(HTTPS 또는 localhost)에서만 존재하는데, 회사 서버
+ * 배포 주소는 `http://192.168.0.128:3000` — 평문 HTTP라 보안 컨텍스트가 아니다.
+ * 그래서 이 배포에서는 **언제나** 카운터였고, 카운터는 새로고침마다 0부터 다시
+ * 셌다. 그 결과 새로고침 뒤 처음 만든 자산이 `asset_1`을 다시 받아 **작업자가
+ * 올린 스타일 레퍼런스의 내용을 덮어썼다** — 화면의 레퍼런스 그림이 방금 만든
+ * 결과물로 바뀌고, 그 다음 생성부터는 AI가 자기 결과를 보고 다시 그렸다.
+ * Vercel(HTTPS)에서는 `randomUUID`가 살아 있어 드러나지 않던 버그다.
+ *
+ * `crypto.getRandomValues`는 보안 컨텍스트를 요구하지 않는다. 그것을 먼저 쓰고,
+ * 그마저 없을 때만 시각과 난수를 섞는다. 어느 쪽이든 **새로고침을 넘어 이어지는
+ * 값**이어야 한다는 것이 이 함수의 조건이다.
  */
 export function createId(prefix = 'blk'): string {
   const globalCrypto = (globalThis as { crypto?: Crypto }).crypto
   if (globalCrypto?.randomUUID) {
     return `${prefix}_${globalCrypto.randomUUID()}`
   }
+  if (globalCrypto?.getRandomValues) {
+    const bytes = globalCrypto.getRandomValues(new Uint8Array(16))
+    let hex = ''
+    for (const byte of bytes) hex += byte.toString(16).padStart(2, '0')
+    return `${prefix}_${hex}`
+  }
+  // 저장소도 난수도 없는 환경(구형 SSR 등). 시각을 섞어 적어도 실행끼리는 겹치지
+  // 않게 한다. 카운터만 쓰던 예전 값이 여기로 돌아오지 않도록 접두사를 붙인다.
   idCounter += 1
-  return `${prefix}_${idCounter.toString(36)}`
+  return `${prefix}_${Date.now().toString(36)}${idCounter.toString(36)}${Math.random().toString(36).slice(2, 10)}`
 }
 
 export interface CreateBlockOptions {
