@@ -1393,6 +1393,95 @@ describe('§13 고른 오브젝트만 톤 조절', () => {
   })
 })
 
+// ── §13-b 완성 후 그림자 ────────────────────────────────────────────────────
+//
+// 그림자는 AI가 그린 것이 아니라 합칠 때마다 브라우저가 그리는 것이다. 그런데
+// 조절 자리는 생성 **전** 화면에만 있었다 — 알맞은 그림자는 완성된 배경 위에서라야
+// 보이는데 정작 그때는 만질 수가 없었다. 톤과 같은 칸에서 같이 조절한다.
+
+describe('§13-b 고른 오브젝트의 그림자', () => {
+  it('완성 뒤에 세기를 바꾸면 다시 합쳐지고, 외부 호출은 없다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    const boxes = await waitFor(() => {
+      const found = container.querySelectorAll<HTMLElement>('.result-object')
+      expect(found.length).toBe(6)
+      return found
+    }, { timeout: 5000 })
+
+    await openFold(/결과 톤 조절/)
+    // 아무것도 고르지 않았으면 그림자 슬라이더도 없다 — 무엇에 걸리는지 화면이
+    // 말하지 못하는 슬라이더는 두지 않는다.
+    expect(screen.queryByLabelText(/접지 그림자 세기/)).toBeNull()
+
+    const calls = fetchSpy.mock.calls.length
+    const photo = Array.from(boxes).find((b) => labelOf(b) === '이미지 blk_photo')!
+    fireEvent.pointerDown(photo, { button: 0, clientX: 5, clientY: 5 })
+    await waitFor(() => expect(photo.getAttribute('aria-pressed')).toBe('true'), { timeout: 5000 })
+    fireEvent.pointerUp(window)
+
+    const contact = await screen.findByLabelText(/접지 그림자 세기/)
+    fireEvent.change(contact, { target: { value: '20' } })
+    fireEvent.pointerUp(contact)
+
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect(job?.effects?.blk_photo?.contactShadow).toBeCloseTo(0.2, 5)
+    }, { timeout: 5000 })
+
+    // 바뀐 값이 실제로 그리는 계획까지 간다.
+    await waitFor(async () => {
+      await loadStudioJob(STUDIO_JOB_ID)
+      const plan = composed.mock.calls.at(-1)![0] as {
+        layers: { blockId: string; effects: { contactShadow: number } }[]
+      }
+      const mine = plan.layers.find((l) => l.blockId === 'blk_photo')
+      expect(mine?.effects.contactShadow).toBeCloseTo(0.2, 5)
+    }, { timeout: 5000 })
+
+    // 그림자를 만지는 데 외부로 나간 요청은 없다.
+    expect(fetchSpy.mock.calls.length).toBe(calls)
+  })
+
+  it('그림자를 끄면 세기 슬라이더가 사라지고, 맞춰 둔 값은 남는다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    const boxes = await waitFor(() => {
+      const found = container.querySelectorAll<HTMLElement>('.result-object')
+      expect(found.length).toBe(6)
+      return found
+    }, { timeout: 5000 })
+
+    await openFold(/결과 톤 조절/)
+    const photo = Array.from(boxes).find((b) => labelOf(b) === '이미지 blk_photo')!
+    fireEvent.pointerDown(photo, { button: 0, clientX: 5, clientY: 5 })
+    await waitFor(() => expect(photo.getAttribute('aria-pressed')).toBe('true'), { timeout: 5000 })
+    fireEvent.pointerUp(window)
+
+    const contact = await screen.findByLabelText(/접지 그림자 세기/)
+    fireEvent.change(contact, { target: { value: '15' } })
+    fireEvent.pointerUp(contact)
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect(job?.effects?.blk_photo?.contactShadow).toBeCloseTo(0.15, 5)
+    }, { timeout: 5000 })
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: /그림자$/ }))
+
+    // 슬라이더는 사라지지만 값은 지워지지 않는다 — 다시 켜면 그대로 돌아온다.
+    await waitFor(() => expect(screen.queryByLabelText(/접지 그림자 세기/)).toBeNull(), { timeout: 5000 })
+    const job = await loadStudioJob(STUDIO_JOB_ID)
+    expect(job?.effects?.blk_photo?.shadow).toBe(false)
+    expect(job?.effects?.blk_photo?.contactShadow).toBeCloseTo(0.15, 5)
+  })
+})
+
 // ── §14 결과 화면의 실행 취소 ───────────────────────────────────────────────
 
 describe('§14 결과를 되돌린다', () => {
