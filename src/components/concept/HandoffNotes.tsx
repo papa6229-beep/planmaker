@@ -96,12 +96,20 @@ export function AiNoteField() {
     <>
       <section className="concept">
         <label className="concept__title" htmlFor="ai-note-input">AI에게 추가로 전달할 말</label>
-        <p className="concept__hint">현재 작업에서 AI가 추가로 지켜야 할 내용을 적어 주세요.</p>
+        {/*
+          "조금 더 어둡게"처럼 **정도**를 적으면 AI가 그 정도를 버리고 끝까지 간다
+          (2026-09-16: 밤이 됐다). 도달할 **상태**를 적으면 정확히 그만큼 간다.
+          그 차이를 안내 문구와 예시로 알려 준다 — 작업자가 처음 쓰는 자리가 여기다.
+        */}
+        <p className="concept__hint">
+          현재 작업에서 AI가 추가로 지켜야 할 내용을 적어 주세요. <strong>어떻게 되기를 바라는지</strong>를
+          적으면 잘 알아듣습니다 — &ldquo;조금 어둡게&rdquo;보다 &ldquo;늦은 오후 빛으로&rdquo;처럼요.
+        </p>
         <textarea
           id="ai-note-input"
           className="concept__input"
           rows={3}
-          placeholder="예: 하단에는 그라데이션을 꼭 넣어 주세요 / 메인 문구의 대비를 강하게 해 주세요"
+          placeholder="예: 인물과 그림자를 지우고 나머지는 그대로 둬 / 늦은 오후 빛으로 바꿔 줘 / 하단에는 그라데이션을 꼭 넣어 주세요"
           value={aiNote}
           onChange={(e) => setAiNote(e.target.value)}
         />
