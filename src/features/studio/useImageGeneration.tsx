@@ -99,6 +99,7 @@ import {
   FIELD_NOTE,
   FIELD_PROMPT,
   FIELD_REFERENCE,
+  FIELD_REFERENCE_MODE,
   FIELD_SIZE,
   GENERATE_IMAGE_PATH,
   IMAGE_CALLS_PER_CLICK,
@@ -107,6 +108,7 @@ import {
   type GeneratedPageResult,
   type ImageRevision,
 } from '../../domain/imageGeneration'
+import type { ReferenceMode } from '../../domain/imageProvider'
 import { deleteAsset, getAllAssets, getAsset, putAsset } from '../../services/assetStore'
 import { sizeLabel, toWorkingImage, workingImageTarget, type WorkingImageTarget } from '../../services/workingImage'
 import { renderPreviewPng } from '../../services/previewRenderer'
@@ -1371,7 +1373,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
        * 작업자가 쓴 말 그대로와 레퍼런스 한 장 (직접 전달 Patch). 첫 생성의 배경
        * 요청에만 붙는다. 서버가 로컬 공급자일 때만 이것을 쓴다.
        */
-      direct?: { note: string; referenceAssetId: string },
+      direct?: { note: string; referenceAssetId: string; mode?: ReferenceMode },
     ): Promise<
       { blob: Blob; mimeType: string; requestedSize: string; model?: string; requestId?: string } | { code?: string }
     > => {
@@ -1393,6 +1395,11 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           const blob = await shrinkReference(reference.blob)
           form.set(FIELD_NOTE, direct.note)
           form.set(FIELD_REFERENCE, new File([blob], 'style-reference.png', { type: blob.type || 'image/png' }))
+          // 말이 비어 있을 때만 체크박스 상태를 싣는다 (레퍼런스만 Patch). 말이
+          // 있으면 그 말이 지시이고, 여기에 문장을 하나 더 얹으면 둘이 싸운다.
+          if (direct.note.length === 0 && direct.mode !== undefined) {
+            form.set(FIELD_REFERENCE_MODE, direct.mode)
+          }
         }
       }
 
@@ -1694,8 +1701,15 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
 
         // 작업자의 말과 레퍼런스를 따로 실어 둔다 (직접 전달 Patch). 빈 페이지도
         // 마찬가지다 — 그 길은 지금까지 레퍼런스를 아예 보내지 않았다.
+        //
+        // **말이 없어도 레퍼런스만 있으면 간다** (레퍼런스만 Patch). 그때는 체크박스
+        // 상태가 함께 실리고, 무슨 말로 시킬지는 엔진을 아는 쪽이 정한다.
         const directNote = getDocument().project.aiNote?.trim() ?? ''
         const directRef = studio?.styleReferenceOf(plan.pageId)
+        // 체크박스를 **직접** 읽는다. `plan.plate`를 거치면 그 칸이 없는 계획
+        // (얹을 것이 없는 빈 장 = full_ai)에서는 켜 둔 체크박스가 조용히 무시된다.
+        const directMode: ReferenceMode =
+          studio?.keepReferenceBackgroundOf(plan.pageId) === true ? 'preserve' : 'style'
         const first = await requestLayer(
           plan,
           auth,
@@ -1703,9 +1717,9 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           plan.inputs,
           await platePrompt(plan),
           undefined,
-          directNote.length > 0 && directRef !== undefined
-            ? { note: directNote, referenceAssetId: directRef }
-            : undefined,
+          directRef === undefined
+            ? undefined
+            : { note: directNote, referenceAssetId: directRef, mode: directMode },
         )
         if (!('blob' in first)) {
           setState({ kind: 'failed', message: errorTextFor(first.code) })

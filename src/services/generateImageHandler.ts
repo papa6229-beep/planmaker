@@ -24,6 +24,7 @@ import {
   FIELD_NOTE,
   FIELD_PROMPT,
   FIELD_REFERENCE,
+  FIELD_REFERENCE_MODE,
   FIELD_SIZE,
   IMAGE_MODEL,
   IMAGE_QUALITY,
@@ -32,7 +33,7 @@ import {
   type GenerateImageSuccess,
   type ImageGenerationErrorCode,
 } from '../domain/imageGeneration.js'
-import { readImageIntent, type ImageProvider } from '../domain/imageProvider.js'
+import { readImageIntent, readReferenceMode, type ImageProvider } from '../domain/imageProvider.js'
 import { ImageProviderError, requestOpenAiImage } from './openAiImageClient.js'
 import { resolveApiKey, type ServerEnv } from './serverAccess.js'
 
@@ -112,13 +113,20 @@ export async function handleGenerateImage(request: Request, deps: HandlerDeps = 
   // 힌트 하나. 아는 값이 아니면 없는 것으로 본다 — 이 값 때문에 생성이 막히는
   // 일은 없어야 한다. OpenAI 경로는 이 값을 읽지 않는다.
   const intent = readImageIntent(form.get(FIELD_INTENT))
-  // 작업자의 말과 레퍼런스 한 장. **둘 다 있을 때만** 넘긴다 — 하나만 있으면
-  // 지금까지의 요청 그대로 간다.
+  // 작업자의 말과 레퍼런스 한 장. **레퍼런스가 있으면** 넘긴다 (레퍼런스만 Patch) —
+  // 원래 PLANMAKER는 레퍼런스만 올려도 배경을 만들었고, 말이 없다고 그 길이
+  // 막히면 안 된다. 말이 비어 있을 때는 체크박스 상태가 대신 실린다.
   const note = form.get(FIELD_NOTE)
   const reference = form.get(FIELD_REFERENCE)
+  const mode = readReferenceMode(form.get(FIELD_REFERENCE_MODE))
+  const trimmedNote = typeof note === 'string' ? note.trim() : ''
   const direct =
-    typeof note === 'string' && note.trim().length > 0 && reference !== null && typeof reference !== 'string'
-      ? { note: note.trim(), reference: { fileName: reference.name, blob: reference } }
+    reference !== null && typeof reference !== 'string'
+      ? {
+          note: trimmedNote,
+          reference: { fileName: reference.name, blob: reference },
+          ...(trimmedNote.length > 0 || mode === undefined ? {} : { mode }),
+        }
       : undefined
 
   const send = deps.requestImage ?? requestOpenAiImage

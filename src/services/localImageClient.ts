@@ -53,6 +53,8 @@ export const LOCAL_FIELD_INTENT = 'intent'
 export const LOCAL_FIELD_MODEL = 'model'
 export const LOCAL_FIELD_BACKGROUND = 'background'
 export const LOCAL_FIELD_IMAGES = 'images[]'
+/** 말 없이 레퍼런스만 왔을 때 체크박스 상태를 싣는 칸 (레퍼런스만 Patch). */
+export const LOCAL_FIELD_REFERENCE_MODE = 'reference_mode'
 
 /**
  * 기다리는 시간의 기본값.
@@ -118,11 +120,18 @@ export function createLocalImageClient(config: LocalImageConfig): ImageProvider 
     // 작업자의 말과 레퍼런스가 함께 왔으면 **그것만** 보낸다 (직접 전달 Patch).
     // 브라우저가 지은 긴 주문도, 번역도, 덧붙이는 규칙도 없다 — 모델이 작업자의
     // 말을 알아듣는지부터 본다.
-    const prompt = request.direct?.note ?? request.prompt
+    // 말이 비어 있으면 프롬프트 칸도 비워서 보낸다. 빈 자리를 무엇으로 채울지는
+    // 엔진을 아는 쪽(어댑터)이 `reference_mode`를 보고 정한다 — 브라우저가 지은
+    // 긴 주문이 그 자리로 되돌아오는 일은 없다 (레퍼런스만 Patch).
+    const prompt = request.direct === undefined ? request.prompt : request.direct.note
     const images = request.direct === undefined ? request.images : [request.direct.reference]
 
     const form = new FormData()
     form.set(LOCAL_FIELD_PROMPT, prompt)
+    // 말이 있으면 그 말이 곧 지시다. 상태는 말이 없을 때만 나간다.
+    if (request.direct !== undefined && prompt.length === 0 && request.direct.mode !== undefined) {
+      form.set(LOCAL_FIELD_REFERENCE_MODE, request.direct.mode)
+    }
     form.set(LOCAL_FIELD_SIZE, request.size)
     if (request.intent !== undefined) form.set(LOCAL_FIELD_INTENT, request.intent)
     if (config.model !== undefined && config.model.length > 0) form.set(LOCAL_FIELD_MODEL, config.model)

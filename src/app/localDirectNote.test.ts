@@ -6,8 +6,19 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { API_KEY_HEADER, FIELD_INTENT, FIELD_NOTE, FIELD_REFERENCE } from '../domain/imageGeneration'
-import { createLocalImageClient, LOCAL_FIELD_IMAGES, LOCAL_FIELD_PROMPT } from '../services/localImageClient'
+import {
+  API_KEY_HEADER,
+  FIELD_INTENT,
+  FIELD_NOTE,
+  FIELD_REFERENCE,
+  FIELD_REFERENCE_MODE,
+} from '../domain/imageGeneration'
+import {
+  createLocalImageClient,
+  LOCAL_FIELD_IMAGES,
+  LOCAL_FIELD_PROMPT,
+  LOCAL_FIELD_REFERENCE_MODE,
+} from '../services/localImageClient'
 import { handleGenerateImage } from '../services/generateImageHandler'
 
 const LOCAL_URL = 'http://127.0.0.1:8801/generate'
@@ -34,7 +45,7 @@ function jsonReply(body: unknown): Response {
  * `FormData`를 Node `Request`가 multipart로 읽지 못해서다 — 여기서 보려는 것은
  * 폼을 읽은 **뒤**의 일이다.
  */
-function plateRequest(withNote: boolean, withReference: boolean): Request {
+function plateRequest(withNote: boolean, withReference: boolean, mode?: string): Request {
   const form = new FormData()
   form.set('prompt', LONG_PROMPT)
   form.set('size', '832x800')
@@ -43,6 +54,7 @@ function plateRequest(withNote: boolean, withReference: boolean): Request {
   form.append('images[]', new File(['s'], '1-style-reference.jpg', { type: 'image/png' }))
   if (withNote) form.set(FIELD_NOTE, `  ${NOTE}  `)
   if (withReference) form.set(FIELD_REFERENCE, new File(['rrrr'], 'style-reference.png', { type: 'image/png' }))
+  if (mode !== undefined) form.set(FIELD_REFERENCE_MODE, mode)
   const request = new Request('https://planmaker.local/api/generate-image', {
     method: 'POST',
     headers: { [API_KEY_HEADER]: 'sk-mine-123' },
@@ -64,22 +76,63 @@ describe('작업자의 말과 레퍼런스만 로컬로 간다', () => {
     expect(files.map((f) => [f.name, f.size])).toEqual([['style-reference.png', 4]])
   })
 
-  for (const [name, withNote, withReference] of [
-    ['말이 없으면', false, true],
-    ['레퍼런스가 없으면', true, false],
-  ] as const) {
-    it(`${name} 지금까지의 요청 그대로다`, async () => {
+  it('레퍼런스가 없으면 지금까지의 요청 그대로다', async () => {
+    const { calls, stub } = recorder(() => jsonReply({ b64: 'AAAA', mimeType: 'image/png' }))
+    const provider = createLocalImageClient({ apiUrl: LOCAL_URL, timeoutMs: 5_000 })
+    await handleGenerateImage(plateRequest(true, false), { requestImage: provider, fetch: stub })
+
+    const body = calls[0]!.init.body as FormData
+    expect(body.get(LOCAL_FIELD_PROMPT)).toBe(LONG_PROMPT)
+    expect((body.getAll(LOCAL_FIELD_IMAGES) as File[]).map((f) => [f.name, f.size])).toEqual([
+      ['1-style-reference.jpg', 1],
+    ])
+  })
+
+  // ── 레퍼런스만 Patch ─────────────────────────────────────────────────────
+  //
+  // 원래 PLANMAKER는 레퍼런스만 올려도 배경을 만들었다. 그 길을 엔진이 바뀌었다고
+  // 잃지 않는다. 다만 무슨 말로 시킬지는 여기서 정하지 않는다 — 체크박스 상태만
+  // 넘기고, 문장은 그 모델을 아는 쪽(어댑터)이 고른다.
+  describe('말 없이 레퍼런스만 올렸을 때', () => {
+    for (const mode of ['preserve', 'style'] as const) {
+      it(`${mode}: 긴 주문 대신 빈 프롬프트와 체크박스 상태가 간다`, async () => {
+        const { calls, stub } = recorder(() => jsonReply({ b64: 'AAAA', mimeType: 'image/png' }))
+        const provider = createLocalImageClient({ apiUrl: LOCAL_URL, timeoutMs: 5_000 })
+        const response = await handleGenerateImage(plateRequest(false, true, mode), {
+          requestImage: provider,
+          fetch: stub,
+        })
+
+        expect(response.status).toBe(200)
+        const body = calls[0]!.init.body as FormData
+        // 긴 주문은 나가지 않는다. 브라우저가 지은 문장이 되돌아올 자리가 없다.
+        expect(body.get(LOCAL_FIELD_PROMPT)).toBe('')
+        expect(body.get(LOCAL_FIELD_REFERENCE_MODE)).toBe(mode)
+        expect((body.getAll(LOCAL_FIELD_IMAGES) as File[]).map((f) => [f.name, f.size])).toEqual([
+          ['style-reference.png', 4],
+        ])
+      })
+    }
+
+    it('모르는 상태는 없는 것으로 본다 — 지금까지의 요청 그대로다', async () => {
       const { calls, stub } = recorder(() => jsonReply({ b64: 'AAAA', mimeType: 'image/png' }))
       const provider = createLocalImageClient({ apiUrl: LOCAL_URL, timeoutMs: 5_000 })
-      await handleGenerateImage(plateRequest(withNote, withReference), { requestImage: provider, fetch: stub })
+      await handleGenerateImage(plateRequest(false, true, '배경까지'), { requestImage: provider, fetch: stub })
 
       const body = calls[0]!.init.body as FormData
-      expect(body.get(LOCAL_FIELD_PROMPT)).toBe(LONG_PROMPT)
-      expect((body.getAll(LOCAL_FIELD_IMAGES) as File[]).map((f) => [f.name, f.size])).toEqual([
-        ['1-style-reference.jpg', 1],
-      ])
+      expect(body.has(LOCAL_FIELD_REFERENCE_MODE)).toBe(false)
     })
-  }
+  })
+
+  it('말이 있으면 상태는 실리지 않는다 — 문장 둘이 싸우지 않는다', async () => {
+    const { calls, stub } = recorder(() => jsonReply({ b64: 'AAAA', mimeType: 'image/png' }))
+    const provider = createLocalImageClient({ apiUrl: LOCAL_URL, timeoutMs: 5_000 })
+    await handleGenerateImage(plateRequest(true, true, 'preserve'), { requestImage: provider, fetch: stub })
+
+    const body = calls[0]!.init.body as FormData
+    expect(body.get(LOCAL_FIELD_PROMPT)).toBe(NOTE)
+    expect(body.has(LOCAL_FIELD_REFERENCE_MODE)).toBe(false)
+  })
 
   it('OpenAI로 나가는 요청에는 말도 레퍼런스도 섞이지 않는다', async () => {
     const { calls, stub } = recorder(() => jsonReply({ data: [{ b64_json: 'AAAA' }] }))

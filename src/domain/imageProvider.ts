@@ -36,6 +36,22 @@ export const IMAGE_INTENTS = ['plate', 'text-layer', 'edit', 'background'] as co
 export type ImageIntent = (typeof IMAGE_INTENTS)[number]
 
 /**
+ * 말 없이 레퍼런스만 왔을 때, 그 레퍼런스를 어떻게 볼 것인가.
+ *
+ * `preserve` = 배경 구성까지 그대로, `style` = 색감·질감만 가져오고 구성은 새로.
+ * PLANMAKER의 체크박스 두 상태이고, 값은 공급자에게 넘기는 **사실**이다.
+ */
+export const REFERENCE_MODES = ['preserve', 'style'] as const
+export type ReferenceMode = (typeof REFERENCE_MODES)[number]
+
+/** 폼에서 읽은 값을 아는 상태로 좁힌다. 모르는 값은 없는 것으로 본다. */
+export function readReferenceMode(value: unknown): ReferenceMode | undefined {
+  return typeof value === 'string' && (REFERENCE_MODES as readonly string[]).includes(value)
+    ? (value as ReferenceMode)
+    : undefined
+}
+
+/**
  * 폼에서 읽은 값을 아는 갈래로 좁힌다.
  *
  * 모르는 값은 조용히 버린다 — 힌트 하나가 이상하다고 생성을 막을 이유가 없고,
@@ -73,10 +89,14 @@ export interface ImageProviderRequest {
   /**
    * 작업자가 쓴 말 그대로 + 레퍼런스 그림 한 장 (직접 전달 Patch).
    *
-   * 둘 다 있을 때만 생긴다. 로컬 provider는 이것이 있으면 `prompt`와 `images`
-   * 대신 이것만 보낸다. OpenAI provider는 읽지 않는다.
+   * **레퍼런스 한 장이면 생긴다** (레퍼런스만 Patch). 로컬 provider는 이것이 있으면
+   * `prompt`와 `images` 대신 이것만 보낸다. OpenAI provider는 읽지 않는다.
+   *
+   * 말이 비어 있을 때는 `mode`가 대신 간다 — 체크박스 상태 그대로다. 원래
+   * PLANMAKER는 레퍼런스만 올려도 배경을 만들었고, 그 길이 엔진이 바뀌었다고
+   * 사라지면 안 된다. 그때 무슨 말로 시킬지는 엔진을 아는 쪽이 정한다.
    */
-  direct?: { note: string; reference: ImageProviderInput }
+  direct?: { note: string; reference: ImageProviderInput; mode?: ReferenceMode }
 }
 
 export interface ImageProviderResult {

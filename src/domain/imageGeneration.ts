@@ -55,6 +55,14 @@ export const FIELD_INTENT = 'intent'
  */
 export const FIELD_NOTE = 'note'
 export const FIELD_REFERENCE = 'reference'
+/**
+ * 작업자가 아무 말도 쓰지 않았을 때, 레퍼런스를 어떻게 볼 것인가 (레퍼런스만 Patch).
+ *
+ * "이 레퍼런스의 배경 구성까지 살리기" 체크박스 그대로다. 문장이 아니라 **상태**만
+ * 보낸다 — 어느 모델에게 무슨 말로 시킬지는 그 모델을 아는 쪽이 정한다.
+ * 작업자가 말을 썼으면 이 칸은 나가지 않는다. 그 말이 곧 지시이기 때문이다.
+ */
+export const FIELD_REFERENCE_MODE = 'referenceMode'
 
 export interface ImageGenerationMetadata {
   /**
