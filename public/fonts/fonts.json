@@ -1,0 +1,461 @@
+[
+ {
+  "file": "f01-pretendard-100.woff2",
+  "family": "Pretendard",
+  "group": "본문·다목적",
+  "weight": 100,
+  "source": "PRETENDARD-THIN.OTF",
+  "copyright": "Copyright © 2023 길형진",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f01-pretendard-200.woff2",
+  "family": "Pretendard",
+  "group": "본문·다목적",
+  "weight": 200,
+  "source": "PRETENDARD-EXTRALIGHT.OTF",
+  "copyright": "Copyright © 2023 길형진",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f01-pretendard-300.woff2",
+  "family": "Pretendard",
+  "group": "본문·다목적",
+  "weight": 300,
+  "source": "PRETENDARD-LIGHT.OTF",
+  "copyright": "Copyright © 2023 길형진",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f01-pretendard-700.woff2",
+  "family": "Pretendard",
+  "group": "본문·다목적",
+  "weight": 700,
+  "source": "PRETENDARD-BOLD.OTF",
+  "copyright": "Copyright © 2023 길형진",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f01-pretendard-500.woff2",
+  "family": "Pretendard",
+  "group": "본문·다목적",
+  "weight": 500,
+  "source": "PRETENDARD-MEDIUM.OTF",
+  "copyright": "Copyright © 2023 길형진",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f01-pretendard-600.woff2",
+  "family": "Pretendard",
+  "group": "본문·다목적",
+  "weight": 600,
+  "source": "PRETENDARD-SEMIBOLD.OTF",
+  "copyright": "Copyright © 2023 길형진",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f01-pretendard-800.woff2",
+  "family": "Pretendard",
+  "group": "본문·다목적",
+  "weight": 800,
+  "source": "PRETENDARD-EXTRABOLD.OTF",
+  "copyright": "Copyright © 2023 길형진",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f01-pretendard-900.woff2",
+  "family": "Pretendard",
+  "group": "본문·다목적",
+  "weight": 900,
+  "source": "PRETENDARD-BLACK.OTF",
+  "copyright": "Copyright © 2023 길형진",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f02-wanted-sans-700.woff2",
+  "family": "Wanted Sans",
+  "group": "본문·다목적",
+  "weight": 700,
+  "source": "WANTEDSANS-BOLD.TTF",
+  "copyright": "Copyright © 2023 Wanted Lab, Inc.",
+  "licenseUrl": "https://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f02-wanted-sans-500.woff2",
+  "family": "Wanted Sans",
+  "group": "본문·다목적",
+  "weight": 500,
+  "source": "WANTEDSANS-MEDIUM.TTF",
+  "copyright": "Copyright © 2023 Wanted Lab, Inc.",
+  "licenseUrl": "https://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f02-wanted-sans-600.woff2",
+  "family": "Wanted Sans",
+  "group": "본문·다목적",
+  "weight": 600,
+  "source": "WANTEDSANS-SEMIBOLD.TTF",
+  "copyright": "Copyright © 2023 Wanted Lab, Inc.",
+  "licenseUrl": "https://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f02-wanted-sans-800.woff2",
+  "family": "Wanted Sans",
+  "group": "본문·다목적",
+  "weight": 800,
+  "source": "WANTEDSANS-EXTRABOLD.TTF",
+  "copyright": "Copyright © 2023 Wanted Lab, Inc.",
+  "licenseUrl": "https://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f02-wanted-sans-900.woff2",
+  "family": "Wanted Sans",
+  "group": "본문·다목적",
+  "weight": 900,
+  "source": "WANTEDSANS-BLACK.TTF",
+  "copyright": "Copyright © 2023 Wanted Lab, Inc.",
+  "licenseUrl": "https://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f02-wanted-sans-950.woff2",
+  "family": "Wanted Sans",
+  "group": "본문·다목적",
+  "weight": 950,
+  "source": "WANTEDSANS-EXTRABLACK.TTF",
+  "copyright": "Copyright © 2023 Wanted Lab, Inc.",
+  "licenseUrl": "https://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f03-300.woff2",
+  "family": "프리젠테이션",
+  "group": "제목·강조",
+  "weight": 300,
+  "source": "FREESENTATION-3LIGHT.TTF",
+  "copyright": "Copyright © 2024 피티앤",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f03-400.woff2",
+  "family": "프리젠테이션",
+  "group": "제목·강조",
+  "weight": 400,
+  "source": "FREESENTATION-4REGULAR.TTF",
+  "copyright": "Copyright © 2024 피티앤",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f03-500.woff2",
+  "family": "프리젠테이션",
+  "group": "제목·강조",
+  "weight": 500,
+  "source": "FREESENTATION-5MEDIUM.TTF",
+  "copyright": "Copyright © 2024 피티앤",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f03-600.woff2",
+  "family": "프리젠테이션",
+  "group": "제목·강조",
+  "weight": 600,
+  "source": "FREESENTATION-6SEMIBOLD.TTF",
+  "copyright": "Copyright © 2024 피티앤",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f03-700.woff2",
+  "family": "프리젠테이션",
+  "group": "제목·강조",
+  "weight": 700,
+  "source": "FREESENTATION-7BOLD.TTF",
+  "copyright": "Copyright © 2024 피티앤",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f03-800.woff2",
+  "family": "프리젠테이션",
+  "group": "제목·강조",
+  "weight": 800,
+  "source": "FREESENTATION-8EXTRABOLD.TTF",
+  "copyright": "Copyright © 2024 피티앤",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f03-900.woff2",
+  "family": "프리젠테이션",
+  "group": "제목·강조",
+  "weight": 900,
+  "source": "FREESENTATION-9BLACK.TTF",
+  "copyright": "Copyright © 2024 피티앤",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f04-300.woff2",
+  "family": "페이퍼로지",
+  "group": "제목·강조",
+  "weight": 300,
+  "source": "PAPERLOGY-3LIGHT.TTF",
+  "copyright": "Copyright © 2024 피티앤",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f04-400.woff2",
+  "family": "페이퍼로지",
+  "group": "제목·강조",
+  "weight": 400,
+  "source": "PAPERLOGY-4REGULAR.TTF",
+  "copyright": "Copyright © 2024 피티앤",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f04-500.woff2",
+  "family": "페이퍼로지",
+  "group": "제목·강조",
+  "weight": 500,
+  "source": "PAPERLOGY-5MEDIUM.TTF",
+  "copyright": "Copyright © 2024 피티앤",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f04-600.woff2",
+  "family": "페이퍼로지",
+  "group": "제목·강조",
+  "weight": 600,
+  "source": "PAPERLOGY-6SEMIBOLD.TTF",
+  "copyright": "Copyright © 2024 피티앤",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f04-700.woff2",
+  "family": "페이퍼로지",
+  "group": "제목·강조",
+  "weight": 700,
+  "source": "PAPERLOGY-7BOLD.TTF",
+  "copyright": "Copyright © 2024 피티앤",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f04-800.woff2",
+  "family": "페이퍼로지",
+  "group": "제목·강조",
+  "weight": 800,
+  "source": "PAPERLOGY-8EXTRABOLD.TTF",
+  "copyright": "Copyright © 2024 피티앤",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f04-900.woff2",
+  "family": "페이퍼로지",
+  "group": "제목·강조",
+  "weight": 900,
+  "source": "PAPERLOGY-9BLACK.TTF",
+  "copyright": "Copyright © 2024 피티앤",
+  "licenseUrl": "http://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f05-black-han-sans-900.woff2",
+  "family": "Black Han Sans",
+  "group": "임팩트",
+  "weight": 900,
+  "source": "BLACKHANSANS-REGULAR.TTF",
+  "copyright": "Copyright 2015 The Black Han Sans Project Authors (https://github.com/zesstype/Black-Han-Sans)",
+  "licenseUrl": "https://openfontlicense.org"
+ },
+ {
+  "file": "f06-gasoek-one-400.woff2",
+  "family": "Gasoek One",
+  "group": "임팩트",
+  "weight": 400,
+  "source": "GASOEKONE-REGULAR.TTF",
+  "copyright": "Copyright 2022 The Gasoek Project Authors (https://github.com/JAMO-TYPEFACE/Gasoek)",
+  "licenseUrl": "https://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f07-bagel-fat-one-400.woff2",
+  "family": "Bagel Fat One",
+  "group": "임팩트",
+  "weight": 400,
+  "source": "BAGELFATONE-REGULAR.TTF",
+  "copyright": "Copyright 2022 The Bagel Fat Project Authors (https://github.com/JAMO-TYPEFACE/BagelFat)",
+  "licenseUrl": "https://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f08-moirai-one-400.woff2",
+  "family": "Moirai One",
+  "group": "임팩트",
+  "weight": 400,
+  "source": "MOIRAIONE-REGULAR.TTF",
+  "copyright": "Copyright 2022 The Moirai Project Authors (https://github.com/JAMO-TYPEFACE/Moirai)",
+  "licenseUrl": "https://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f09-400.woff2",
+  "family": "배달의민족 주아",
+  "group": "임팩트",
+  "weight": 400,
+  "source": "BMJUA_TTF.TTF",
+  "copyright": "Copyright (c) 2014 WOOWA BROTHERS Corporation(www.woowahan.com) with Reserved Font Name \"BM JUA\"",
+  "licenseUrl": "www.woowahan.com"
+ },
+ {
+  "file": "f10-700.woff2",
+  "family": "메이플스토리",
+  "group": "임팩트",
+  "weight": 700,
+  "source": "MAPLESTORY BOLD.TTF",
+  "copyright": "Copyright (c) 2017 NEXON-Maplestory. All rights reserved. Font designed by FONTRIX Inc.",
+  "licenseUrl": ""
+ },
+ {
+  "file": "f11-cafe24-ssukssuk-400.woff2",
+  "family": "Cafe24 Ssukssuk",
+  "group": "귀여움·캐주얼",
+  "weight": 400,
+  "source": "CAFE24SSUKSSUK-V2.0.TTF",
+  "copyright": "Copyright © Cafe24 Corp. All rights Reserved.",
+  "licenseUrl": "https://fonts.cafe24.com"
+ },
+ {
+  "file": "f12-dongle-700.woff2",
+  "family": "Dongle",
+  "group": "귀여움·캐주얼",
+  "weight": 700,
+  "source": "DONGLE-BOLD.TTF",
+  "copyright": "Copyright 2021 The Dongle Project Authors (https://github.com/yangheeryu/Dongle)",
+  "licenseUrl": "https://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f13-400.woff2",
+  "family": "배찌체",
+  "group": "귀여움·캐주얼",
+  "weight": 400,
+  "source": "BAZZI.TTF",
+  "copyright": "Copyright (c) 2019 NEXON. All rights reserved. Font designed by FONTRIX Inc.",
+  "licenseUrl": ""
+ },
+ {
+  "file": "f14-400.woff2",
+  "family": "배달의민족 꾸불림",
+  "group": "귀여움·캐주얼",
+  "weight": 400,
+  "source": "BMKKUBULIMTTF.TTF",
+  "copyright": "Copyright © Woowa Brothers Corporation. All right reserved.",
+  "licenseUrl": "https://www.woowahan.com"
+ },
+ {
+  "file": "f15-400.woff2",
+  "family": "학교안심 몽글몽글",
+  "group": "귀여움·캐주얼",
+  "weight": 400,
+  "source": "HAKGYOANSIMMONGGEULMONGGEULR.TTF",
+  "copyright": "Copyright © KERIS. All rights reserved.",
+  "licenseUrl": ""
+ },
+ {
+  "file": "f16-400.woff2",
+  "family": "학교안심 꼬꼬마",
+  "group": "귀여움·캐주얼",
+  "weight": 400,
+  "source": "HAKGYOANSIMKKOKKOMAR.TTF",
+  "copyright": "Copyright © KERIS. All rights reserved.",
+  "licenseUrl": ""
+ },
+ {
+  "file": "f17-400.woff2",
+  "family": "나눔명조",
+  "group": "명조·고전",
+  "weight": 400,
+  "source": "NANUMMYEONGJO.TTF",
+  "copyright": "Copyright © 2010 NHN Corporation. All rights reserved. Font designed by FONTRIX.",
+  "licenseUrl": "http://www.nhncorp.com"
+ },
+ {
+  "file": "f17-800.woff2",
+  "family": "나눔명조",
+  "group": "명조·고전",
+  "weight": 800,
+  "source": "NANUMMYEONGJOEXTRABOLD.TTF",
+  "copyright": "Copyright © 2010 NHN Corporation. All rights reserved. Font designed by FONTRIX.",
+  "licenseUrl": "http://www.nhncorp.com"
+ },
+ {
+  "file": "f18-noto-serif-kr-400.woff2",
+  "family": "Noto Serif KR",
+  "group": "명조·고전",
+  "weight": 400,
+  "source": "NOTOSERIFKR-REGULAR.TTF",
+  "copyright": "",
+  "licenseUrl": ""
+ },
+ {
+  "file": "f18-noto-serif-kr-700.woff2",
+  "family": "Noto Serif KR",
+  "group": "명조·고전",
+  "weight": 700,
+  "source": "NOTOSERIFKR-BOLD.TTF",
+  "copyright": "",
+  "licenseUrl": ""
+ },
+ {
+  "file": "f18-noto-serif-kr-900.woff2",
+  "family": "Noto Serif KR",
+  "group": "명조·고전",
+  "weight": 900,
+  "source": "NOTOSERIFKR-BLACK.TTF",
+  "copyright": "",
+  "licenseUrl": ""
+ },
+ {
+  "file": "f19-400.woff2",
+  "family": "함렡",
+  "group": "명조·고전",
+  "weight": 400,
+  "source": "HAHMLET-THIN.TTF",
+  "copyright": "Copyright 2020 The Hahmlet Project Authors (https://github.com/hyper-type/hahmlet)",
+  "licenseUrl": "https://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f20-diphylleia-400.woff2",
+  "family": "Diphylleia",
+  "group": "명조·고전",
+  "weight": 400,
+  "source": "DIPHYLLEIA-REGULAR.TTF",
+  "copyright": "Copyright 2022 The Diphylleia Project Authors (https://github.com/JAMO-TYPEFACE/Diphylleia)",
+  "licenseUrl": "https://scripts.sil.org/OFL"
+ },
+ {
+  "file": "f21-400.woff2",
+  "family": "학교안심 소나기",
+  "group": "손글씨",
+  "weight": 400,
+  "source": "HAKGYOANSIMSONAGIR.TTF",
+  "copyright": "Copyright © KERIS. All rights reserved.",
+  "licenseUrl": ""
+ },
+ {
+  "file": "f22-400.woff2",
+  "family": "학교안심 우산",
+  "group": "손글씨",
+  "weight": 400,
+  "source": "HAKGYOANSIMUSANR.TTF",
+  "copyright": "Copyright © KERIS. All rights reserved.",
+  "licenseUrl": ""
+ },
+ {
+  "file": "f23-400.woff2",
+  "family": "안경잡이",
+  "group": "손글씨",
+  "weight": 400,
+  "source": "FOUREYES.TTF",
+  "copyright": "Copyright (c) 2015 greenegg(www.greenegg.co.kr) with \" FOUREYES \"",
+  "licenseUrl": "www.greenegg.co.kr"
+ },
+ {
+  "file": "f24-400.woff2",
+  "family": "학교안심 콧수염",
+  "group": "손글씨",
+  "weight": 400,
+  "source": "HAKGYOANSIMKOSSUYEOMR.TTF",
+  "copyright": "Copyright © KERIS. All rights reserved.",
+  "licenseUrl": ""
+ }
+]

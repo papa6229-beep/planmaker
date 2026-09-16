@@ -371,7 +371,20 @@ function readBlockOrders(raw: unknown): Record<string, BlockOrder> {
     if (typeof value.referenceAssetId === 'string' && value.referenceAssetId.length > 0) {
       order.referenceAssetId = value.referenceAssetId
     }
-    if (order.note !== undefined || order.referenceAssetId !== undefined) out[blockId] = order
+    // 글꼴 (문구 판 Patch). 파일에 적히고 파일에서 돌아온다 — 다른 컴퓨터에서 열면
+    // 그 글꼴이 목록에 없을 수 있고, 그때는 그리는 쪽이 기본 글꼴로 간다.
+    if (typeof value.fontFamily === 'string' && value.fontFamily.length > 0) order.fontFamily = value.fontFamily
+    if (typeof value.fontWeight === 'number' && value.fontWeight >= 100 && value.fontWeight <= 950) {
+      order.fontWeight = value.fontWeight
+    }
+    if (
+      order.note !== undefined ||
+      order.referenceAssetId !== undefined ||
+      order.fontFamily !== undefined ||
+      order.fontWeight !== undefined
+    ) {
+      out[blockId] = order
+    }
   }
   return out
 }

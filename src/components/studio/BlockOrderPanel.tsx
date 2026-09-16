@@ -25,6 +25,7 @@ import { useStudioJob } from '../../features/studio/useStudioJob'
 import { getBlockTypeMeta } from '../../domain/blockTypes'
 import { ACCEPTED_MIME_TYPES } from '../../features/assets/imageUtils'
 import { PanelFold } from './PanelFold'
+import { FontPicker } from './FontPicker'
 
 const IMAGE_ACCEPT = ACCEPTED_MIME_TYPES.join(',')
 
@@ -51,14 +52,27 @@ export function BlockOrderPanel() {
     <PanelFold
       id="block-order"
       title="이 문구 디자인 주문"
-      note="주문 적기 · 참고 그림"
-      marked={(order.note ?? '').trim().length > 0 || order.referenceAssetId !== undefined}
+      note="글꼴 · 주문 적기 · 참고 그림"
+      marked={
+        (order.note ?? '').trim().length > 0 ||
+        order.referenceAssetId !== undefined ||
+        order.fontFamily !== undefined
+      }
       defaultOpen
     >
     <section className="block-order" aria-label="이 블록의 디자인 주문">
       <p className="block-order__hint">
         생성하기 전에 이 문구에만 붙는 주문입니다. 페이지 전체 지시보다 우선합니다.
       </p>
+
+      {/* 글꼴이 먼저다 (문구 판 Patch). 로컬 엔진은 한글을 쓰지 못해 글자를 브라우저가
+          그리므로, 디자인의 폭을 정하는 것이 주문 글이 아니라 글꼴이다. */}
+      <FontPicker
+        sample={selected.content ?? ''}
+        family={order.fontFamily}
+        weight={order.fontWeight}
+        onPick={(patch) => void studio.setBlockOrder(selected.id, patch)}
+      />
 
       <textarea
         className="field__input block-order__note"

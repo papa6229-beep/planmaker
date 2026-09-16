@@ -547,6 +547,16 @@ export interface BlockOrder {
   note?: string
   /** 이 블록만 참고할 그림. 말로 설명하기 어려운 모양을 위해서다. */
   referenceAssetId?: string
+  /**
+   * 이 문구를 어느 글꼴로 그릴 것인가 (문구 판 Patch).
+   *
+   * 로컬 엔진은 한글을 쓰지 못한다 — 글자는 브라우저가 이 글꼴로 그리고, 모델은
+   * 재질만 입힌다. 그래서 **디자인의 폭이 여기서 정해진다.** 고르지 않았으면
+   * 기본 글꼴로 그린다.
+   */
+  fontFamily?: string | undefined
+  /** 100~900. 그 글꼴에 없는 굵기면 가장 가까운 것으로 그린다. */
+  fontWeight?: number | undefined
 }
 
 export function blockOrderOf(job: StudioJob | null, blockId: string): BlockOrder {
@@ -563,8 +573,15 @@ export function withBlockOrder(
   // 빈 값은 지운다 — 없는 것과 빈 문자열이 다른 뜻이 되면 안 된다.
   if ((next.note ?? '').trim().length === 0) delete next.note
   if (next.referenceAssetId === undefined || next.referenceAssetId.length === 0) delete next.referenceAssetId
+  if (next.fontFamily === undefined || next.fontFamily.length === 0) delete next.fontFamily
+  if (next.fontWeight === undefined) delete next.fontWeight
   const orders = { ...job.blockOrders }
-  if (next.note === undefined && next.referenceAssetId === undefined) delete orders[blockId]
+  const empty =
+    next.note === undefined &&
+    next.referenceAssetId === undefined &&
+    next.fontFamily === undefined &&
+    next.fontWeight === undefined
+  if (empty) delete orders[blockId]
   else orders[blockId] = next
   return { ...job, blockOrders: orders, updatedAt: now }
 }

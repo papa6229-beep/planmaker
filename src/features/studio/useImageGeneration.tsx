@@ -82,6 +82,10 @@ import {
 } from '../../domain/textLayers'
 import { removeKeyBackground } from '../../services/textLayerKey'
 import { trimToContent } from '../../services/trimToContent'
+import { renderTextPlate } from '../../services/textPlateRenderer'
+import { fetchFontCatalog, faceName, loadFamilyWeight } from '../../services/fontLoader'
+import { parseFontCatalog, FALLBACK_FAMILY, type FontFamily } from '../../domain/fontCatalog'
+import type { BlockOrder } from '../../domain/studioJob'
 import { analyzeRegions } from '../../services/regionTone'
 import { toneOf as productToneOf } from '../../domain/imageAnalysis'
 import { analyzeImageBlob } from '../../services/imageAnalysisRunner'
@@ -176,7 +180,7 @@ interface GenerationPlan {
   /** 블록 id → 그 문구를 주문할 판 크기. 블록과 같은 모양이다 (2차 Patch). */
   textSizes?: Record<string, string>
   /** 블록 id → 그 블록에만 붙는 주문과 참고 그림 (블록별 주문 Patch). */
-  blockOrders?: Record<string, { note?: string; referenceAssetId?: string }>
+  blockOrders?: Record<string, BlockOrder>
   /**
    * 문구 오브젝트 하나만 다시 디자인하는 길 (텍스트 오브젝트 Patch §3).
    *
@@ -882,6 +886,70 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
    *
    * 실패하면 이유를 돌려준다. 다시 부르지 않는다.
    */
+  /**
+   * 글꼴 목록. 한 번 읽어 두고 쓴다 — 문구마다 다시 읽을 이유가 없다.
+   *
+   * 읽지 못해도 그리기는 멈추지 않는다. 그때는 화면 기본 글꼴로 그린다.
+   */
+  const fontsRef = useRef<FontFamily[] | null>(null)
+  const fontsOf = useCallback(async (): Promise<FontFamily[]> => {
+    if (fontsRef.current === null) fontsRef.current = parseFontCatalog(await fetchFontCatalog())
+    return fontsRef.current
+  }, [])
+
+  /**
+   * 문구 한 판을 **브라우저가 그린다** (문구 판 Patch).
+   *
+   * 로컬 엔진은 한글을 쓰지 못한다 (2026-09-16 확인). 그래서 글자는 여기서
+   * 정해지고 모델이 바꾸지 못한다. 그린 판은 바탕이 비어 있어 걷어 낼 색이 없다.
+   *
+   * 그리지 못하면 `null` — 부르는 쪽이 지금까지의 길(모델에게 맡기기)로 간다.
+   */
+  const drawLocalTextPlate = useCallback(
+    async (
+      block: TextLayerBlock,
+      size: { width: number; height: number },
+      order: { fontFamily?: string | undefined; fontWeight?: number | undefined },
+    ): Promise<{ object?: StudioTextObject; problem?: string } | null> => {
+      // **글꼴을 고른 블록에서만** 이 길로 간다. 고르지 않았으면 지금까지처럼
+      // 모델이 그린다 — 지금 쓰고 있는 페이지의 결과가 말없이 달라지지 않는다.
+      // 어느 쪽이 나은지는 작업자가 눈으로 보고 정할 일이다.
+      if (order.fontFamily === undefined || order.fontFamily.length === 0) return null
+      const families = await fontsOf()
+      const wanted = families.find((f) => f.family === order.fontFamily)
+        ?? families.find((f) => f.family === FALLBACK_FAMILY)
+      const file = wanted === undefined ? null : await loadFamilyWeight(wanted, order.fontWeight)
+      const rows = block.lines.length > 0 ? block.lines : [block.content]
+
+      const plate = await renderTextPlate({
+        lines: rows,
+        plate: size,
+        // 바탕을 비워 둔다. 모델을 거치지 않으므로 지울 색을 깔 이유가 없다.
+        keyed: false,
+        style: {
+          ...(file === null ? {} : { fontFamily: faceName(file), fontWeight: file.weight }),
+          ...(order.fontWeight === undefined || file !== null ? {} : { fontWeight: order.fontWeight }),
+        },
+      })
+      if (plate === null) return null
+
+      const trimmed = await trimToContent(plate.blob)
+      if (trimmed === null) return { problem: `"${block.content}"을(를) 그리지 못했습니다.` }
+      const assetId = createId('asset')
+      await putAsset({
+        id: assetId,
+        blob: trimmed.blob,
+        fileName: `text-${block.blockId}.png`,
+        mimeType: 'image/png',
+        byteSize: trimmed.blob.size,
+      })
+      return {
+        object: { blockId: block.blockId, assetId, rect: containRect(trimmed, block.rect), layer: block.layer },
+      }
+    },
+    [fontsOf],
+  )
+
   const drawTextLayer = useCallback(
     async (
       blob: Blob,
@@ -1786,6 +1854,15 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
 
           // ④ 블록마다 한 번씩. 하나가 실패해도 나머지는 그대로 간다 — 값을 치른
           //    것을 잃지 않기 위해서다. 스스로 다시 부르는 자리는 없다.
+          /** 이 문구가 쓸 판의 크기. 이미 정해 둔 규격(`textSizes`)이 있으면 그것을 쓴다. */
+          const canvasOf = (block: TextLayerBlock): { width: number; height: number } => {
+            const parts = (plan.textSizes?.[block.blockId] ?? '').split('x')
+            const w = Number(parts[0])
+            const h = Number(parts[1])
+            return Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0
+              ? { width: w, height: h }
+              : { width: Math.max(1, Math.round(block.rect.width)), height: Math.max(1, Math.round(block.rect.height)) }
+          }
           const made: (StudioTextObject | undefined)[] = Array.from<StudioTextObject | undefined>({ length: textBlocks.length })
           const trouble: (string | undefined)[] = Array.from<string | undefined>({ length: textBlocks.length })
           let done = 0
@@ -1797,6 +1874,23 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             // 첨부와 주문은 블록마다 다르다 — 이 블록에만 붙여 둔 참고 그림이
             // 있으면 그 요청에만 실린다 (블록별 주문 Patch).
             const order = plan.blockOrders?.[block.blockId] ?? {}
+
+            // ── 글자는 브라우저가 그린다 (문구 판 Patch) ─────────────────────
+            //
+            // 로컬 엔진은 한글을 쓰지 못한다. 2026-09-16에 같은 판으로 확인했다:
+            // `여름 시즌오프`를 그려 달라고 하면 `메롱 시셩므무`가 돌아온다. 규칙으로
+            // 부탁해서 될 일이 아니라, 틀리면 안 되는 것을 **말로 맡기지 않는다**.
+            //
+            // 그래서 문구 판은 여기서 그린다. 모델을 부르지 않으므로 값도 시간도
+            // 들지 않고, 글자는 한 글자도 틀리지 않는다. 그린 판을 모델에게 넘겨
+            // 재질만 입히는 길은 그 다음 조각이다.
+            const local = await drawLocalTextPlate(block, canvasOf(block), order)
+            if (local !== null) {
+              if (local.object !== undefined) made[index] = local.object
+              if (local.problem !== undefined) trouble[index] = local.problem
+              return
+            }
+
             const answer = await requestLayer(
               plan,
               auth,
