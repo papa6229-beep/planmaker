@@ -83,6 +83,7 @@ import {
 import { removeKeyBackground } from '../../services/textLayerKey'
 import { trimToContent } from '../../services/trimToContent'
 import { analyzeRegions } from '../../services/regionTone'
+import { toneOf as productToneOf } from '../../domain/imageAnalysis'
 import { analyzeImageBlob } from '../../services/imageAnalysisRunner'
 import type { StudioTextObject } from '../../domain/textObjects'
 import { planLocalComposite } from '../../domain/composite'
@@ -97,6 +98,7 @@ import {
   FIELD_IMAGES,
   FIELD_INTENT,
   FIELD_NOTE,
+  FIELD_PRODUCT_TONE,
   FIELD_PROMPT,
   FIELD_REFERENCE,
   FIELD_REFERENCE_MODE,
@@ -1373,7 +1375,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
        * 작업자가 쓴 말 그대로와 레퍼런스 한 장 (직접 전달 Patch). 첫 생성의 배경
        * 요청에만 붙는다. 서버가 로컬 공급자일 때만 이것을 쓴다.
        */
-      direct?: { note: string; referenceAssetId: string; mode?: ReferenceMode },
+      direct?: { note: string; referenceAssetId: string; mode?: ReferenceMode; productAssetId?: string },
     ): Promise<
       { blob: Blob; mimeType: string; requestedSize: string; model?: string; requestId?: string } | { code?: string }
     > => {
@@ -1399,6 +1401,21 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           // 있으면 그 말이 지시이고, 여기에 문장을 하나 더 얹으면 둘이 싸운다.
           if (direct.note.length === 0 && direct.mode !== undefined) {
             form.set(FIELD_REFERENCE_MODE, direct.mode)
+          }
+          // 이미지 블록의 제품 한 장 (제품 색맞춤 Patch). **그리라고 보내는 것이
+          // 아니다** — 배경이 이 제품과 겉돌지 않도록 색과 광량만 참고하라고 보낸다.
+          // 진짜 제품은 지금까지처럼 브라우저가 원본 그대로 얹는다 (§1은 그대로다).
+          const productAssetId = direct.productAssetId
+          if (productAssetId !== undefined) {
+            const productAsset = await getAsset(productAssetId)
+            // **색만, 숫자로** 보낸다 (제품 색맞춤 Patch). 2026-09-16에 셋을 같은
+            // 조건으로 비교한 결과다: 제품 사진을 보내면 AI가 배경에 제품을 그렸고,
+            // 형태를 지운 색면을 보내면 색이 옮겨오지 않았고, 색을 **말로** 옮겼을
+            // 때만 장면의 색이 실제로 움직였다. 사진은 여전히 한 장도 나가지 않는다.
+            const tone = productToneOf(
+              productAsset === undefined ? null : await analyzeImageBlob(productAsset.blob),
+            )
+            if (tone !== undefined) form.set(FIELD_PRODUCT_TONE, tone)
           }
         }
       }
@@ -1708,6 +1725,12 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         const directRef = studio?.styleReferenceOf(plan.pageId)
         // 체크박스를 **직접** 읽는다. `plan.plate`를 거치면 그 칸이 없는 계획
         // (얹을 것이 없는 빈 장 = full_ai)에서는 켜 둔 체크박스가 조용히 무시된다.
+        // 제품이 여러 개면 **가장 크게 놓인 것** 하나만 보낸다. 배경의 색을 좌우하는
+        // 것은 눈에 제일 크게 들어오는 제품이고, 여러 장을 보내면 Klein이 그것들을
+        // 섞어 그릴 자리만 늘어난다 (어댑터 상한도 3장이다).
+        const biggestProduct = [...(plan.plate?.fixed ?? [])].sort(
+          (a, b) => b.rect.width * b.rect.height - a.rect.width * a.rect.height,
+        )[0]
         const directMode: ReferenceMode =
           studio?.keepReferenceBackgroundOf(plan.pageId) === true ? 'preserve' : 'style'
         const first = await requestLayer(
@@ -1719,7 +1742,12 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           undefined,
           directRef === undefined
             ? undefined
-            : { note: directNote, referenceAssetId: directRef, mode: directMode },
+            : {
+                note: directNote,
+                referenceAssetId: directRef,
+                mode: directMode,
+                ...(biggestProduct === undefined ? {} : { productAssetId: biggestProduct.assetId }),
+              },
         )
         if (!('blob' in first)) {
           setState({ kind: 'failed', message: errorTextFor(first.code) })

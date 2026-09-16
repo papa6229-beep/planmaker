@@ -63,6 +63,17 @@ export const FIELD_REFERENCE = 'reference'
  * 작업자가 말을 썼으면 이 칸은 나가지 않는다. 그 말이 곧 지시이기 때문이다.
  */
 export const FIELD_REFERENCE_MODE = 'referenceMode'
+/**
+ * 이미지 블록 제품의 대표색 — **숫자뿐이다** (제품 색맞춤 Patch).
+ *
+ * `#e060a0,#e080c0` 처럼 16진수를 쉼표로 잇는다. 사진도 파일명도 바이트도 가지
+ * 않는다. 색을 무슨 말로 옮길지는 그 모델을 아는 쪽(어댑터)이 정한다.
+ *
+ * 2026-09-16에 셋을 같은 조건으로 비교해서 이 길을 골랐다: 제품 사진을 보내면
+ * 배경에 제품을 그렸고, 형태를 지운 색면을 보내면 색이 옮겨오지 않았고, 색을
+ * **말로** 했을 때만 장면의 색이 실제로 움직였다.
+ */
+export const FIELD_PRODUCT_TONE = 'productTone'
 
 export interface ImageGenerationMetadata {
   /**

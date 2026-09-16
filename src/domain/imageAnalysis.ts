@@ -303,3 +303,26 @@ export function mergePageAnalysis(list: readonly ImageAnalysis[]): ImageAnalysis
     light: { x: mean((a) => a.light.x), y: mean((a) => a.light.y), confidence: 'low' },
   }
 }
+
+/**
+ * 대표색을 **보낼 수 있는 한 줄**로 (제품 색맞춤 Patch).
+ *
+ * `#e060a0,#e080c0` — 많이 쓰인 순서대로, 16진수만. 이 문자열이 요청에 실리는
+ * 전부다: 사진도 파일명도 바이트도 아니다.
+ *
+ * 너무 조금 쓰인 색은 뺀다. 제품 어딘가의 작은 점 하나가 배경 전체의 색을
+ * 정하면, 어울리게 하려던 일이 오히려 어긋나게 만든다.
+ */
+export const TONE_MIN_SHARE = 0.08
+export const TONE_MAX_COLORS = 3
+
+export function toneOf(analysis: ImageAnalysis | null): string | undefined {
+  if (analysis === null) return undefined
+  const picked = analysis.palette
+    .filter((entry) => entry.share >= TONE_MIN_SHARE)
+    .slice(0, TONE_MAX_COLORS)
+    .map((entry) => entry.hex)
+  // 골고루 섞인 그림이라 어느 색도 기준을 넘지 못하면, 가장 많이 쓰인 하나는 쓴다.
+  const hexes = picked.length > 0 ? picked : analysis.palette.slice(0, 1).map((entry) => entry.hex)
+  return hexes.length > 0 ? hexes.join(',') : undefined
+}

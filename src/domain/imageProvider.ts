@@ -96,7 +96,13 @@ export interface ImageProviderRequest {
    * PLANMAKER는 레퍼런스만 올려도 배경을 만들었고, 그 길이 엔진이 바뀌었다고
    * 사라지면 안 된다. 그때 무슨 말로 시킬지는 엔진을 아는 쪽이 정한다.
    */
-  direct?: { note: string; reference: ImageProviderInput; mode?: ReferenceMode }
+  direct?: {
+    note: string
+    reference: ImageProviderInput
+    mode?: ReferenceMode
+    /** 제품의 대표색 — `#rrggbb` 를 쉼표로 이은 것. 숫자만 간다. */
+    productTone?: string
+  }
 }
 
 export interface ImageProviderResult {

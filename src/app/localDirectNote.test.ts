@@ -11,11 +11,13 @@ import {
   FIELD_INTENT,
   FIELD_NOTE,
   FIELD_REFERENCE,
+  FIELD_PRODUCT_TONE,
   FIELD_REFERENCE_MODE,
 } from '../domain/imageGeneration'
 import {
   createLocalImageClient,
   LOCAL_FIELD_IMAGES,
+  LOCAL_FIELD_PRODUCT_TONE,
   LOCAL_FIELD_PROMPT,
   LOCAL_FIELD_REFERENCE_MODE,
 } from '../services/localImageClient'
@@ -45,7 +47,12 @@ function jsonReply(body: unknown): Response {
  * `FormData`를 Node `Request`가 multipart로 읽지 못해서다 — 여기서 보려는 것은
  * 폼을 읽은 **뒤**의 일이다.
  */
-function plateRequest(withNote: boolean, withReference: boolean, mode?: string): Request {
+function plateRequest(
+  withNote: boolean,
+  withReference: boolean,
+  mode?: string,
+  tone?: string,
+): Request {
   const form = new FormData()
   form.set('prompt', LONG_PROMPT)
   form.set('size', '832x800')
@@ -55,6 +62,7 @@ function plateRequest(withNote: boolean, withReference: boolean, mode?: string):
   if (withNote) form.set(FIELD_NOTE, `  ${NOTE}  `)
   if (withReference) form.set(FIELD_REFERENCE, new File(['rrrr'], 'style-reference.png', { type: 'image/png' }))
   if (mode !== undefined) form.set(FIELD_REFERENCE_MODE, mode)
+  if (tone !== undefined) form.set(FIELD_PRODUCT_TONE, tone)
   const request = new Request('https://planmaker.local/api/generate-image', {
     method: 'POST',
     headers: { [API_KEY_HEADER]: 'sk-mine-123' },
@@ -132,6 +140,55 @@ describe('작업자의 말과 레퍼런스만 로컬로 간다', () => {
     const body = calls[0]!.init.body as FormData
     expect(body.get(LOCAL_FIELD_PROMPT)).toBe(NOTE)
     expect(body.has(LOCAL_FIELD_REFERENCE_MODE)).toBe(false)
+  })
+
+  // ── 제품의 색은 숫자로만 ─────────────────────────────────────────────────
+  describe('제품의 색', () => {
+    it('숫자 한 줄로 실려 간다 — 사진은 가지 않는다', async () => {
+      const { calls, stub } = recorder(() => jsonReply({ b64: 'AAAA', mimeType: 'image/png' }))
+      const provider = createLocalImageClient({ apiUrl: LOCAL_URL, timeoutMs: 5_000 })
+      const response = await handleGenerateImage(
+        plateRequest(true, true, undefined, '#e060a0,#e080c0'),
+        { requestImage: provider, fetch: stub },
+      )
+
+      expect(response.status).toBe(200)
+      const body = calls[0]!.init.body as FormData
+      expect(body.get(LOCAL_FIELD_PRODUCT_TONE)).toBe('#e060a0,#e080c0')
+      // 나가는 그림은 스타일 레퍼런스 한 장뿐이다.
+      expect((body.getAll(LOCAL_FIELD_IMAGES) as File[]).map((f) => f.name)).toEqual(['style-reference.png'])
+    })
+
+    it('말이 없어도 색은 간다 — 어울리게 하는 일은 주문과 무관하다', async () => {
+      const { calls, stub } = recorder(() => jsonReply({ b64: 'AAAA', mimeType: 'image/png' }))
+      const provider = createLocalImageClient({ apiUrl: LOCAL_URL, timeoutMs: 5_000 })
+      await handleGenerateImage(plateRequest(false, true, 'style', '#e060a0'), {
+        requestImage: provider,
+        fetch: stub,
+      })
+
+      const body = calls[0]!.init.body as FormData
+      expect(body.get(LOCAL_FIELD_PRODUCT_TONE)).toBe('#e060a0')
+      expect(body.get(LOCAL_FIELD_REFERENCE_MODE)).toBe('style')
+    })
+
+    it('빈 값은 싣지 않는다', async () => {
+      const { calls, stub } = recorder(() => jsonReply({ b64: 'AAAA', mimeType: 'image/png' }))
+      const provider = createLocalImageClient({ apiUrl: LOCAL_URL, timeoutMs: 5_000 })
+      await handleGenerateImage(plateRequest(true, true, undefined, '   '), {
+        requestImage: provider,
+        fetch: stub,
+      })
+
+      expect((calls[0]!.init.body as FormData).has(LOCAL_FIELD_PRODUCT_TONE)).toBe(false)
+    })
+
+    it('OpenAI 경로에는 색도 가지 않는다', async () => {
+      const { calls, stub } = recorder(() => jsonReply({ data: [{ b64_json: 'AAAA' }] }))
+      await handleGenerateImage(plateRequest(true, true, undefined, '#e060a0'), { fetch: stub })
+
+      expect((calls[0]!.init.body as FormData).has(FIELD_PRODUCT_TONE)).toBe(false)
+    })
   })
 
   it('OpenAI로 나가는 요청에는 말도 레퍼런스도 섞이지 않는다', async () => {

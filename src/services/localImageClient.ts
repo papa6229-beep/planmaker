@@ -55,6 +55,8 @@ export const LOCAL_FIELD_BACKGROUND = 'background'
 export const LOCAL_FIELD_IMAGES = 'images[]'
 /** 말 없이 레퍼런스만 왔을 때 체크박스 상태를 싣는 칸 (레퍼런스만 Patch). */
 export const LOCAL_FIELD_REFERENCE_MODE = 'reference_mode'
+/** 제품의 대표색을 싣는 칸 (제품 색맞춤 Patch). 그림이 아니라 숫자다. */
+export const LOCAL_FIELD_PRODUCT_TONE = 'product_tone'
 
 /**
  * 기다리는 시간의 기본값.
@@ -131,6 +133,11 @@ export function createLocalImageClient(config: LocalImageConfig): ImageProvider 
     // 말이 있으면 그 말이 곧 지시다. 상태는 말이 없을 때만 나간다.
     if (request.direct !== undefined && prompt.length === 0 && request.direct.mode !== undefined) {
       form.set(LOCAL_FIELD_REFERENCE_MODE, request.direct.mode)
+    }
+    // 제품의 색. 말이 있든 없든 함께 간다 — 배경이 그 제품과 겉돌지 않게 하는 일은
+    // 작업자가 무엇을 주문했는지와 무관하게 언제나 필요하다.
+    if (request.direct?.productTone !== undefined && request.direct.productTone.length > 0) {
+      form.set(LOCAL_FIELD_PRODUCT_TONE, request.direct.productTone)
     }
     form.set(LOCAL_FIELD_SIZE, request.size)
     if (request.intent !== undefined) form.set(LOCAL_FIELD_INTENT, request.intent)

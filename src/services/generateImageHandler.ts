@@ -22,6 +22,7 @@ import {
   FIELD_IMAGES,
   FIELD_INTENT,
   FIELD_NOTE,
+  FIELD_PRODUCT_TONE,
   FIELD_PROMPT,
   FIELD_REFERENCE,
   FIELD_REFERENCE_MODE,
@@ -119,6 +120,8 @@ export async function handleGenerateImage(request: Request, deps: HandlerDeps = 
   const note = form.get(FIELD_NOTE)
   const reference = form.get(FIELD_REFERENCE)
   const mode = readReferenceMode(form.get(FIELD_REFERENCE_MODE))
+  const tone = form.get(FIELD_PRODUCT_TONE)
+  const productTone = typeof tone === 'string' && tone.trim().length > 0 ? tone.trim() : undefined
   const trimmedNote = typeof note === 'string' ? note.trim() : ''
   const direct =
     reference !== null && typeof reference !== 'string'
@@ -126,6 +129,7 @@ export async function handleGenerateImage(request: Request, deps: HandlerDeps = 
           note: trimmedNote,
           reference: { fileName: reference.name, blob: reference },
           ...(trimmedNote.length > 0 || mode === undefined ? {} : { mode }),
+          ...(productTone === undefined ? {} : { productTone }),
         }
       : undefined
 
