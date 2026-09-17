@@ -39,6 +39,7 @@ import { useAssets } from '../../features/assets/useAssets'
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { useCanvasFace, useFontPreview } from '../../features/studio/blockFont'
 import { normalizeTextLook } from '../../domain/textLook'
+import { fontOrDefault } from '../../domain/fontCatalog'
 import { normalizeShapeLook } from '../../domain/shapeLook'
 import { isShapeBlock } from '../../domain/blockTypes'
 import { planLines } from '../../domain/textLayers'
@@ -231,12 +232,12 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   const objectTone = studio !== null && (takesFont || shape) ? studio.objectToneOf(block.id) : undefined
   const box = { width: block.position.width, height: block.position.height }
   const artRequest: ArtRequest | null =
-    takesFont && order !== null && order.fontFamily !== undefined && hasContent(block) && !editing
+    takesFont && order !== null && hasContent(block) && !editing
       ? {
           kind: 'text',
           content: block.content ?? '',
           lines: planLines(block.content ?? '', block.position, bare),
-          family: pointed?.family ?? order.fontFamily,
+          family: pointed?.family ?? fontOrDefault(order.fontFamily),
           weight: pointed === null ? order.fontWeight : pointed.weight,
           chars: order.chars,
           look,

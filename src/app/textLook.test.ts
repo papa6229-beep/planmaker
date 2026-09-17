@@ -200,11 +200,12 @@ describe('다시 그릴 재료와 자리', () => {
     expect(liveInputOf(banner, job, doc)).toMatchObject({ text: '배너 문구', lines: ['배너 문구'], family: '글꼴B', align: 'right' })
   })
 
-  it('글꼴이 없으면 문구는 그리지 않는다 — 도형은 글꼴이 없어도 그린다', () => {
+  it('글꼴이 없으면 기본 글꼴로 그린다 — 빈 문구만 그리지 않는다', () => {
     const G = globalThis as { __noTestFont?: boolean }
     G.__noTestFont = true
     try {
-      expect(liveInputOf({ ...object, blockId: 'blk_none', text: '글' }, job, doc)).toBeNull()
+      expect(liveInputOf({ ...object, blockId: 'blk_none', text: '글' }, job, doc)).toMatchObject({ family: 'Pretendard' })
+      expect(liveInputOf({ ...object, blockId: 'blk_none', text: '  ' }, job, doc)).toBeNull()
       expect(liveInputOf({ ...object, blockId: 'blk_none', kind: 'shape' }, job, doc)).toMatchObject({ kind: 'shape' })
     } finally {
       G.__noTestFont = false

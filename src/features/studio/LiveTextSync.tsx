@@ -24,15 +24,15 @@ import { drawsBareText, textAlignOf } from '../../domain/simpleBlocks'
 import { planLines } from '../../domain/textLayers'
 import { realignCharStyles } from '../../domain/textArt'
 import { normalizeTextLook } from '../../domain/textLook'
+import { fontOrDefault } from '../../domain/fontCatalog'
 import type { BriefDocument } from '../../domain/pageSchema'
 import type { StudioTextObject } from '../../domain/textObjects'
 import { liveKeyOf, paintLive, placeInFrame, type LiveInput } from './liveText'
 
-/** 이 조각을 지금 값으로 그릴 재료. 그릴 수 없으면(글꼴 없음·빈 문구) `null`. */
+/** 이 조각을 지금 값으로 그릴 재료. 그릴 수 없으면(빈 문구) `null`. */
 export function liveInputOf(object: StudioTextObject, job: StudioJob, doc: BriefDocument): LiveInput | null {
   const order = blockOrderOf(job, object.blockId)
   if (object.kind === 'shape') return { kind: 'shape', blockId: object.blockId, look: order.shape }
-  if (order.fontFamily === undefined || order.fontFamily.length === 0) return null
   const block = doc.pages.flatMap((p) => p.blocks).find((b) => b.id === object.blockId)
   // 기획서에 블록이 있으면 그 문구와 줄이 기준이다. 없으면(배너 조각) 그릴 때 적어 둔 것.
   const text = block === undefined ? (object.text ?? '') : (block.content ?? '')
@@ -45,7 +45,8 @@ export function liveInputOf(object: StudioTextObject, job: StudioJob, doc: Brief
     blockId: object.blockId,
     text,
     lines,
-    family: order.fontFamily,
+    // 고르지 않았으면 기본 글꼴.
+    family: fontOrDefault(order.fontFamily),
     weight: order.fontWeight,
     look: order.look,
     chars: order.chars,

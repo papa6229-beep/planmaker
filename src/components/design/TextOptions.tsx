@@ -101,7 +101,7 @@ export function TextOptions({ target, label }: { target: DesignTarget; label: st
       {/* 글꼴 — 고른 글자가 있으면 그 글자만 */}
       <BarMenu
         label="글꼴"
-        icon={<span className="design-bar__font">{first?.family ?? order.fontFamily ?? '글꼴 고르기'}</span>}
+        icon={<span className="design-bar__font">{first?.family ?? order.fontFamily ?? '기본 글꼴'}</span>}
         title={sel === null ? '글꼴 (문구 전체)' : '글꼴 (고른 글자)'}
         width={300}
       >

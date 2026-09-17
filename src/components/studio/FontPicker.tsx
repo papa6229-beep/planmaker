@@ -196,10 +196,10 @@ export function FontPicker({
   return (
     <div className="font-pick">
       <p className="block-order__label">
-        글꼴 <span className="font-pick__required">필수</span>
+        글꼴
         {chosen !== undefined && <span className="font-pick__current"> · {chosen.family}</span>}
       </p>
-      {chosen === undefined && <p className="font-pick__warn">글꼴을 골라야 이 문구를 만들 수 있습니다.</p>}
+      {chosen === undefined && <p className="font-pick__hint">고르지 않으면 기본 글꼴(Pretendard)로 그립니다.</p>}
       <div className="font-pick__tabs" role="tablist" aria-label="글꼴 종류">
         {FONT_SCRIPTS.map((s) => (
           <button

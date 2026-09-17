@@ -56,6 +56,14 @@ export interface FontFamily {
 
 /** 목록에 없는 글꼴을 고르면 여기로 돌아온다 — 화면 기본 글꼴이다. */
 export const FALLBACK_FAMILY = 'Pretendard'
+
+/**
+ * 그릴 글꼴 — 고르지 않았으면 기본 글꼴 (2026-09-17). 문구는 생성한 뒤에도 브라우저가
+ * 다시 그리므로 글꼴을 나중에 골라도 된다. 고르지 않았다고 문구를 빼지 않는다.
+ */
+export function fontOrDefault(family: string | undefined): string {
+  return family === undefined || family.length === 0 ? FALLBACK_FAMILY : family
+}
 /** 굵기를 고르지 않았을 때. 문구는 굵은 쪽이 기본이다 — 이벤트 페이지의 문구는 제목이 많다. */
 export const DEFAULT_WEIGHT = 700
 

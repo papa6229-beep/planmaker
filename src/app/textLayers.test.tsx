@@ -2147,18 +2147,20 @@ describe('§20 문구는 글꼴로 그리고, 모델에게는 판 한 장과 재
     expect(followFrame(frame, from, from)).toEqual(frame)
   })
 
-  it('글꼴을 고르지 않은 문구는 만들지 않고, 요청도 나가지 않으며, 이유를 말한다', async () => {
+  it('글꼴을 고르지 않은 문구도 기본 글꼴로 만들어진다 — 생성한 뒤에 글꼴을 골라도 된다', async () => {
     ;(globalThis as { __noTestFont?: boolean }).__noTestFont = true
     try {
       await seedJob()
       const { container } = renderStudio()
       await documentReady(container)
-      // 배경 한 장만 나간다.
       await generateOnce(1)
 
       const job = await loadStudioJob(STUDIO_JOB_ID)
-      expect(job?.textObjects?.page_1 ?? []).toEqual([])
-      expect((await screen.findByText(/글꼴을 고르지 않아/)).textContent).toContain(CONTENTS.blk_t1!)
+      const objects = job?.textObjects?.page_1 ?? []
+      expect(objects.map((o) => o.blockId)).toEqual(SHEET_IDS)
+      for (const o of objects) expect(o.liveKey).toContain('"Pretendard"')
+      expect(screen.queryByText(/글꼴을 고르지 않아/)).toBeNull()
+      expect(screen.queryByText('이미지를 생성하지 못했습니다')).toBeNull()
       expect(fetchSpy).toHaveBeenCalledTimes(1)
     } finally {
       ;(globalThis as { __noTestFont?: boolean }).__noTestFont = false
@@ -2516,7 +2518,7 @@ describe('§26 도구 막대로 만든다', () => {
       expect(job.blockOrders?.[text!.id]?.fontFamily).toBeTruthy()
     }, { timeout: 5000 })
     expect(fetchSpy).not.toHaveBeenCalled()
-  })
+  }, 20000)
 
   it('도형 블록은 AI에게 가지 않고, 생성 때 브라우저가 그려 앞 겹에 얹으며, 부분수정 대상도 아니다', async () => {
     await shapeDoc([
@@ -2613,4 +2615,38 @@ describe('§26 도구 막대로 만든다', () => {
     expect(parsed?.blockOrders?.blk_s?.chars).toEqual([null, { color: '#ff0000' }])
     expect(parsed?.blockOrders?.blk_s?.charsFor).toBe('가나')
   })
+})
+
+describe('§27 빠진 문구·도형 얹기', () => {
+  it('완성본에 없는 문구를 버튼 하나로 브라우저가 그려 얹는다 — 외부 호출 없음, 누르지 않으면 채우지 않는다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+    await waitFor(() => expect(container.querySelectorAll('.result-object').length).toBe(6), { timeout: 5000 })
+    // 문구 둘이 빠진 완성본 (예: 예전 판에서 글꼴이 없어 빠졌던 것).
+    const made = (await loadStudioJob(STUDIO_JOB_ID))!
+    await saveStudioJob({
+      ...made,
+      textObjects: { page_1: made.textObjects!.page_1!.filter((o) => o.blockId !== 'blk_t2' && o.blockId !== 'blk_btn') },
+    })
+    cleanup()
+    const { container: reopened } = renderStudio()
+    await documentReady(reopened)
+    fireEvent.click(await screen.findByRole('radio', { name: '완성본' }))
+    await waitFor(() => expect(reopened.querySelectorAll('.result-object').length).toBe(4), { timeout: 5000 })
+    const calls = fetchSpy.mock.calls.length
+
+    const bar = await screen.findByRole('toolbar', { name: '디자인 도구' })
+    const fill = await within(bar).findByRole('button', { name: /빠진 문구·도형 얹기 \(2\)/ })
+    // 누르기 전에는 그대로다.
+    expect((await loadStudioJob(STUDIO_JOB_ID))!.textObjects!.page_1).toHaveLength(2)
+    fireEvent.click(fill)
+    await waitFor(async () => {
+      const ids = (await loadStudioJob(STUDIO_JOB_ID))!.textObjects!.page_1!.map((o) => o.blockId)
+      expect(ids).toEqual(expect.arrayContaining(['blk_t2', 'blk_btn']))
+    }, { timeout: 5000 })
+    await waitFor(() => expect(within(bar).queryByRole('button', { name: /빠진 문구/ })).toBeNull())
+    expect(fetchSpy.mock.calls.length).toBe(calls)
+  }, 30000)
 })

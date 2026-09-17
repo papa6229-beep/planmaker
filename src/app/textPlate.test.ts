@@ -95,9 +95,10 @@ describe('fitPlate', () => {
 // 그 갈림은 `useImageGeneration`의 `drawLocalTextPlate`가 맡고, 여기서는 그
 // 약속이 문서로 남아 있는지만 본다 — 조건이 사라지면 이 검사가 먼저 깨진다.
 describe('코드가 그리는 조건', () => {
-  it('글꼴을 고르지 않으면 코드가 그리지 않는다는 약속이 코드에 적혀 있다', async () => {
-    const source = await import('../features/studio/useImageGeneration?raw')
-    const text = String((source as { default: string }).default)
-    expect(text).toContain("if (order.fontFamily === undefined || order.fontFamily.length === 0) return null")
+  it('글꼴을 고르지 않으면 기본 글꼴로 그린다 (2026-09-17 — 생성한 뒤에 골라도 된다)', async () => {
+    const { fontOrDefault, FALLBACK_FAMILY } = await import('../domain/fontCatalog')
+    expect(fontOrDefault(undefined)).toBe(FALLBACK_FAMILY)
+    expect(fontOrDefault('')).toBe(FALLBACK_FAMILY)
+    expect(fontOrDefault('둥근모꼴')).toBe('둥근모꼴')
   })
 })

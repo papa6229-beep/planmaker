@@ -2841,9 +2841,9 @@ button { font-family: inherit; }
 .font-pick__tab { flex: 1; padding: 4px 8px; font-size: 11px; }
 .font-pick__tab.is-on { border-color: var(--color-accent, #6c5ce7); font-weight: 700; }
 .font-pick__search { padding: 5px 8px; font-size: 12px; }
-.font-pick__required { font-size: 10px; font-weight: 700; color: var(--color-accent, #6c5ce7); }
+
 .font-pick__current { font-weight: 400; color: var(--color-muted); }
-.font-pick__warn { margin: 0; font-size: 11px; color: var(--color-danger, #c0392b); }
+.font-pick__hint { margin: 0; font-size: 11px; color: var(--color-muted); }
 .block-order__empty { margin: 0; color: var(--color-muted); font-size: 11px; line-height: 1.5; }
 .block-order__preview {
   overflow: hidden;

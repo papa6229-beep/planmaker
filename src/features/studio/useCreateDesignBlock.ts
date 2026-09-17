@@ -17,7 +17,10 @@ import { useBriefDocument } from '../document/useBriefDocument'
 import { useStudioJob } from './useStudioJob'
 import { useImageGeneration } from './useImageGeneration'
 import { createId } from '../../domain/factory'
-import { FALLBACK_FAMILY } from '../../domain/fontCatalog'
+import { FALLBACK_FAMILY, fontOrDefault } from '../../domain/fontCatalog'
+import { getBlockTypeMeta } from '../../domain/blockTypes'
+import { drawsBareText, textAlignOf } from '../../domain/simpleBlocks'
+import type { StudioTextObject } from '../../domain/textObjects'
 import type { LayoutRect } from '../../domain/imageLayout'
 import { DEFAULT_SHAPE_LOOK, SHAPE_KINDS, lineFromDrag, type ShapeLook } from '../../domain/shapeLook'
 import {
@@ -171,4 +174,64 @@ export function useCreateDesignBlock(): ((tool: Exclude<DesignTool, 'select'>, d
   )
 
   return studio === null ? null : create
+}
+
+/**
+ * 완성본에 빠진 문구·도형 조각을 얹는다 (2026-09-17).
+ *
+ * 글꼴을 고르지 않아 문구가 빠진 채 만들어진 완성본이 있었다 — 문구는 브라우저가
+ * 그리므로 다시 생성할 이유가 없다. 사람이 누를 때만 채운다: 일부러 지운 조각을
+ * 저절로 되살리면 안 되기 때문이다. AI 호출은 0건이다.
+ */
+export function useFillMissingPieces(): { missing: number; fill: () => Promise<void> } | null {
+  const studio = useStudioJob()
+  const generation = useImageGeneration()
+  const { activePageId, getDocument } = useBriefDocument()
+  if (studio === null || pageResultOf(studio.job, activePageId) === undefined) return null
+  // 배너 조각은 기획서 블록과 번호가 달라 "빠졌다"를 셀 수 없다 — 배너는 서랍에서 꺼낸다.
+  if (studio.bannerSpecOf(activePageId) !== null) return null
+  const page = getDocument().pages.find((p) => p.id === activePageId)
+  const have = new Set([...textObjectsOf(studio.job, activePageId), ...imageObjectsOf(studio.job, activePageId)].map((o) => o.blockId))
+  const wanted = (page?.blocks ?? []).filter(
+    (b) =>
+      !have.has(b.id) &&
+      b.aiVisibility === 'design' &&
+      (b.type === 'design_shape' ||
+        (getBlockTypeMeta(b.type).hasText && !getBlockTypeMeta(b.type).requiresAsset && (b.content ?? '').trim().length > 0)),
+  )
+  return {
+    missing: wanted.length,
+    fill: async () => {
+      const job = studio.currentJob()
+      const layers = [...imageObjectsOf(job, activePageId), ...textObjectsOf(job, activePageId)].map((o) => o.layer)
+      let layer = layers.length === 0 ? 0 : Math.max(...layers)
+      const made: StudioTextObject[] = []
+      for (const block of wanted) {
+        const order = studio.currentJob().blockOrders?.[block.id] ?? {}
+        const rect = { ...block.position }
+        layer += 1
+        if (block.type === 'design_shape') {
+          const painted = await paintLiveShape({ kind: 'shape', blockId: block.id, look: order.shape }, rect)
+          if (painted !== null) {
+            made.push({ blockId: block.id, assetId: painted.assetId, rect: painted.rect, layer, kind: 'shape', live: true, frame: rect, liveKey: painted.liveKey })
+          }
+          continue
+        }
+        const text = block.content ?? ''
+        const lines = planLines(text, rect, drawsBareText(block))
+        const align = textAlignOf(block)
+        const painted = await paintLiveText(
+          { kind: 'text', blockId: block.id, text, lines, family: fontOrDefault(order.fontFamily), weight: order.fontWeight, look: order.look, chars: order.chars, align },
+          rect,
+        )
+        if (painted !== null) {
+          made.push({ blockId: block.id, assetId: painted.assetId, rect: painted.rect, layer, live: true, frame: rect, liveKey: painted.liveKey, text, lines, align })
+        }
+      }
+      if (made.length === 0) return
+      studio.markStep()
+      await studio.setTextObjects(activePageId, [...textObjectsOf(studio.currentJob(), activePageId), ...made])
+      if (generation !== null) await generation.recomposePage(activePageId)
+    },
+  }
 }

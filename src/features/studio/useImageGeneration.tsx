@@ -96,7 +96,7 @@ import { removeKeyBackground } from '../../services/textLayerKey'
 import { trimToContent } from '../../services/trimToContent'
 import { renderTextPlate } from '../../services/textPlateRenderer'
 import { fetchFontCatalog, faceName, loadFamilyWeight } from '../../services/fontLoader'
-import { parseFontCatalog, FALLBACK_FAMILY, type FontFamily } from '../../domain/fontCatalog'
+import { parseFontCatalog, FALLBACK_FAMILY, fontOrDefault, type FontFamily } from '../../domain/fontCatalog'
 import type { BlockOrder } from '../../domain/studioJob'
 import { analyzeRegions } from '../../services/regionTone'
 import { toneOf as productToneOf } from '../../domain/imageAnalysis'
@@ -1613,7 +1613,6 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       paintOnFailure: boolean
     }): Promise<{ assetId: string; size: { width: number; height: number }; problem?: string } | { problem: string } | null> => {
       const { order } = args
-      if (order.fontFamily === undefined || order.fontFamily.length === 0) return null
 
       const page = getDocument().pages.find((p) => p.id === args.plan.pageId)
       const emphasis = (page?.blocks.find((b) => b.id === args.blockId)?.layoutHint.emphasis ?? 'normal') as TextEmphasis
@@ -2054,17 +2053,13 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             // AI 재질 단계가 흰 글자를 검게 바꾸고 `TENGA`를 `TEHBA`로 깨뜨렸다. 사용자:
             // "AI에게 보정을 요청하기 전까지는 텍스트로 남아 있게 하자." 그래서 브라우저가
             // 고른 글꼴·색·테두리·그림자로 그린 판을 그대로 얹고, 살아 있는 문구로 표시한다.
-            // 글꼴을 고르지 않았으면 만들지 않는다 (글꼴 필수).
-            if (order.fontFamily === undefined || order.fontFamily.length === 0) {
-              trouble[index] = `"${block.content}": 글꼴을 고르지 않아 만들지 않았습니다. 문구 블록에서 글꼴을 골라 주세요.`
-              return
-            }
+            // 글꼴을 고르지 않았으면 기본 글꼴로 그린다 — 생성한 뒤에 골라도 그 조각만 다시 그려진다.
             const input = {
               kind: 'text' as const,
               blockId: block.blockId,
               text: block.content,
               lines: block.lines,
-              family: order.fontFamily,
+              family: fontOrDefault(order.fontFamily),
               weight: order.fontWeight,
               look: order.look,
               chars: order.chars,

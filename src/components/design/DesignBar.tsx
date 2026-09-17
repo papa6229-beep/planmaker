@@ -20,6 +20,7 @@ import { useImageGeneration } from '../../features/studio/useImageGeneration'
 import { setTool, useDesignTools, type DesignTool } from '../../features/studio/designTools'
 import { useDesignTarget } from '../../features/studio/designTarget'
 import { SHAPE_KINDS } from '../../domain/shapeLook'
+import { useFillMissingPieces } from '../../features/studio/useCreateDesignBlock'
 import { ObjectPostEditor, TAB_LABEL, postEditMarks, type PostEditTab } from '../studio/ObjectPostEditor'
 import { BarMenu } from './BarMenu'
 import { TextOptions } from './TextOptions'
@@ -39,6 +40,7 @@ export function DesignBar() {
   const generation = useImageGeneration()
   const { tool, lastShape } = useDesignTools()
   const target = useDesignTarget()
+  const fill = useFillMissingPieces()
 
   // 포토샵과 같은 단축키. 글을 적는 중에는 듣지 않는다.
   useEffect(() => {
@@ -137,7 +139,19 @@ export function DesignBar() {
             캔버스에서 끌어 {tool === 'text' ? '문구' : tool === 'line' ? '선' : '도형'}을 만드세요 · Esc 취소
           </span>
         ) : target === null ? (
-          <span className="design-bar__note">블록이나 조각을 고르면 옵션이 나옵니다 · V 선택 · T 문자 · U 도형 · L 선</span>
+          <>
+            <span className="design-bar__note">블록이나 조각을 고르면 옵션이 나옵니다 · V 선택 · T 문자 · U 도형 · L 선</span>
+            {fill !== null && fill.missing > 0 && (
+              <button
+                type="button"
+                className="design-bar__btn is-on"
+                title="기획서에는 있는데 완성본에 없는 문구·도형을 브라우저가 그려 얹습니다 (AI 호출 없음)"
+                onClick={() => void fill.fill()}
+              >
+                빠진 문구·도형 얹기 ({fill.missing})
+              </button>
+            )}
+          </>
         ) : target.kind === 'text' ? (
           <TextOptions key={target.blockId} target={target} label={label} />
         ) : target.kind === 'shape' ? (
