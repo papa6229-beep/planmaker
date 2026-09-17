@@ -31,7 +31,7 @@ export function ToneAdjustPanel() {
   const settle = () => void generation.recomposePage(activePageId)
 
   return (
-    <PanelFold id="tone" title="결과 톤 조절" note="밝기 · 대비 · 채도 · 색온도 · 그림자" marked={!toneIsFlat(tone)}>
+    <PanelFold id="tone" title="결과 톤 조절" note="밝기 · 대비 · 채도 · 색온도 · 그림자 · 테두리" marked={!toneIsFlat(tone)}>
     <section className="tone" aria-label="결과 톤 조절">
       <p className="tone__note">
         완성 결과 전체에 겁니다. 원본은 그대로 두고 그릴 때마다 이 값으로 다시 계산합니다.
@@ -131,8 +131,8 @@ function ObjectShadow({
 
   const effects = studio.effectsOf(blockId)
   const fields = [
-    { key: 'contactShadow' as const, label: '접지', hint: '바닥에 닿은 자리의 그림자' },
-    { key: 'wallShadow' as const, label: '벽', hint: '빛 반대쪽으로 밀린 그림자' },
+    { key: 'contactShadow' as const, label: '바닥', hint: '바닥에 닿은 자리의 그림자' },
+    { key: 'wallShadow' as const, label: '뒤', hint: '빛 반대쪽(없으면 오른쪽 아래)으로 밀린 그림자 — 세게 할수록 멀고 진하다' },
   ]
 
   return (
@@ -180,6 +180,94 @@ function ObjectShadow({
   )
 }
 
+/**
+ * 고른 오브젝트의 테두리 (후보정 테두리 Patch, 2026-09-17).
+ *
+ * 스티커처럼 사진 윤곽을 따라가는 선이다. 그림자와 같은 까닭으로 여기 둔다 —
+ * 어울리는 두께와 색은 완성된 배경 위에서라야 보인다. 합칠 때 그리기만 하므로
+ * AI 호출도 생성 방식도 건드리지 않는다 (종이 컷아웃과 다른 점).
+ */
+let colorTimer: ReturnType<typeof setTimeout> | undefined
+
+function ObjectOutline({
+  blockId,
+  label,
+  settle,
+  busy,
+}: {
+  blockId: string
+  label: string
+  settle: () => void
+  busy: boolean
+}) {
+  const studio = useStudioJob()
+  if (studio === null) return null
+  const effects = studio.effectsOf(blockId)
+  const sliders = [
+    { key: 'outlineWidth' as const, label: '두께' },
+    { key: 'outlineOpacity' as const, label: '진하기' },
+  ]
+
+  return (
+    <div className="tone__shadow">
+      <label className="tone__shadow-switch">
+        <input
+          type="checkbox"
+          checked={effects.outline}
+          disabled={busy}
+          aria-label={`${label} 테두리`}
+          onChange={() => {
+            studio.markStep()
+            studio.setEffects(blockId, { outline: !effects.outline })
+            settle()
+          }}
+        />
+        테두리
+      </label>
+      {effects.outline && (
+        <div className="tone__sliders">
+          {sliders.map((field) => (
+            <label key={field.key} className="tone__slider">
+              <span className="tone__slider-label">
+                {field.label} · {Math.round(effects[field.key] * 100)}%
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={Math.round(effects[field.key] * 100)}
+                aria-label={`${label} 테두리 ${field.label}`}
+                disabled={busy}
+                onPointerDown={() => studio.markStep()}
+                onKeyDown={() => studio.markStep()}
+                onChange={(e) => studio.setEffects(blockId, { [field.key]: Number(e.target.value) / 100 })}
+                onPointerUp={settle}
+                onKeyUp={settle}
+              />
+            </label>
+          ))}
+          <label className="tone__slider">
+            <span className="tone__slider-label">색</span>
+            <input
+              type="color"
+              value={effects.outlineColor}
+              aria-label={`${label} 테두리 색`}
+              disabled={busy}
+              onFocus={() => studio.markStep()}
+              onChange={(e) => {
+                studio.setEffects(blockId, { outlineColor: e.target.value })
+                // 색 고르개는 끄는 동안 값을 계속 보낸다. 멈춘 뒤 한 번만 다시 합친다.
+                if (colorTimer !== undefined) clearTimeout(colorTimer)
+                colorTimer = setTimeout(settle, 250)
+              }}
+            />
+          </label>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ObjectTone({ settle, busy }: { settle: () => void; busy: boolean }) {
   const studio = useStudioJob()
   const { pages, activePageId } = useBriefDocument()
@@ -219,6 +307,7 @@ function ObjectTone({ settle, busy }: { settle: () => void; busy: boolean }) {
         ))}
       </div>
       <ObjectShadow blockId={blockId} label={label} settle={settle} busy={busy} />
+      <ObjectOutline blockId={blockId} label={label} settle={settle} busy={busy} />
       <button
         type="button"
         className="btn tone__reset"

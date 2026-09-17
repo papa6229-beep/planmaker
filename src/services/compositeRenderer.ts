@@ -13,7 +13,7 @@
  * → 그레인.
  */
 
-import { contactShadow, wallShadow, type CompositeEffects } from '../domain/compositeEffects'
+import { contactShadow, outlineWidthPx, wallShadow, type CompositeEffects } from '../domain/compositeEffects'
 import { paperOutset, PAPER_SHADOW } from '../domain/paperCutout'
 import { applyTone, normalizeTone, toneIsFlat, type ToneAdjust } from '../domain/toneAdjust'
 import { photoImageStyle, type ContentBox } from '../domain/photoBox'
@@ -122,6 +122,34 @@ function silhouette(
   // 알파는 그대로 두고 색만 검게 — 이것이 실루엣이다.
   ctx.globalCompositeOperation = 'source-in'
   ctx.fillStyle = '#000'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  return canvas
+}
+
+/**
+ * 실루엣을 사방으로 불려 테두리 판을 만든다 (후보정 테두리 Patch).
+ *
+ * 캔버스에는 "알파를 따라 두껍게"가 없다. 같은 실루엣을 둥글게 돌아가며 여러 번
+ * 찍으면 그 합이 곧 두꺼워진 모양이다 — 스티커 테두리가 사진 윤곽을 따라간다.
+ * 돌려 준 판은 사방으로 `width`만큼 크다.
+ */
+function outlinePlate(shape: HTMLCanvasElement, width: number, color: string): HTMLCanvasElement | null {
+  const r = Math.max(1, Math.round(width))
+  const canvas = document.createElement('canvas')
+  canvas.width = shape.width + r * 2
+  canvas.height = shape.height + r * 2
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  // 반지름이 클수록 찍는 자리를 촘촘히 — 사이가 벌어지면 테두리가 톱니가 된다.
+  const steps = Math.min(64, Math.max(16, Math.round(r * 2)))
+  for (const ring of r > 6 ? [r, r * 0.66, r * 0.33] : [r]) {
+    for (let i = 0; i < steps; i += 1) {
+      const a = (i / steps) * Math.PI * 2
+      ctx.drawImage(shape, r + Math.cos(a) * ring, r + Math.sin(a) * ring)
+    }
+  }
+  ctx.globalCompositeOperation = 'source-in'
+  ctx.fillStyle = color
   ctx.fillRect(0, 0, canvas.width, canvas.height)
   return canvas
 }
@@ -258,6 +286,22 @@ async function drawLayer(
     ctx.ellipse(contact.cx, contact.cy, Math.max(1, contact.rx), Math.max(1, contact.ry), 0, 0, Math.PI * 2)
     ctx.fill()
     ctx.restore()
+  }
+
+  // ── 테두리: 그림자 위, 사진 아래 (후보정 테두리 Patch) ────────────────────
+  if (shape !== null && effects.outline && effects.outlineOpacity > 0) {
+    const width = outlineWidthPx(layer.rect, effects.outlineWidth)
+    const plate = outlinePlate(shape, width, effects.outlineColor)
+    if (plate !== null) {
+      const r = (plate.width - shape.width) / 2
+      // 실루엣은 화면 크기(`fit.dest`)로 만들어졌다. 판도 같은 배율로 얹는다.
+      const sx = fit.dest.width / shape.width
+      const sy = fit.dest.height / shape.height
+      ctx.save()
+      ctx.globalAlpha = effects.outlineOpacity
+      ctx.drawImage(plate, fit.dest.x - r * sx, fit.dest.y - r * sy, plate.width * sx, plate.height * sy)
+      ctx.restore()
+    }
   }
 
   // ── 원본 (§9 첫 줄: 그대로 얹는다) ────────────────────────────────────────

@@ -49,12 +49,26 @@ export interface CompositeEffects {
   paperWeight: number
   /** 종이 테두리의 진하기 0..1. `0`이면 보이지 않지만 오브젝트는 남는다. */
   paperOpacity: number
+  /**
+   * 테두리 — 완성 뒤에 거는 외곽선 (후보정 테두리 Patch, 2026-09-17).
+   *
+   * 종이 컷아웃과 **다른 것**이다. 종이 컷아웃은 켜는 순간 생성 방식(`preserve`)까지
+   * 바꾸므로, 완성된 뒤에 켜고 끄면 다음 생성이 말없이 달라진다. 이것은 합칠 때
+   * 그리기만 하는 효과라 AI 호출도, 생성 방식도 건드리지 않는다.
+   */
+  outline: boolean
+  /** 테두리 두께 0..1 — 오브젝트 짧은 변에 대한 비율로 옮겨진다 (`outlineWidthPx`). */
+  outlineWidth: number
+  /** 테두리 진하기 0..1. */
+  outlineOpacity: number
+  /** 테두리 색 `#rrggbb`. */
+  outlineColor: string
 }
 
 /** 세기로 조절하는 항목만 — 종이 컷아웃은 체크 하나라 여기 끼지 않는다. */
 export type CompositeStrengthKey = Exclude<
   keyof CompositeEffects,
-  'paperCutout' | 'paperWeight' | 'paperOpacity' | 'shadow'
+  'paperCutout' | 'paperWeight' | 'paperOpacity' | 'shadow' | 'outline' | 'outlineWidth' | 'outlineOpacity' | 'outlineColor'
 >
 
 /**
@@ -74,6 +88,10 @@ export const DEFAULT_COMPOSITE_EFFECTS: CompositeEffects = {
   paperCutout: false,
   paperWeight: DEFAULT_PAPER_WEIGHT,
   paperOpacity: DEFAULT_PAPER_OPACITY,
+  outline: false,
+  outlineWidth: 0.35,
+  outlineOpacity: 1,
+  outlineColor: '#ffffff',
 }
 
 /** 화면에 그대로 쓰는 이름 — 순서까지 여기서 정한다 (§11). */
@@ -117,7 +135,28 @@ export function normalizeEffects(raw: unknown): CompositeEffects {
     paperCutout: value.paperCutout === true,
     paperWeight: paperWeightOf(value.paperWeight),
     paperOpacity: paperOpacityOf(value.paperOpacity),
+    // 예전 작업 파일에는 없는 항목이다. 모르면 꺼짐 — 열어 보기만 해도 결과가 바뀌면 안 된다.
+    outline: value.outline === true,
+    outlineWidth: clamp01(value.outlineWidth, DEFAULT_COMPOSITE_EFFECTS.outlineWidth),
+    outlineOpacity: clamp01(value.outlineOpacity, DEFAULT_COMPOSITE_EFFECTS.outlineOpacity),
+    outlineColor:
+      typeof value.outlineColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.outlineColor)
+        ? value.outlineColor.toLowerCase()
+        : DEFAULT_COMPOSITE_EFFECTS.outlineColor,
   }
+}
+
+/**
+ * 테두리 두께를 픽셀로 (후보정 테두리 Patch).
+ *
+ * 짧은 변의 최대 6%. 0이어도 1px은 남긴다 — 켜 둔 테두리가 보이지 않으면 작업자는
+ * 켜졌는지 꺼졌는지 알 수 없다. 끄는 일은 스위치가 한다.
+ */
+export const OUTLINE_MAX_RATIO = 0.06
+
+export function outlineWidthPx(rect: { width: number; height: number }, width: number): number {
+  const short = Math.max(1, Math.min(rect.width, rect.height))
+  return Math.max(1, short * OUTLINE_MAX_RATIO * clamp01(width, 0))
 }
 
 // ── 그림자 (§9.2) ──────────────────────────────────────────────────────────
@@ -170,22 +209,39 @@ export function contactShadow(rect: ShadowSubject, source: LightDirection, stren
     cx: rect.x + rect.width / 2 - source.light.x * rect.width * 0.06,
     // 제품의 발밑. 상자 아래쪽에 붙어 있어야 닿아 보인다.
     cy: rect.y + rect.height * 0.985,
-    rx: rect.width * 0.42,
+    rx: rect.width * 0.45,
     // 납작해야 바닥에 눕는다. 세로 반지름이 가로의 절반을 넘으면 공처럼 보인다.
-    ry: rect.width * 0.42 * 0.18,
-    blur: rect.width * 0.06,
+    ry: rect.width * 0.45 * 0.2,
+    blur: rect.width * 0.05,
     // 0은 진짜 0이다. 최소 세기에서도 흐릿하게 남는 값을 두면 "껐다"가 거짓이 된다.
-    opacity: s === 0 ? 0 : 0.1 + 0.35 * s,
+    // 2026-09-17: 최대 0.45로는 끝까지 올려도 티가 나지 않았다 (사용자) — 0.8까지.
+    opacity: s === 0 ? 0 : 0.15 + 0.65 * s,
   }
 }
 
 export function wallShadow(rect: ShadowSubject, source: LightDirection, strength: number): WallShadow {
   const s = clamp01(strength, 0)
+  // 빛의 반대쪽으로 민다. 정면광이면 밀 곳이 없어 그림자가 제품 뒤에 통째로
+  // 숨었다 — 끝까지 올려도 보이지 않던 이유다 (2026-09-17). 빛이 약하면 오른쪽
+  // 아래를 기본으로 삼는다. 사진 속 빛이 대개 왼쪽 위에서 오기 때문이다.
+  let ux = -source.light.x
+  let uy = -source.light.y
+  const len = Math.hypot(ux, uy)
+  if (len < 0.35) {
+    ux = 0.6
+    uy = 0.8
+  } else {
+    ux /= len
+    uy /= len
+  }
+  const short = Math.min(rect.width, rect.height)
+  const distance = short * (0.02 + 0.07 * s)
   return {
-    dx: -source.light.x * rect.width * 0.1 * (0.4 + 0.6 * s),
-    dy: -source.light.y * rect.height * 0.06 * (0.4 + 0.6 * s) + rect.height * 0.02,
-    blur: rect.width * 0.12,
-    // 접지 그림자보다 반드시 옅다 (위 상한 0.45 대 여기 0.2).
-    opacity: s === 0 ? 0 : 0.06 + 0.14 * s,
+    dx: ux * distance,
+    dy: uy * distance,
+    // 세게 할수록 또렷하게. 흐릴수록 넓게 퍼져 옅어 보인다.
+    blur: short * (0.05 - 0.025 * s),
+    // 접지 그림자보다는 옅게 (여기 상한 0.6 대 위 0.8).
+    opacity: s === 0 ? 0 : 0.12 + 0.48 * s,
   }
 }
