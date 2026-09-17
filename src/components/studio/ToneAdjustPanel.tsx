@@ -125,8 +125,8 @@ function LightMatch({ pageId, busy }: { pageId: string; busy: boolean }) {
     <div className="light-match">
       <p className="tone__object-title">빛 맞추기</p>
       <p className="tone__note">
-        제품 위치를 정한 뒤 누르세요. 배경의 조명을 제품에 입히고, 제품 모양대로 그림자를 만들어 제품에 붙입니다 —
-        옮기면 함께 움직입니다. 제품 그림은 AI에 보내지 않습니다.
+        제품 위치를 정한 뒤 누르세요. 배경의 조명을 제품에 입힙니다 — 옮기면 함께 움직입니다. 그림자는 아래
+        오브젝트 칸의 그림자로 맞추세요. 제품 그림은 AI에 보내지 않습니다.
       </p>
       <input
         type="text"
@@ -228,7 +228,7 @@ function ObjectLight({
       </label>
       {moved && (
         <p className="light-match__stale">
-          자리나 기울기가 바뀌었습니다. 빛과 그림자는 따라왔지만, 새 자리의 조명에 맞추려면 빛 맞추기를 다시 누르세요.
+          자리나 기울기가 바뀌었습니다. 빛 층은 따라왔지만, 새 자리의 조명에 맞추려면 빛 맞추기를 다시 누르세요.
         </p>
       )}
       {effects.light && (

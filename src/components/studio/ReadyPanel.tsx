@@ -60,8 +60,8 @@ export function ReadyPanel() {
           checked={generation.autoLight}
           onChange={(e) => generation.setAutoLight(e.target.checked)}
         />
-        생성 후 빛·그림자 자동 맞추기
-        <span className="ready-panel__hint">이미지 블록 제품에 배경의 조명과 그림자를 입힙니다 (약 3초 더)</span>
+        생성 후 빛 자동 맞추기
+        <span className="ready-panel__hint">이미지 블록 제품에 배경의 조명을 입힙니다 (약 3초 더)</span>
       </label>
       <dl className="ready-panel__facts">
         <div>

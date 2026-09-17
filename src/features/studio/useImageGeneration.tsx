@@ -134,7 +134,6 @@ import { renderPreviewPng } from '../../services/previewRenderer'
 import {
   alignLit,
   canvasToPng,
-  castShadowsFor,
   lightMapFor,
   renderComposite,
   renderLightProbe,
@@ -1328,10 +1327,9 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
    *  2. Klein: "덩어리를 장면과 같은 빛을 받는 점토 물체로" (어댑터가 고정 문장을 쥔다)
    *  3. 결과의 크기 어긋남(1.5~4%)을 되돌린다. 못 되돌리면 장면을 새로 그린 것 — 버린다
    *  4. 오브젝트마다 **빛만** 떼어 제품 좌표의 빛 층으로 저장 → 원본 제품에 곱한다
-   *  5. 그림자도 제품마다 떼어 **제품에 붙인다** — 옮기면 따라간다. 배경은 그대로
+   *  5. 배경은 그대로. 그림자는 만들지 않는다 — 후보정 그림자로 (2026-09-17 밤)
    *
-   * 제품 자리가 정해진 **뒤에** 누르는 버튼이다. 많이 옮기면 바닥과 그림자가 어긋나므로
-   * 다시 누른다.
+   * 제품 자리가 정해진 **뒤에** 누르는 버튼이다. 많이 옮기면 다시 누른다.
    * 스스로 다시 부르지 않는다.
    */
   const matchLight = useCallback(
@@ -1398,7 +1396,9 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           return
         }
 
-        const shadows = await castShadowsFor(plan, probe, lit.canvas, ids)
+        // 그림자는 AI에게 맡기지 않는다 (2026-09-17 밤, 사용자 결정). 엔진은 빛 방향을 따져
+        // 바닥에 그림자를 눕히지 못했다 — bg2에서 원본의 V자 그림자 대신 반대쪽에 덩어리를
+        // 만들었다 (REPORT §14). 그림자는 후보정(바닥·뒤)으로, 이 버튼은 빛만 입힌다.
         studio.markStep()
         for (const object of objects) {
           const layer = plan.layers.find((l) => l.blockId === object.blockId)
@@ -1407,32 +1407,12 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           if (map === null) continue
           const assetId = createId('asset')
           await putAsset({ id: assetId, blob: map, fileName: `light-${object.blockId}.png`, mimeType: 'image/png', byteSize: map.size })
-          const shadow = shadows.get(object.blockId)
-          let shadowAssetId: string | undefined
-          if (shadow !== undefined) {
-            shadowAssetId = createId('asset')
-            await putAsset({
-              id: shadowAssetId,
-              blob: shadow.blob,
-              fileName: `shadow-${object.blockId}.png`,
-              mimeType: 'image/png',
-              byteSize: shadow.blob.size,
-            })
-          }
           studio.setEffects(object.blockId, {
             light: true,
             lightAssetId: assetId,
             lightKey: lightKeyOf(object.rect, object.angle),
-            lightAngle: object.angle ?? 0,
-            ...(shadowAssetId === undefined || shadow === undefined
-              ? {}
-              : { lightShadowAssetId: shadowAssetId, lightShadowBox: shadow.box }),
-            // 그림자는 이제 제품에 붙어 있다. 코드 그림자까지 두면 두 번 진다.
-            shadow: false,
           })
         }
-        // 배경은 건드리지 않는다 (2026-09-17 저녁). 처음 판은 제품 주변 배경을 결과로
-        // 바꿨고, 그 안의 점토 덩어리가 제품을 옮기면 드러났다.
         await recomposePage(pageId)
         setState({ kind: 'idle' })
       } catch {
