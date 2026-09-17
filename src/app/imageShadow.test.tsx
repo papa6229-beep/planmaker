@@ -186,7 +186,7 @@ describe('§S2 스위치가 그리는 자리까지 간다', () => {
               rect: { x: 60, y: 520, width: 300, height: 200 },
               fit: 'contain',
               crop: { sx: 0, sy: 0, sWidth: 100, sHeight: 100, dx: 60, dy: 520, dWidth: 300, dHeight: 200 },
-              effects: { ...DEFAULT_COMPOSITE_EFFECTS, shadow },
+              effects: { ...DEFAULT_COMPOSITE_EFFECTS, contactShadow: 0.7, shadow },
               order: 0,
             },
           ],

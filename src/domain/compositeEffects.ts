@@ -101,7 +101,7 @@ export type CompositeStrengthKey = Exclude<
  */
 export const DEFAULT_COMPOSITE_EFFECTS: CompositeEffects = {
   edge: 0.5,
-  contactShadow: 0.7,
+  contactShadow: 0,
   wallShadow: 0.35,
   shadow: true,
   grading: 0.25,
