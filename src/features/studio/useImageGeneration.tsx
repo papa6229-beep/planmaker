@@ -35,7 +35,18 @@ import {
 } from 'react'
 import { useBriefDocument } from '../document/useBriefDocument'
 import { useStudioJob } from './useStudioJob'
-import { cursorOf, pageResultOf, revisionsOf, studioLiveAssetIds } from '../../domain/studioJob'
+import {
+  cursorOf,
+  imageObjectsOf,
+  objectToneOf as objectToneIn,
+  pageResultOf,
+  revisionsOf,
+  studioLiveAssetIds,
+  toneOf as toneIn,
+} from '../../domain/studioJob'
+import { bumpPreviewEpoch, previewEpoch, setLivePreview } from './livePreview'
+import { matchLevels } from '../../domain/toneMatch'
+import { aroundToneStats, objectToneStats } from '../../services/toneMatchStats'
 import {
   apiKeyRemembered,
   authHeaders,
@@ -338,6 +349,10 @@ export interface ImageGenerationApi {
   retryConversion: () => void
   /** 문구를 옮기거나 크기를 바꾼 뒤 결과를 다시 합친다. 외부 호출 0건. */
   recomposePage: (pageId: string) => Promise<void>
+  /** 끄는 동안의 미리보기 — 저장하지 않는 그림을 완성본 자리에 건다. 외부 호출 0건. */
+  previewPage: (pageId: string) => void
+  /** 조각의 레벨을 주변 배경에서 채운다. 외부 호출 0건. */
+  matchToBackground: (pageId: string, blockId: string) => Promise<boolean>
   /**
    * 재료에서 완성본을 되살린다 (다시 합치기 Patch). **외부 호출 0건.**
    *
@@ -1158,7 +1173,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         rectOverrides[object.blockId] = object.rect
         orderOverrides[object.blockId] = object.layer
         if (object.angle !== undefined) angleOverrides[object.blockId] = object.angle
-        objectTones[object.blockId] = studio.objectToneOf(object.blockId)
+        // 방금 적힌 값을 읽는다 — 끄는 동안의 미리보기가 한 박자 늦지 않게.
+        objectTones[object.blockId] = objectToneIn(job, object.blockId)
         productImages[object.blockId] = object.assetId
       }
 
@@ -1171,12 +1187,12 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           order: t.layer,
           ...(t.angle === undefined ? {} : { angle: t.angle }),
           // 이 문구 하나에만 거는 톤 (블록별 톤 Patch). 전체 톤과 따로 산다.
-          tone: studio.objectToneOf(t.blockId),
+          tone: objectToneIn(job, t.blockId),
         })),
         productImages,
         effects: job.effects ?? {},
-        grain: studio.grain,
-        tone: studio.toneOf(pageId),
+        grain: job.grain ?? studio.grain,
+        tone: toneIn(job, pageId),
         onlyBlockIds: fixed,
         rectOverrides,
         orderOverrides,
@@ -1250,11 +1266,50 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     [studio],
   )
 
+  /**
+   * 끄는 동안의 미리보기 (후보정 창 Patch). **저장하지 않는다.**
+   *
+   * 한 번에 한 장만 그린다. 그리는 사이 값이 또 바뀌면 끝난 뒤 한 번 더 그린다 —
+   * 끄는 속도가 그리는 속도보다 빨라도 줄이 쌓이지 않고, 마지막 값은 반드시 보인다.
+   */
+  const previewRef = useRef<Map<string, { running: boolean; dirty: boolean }>>(new Map())
+  const previewPage = useCallback(
+    (pageId: string) => {
+      if (studio === null || pageResultOf(studio.currentJob(), pageId) === undefined) return
+      const slot = previewRef.current.get(pageId) ?? { running: false, dirty: false }
+      previewRef.current.set(pageId, slot)
+      if (slot.running) {
+        slot.dirty = true
+        return
+      }
+      slot.running = true
+      void (async () => {
+        try {
+          do {
+            slot.dirty = false
+            const epoch = previewEpoch(pageId)
+            const plan = compositePlanFor(pageId)
+            if (plan === null) break
+            const blob = await renderComposite(plan, await collectCompositeSources(plan))
+            setLivePreview(pageId, URL.createObjectURL(blob), epoch)
+          } while (slot.dirty)
+        } catch {
+          // 미리보기가 실패해도 손을 떼면 최종 합치기가 그린다.
+        } finally {
+          slot.running = false
+        }
+      })()
+    },
+    [studio, compositePlanFor],
+  )
+
   const recomposePage = useCallback(
     async (pageId: string) => {
       if (studio === null) return
       const previous = pageResultOf(studio.currentJob(), pageId)
       if (previous === undefined) return
+      // 이 앞에서 시작한 미리보기는 늦게 끝나도 걸지 않는다.
+      bumpPreviewEpoch(pageId)
       const composed = await composePage(pageId)
       if (composed === null) return
       const assetId = await storeComposed(pageId, composed.blob)
@@ -1271,6 +1326,34 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       await dropOrphan(previous.assetId)
     },
     [studio, composePage, storeComposed, dropOrphan],
+  )
+
+  /**
+   * "배경에 맞추기" (후보정 창 Patch). 조각의 레벨 값을 주변 배경에서 채운다.
+   * 커브는 그대로 둔다. 잴 수 없으면 아무것도 바꾸지 않고 `false`. 외부 호출 0건.
+   */
+  const matchToBackground = useCallback(
+    async (pageId: string, blockId: string): Promise<boolean> => {
+      if (studio === null) return false
+      const job = studio.currentJob()
+      const result = pageResultOf(job, pageId)
+      const object = [...imageObjectsOf(job, pageId), ...(job.textObjects?.[pageId] ?? [])].find(
+        (o) => o.blockId === blockId,
+      )
+      const page = getDocument().pages.find((p) => p.id === pageId)
+      if (result === undefined || object === undefined || page === undefined) return false
+      const [own, whole] = await Promise.all([getAsset(object.assetId), getAsset(result.assetId)])
+      if (own === undefined || whole === undefined) return false
+      const size = { width: page.canvasWidth ?? 840, height: page.canvasHeight ?? 1000 }
+      const [a, b] = await Promise.all([objectToneStats(own.blob), aroundToneStats(whole.blob, size, object.rect)])
+      const levels = a === null || b === null ? null : matchLevels(a, b)
+      if (levels === null) return false
+      studio.markStep()
+      await studio.setObjectTone(blockId, { levels })
+      await recomposePage(pageId)
+      return true
+    },
+    [studio, getDocument, recomposePage],
   )
 
 
@@ -2484,6 +2567,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             confirm,
             retryConversion,
             recomposePage,
+            previewPage,
+            matchToBackground,
             rebuildPage,
             canRebuild,
             editTargets,
@@ -2506,6 +2591,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           },
     [
       studio, state, hasResult, hasKey, keyRemembered, accessMode, askAccessMode, view, begin, confirm, retryConversion, recomposePage,
+      previewPage, matchToBackground,
       rebuildPage, canRebuild,
       editTargets, selectedTargetIds, toggleTarget, instructionFor, setInstructionFor,
       canEdit, editBlockedReason, beginEdit, confirmEdit,

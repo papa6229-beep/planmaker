@@ -242,6 +242,24 @@ async function openFold(name: RegExp) {
 }
 
 const labelOf = (el: HTMLElement) => el.getAttribute('aria-label') ?? ''
+
+/**
+ * 완성본 조각을 고르고 그 옆 "후보정" 창을 연다 (후보정 창 Patch). 탭을 주면 그리로 간다.
+ */
+async function openPostEdit(box: HTMLElement, tab?: RegExp): Promise<HTMLElement> {
+  fireEvent.pointerDown(box, { button: 0, clientX: 5, clientY: 5 })
+  await waitFor(() => expect(box.getAttribute('aria-pressed')).toBe('true'), { timeout: 5000 })
+  fireEvent.pointerUp(window)
+  const dialog = () => document.querySelector<HTMLElement>('.result-object__editor')
+  if (dialog() === null) fireEvent.click(await waitFor(() => within(box).getByRole('button', { name: '후보정' })))
+  const found = await waitFor(() => {
+    const d = dialog()
+    expect(d).not.toBeNull()
+    return d!
+  })
+  if (tab !== undefined) fireEvent.click(within(found).getByRole('tab', { name: tab }))
+  return found
+}
 const bodies = () => fetchSpy.mock.calls.map((c) => c[1].body as FormData)
 const promptOf = (form: FormData) => String(form.get('prompt'))
 const namesOf = (form: FormData) =>
@@ -1187,13 +1205,21 @@ describe('§11 완성 후 종이 테두리', () => {
     const calls = fetchSpy.mock.calls.length
     composed.mockClear()
 
-    // 컷아웃이 켜진 블록만 나온다 — 일반 이미지에는 다듬을 테두리가 없다.
-    // 이름은 부분수정 목록과 같은 번호다. 블록 이름표는 둘 다 `이미지`라 구분되지
-    // 않는다 (컷아웃 구분 Patch).
-    await openFold(/종이 테두리 다듬기/)
-    expect(screen.queryByLabelText('이미지 1 종이 테두리 두께')).toBeNull()
+    // 컷아웃이 켜진 조각의 "모양" 탭에만 나온다 — 일반 이미지에는 다듬을 테두리가 없다.
+    const boxes = await waitFor(() => {
+      const found = container.querySelectorAll<HTMLElement>('.result-object')
+      expect(found.length).toBe(6)
+      return found
+    }, { timeout: 5000 })
+    const plainBox = Array.from(boxes).find((b) => labelOf(b) === '이미지 blk_photo')!
+    const plainEditor = await openPostEdit(plainBox, /모양/)
+    expect(within(plainEditor).queryByLabelText(/종이 테두리 두께/)).toBeNull()
+    const cutBox = Array.from(container.querySelectorAll<HTMLElement>('.result-object')).find(
+      (b) => labelOf(b) === '이미지 blk_cut',
+    )!
+    const editor = await openPostEdit(cutBox, /모양/)
 
-    const weight = await screen.findByLabelText('이미지 2 종이 테두리 두께')
+    const weight = await within(editor).findByLabelText(/종이 테두리 두께/)
     fireEvent.change(weight, { target: { value: '35' } })
     fireEvent.pointerUp(weight)
 
@@ -1209,7 +1235,7 @@ describe('§11 완성 후 종이 테두리', () => {
     expect(plan.layers.find((l) => l.blockId === 'blk_cut')?.effects.paperWeight).toBeCloseTo(0.35, 5)
 
     // 진하기 0은 컷아웃을 끄는 것과 다르다 — 오브젝트도 자리도 그대로다.
-    const opacity = await screen.findByLabelText('이미지 2 종이 테두리 진하기')
+    const opacity = await within(editor).findByLabelText(/종이 테두리 진하기/)
     fireEvent.change(opacity, { target: { value: '0' } })
     fireEvent.pointerUp(opacity)
     await waitFor(async () => {
@@ -1348,21 +1374,23 @@ describe('§13 고른 오브젝트만 톤 조절', () => {
     }, { timeout: 5000 })
 
     await openFold(/결과 톤 조절/)
-    // 아무것도 고르지 않았으면 블록별 슬라이더는 없다.
-    expect(screen.queryByLabelText(/큰 문구 밝기 조절/)).toBeNull()
+    // 아무것도 고르지 않았으면 조각의 후보정 창은 없다. 오른쪽 칸은 페이지 전체만 다룬다.
+    expect(document.querySelector('.result-object__editor')).toBeNull()
+    expect(screen.queryAllByLabelText(/밝기 조절$/)).toHaveLength(1)
 
     const calls = fetchSpy.mock.calls.length
     const title = Array.from(boxes).find((b) => labelOf(b) === '꾸며진 문구 blk_t1')!
-    fireEvent.pointerDown(title, { button: 0, clientX: 5, clientY: 5 })
-    await waitFor(() => expect(title.getAttribute('aria-pressed')).toBe('true'))
-    fireEvent.pointerUp(window)
+    const editor = await openPostEdit(title, /^색/)
+    // 문구 조각에는 그림자·테두리 탭이 없다 — 합칠 때 이미지에만 그려진다.
+    expect(within(editor).queryByRole('tab', { name: /그림자/ })).toBeNull()
+    expect(within(editor).queryByRole('tab', { name: /테두리/ })).toBeNull()
 
     // 전체는 밝게, 고른 문구 하나는 어둡게 — 한 벌의 값으로는 안 되는 일이다.
     const whole = await screen.findByLabelText('밝기 조절')
     fireEvent.change(whole, { target: { value: '30' } })
     fireEvent.pointerUp(whole)
 
-    const mine = await screen.findByLabelText('큰 문구 밝기 조절')
+    const mine = await within(editor).findByLabelText(/밝기 조절$/)
     fireEvent.change(mine, { target: { value: '-50' } })
     fireEvent.pointerUp(mine)
 
@@ -1416,18 +1444,15 @@ describe('§13-b 고른 오브젝트의 그림자', () => {
       return found
     }, { timeout: 5000 })
 
-    await openFold(/결과 톤 조절/)
     // 아무것도 고르지 않았으면 그림자 슬라이더도 없다 — 무엇에 걸리는지 화면이
     // 말하지 못하는 슬라이더는 두지 않는다.
     expect(screen.queryByLabelText(/바닥 그림자 세기/)).toBeNull()
 
     const calls = fetchSpy.mock.calls.length
     const photo = Array.from(boxes).find((b) => labelOf(b) === '이미지 blk_photo')!
-    fireEvent.pointerDown(photo, { button: 0, clientX: 5, clientY: 5 })
-    await waitFor(() => expect(photo.getAttribute('aria-pressed')).toBe('true'), { timeout: 5000 })
-    fireEvent.pointerUp(window)
+    const editor = await openPostEdit(photo, /그림자/)
 
-    const contact = await screen.findByLabelText(/바닥 그림자 세기/)
+    const contact = await within(editor).findByLabelText(/바닥 그림자 세기/)
     fireEvent.change(contact, { target: { value: '20' } })
     fireEvent.pointerUp(contact)
 
@@ -1462,13 +1487,10 @@ describe('§13-b 고른 오브젝트의 그림자', () => {
       return found
     }, { timeout: 5000 })
 
-    await openFold(/결과 톤 조절/)
     const photo = Array.from(boxes).find((b) => labelOf(b) === '이미지 blk_photo')!
-    fireEvent.pointerDown(photo, { button: 0, clientX: 5, clientY: 5 })
-    await waitFor(() => expect(photo.getAttribute('aria-pressed')).toBe('true'), { timeout: 5000 })
-    fireEvent.pointerUp(window)
+    const editor = await openPostEdit(photo, /그림자/)
 
-    const contact = await screen.findByLabelText(/바닥 그림자 세기/)
+    const contact = await within(editor).findByLabelText(/바닥 그림자 세기/)
     fireEvent.change(contact, { target: { value: '15' } })
     fireEvent.pointerUp(contact)
     await waitFor(async () => {
@@ -1476,7 +1498,7 @@ describe('§13-b 고른 오브젝트의 그림자', () => {
       expect(job?.effects?.blk_photo?.contactShadow).toBeCloseTo(0.15, 5)
     }, { timeout: 5000 })
 
-    fireEvent.click(await screen.findByRole('checkbox', { name: /그림자$/ }))
+    fireEvent.click(await within(editor).findByRole('checkbox', { name: /그림자$/ }))
 
     // 슬라이더는 사라지지만 값은 지워지지 않는다 — 다시 켜면 그대로 돌아온다.
     await waitFor(() => expect(screen.queryByLabelText(/바닥 그림자 세기/)).toBeNull(), { timeout: 5000 })
@@ -2237,5 +2259,98 @@ describe('§23 글꼴 미리보기', () => {
       G.__testFontCatalog = undefined
       resetFontFamiliesForTests()
     }
+  })
+})
+
+// ── §24 조각 옆 후보정 창 (2026-09-17) ───────────────────────────────────────
+
+describe('§24 후보정 창', () => {
+  async function ready(container: HTMLElement) {
+    await documentReady(container)
+    await generateOnce()
+    return waitFor(() => {
+      const found = container.querySelectorAll<HTMLElement>('.result-object')
+      expect(found.length).toBe(6)
+      return Array.from(found)
+    }, { timeout: 5000 })
+  }
+
+  it('끄는 동안 저장 없이 다시 그려 보여 주고, 놓으면 그때 저장한다 — 외부 호출은 없다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    const boxes = await ready(container)
+    const photo = boxes.find((b) => labelOf(b) === '이미지 blk_photo')!
+    const editor = await openPostEdit(photo, /^색/)
+    const before = (await loadStudioJob(STUDIO_JOB_ID))?.results?.page_1?.assetId
+    const calls = fetchSpy.mock.calls.length
+    composed.mockClear()
+
+    const slider = within(editor).getByLabelText(/밝기 조절$/)
+    fireEvent.pointerDown(slider)
+    fireEvent.change(slider, { target: { value: '40' } })
+    // 손을 떼기 전에 이미 그렸다.
+    await waitFor(() => expect(composed).toHaveBeenCalled(), { timeout: 5000 })
+    const plan = composed.mock.calls.at(-1)![0] as { layers: { blockId: string }[]; objectTones?: unknown }
+    expect(plan.layers.some((l) => l.blockId === 'blk_photo')).toBe(true)
+    // 그래도 결과는 그대로다 — 미리보기는 저장하지 않는다.
+    expect((await loadStudioJob(STUDIO_JOB_ID))?.results?.page_1?.assetId).toBe(before)
+
+    fireEvent.pointerUp(slider)
+    await waitFor(async () => {
+      expect((await loadStudioJob(STUDIO_JOB_ID))?.results?.page_1?.assetId).not.toBe(before)
+    }, { timeout: 5000 })
+    expect(fetchSpy.mock.calls.length).toBe(calls)
+  })
+
+  it('그림자 방향 9칸 — 누르면 그쪽으로 가고, 진하기가 0이면 켜진다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    const boxes = await ready(container)
+    const photo = boxes.find((b) => labelOf(b) === '이미지 blk_photo')!
+    const editor = await openPostEdit(photo, /그림자/)
+    fireEvent.change(within(editor).getByLabelText(/드롭 진하기 그림자 세기/), { target: { value: '0' } })
+    fireEvent.click(within(editor).getByRole('button', { name: '그림자 왼쪽 위' }))
+    await waitFor(async () => {
+      const fx = (await loadStudioJob(STUDIO_JOB_ID))?.effects?.blk_photo
+      expect(fx?.shadowX).toBeCloseTo(-0.1, 5)
+      expect(fx?.shadowY).toBeCloseTo(-0.1, 5)
+      expect(fx?.wallShadow).toBeGreaterThan(0)
+    }, { timeout: 5000 })
+    expect(within(editor).getByRole('button', { name: '그림자 왼쪽 위' }).getAttribute('aria-pressed')).toBe('true')
+    // 막대 버튼이 손댄 것을 말한다.
+    expect(within(photo).getByRole('button', { name: '후보정' }).textContent).toContain('그림자')
+  })
+
+  it('배경에 맞추기 — 잴 수 없으면 아무것도 바꾸지 않고 그렇다고 말한다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    const boxes = await ready(container)
+    const photo = boxes.find((b) => labelOf(b) === '이미지 blk_photo')!
+    const editor = await openPostEdit(photo, /레벨/)
+    fireEvent.click(within(editor).getByRole('button', { name: '배경에 맞추기' }))
+    // 이 검사 환경에는 그림을 읽을 캔버스가 없다.
+    expect(await within(editor).findByText('주변을 재지 못했습니다.')).toBeTruthy()
+    expect((await loadStudioJob(STUDIO_JOB_ID))?.objectTones?.blk_photo).toBeUndefined()
+  })
+
+  it('창을 연 채로 다른 조각을 누르면 그 조각의 창이 되고, Esc로 닫힌다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    const boxes = await ready(container)
+    const photo = boxes.find((b) => labelOf(b) === '이미지 blk_photo')!
+    await openPostEdit(photo)
+    const title = boxes.find((b) => labelOf(b) === '꾸며진 문구 blk_t1')!
+    fireEvent.mouseDown(title)
+    fireEvent.pointerDown(title, { button: 0, clientX: 5, clientY: 5 })
+    fireEvent.pointerUp(window)
+    const editor = await waitFor(() => {
+      const d = document.querySelector<HTMLElement>('.result-object__editor')
+      expect(d).not.toBeNull()
+      // 문구 조각이라 그림자 탭이 없다.
+      expect(within(d!).queryByRole('tab', { name: /그림자/ })).toBeNull()
+      return d!
+    })
+    fireEvent.keyDown(editor, { key: 'Escape' })
+    await waitFor(() => expect(document.querySelector('.result-object__editor')).toBeNull())
   })
 })

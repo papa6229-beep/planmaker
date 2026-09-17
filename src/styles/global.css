@@ -3391,3 +3391,55 @@ button { font-family: inherit; }
 .text-design__actions { display: flex; gap: 6px; }
 .text-design__file { display: none; }
 .block-card__font-panel:has(.text-design__preview.is-large) { width: 520px; }
+
+/* ── 후보정 창 (2026-09-17) — 완성본 조각 옆에 뜬다 ─────────────────────────── */
+.result-object__edit {
+  height: 20px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.result-object__edit:hover,
+.result-object__edit.is-open { background: var(--color-accent); color: #fff; }
+.result-object__edit-mark { margin-left: 4px; font-weight: 400; opacity: 0.85; }
+.result-object__editor {
+  position: fixed;
+  z-index: 60;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-panel);
+  box-shadow: 0 8px 24px rgba(20, 23, 33, 0.18);
+  cursor: default;
+}
+.post-edit { display: flex; flex-direction: column; gap: 8px; }
+.post-edit__tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.post-edit__tab { position: relative; flex: 1 1 auto; padding: 5px 6px; font-size: 12px; }
+.post-edit__tab.is-on { border-color: var(--color-accent, #6c5ce7); color: var(--color-accent, #6c5ce7); font-weight: 700; }
+.post-edit__pane { display: flex; flex-direction: column; gap: 8px; }
+.post-edit__match { display: flex; align-items: center; gap: 8px; }
+.post-edit__warn { font-size: 11px; color: var(--color-danger, #c0392b); }
+.post-edit__dirs { display: grid; grid-template-columns: repeat(3, 34px); gap: 4px; }
+.post-edit__dir { width: 34px; height: 30px; padding: 0; font-size: 15px; }
+.post-edit__dir.is-on { border-color: var(--color-accent, #6c5ce7); background: var(--color-accent-soft); color: var(--color-accent); }
+.result-object__editbar {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 32px);
+  z-index: 5;
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-panel);
+  cursor: default;
+}

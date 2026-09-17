@@ -10,15 +10,18 @@
  * 손에 있고 다시 합치기만 하면 된다.
  *
  * 결과가 있을 때만 나온다. 없는 결과의 톤을 미리 조절할 수는 없다.
+ *
+ * **페이지 전체만** 다룬다 (후보정 창 Patch, 2026-09-17). 조각 하나의 색·그림자·
+ * 테두리는 완성본에서 그 조각을 누르고 "후보정"으로 연다 — 전에는 여기 아래에
+ * "고른 것만"으로 쌓여 있어 멀고 길었다. 결과 전체에 얹는 그레인은 이리 옮겼다.
  */
 
 import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
 import { RESET_TONE, TONE_FIELDS, toneIsFlat } from '../../domain/toneAdjust'
-import { imageObjectsOf, pageResultOf } from '../../domain/studioJob'
+import { pageResultOf } from '../../domain/studioJob'
 import { ToneCurvePanel } from './ToneCurvePanel'
-import { DEFAULT_COMPOSITE_EFFECTS, type CompositeEffects } from '../../domain/compositeEffects'
 import { PanelFold } from './PanelFold'
 
 export function ToneAdjustPanel() {
@@ -31,12 +34,14 @@ export function ToneAdjustPanel() {
   const busy = generation.state.kind === 'running'
   /** 손을 뗀 뒤 한 번 다시 합친다. 끄는 동안 매번 합치면 화면이 버벅인다. */
   const settle = () => void generation.recomposePage(activePageId)
+  /** 끄는 동안의 미리보기 — 저장하지 않는다. */
+  const preview = () => generation.previewPage(activePageId)
 
   return (
-    <PanelFold id="tone" title="결과 톤 조절" note="밝기 · 대비 · 채도 · 색온도 · 레벨 · 커브 · 그림자 · 테두리" marked={!toneIsFlat(tone)}>
+    <PanelFold id="tone" title="결과 톤 조절" note="페이지 전체 · 밝기 · 대비 · 채도 · 색온도 · 레벨 · 커브 · 그레인" marked={!toneIsFlat(tone)}>
     <section className="tone" aria-label="결과 톤 조절">
       <p className="tone__note">
-        완성 결과 전체에 겁니다. 원본은 그대로 두고 그릴 때마다 이 값으로 다시 계산합니다.
+        완성 결과 전체에 겁니다. 조각 하나는 완성본에서 그 조각을 누르고 “후보정”을 여세요.
       </p>
 
       <div className="tone__sliders">
@@ -56,7 +61,9 @@ export function ToneAdjustPanel() {
               // 슬라이더 한 번 끄는 것이 되돌리기 한 칸이다 (결과 되돌리기 Patch).
               onPointerDown={() => studio.markStep()}
               onKeyDown={() => studio.markStep()}
-              onChange={(e) => void studio.setTone(activePageId, { [field.key]: Number(e.target.value) / 100 })}
+              onChange={(e) =>
+                void studio.setTone(activePageId, { [field.key]: Number(e.target.value) / 100 }).then(preview)
+              }
               onPointerUp={settle}
               onKeyUp={settle}
             />
@@ -72,11 +79,30 @@ export function ToneAdjustPanel() {
           levels={tone.levels}
           assetId={pageResultOf(studio.job, activePageId)?.assetId}
           busy={busy}
-          onChange={(patch) => void studio.setTone(activePageId, patch)}
+          onChange={(patch) => void studio.setTone(activePageId, patch).then(preview)}
           onStart={() => studio.markStep()}
           onCommit={settle}
         />
       </details>
+
+      {/* 그레인은 제품 하나가 아니라 완성 결과 전체에 얹힌다 (§9.5). 전에는 생성 전
+          "합성 효과" 칸에 있었다. */}
+      <label className="tone__slider">
+        <span className="tone__slider-label">그레인 · {Math.round(studio.grain * 100)}%</span>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={Math.round(studio.grain * 100)}
+          aria-label="그레인 세기"
+          disabled={busy}
+          onPointerDown={() => studio.markStep()}
+          onKeyDown={() => studio.markStep()}
+          onChange={(e) => void Promise.resolve(studio.setGrain(Number(e.target.value) / 100)).then(preview)}
+          onPointerUp={settle}
+          onKeyUp={settle}
+        />
+      </label>
 
       <button
         type="button"
@@ -89,326 +115,7 @@ export function ToneAdjustPanel() {
       >
         손대기 전으로
       </button>
-
-      <ObjectTone settle={settle} busy={busy} />
     </section>
     </PanelFold>
-  )
-}
-
-/**
- * 고른 오브젝트의 기울기 (2026-09-17). 캔버스의 회전 손잡이와 같은 값이다 — 손잡이를
- * 찾기 어렵다는 말에 숫자로도 맞출 수 있게 둔다.
- */
-function ObjectAngle({
-  blockId,
-  pageId,
-  label,
-  settle,
-  busy,
-}: {
-  blockId: string
-  pageId: string
-  label: string
-  settle: () => void
-  busy: boolean
-}) {
-  const studio = useStudioJob()
-  if (studio === null) return null
-  const object = [...imageObjectsOf(studio.job, pageId), ...(studio.job.textObjects?.[pageId] ?? [])].find(
-    (o) => o.blockId === blockId,
-  )
-  if (object === undefined) return null
-  const angle = object.angle ?? 0
-  return (
-    <label className="tone__slider">
-      <span className="tone__slider-label">기울기 · {angle}°</span>
-      <input
-        type="range"
-        min={-180}
-        max={180}
-        value={angle}
-        aria-label={`${label} 기울기`}
-        disabled={busy}
-        onPointerDown={() => studio.markStep()}
-        onKeyDown={() => studio.markStep()}
-        onChange={(e) => studio.spinObject(pageId, blockId, Number(e.target.value))}
-        onPointerUp={settle}
-        onKeyUp={settle}
-      />
-    </label>
-  )
-}
-
-/**
- * 고른 오브젝트 하나에만 거는 톤 (블록별 톤 Patch).
- *
- * 위의 전체 톤과 **따로** 산다. 사진 하나만 어둡게 깔고 페이지 전체를 밝히는 일은
- * 한 벌의 값으로는 되지 않는다. 그리는 차례도 그대로다 — 이 값이 먼저 걸리고,
- * 다 그린 뒤에 전체 톤이 한 번 더 걸린다.
- *
- * 오브젝트를 고르지 않았으면 나오지 않는다. 무엇에 걸리는지 화면이 말하지 못하는
- * 슬라이더는 두지 않는다.
- */
-/** 세기 둘이 기본값 그대로인가 — 되돌릴 것이 있는지 판정할 때 쓴다. */
-function shadowIsDefault(effects: CompositeEffects): boolean {
-  const d = DEFAULT_COMPOSITE_EFFECTS
-  return (
-    effects.contactShadow === d.contactShadow &&
-    effects.wallShadow === d.wallShadow &&
-    effects.shadowX === d.shadowX &&
-    effects.shadowY === d.shadowY &&
-    effects.shadowBlur === d.shadowBlur
-  )
-}
-
-/**
- * 고른 오브젝트의 그림자 (완성 후 그림자 Patch).
- *
- * 그림자는 AI가 그린 것이 아니라 합칠 때마다 브라우저가 그리는 것이다. 종이
- * 테두리와 같다 — 값만 바꾸고 다시 합치면 그만이고, **외부 호출은 0건이다.**
- *
- * 그런데 조절 자리는 생성 **전** 화면에만 있었다. 알맞은 그림자는 완성된 배경
- * 위에서라야 보이는데(어두운 배경에서는 진한 그림자가 묻히고 밝은 배경에서는
- * 도드라진다) 정작 그때는 만질 수가 없었다. 톤 슬라이더와 같은 대상, 같은 성격,
- * 같은 조작이므로 같은 칸에 둔다 — 제품 하나를 고르고 밝기와 그림자를 한자리에서
- * 맞춘다.
- *
- * 세기 둘은 **켠 자리에만** 나온다. 꺼 둔 블록에 보여 주면 무엇의 세기인지
- * 화면이 말해 주지 못한다 (종이 테두리와 같은 규칙이다).
- */
-function ObjectShadow({
-  blockId,
-  label,
-  settle,
-  busy,
-}: {
-  blockId: string
-  label: string
-  settle: () => void
-  busy: boolean
-}) {
-  const studio = useStudioJob()
-  if (studio === null) return null
-
-  const effects = studio.effectsOf(blockId)
-  // 드롭 그림자 (드롭 그림자 Patch, 2026-09-17) — 포토샵처럼 숫자로도, 캔버스의
-  // 그림자 손잡이를 끌어서도 맞춘다. 자리는 짧은 변의 비율(±150%).
-  const fields = [
-    { key: 'wallShadow' as const, label: '드롭 진하기', hint: '제품 모양 그대로 밀어 까는 그림자', min: 0, max: 100, scale: 100 },
-    { key: 'shadowBlur' as const, label: '드롭 흐림', hint: '그림자 가장자리의 번짐', min: 0, max: 100, scale: 100 },
-    { key: 'shadowX' as const, label: '드롭 가로 위치', hint: '− 왼쪽 · + 오른쪽 (캔버스에서 끌어도 됩니다)', min: -150, max: 150, scale: 100 },
-    { key: 'shadowY' as const, label: '드롭 세로 위치', hint: '− 위 · + 아래 (캔버스에서 끌어도 됩니다)', min: -150, max: 150, scale: 100 },
-    { key: 'contactShadow' as const, label: '바닥', hint: '바닥에 닿은 자리의 납작한 그림자', min: 0, max: 100, scale: 100 },
-  ]
-
-  return (
-    <div className="tone__shadow">
-      <label className="tone__shadow-switch">
-        <input
-          type="checkbox"
-          checked={effects.shadow}
-          disabled={busy}
-          aria-label={`${label} 그림자`}
-          onChange={() => {
-            studio.markStep()
-            studio.setEffects(blockId, { shadow: !effects.shadow })
-            settle()
-          }}
-        />
-        그림자
-      </label>
-      {effects.shadow && (
-        <div className="tone__sliders">
-          {fields.map((field) => (
-            <label key={field.key} className="tone__slider">
-              <span className="tone__slider-label">
-                {field.label} · {Math.round(effects[field.key] * field.scale)}%
-              </span>
-              <input
-                type="range"
-                min={field.min}
-                max={field.max}
-                value={Math.round(effects[field.key] * field.scale)}
-                aria-label={`${label} ${field.label} 그림자 세기`}
-                title={field.hint}
-                disabled={busy}
-                onPointerDown={() => studio.markStep()}
-                onKeyDown={() => studio.markStep()}
-                onChange={(e) => studio.setEffects(blockId, { [field.key]: Number(e.target.value) / field.scale })}
-                onPointerUp={settle}
-                onKeyUp={settle}
-              />
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/**
- * 고른 오브젝트의 테두리 (후보정 테두리 Patch, 2026-09-17).
- *
- * 스티커처럼 사진 윤곽을 따라가는 선이다. 그림자와 같은 까닭으로 여기 둔다 —
- * 어울리는 두께와 색은 완성된 배경 위에서라야 보인다. 합칠 때 그리기만 하므로
- * AI 호출도 생성 방식도 건드리지 않는다 (종이 컷아웃과 다른 점).
- */
-let colorTimer: ReturnType<typeof setTimeout> | undefined
-
-function ObjectOutline({
-  blockId,
-  label,
-  settle,
-  busy,
-}: {
-  blockId: string
-  label: string
-  settle: () => void
-  busy: boolean
-}) {
-  const studio = useStudioJob()
-  if (studio === null) return null
-  const effects = studio.effectsOf(blockId)
-  const sliders = [
-    { key: 'outlineWidth' as const, label: '두께' },
-    { key: 'outlineOpacity' as const, label: '진하기' },
-  ]
-
-  return (
-    <div className="tone__shadow">
-      <label className="tone__shadow-switch">
-        <input
-          type="checkbox"
-          checked={effects.outline}
-          disabled={busy}
-          aria-label={`${label} 테두리`}
-          onChange={() => {
-            studio.markStep()
-            studio.setEffects(blockId, { outline: !effects.outline })
-            settle()
-          }}
-        />
-        테두리
-      </label>
-      {effects.outline && (
-        <div className="tone__sliders">
-          {sliders.map((field) => (
-            <label key={field.key} className="tone__slider">
-              <span className="tone__slider-label">
-                {field.label} · {Math.round(effects[field.key] * 100)}%
-              </span>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={Math.round(effects[field.key] * 100)}
-                aria-label={`${label} 테두리 ${field.label}`}
-                disabled={busy}
-                onPointerDown={() => studio.markStep()}
-                onKeyDown={() => studio.markStep()}
-                onChange={(e) => studio.setEffects(blockId, { [field.key]: Number(e.target.value) / 100 })}
-                onPointerUp={settle}
-                onKeyUp={settle}
-              />
-            </label>
-          ))}
-          <label className="tone__slider">
-            <span className="tone__slider-label">색</span>
-            <input
-              type="color"
-              value={effects.outlineColor}
-              aria-label={`${label} 테두리 색`}
-              disabled={busy}
-              onFocus={() => studio.markStep()}
-              onChange={(e) => {
-                studio.setEffects(blockId, { outlineColor: e.target.value })
-                // 색 고르개는 끄는 동안 값을 계속 보낸다. 멈춘 뒤 한 번만 다시 합친다.
-                if (colorTimer !== undefined) clearTimeout(colorTimer)
-                colorTimer = setTimeout(settle, 250)
-              }}
-            />
-          </label>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ObjectTone({ settle, busy }: { settle: () => void; busy: boolean }) {
-  const studio = useStudioJob()
-  const { pages, activePageId } = useBriefDocument()
-  const blockId = studio?.selectedObjectBlockId ?? null
-  if (studio === null || blockId === null) return null
-
-  const label =
-    pages.find((p) => p.id === activePageId)?.blocks.find((b) => b.id === blockId)?.label ?? '고른 오브젝트'
-  const tone = studio.objectToneOf(blockId)
-
-  return (
-    <div className="tone__object">
-      <p className="tone__object-title">고른 것만 · {label}</p>
-      <div className="tone__sliders">
-        {TONE_FIELDS.map((field) => (
-          <label key={field.key} className="tone__slider">
-            <span className="tone__slider-label">
-              {field.label} · {tone[field.key] > 0 ? '+' : ''}
-              {Math.round(tone[field.key] * 100)}
-            </span>
-            <input
-              type="range"
-              min={-100}
-              max={100}
-              value={Math.round(tone[field.key] * 100)}
-              aria-label={`${label} ${field.label} 조절`}
-              disabled={busy}
-              onPointerDown={() => studio.markStep()}
-              onKeyDown={() => studio.markStep()}
-              onChange={(e) =>
-                void studio.setObjectTone(blockId, { [field.key]: Number(e.target.value) / 100 })
-              }
-              onPointerUp={settle}
-              onKeyUp={settle}
-            />
-          </label>
-        ))}
-      </div>
-      <details className="tone__fold">
-        <summary>레벨 · 커브</summary>
-        <ToneCurvePanel
-          label={label}
-          curves={tone.curves}
-          levels={tone.levels}
-          assetId={imageObjectsOf(studio.job, activePageId).find((o) => o.blockId === blockId)?.assetId}
-          busy={busy}
-          onChange={(patch) => void studio.setObjectTone(blockId, patch)}
-          onStart={() => studio.markStep()}
-          onCommit={settle}
-        />
-      </details>
-      <ObjectAngle blockId={blockId} pageId={activePageId} label={label} settle={settle} busy={busy} />
-      <ObjectShadow blockId={blockId} label={label} settle={settle} busy={busy} />
-      <ObjectOutline blockId={blockId} label={label} settle={settle} busy={busy} />
-      <button
-        type="button"
-        className="btn tone__reset"
-        disabled={busy || (toneIsFlat(tone) && shadowIsDefault(studio.effectsOf(blockId)))}
-        onClick={() => {
-          studio.markStep()
-          // 그림자 **세기**도 함께 되돌린다. 켜고 끄기는 건드리지 않는다 — 그 값은
-          // 작업자가 정했거나, 실루엣을 보고 처음에 정해진 것이라 "손댄 값"이 아니다.
-          studio.setEffects(blockId, {
-            contactShadow: DEFAULT_COMPOSITE_EFFECTS.contactShadow,
-            wallShadow: DEFAULT_COMPOSITE_EFFECTS.wallShadow,
-            shadowX: DEFAULT_COMPOSITE_EFFECTS.shadowX,
-            shadowY: DEFAULT_COMPOSITE_EFFECTS.shadowY,
-            shadowBlur: DEFAULT_COMPOSITE_EFFECTS.shadowBlur,
-          })
-          void studio.setObjectTone(blockId, RESET_TONE).then(settle)
-        }}
-      >
-        이것만 손대기 전으로
-      </button>
-    </div>
   )
 }

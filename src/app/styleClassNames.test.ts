@@ -41,7 +41,6 @@ const INTENTIONAL: Record<string, string> = {
   'badge__label': '배지의 글자 <span>. 배지 자체와 __value가 규칙을 갖는다.',
   'library__group': '보관함 묶음 <section>. 부모 __groups가 간격을 정하고 __group-title이 활자를 정한다.',
   'brief-requests': '전달한 요청 <section> 껍데기. 안쪽 __title이 규칙을 갖는다.',
-  'effects__details': '세부 조정 <details> 껍데기. __summary와 __sliders가 규칙을 갖는다.',
   'gen-dialog': '생성 확인창의 이름표. 같은 자리에 confirm·confirm--scrollable이 규칙을 갖고, 자식 __targets가 이 이름을 쓴다.',
   'page-note': '팀 선택으로 돌아가는 한 줄. 기본 활자 그대로 쓴다.',
   'is-saved': 'API 키가 저장됐다는 **검사용 표식**. 보이는 변화는 btn--key-saved가 맡는다.',

@@ -24,6 +24,7 @@ import { getAsset } from '../../services/assetStore'
 import { ResultObjectLayer } from './ResultObjectLayer'
 import { BannerBackgroundHandle } from './BannerBackgroundHandle'
 import { useResultView } from '../../features/studio/useResultView'
+import { clearLivePreview, useLivePreview } from '../../features/studio/livePreview'
 
 function formatTime(ms: number): string {
   const d = new Date(ms)
@@ -93,6 +94,11 @@ export function ResultCompare() {
   }, [result, blinkAssetId, pageId, studio])
 
   const zoom = view?.zoom ?? 1
+  /** 끄는 동안의 그림 (후보정 창 Patch). 저장된 완성본이 새로 걸리면 거둔다. */
+  const live = useLivePreview(pageId)
+  useEffect(() => {
+    clearLivePreview(pageId)
+  }, [url, pageId])
 
   return (
     <div className={`compare${withBrief ? ' compare--split' : ''}`}>
@@ -147,7 +153,7 @@ export function ResultCompare() {
               className="compare__stage"
               style={{ width: `${String(Math.round(logical.width * zoom))}px` }}
             >
-              <img className="compare__image" src={url} alt="AI가 생성한 결과 이미지" />
+              <img className="compare__image" src={live ?? url} alt="AI가 생성한 결과 이미지" />
               {/* 배경 손잡이가 조각보다 **뒤에** 온다. 앞에 두면 화면 전체가
                   배경이라 어디를 눌러도 배경이 먼저 걸려 조각을 못 잡는다. */}
               <BannerBackgroundHandle pageId={pageId} page={logical} />

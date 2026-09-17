@@ -408,7 +408,7 @@ describe('§5 종이 테두리 두께와 진하기', () => {
     expect(paperOpacityOf(-1)).toBe(0)
   })
 
-  it('컷아웃을 켠 블록에만 두 슬라이더가 나오고, 움직이면 저장된다', async () => {
+  it('생성 전 막대에는 켜고 끄기만 있고, 두께·진하기는 없다 (완성본 후보정 창으로 옮김)', async () => {
     await seedJob({ effects: { blk_cut: { paperCutout: true } } })
     const { container } = renderStudio()
     await documentReady(container)
@@ -419,33 +419,11 @@ describe('§5 종이 테두리 두께와 진하기', () => {
     fireEvent.pointerDown(card, { button: 0 })
     await waitFor(() => expect(card.getAttribute('aria-pressed')).toBe('true'))
 
-    const thickness = within(card).getByLabelText('종이 테두리 두께')
-    const opacity = within(card).getByLabelText('종이 테두리 진하기')
-    expect(thickness.getAttribute('value')).toBe('100')
-    expect(opacity.getAttribute('value')).toBe('100')
-
-    // 예전 `얇게`(0.6)보다 얇게 내린다.
-    fireEvent.change(thickness, { target: { value: '25' } })
-    await waitFor(async () => {
-      const job = await loadStudioJob(STUDIO_JOB_ID)
-      expect(job?.effects?.blk_cut?.paperWeight).toBeCloseTo(0.25, 5)
-    })
-
-    // 진하기 0 — 보이지 않지만 컷아웃은 켜진 채로 남는다.
-    fireEvent.change(opacity, { target: { value: '0' } })
-    await waitFor(async () => {
-      const job = await loadStudioJob(STUDIO_JOB_ID)
-      expect(job?.effects?.blk_cut?.paperOpacity).toBe(0)
-      expect(job?.effects?.blk_cut?.paperCutout).toBe(true)
-    })
-
-    // 컷아웃을 켜지 않은 블록에는 조절이 없다.
-    const plain = Array.from(container.querySelectorAll<HTMLElement>('.canvas__sheet .block-card')).find((el) =>
-      (el.getAttribute('aria-label') ?? '').startsWith('일반 이미지'),
-    )!
-    fireEvent.pointerDown(plain, { button: 0 })
-    await waitFor(() => expect(plain.getAttribute('aria-pressed')).toBe('true'))
-    expect(within(plain).queryByLabelText('종이 테두리 두께')).toBeNull()
+    expect(within(card).getByRole('checkbox', { name: /종이 컷아웃/ })).toBeTruthy()
+    expect(within(card).queryByLabelText('종이 테두리 두께')).toBeNull()
+    expect(within(card).queryByLabelText('종이 테두리 진하기')).toBeNull()
+    // 생성 전 "합성 효과" 칸도 없다.
+    expect(screen.queryByRole('region', { name: '합성 효과' })).toBeNull()
   })
 
   it('작업 파일 왕복에서 두께·진하기가 남고, 예전 파일도 그대로 읽힌다', async () => {

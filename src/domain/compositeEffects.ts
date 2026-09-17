@@ -84,23 +84,6 @@ export interface CompositeEffects {
   shadowBlur: number
 }
 
-/** 세기로 조절하는 항목만 — 종이 컷아웃은 체크 하나라 여기 끼지 않는다. */
-export type CompositeStrengthKey = Exclude<
-  keyof CompositeEffects,
-  | 'paperCutout'
-  | 'paperWeight'
-  | 'paperOpacity'
-  | 'shadow'
-  | 'outline'
-  | 'outlineWidth'
-  | 'outlineOpacity'
-  | 'outlineColor'
-  | 'shadowX'
-  | 'shadowY'
-  | 'shadowBlur'
-  | 'floorDefaultZero'
->
-
 /**
  * 아무것도 만지지 않았을 때의 값.
  *
@@ -130,14 +113,6 @@ export const DEFAULT_COMPOSITE_EFFECTS: CompositeEffects = {
 /** 2026-09-17까지의 바닥 그림자 기본값. */
 const LEGACY_CONTACT_SHADOW = 0.7
 
-/** 화면에 그대로 쓰는 이름 — 순서까지 여기서 정한다 (§11). */
-export const COMPOSITE_EFFECT_FIELDS: readonly { key: CompositeStrengthKey; label: string }[] = [
-  { key: 'edge', label: '가장자리 보정' },
-  { key: 'contactShadow', label: '접지 그림자' },
-  { key: 'wallShadow', label: '드롭 그림자' },
-  { key: 'grading', label: '색상 통일' },
-  { key: 'rimLight', label: '림라이트' },
-]
 
 /** 완성 결과 전체에 얹는 아주 약한 그레인의 기본값 (§9.5). */
 export const DEFAULT_GRAIN = 0.08

@@ -41,9 +41,7 @@ import { BlockLayerTools } from '../components/studio/BlockLayerTools'
 import { BackgroundTools } from '../components/studio/BackgroundTools'
 import { StyleReferenceTools } from '../components/studio/StyleReferenceTools'
 import { BackgroundDialog } from '../components/studio/BackgroundDialog'
-import { CompositeEffectsPanel } from '../components/studio/CompositeEffectsPanel'
 import { ToneAdjustPanel } from '../components/studio/ToneAdjustPanel'
-import { PaperTunePanel } from '../components/studio/PaperTunePanel'
 import { BannerPanel } from '../components/studio/BannerPanel'
 import { WorkList } from '../components/studio/WorkList'
 import { BannerDrawer } from '../components/studio/BannerDrawer'
@@ -349,8 +347,8 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
                 <EditPanel />
                 {/* 결과 전체의 톤 (톤 조절 Patch). */}
                 <ToneAdjustPanel />
-                {/* 완성된 배경 위에서 종이 테두리를 다듬는다 (완성 후 컷아웃 Patch). */}
-                <PaperTunePanel />
+                {/* 조각 하나의 색·그림자·테두리·종이 두께는 완성본의 그 조각 옆
+                    "후보정" 창에서 고친다 (후보정 창 Patch, 2026-09-17). */}
               </>
             ) : (
               <>
@@ -361,7 +359,6 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
                 <BlockLayerTools />
                 {/* 생성 **전**에 이 블록에만 붙이는 주문(글꼴·주문·참고 그림)은 캔버스의
                     블록 옆 "문구 디자인" 창에만 있다 (2026-09-17). */}
-                <CompositeEffectsPanel />
                 <ReadyPanel />
               </>
             )}

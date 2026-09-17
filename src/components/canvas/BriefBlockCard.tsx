@@ -26,8 +26,6 @@ import {
   paperOutset,
   DEFAULT_PAPER_WEIGHT,
   DEFAULT_PAPER_OPACITY,
-  PAPER_WEIGHT_MAX,
-  PAPER_WEIGHT_MIN,
   PAPER_SHADOW,
 } from '../../domain/paperCutout'
 import { getAsset } from '../../services/assetStore'
@@ -542,40 +540,9 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
           그림자
         </label>
       )}
-      {/* 두께와 진하기는 켠 자리에만 나온다. 꺼 둔 블록에 보여 주면 무엇을
-          두껍게 하는 값인지 화면이 말해 주지 못한다 (두께·투명도 Patch).
-
-          단계가 아니라 슬라이더인 것은, 알맞은 두께가 그림마다 다르기 때문이다.
-          진하기 0은 컷아웃을 끄는 것과 다르다 — 테두리만 보이지 않을 뿐 오브젝트도
-          자리도 그대로다. */}
-      {paperOn && studio !== null && (
-        <span className="block-card__paper-tune" role="group" aria-label="종이 테두리">
-          <label className="block-card__tune">
-            <span className="block-card__tune-label">두께</span>
-            <input
-              type="range"
-              min={Math.round(PAPER_WEIGHT_MIN * 100)}
-              max={Math.round(PAPER_WEIGHT_MAX * 100)}
-              value={Math.round(paperWeight * 100)}
-              aria-label="종이 테두리 두께"
-              title={`종이 테두리 두께 ${paperWeight.toFixed(2)}배`}
-              onChange={(e) => studio.setEffects(block.id, { paperWeight: Number(e.target.value) / 100 })}
-            />
-          </label>
-          <label className="block-card__tune">
-            <span className="block-card__tune-label">진하기</span>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={Math.round(paperOpacity * 100)}
-              aria-label="종이 테두리 진하기"
-              title={`종이 테두리 진하기 ${String(Math.round(paperOpacity * 100))}%`}
-              onChange={(e) => studio.setEffects(block.id, { paperOpacity: Number(e.target.value) / 100 })}
-            />
-          </label>
-        </span>
-      )}
+      {/* 종이 테두리의 두께와 진하기는 완성본의 "후보정" 창(모양 탭)에서만 고친다
+          (후보정 창 Patch, 2026-09-17). 알맞은 두께는 완성된 배경 위에서라야 보인다.
+          여기에는 켜고 끄기만 남긴다. */}
 
       {/* 글꼴은 블록 바로 위에서 고른다 (글꼴 미리보기 Patch). 오른쪽 칸까지 가지
           않고, 가리키는 동안 이 블록의 글자가 그 글꼴로 바뀐다. */}
