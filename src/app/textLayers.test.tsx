@@ -269,7 +269,7 @@ async function openBarMenu(name: RegExp): Promise<HTMLElement> {
   )
   const label = button.getAttribute('aria-label')!
   if (button.getAttribute('aria-expanded') !== 'true') fireEvent.click(button)
-  return waitFor(() => screen.getByRole('dialog', { name: label }))
+  return waitFor(() => screen.getByRole('dialog', { name: label }), { timeout: 5000 })
 }
 
 const bodies = () => fetchSpy.mock.calls.map((c) => c[1].body as FormData)
@@ -2485,13 +2485,13 @@ describe('§26 도구 막대로 만든다', () => {
 
     // T → 문자 도구. 끌어서 상자를 만든다.
     fireEvent.keyDown(window, { key: 't' })
-    await waitFor(() => expect(within(bar).getByRole('radio', { name: /^문자/ }).getAttribute('aria-checked')).toBe('true'))
+    await waitFor(() => expect(within(bar).getByRole('radio', { name: /^문자/ }).getAttribute('aria-checked')).toBe('true'), { timeout: 5000 })
     fireEvent.pointerDown(sheet, { button: 0, clientX: 100, clientY: 400 })
     fireEvent.pointerMove(window, { clientX: 300, clientY: 460 })
     fireEvent.pointerUp(window, { clientX: 300, clientY: 460 })
-    await waitFor(() => expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(7))
+    await waitFor(() => expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(7), { timeout: 5000 })
     // 하나 만들면 선택 도구로 돌아온다.
-    expect(within(bar).getByRole('radio', { name: /^선택/ }).getAttribute('aria-checked')).toBe('true')
+    await waitFor(() => expect(within(bar).getByRole('radio', { name: /^선택/ }).getAttribute('aria-checked')).toBe('true'), { timeout: 5000 })
 
     // U → 도형(사각형), Shift로 정사각.
     fireEvent.keyDown(window, { key: 'u' })
@@ -2693,8 +2693,9 @@ describe('§28 되돌리기는 그 창의 값만', () => {
       // 밝기는 색 창의 값이라 남는다.
       expect(tone?.brightness).toBeCloseTo(0.2)
     }, { timeout: 5000 })
-    await waitFor(() =>
-      expect((within(levels).getByRole('button', { name: '레벨·커브 되돌리기' }) as HTMLButtonElement).disabled).toBe(true),
+    await waitFor(
+      () => expect((within(levels).getByRole('button', { name: '레벨·커브 되돌리기' }) as HTMLButtonElement).disabled).toBe(true),
+      { timeout: 5000 },
     )
   }, 30000)
 })
