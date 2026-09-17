@@ -98,6 +98,7 @@ export type CompositeStrengthKey = Exclude<
   | 'shadowX'
   | 'shadowY'
   | 'shadowBlur'
+  | 'floorDefaultZero'
 >
 
 /**
