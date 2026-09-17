@@ -1641,7 +1641,7 @@ describe('§16-B 생성 전 블록별 주문은 펴진 채로 있다', () => {
    * 사라진 줄 알았다 — "왜 없어진 거야?" 블록을 고르면 접기를 누르지 않고도
    * 적을 칸이 바로 나와야 한다.
    */
-  it('문구 블록을 고르면 주문 칸과 참고 그림이 곧바로 나온다', async () => {
+  it('문구 블록 옆 "문구 디자인" 창에서 주문과 참고 그림을 적는다 — 오른쪽에는 없다', async () => {
     resetFoldsForTests()
     await seedJob()
     const { container } = renderStudio()
@@ -1650,10 +1650,34 @@ describe('§16-B 생성 전 블록별 주문은 펴진 채로 있다', () => {
     // 순서는 sampleDoc 그대로 — 사진 · 컷아웃 · 문구 셋 · 버튼.
     const cards = container.querySelectorAll<HTMLElement>('.canvas__sheet .block-card')
     fireEvent.pointerDown(cards[2]!, { button: 0 })
+    fireEvent.pointerUp(window)
 
-    // 접기를 누르지 않았는데도 적을 칸이 있다.
-    expect(await screen.findByLabelText('큰 문구 디자인 주문')).toBeTruthy()
-    expect(screen.getByRole('button', { name: '참고 그림 추가' })).toBeTruthy()
+    // 오른쪽 패널에는 주문 칸도, 생성 준비도 없다 (2026-09-17).
+    const right = container.querySelector('.side-right')!
+    expect(within(right as HTMLElement).queryByRole('region', { name: '이 블록의 디자인 주문' })).toBeNull()
+    expect(screen.queryByRole('region', { name: '생성 준비' })).toBeNull()
+
+    // 닫혀 있어도 막대 버튼이 무엇이 들어 있는지 말한다.
+    const trigger = await waitFor(() => within(cards[2]!).getByRole('button', { name: '문구 디자인' }))
+    expect(trigger.textContent).not.toContain('주문')
+    fireEvent.click(trigger)
+    const panel = await waitFor(() => within(cards[2]!).getByRole('dialog', { name: '문구 디자인' }))
+    fireEvent.click(within(panel).getByRole('tab', { name: /주문/ }))
+    const note = within(panel).getByLabelText('큰 문구 디자인 주문')
+    fireEvent.change(note, { target: { value: '알록달록하게' } })
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect(job?.blockOrders?.blk_t1?.note).toBe('알록달록하게')
+    })
+    await waitFor(() => expect(trigger.textContent).toContain('주문'))
+    fireEvent.click(within(panel).getByRole('tab', { name: /참고 그림/ }))
+    expect(within(panel).getByRole('button', { name: '참고 그림 추가' })).toBeTruthy()
+
+    // 블록을 놓으면 창이 닫히고 생성 준비가 돌아온다.
+    fireEvent.keyDown(panel, { key: 'Escape' })
+    fireEvent.pointerDown(container.querySelector('.canvas__sheet')!, { button: 0 })
+    fireEvent.pointerUp(window)
+    await waitFor(() => expect(screen.getByRole('region', { name: '생성 준비' })).toBeTruthy(), { timeout: 5000 })
   })
 })
 
@@ -2152,9 +2176,9 @@ describe('§23 글꼴 미리보기', () => {
 
       fireEvent.pointerDown(card(), { button: 0, clientX: 5, clientY: 5 })
       fireEvent.pointerUp(window)
-      const trigger = await waitFor(() => within(card()).getByRole('button', { name: '글꼴 고르기' }))
+      const trigger = await waitFor(() => within(card()).getByRole('button', { name: '문구 디자인' }))
       fireEvent.click(trigger)
-      const panel = await waitFor(() => within(card()).getByRole('dialog', { name: '글꼴 목록' }))
+      const panel = await waitFor(() => within(card()).getByRole('dialog', { name: '문구 디자인' }))
       const beta = await waitFor(() => within(panel).getByRole('radio', { name: '글꼴 베타체' }))
 
       // 가리키면 캔버스의 글자가 그 글꼴이 된다.
@@ -2173,9 +2197,9 @@ describe('§23 글꼴 미리보기', () => {
         expect(job?.blockOrders?.blk_t1?.fontFamily).toBe('알파체')
       })
       fireEvent.keyDown(panel, { key: 'Escape' })
-      await waitFor(() => expect(within(card()).queryByRole('dialog', { name: '글꼴 목록' })).toBeNull())
+      await waitFor(() => expect(within(card()).queryByRole('dialog', { name: '문구 디자인' })).toBeNull())
       await waitFor(() => expect(text().style.fontFamily).toContain('pm-alpha-700'), { timeout: 5000 })
-      expect(within(card()).getByRole('button', { name: '글꼴 고르기' }).textContent).toContain('알파체')
+      expect(within(card()).getByRole('button', { name: '문구 디자인' }).textContent).toContain('알파체')
 
       // 다른 문구는 그대로다.
       const other = container.querySelector<HTMLElement>('.canvas__sheet .block-card[aria-label^="가까운 문구"] .block-card__content')!
@@ -2188,7 +2212,7 @@ describe('§23 글꼴 미리보기', () => {
     }
   })
 
-  it('오른쪽 칸의 목록에서 가리켜도 캔버스가 바뀐다', async () => {
+  it('주문 탭으로 넘어가면 가리키던 글꼴을 거둔다', async () => {
     G.__noTestFont = true
     G.__testFontCatalog = FONTS
     const { resetFontFamiliesForTests } = await load('features/studio/blockFont')
@@ -2198,15 +2222,16 @@ describe('§23 글꼴 미리보기', () => {
       const { container } = renderStudio()
       await documentReady(container)
       const card = () => container.querySelector<HTMLElement>('.canvas__sheet .block-card[aria-label^="가까운 문구"]')!
+      const text = () => card().querySelector<HTMLElement>('.block-card__content')!
       fireEvent.pointerDown(card(), { button: 0, clientX: 5, clientY: 5 })
       fireEvent.pointerUp(window)
-      const side = await screen.findByRole('region', { name: '이 블록의 디자인 주문' })
-      const beta = await waitFor(() => within(side).getByRole('radio', { name: '글꼴 베타체' }))
+      fireEvent.click(await waitFor(() => within(card()).getByRole('button', { name: '문구 디자인' })))
+      const panel = await waitFor(() => within(card()).getByRole('dialog', { name: '문구 디자인' }))
+      const beta = await waitFor(() => within(panel).getByRole('radio', { name: '글꼴 베타체' }))
       fireEvent.focus(beta)
-      await waitFor(
-        () => expect(card().querySelector<HTMLElement>('.block-card__content')!.style.fontFamily).toContain('pm-beta-700'),
-        { timeout: 5000 },
-      )
+      await waitFor(() => expect(text().style.fontFamily).toContain('pm-beta-700'), { timeout: 5000 })
+      fireEvent.click(within(panel).getByRole('tab', { name: /주문/ }))
+      await waitFor(() => expect(text().style.fontFamily).toBe(''), { timeout: 5000 })
     } finally {
       G.__noTestFont = false
       G.__testFontCatalog = undefined

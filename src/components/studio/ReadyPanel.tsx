@@ -20,6 +20,7 @@ import { summarizeUsage, USAGE_KINDS, USAGE_KIND_LABEL, type UsageSummary } from
 import { listCalls } from '../../services/usageStore'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { useStudioJob } from '../../features/studio/useStudioJob'
+import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
 
 export function ReadyPanel() {
@@ -40,7 +41,11 @@ export function ReadyPanel() {
       alive = false
     }
   }, [generation?.state.kind])
+  const { selected } = useBriefEditor()
   if (studio === null || generation === null) return null
+  // 블록을 고른 동안에는 그 블록의 일을 하는 중이다 — 페이지 전체의 준비 상태는
+  // 필요 없다 (2026-09-17 사용자). 아무것도 고르지 않았을 때만 선다.
+  if (selected !== null) return null
 
   const doc = getDocument()
   const index = doc.pages.findIndex((p) => p.id === doc.activePageId)

@@ -3347,3 +3347,47 @@ button { font-family: inherit; }
 .block-card__font-panel--left { right: calc(100% + 12px); transform-origin: top right; }
 .block-card__font-panel--below { left: 0; top: calc(100% + 12px); transform-origin: top left; }
 .block-card__font .block-card__layer-trigger { gap: 2px; }
+
+/* ── 문구 디자인 창 (2026-09-17) — 글꼴 · 주문 · 참고 그림 ───────────────── */
+.block-card__design-mark {
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 16px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.text-design { display: flex; flex-direction: column; gap: 8px; }
+.text-design__tabs { display: flex; gap: 4px; }
+.text-design__tab { position: relative; flex: 1; padding: 5px 6px; font-size: 12px; }
+.text-design__tab.is-on { border-color: var(--color-accent, #6c5ce7); color: var(--color-accent, #6c5ce7); font-weight: 700; }
+.text-design__tab.is-missing { color: var(--color-danger, #c0392b); }
+.text-design__dot {
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent, #6c5ce7);
+}
+.text-design__pane { display: flex; flex-direction: column; gap: 8px; }
+.text-design__hint { margin: 0; font-size: 11px; line-height: 1.5; color: var(--color-muted); }
+.text-design__note { width: 100%; resize: vertical; font-size: 13px; }
+.text-design__empty { margin: 0; font-size: 12px; color: var(--color-muted); }
+.text-design__preview {
+  display: block;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-panel-muted, #f4f4f7);
+  cursor: zoom-in;
+  overflow: hidden;
+}
+.text-design__preview img { display: block; width: 100%; max-height: 160px; object-fit: contain; }
+.text-design__preview.is-large { cursor: zoom-out; }
+.text-design__preview.is-large img { max-height: 520px; }
+.text-design__actions { display: flex; gap: 6px; }
+.text-design__file { display: none; }
+.block-card__font-panel:has(.text-design__preview.is-large) { width: 520px; }

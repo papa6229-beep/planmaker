@@ -40,7 +40,7 @@ import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useAssets } from '../../features/assets/useAssets'
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { clearFontPreview, setFontPreview, useCanvasFace, useFontPreview } from '../../features/studio/blockFont'
-import { FontPicker } from '../studio/FontPicker'
+import { TextDesignEditor } from '../studio/TextDesignEditor'
 import { ACCEPTED_MIME_TYPES } from '../../features/assets/imageUtils'
 import { RESIZE_HANDLES, resizeRect, type ResizeHandle } from '../../features/editor/canvasGeometry'
 
@@ -586,15 +586,22 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
             className={`block-card__tool block-card__layer-trigger${fontOpen ? ' is-open' : ''}${
               order.fontFamily === undefined ? ' block-card__font-missing' : ''
             }`}
-            aria-label="글꼴 고르기"
+            aria-label="문구 디자인"
             aria-expanded={fontOpen}
-            title={order.fontFamily ?? '글꼴을 골라야 만들 수 있습니다'}
+            title={
+              order.fontFamily === undefined
+                ? '글꼴을 골라야 만들 수 있습니다'
+                : `글꼴 ${order.fontFamily} — 글꼴 · 주문 · 참고 그림`
+            }
             onClick={() => setFontOpen((v) => !v)}
           >
             <span className="block-card__font-name" style={pointed === null ? faceStyle : undefined}>
-              {order.fontFamily ?? '글꼴'}
-            </span>{' '}
-            ▾
+              {order.fontFamily ?? '글꼴 고르기'}
+            </span>
+            {/* 창을 닫아도 무엇이 들어 있는지 보인다 (§16-B). */}
+            {(order.note ?? '').trim().length > 0 && <span className="block-card__design-mark">주문</span>}
+            {order.referenceAssetId !== undefined && <span className="block-card__design-mark">참고</span>}
+            {' '}▾
           </button>
         </span>
       )}
@@ -708,7 +715,7 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
       ref={fontPanelRef}
       className={`block-card__font-panel block-card__font-panel--${fontPanelSide}`}
       role="dialog"
-      aria-label="글꼴 목록"
+      aria-label="문구 디자인"
       // 캔버스가 줄어 있어도 목록은 제 크기로 읽힌다.
       style={{ transform: `scale(${String(1 / (scale > 0 ? scale : 1))})` }}
       onPointerDown={(e) => e.stopPropagation()}
@@ -722,12 +729,10 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
       onWheel={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
     >
-      <FontPicker
-        sample={block.content ?? ''}
-        family={order.fontFamily}
-        weight={order.fontWeight}
-        autoFocus
-        onPick={(patch) => void studio.setBlockOrder(block.id, patch)}
+      <TextDesignEditor
+        blockId={block.id}
+        label={block.label}
+        content={block.content ?? ''}
         onPreview={(point) =>
           point === null ? clearFontPreview(block.id) : setFontPreview({ blockId: block.id, ...point })
         }

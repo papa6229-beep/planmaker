@@ -42,7 +42,6 @@ import { BackgroundTools } from '../components/studio/BackgroundTools'
 import { StyleReferenceTools } from '../components/studio/StyleReferenceTools'
 import { BackgroundDialog } from '../components/studio/BackgroundDialog'
 import { CompositeEffectsPanel } from '../components/studio/CompositeEffectsPanel'
-import { BlockOrderPanel } from '../components/studio/BlockOrderPanel'
 import { ToneAdjustPanel } from '../components/studio/ToneAdjustPanel'
 import { PaperTunePanel } from '../components/studio/PaperTunePanel'
 import { BannerPanel } from '../components/studio/BannerPanel'
@@ -360,8 +359,8 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
                 <AlignTools />
                 {/* 고른 블록의 배치 — 맞춤 방식과 레이어 순서 (§3.1, §4). */}
                 <BlockLayerTools />
-                {/* 생성 **전**에 이 블록에만 붙이는 주문 (블록별 주문 Patch). */}
-                <BlockOrderPanel />
+                {/* 생성 **전**에 이 블록에만 붙이는 주문(글꼴·주문·참고 그림)은 캔버스의
+                    블록 옆 "문구 디자인" 창에만 있다 (2026-09-17). */}
                 <CompositeEffectsPanel />
                 <ReadyPanel />
               </>
