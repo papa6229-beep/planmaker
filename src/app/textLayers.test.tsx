@@ -2594,6 +2594,98 @@ describe('§26 도구 막대로 만든다', () => {
     await waitFor(() => expect(container.querySelector('.result-object[aria-label="도형 blk_box"]')).not.toBeNull(), { timeout: 5000 })
   })
 
+  it('지우개(E)는 완성본에서 고른 조각만 문질러 지우고, 실행 취소·모두 되돌리기가 되며, AI를 부르지 않는다', async () => {
+    // jsdom에는 캔버스가 없다 — 붓 자국을 받는 흉내 판을 깐다. 무엇을 지웠는지의 픽셀은
+    // 이 검사가 볼 일이 아니다 (합치기는 흉내다). 여기서는 흐름만 본다.
+    const fakeCtx = {
+      canvas: { width: 1024, height: 1024 },
+      globalCompositeOperation: 'source-over',
+      fillStyle: '',
+      createRadialGradient: () => ({ addColorStop: () => {} }),
+      beginPath: () => {},
+      arc: () => {},
+      fill: () => {},
+      drawImage: () => {},
+    }
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
+      fakeCtx.canvas = this
+      return fakeCtx as unknown as CanvasRenderingContext2D
+    } as never)
+    const toBlob = vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((cb: BlobCallback) =>
+      cb(new Blob([new Uint8Array([137, 80, 78, 71, 9])], { type: 'image/png' })),
+    )
+    try {
+      await shapeDoc([
+        createBlock('design_shape', { id: 'blk_box', label: '별', position: { x: 600, y: 50, width: 120, height: 120 } }),
+      ])
+      const { container } = renderStudio()
+      await waitFor(() => expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(7), { timeout: 5000 })
+      await generateOnce()
+      await waitFor(() => expect(container.querySelector('.result-objects')).not.toBeNull(), { timeout: 5000 })
+      // 판의 화면 크기 = 지면 크기로 둔다 — 누른 자리가 곧 지면 좌표다. 완성본이 다시 합쳐지면
+      // 판이 새로 그려질 수 있으므로 누를 때마다 새로 찾는다.
+      const layerNow = () => {
+        const el = container.querySelector<HTMLElement>('.result-objects')!
+        el.getBoundingClientRect = () => ({ left: 0, top: 0, width: 840, height: 1200, right: 840, bottom: 1200, x: 0, y: 0, toJSON: () => ({}) })
+        return el
+      }
+      const calls = fetchSpy.mock.calls.length
+      const bar = await screen.findByRole('toolbar', { name: '디자인 도구' }, { timeout: 5000 })
+
+      fireEvent.keyDown(window, { key: 'e' })
+      await waitFor(() => expect(within(bar).getByRole('radio', { name: /^지우개/ }).getAttribute('aria-checked')).toBe('true'), { timeout: 5000 })
+      expect(within(bar).getByText(/지울 조각을 누르세요/)).toBeTruthy()
+      // [ ] 로 붓 크기.
+      fireEvent.keyDown(window, { key: ']' })
+      await waitFor(() => expect((within(bar).getByLabelText('붓 크기') as HTMLInputElement).value).toBe('45'), { timeout: 5000 })
+
+      // 고른 것이 없으면 누른 자리의 맨 앞 조각을 고른다 — 지우지는 않는다.
+      fireEvent.pointerDown(layerNow(), { button: 0, clientX: 660, clientY: 110 })
+      await waitFor(
+        () => expect(container.querySelector('.result-object[aria-label="도형 blk_box"]')!.classList.contains('is-selected')).toBe(true),
+        { timeout: 5000 },
+      )
+      expect((await loadStudioJob(STUDIO_JOB_ID))!.eraseMasks?.blk_box).toBeUndefined()
+
+      // 문지른다.
+      fireEvent.pointerDown(layerNow(), { button: 0, clientX: 640, clientY: 90 })
+      fireEvent.pointerMove(window, { clientX: 680, clientY: 130 })
+      fireEvent.pointerUp(window)
+      let first = ''
+      await waitFor(async () => {
+        const mask = (await loadStudioJob(STUDIO_JOB_ID))!.eraseMasks?.blk_box
+        expect(mask).toBeDefined()
+        first = mask!
+      }, { timeout: 5000 })
+      // 한 번 더 — 새 자산이다.
+      fireEvent.pointerDown(layerNow(), { button: 0, clientX: 610, clientY: 60 })
+      fireEvent.pointerUp(window)
+      await waitFor(async () => {
+        const mask = (await loadStudioJob(STUDIO_JOB_ID))!.eraseMasks?.blk_box
+        expect(mask !== undefined && mask !== first).toBe(true)
+      }, { timeout: 5000 })
+
+      // 실행 취소 한 번 = 문지르기 한 번.
+      fireEvent.click(screen.getByRole('button', { name: '실행 취소' }))
+      await waitFor(async () => expect((await loadStudioJob(STUDIO_JOB_ID))!.eraseMasks?.blk_box).toBe(first), { timeout: 5000 })
+
+      // 모두 되돌리기.
+      fireEvent.click(within(bar).getByRole('button', { name: '지운 것 모두 되돌리기' }))
+      await waitFor(async () => expect((await loadStudioJob(STUDIO_JOB_ID))!.eraseMasks?.blk_box).toBeUndefined(), { timeout: 5000 })
+      await waitFor(
+        () => expect((within(bar).getByRole('button', { name: '지운 것 모두 되돌리기' }) as HTMLButtonElement).disabled).toBe(true),
+        { timeout: 5000 },
+      )
+
+      // 기획서 캔버스에서는 지우지 않는다고 말한다.
+      fireEvent.keyDown(window, { key: 'Escape' })
+      expect(fetchSpy.mock.calls.length).toBe(calls)
+    } finally {
+      getContext.mockRestore()
+      toBlob.mockRestore()
+    }
+  }, 30000)
+
   it('완성본에서 도형 옵션을 바꾸면 그 조각만 다시 그려지고, 도형을 옮겨도 "기획서 수정 전"이 뜨지 않는다', async () => {
     await shapeDoc([
       createBlock('design_shape', { id: 'blk_box', label: '별', position: { x: 600, y: 50, width: 120, height: 120 } }),

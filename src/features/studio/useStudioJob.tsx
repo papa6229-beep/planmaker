@@ -26,6 +26,8 @@ import {
   withBlockOrder,
   toneOf,
   objectToneOf,
+  eraseMaskOf,
+  withEraseMask,
   withTone,
   withObjectTone,
   createStudioJob,
@@ -195,6 +197,9 @@ export interface StudioJobApi {
    */
   objectToneOf: (blockId: string) => ToneAdjust
   setObjectTone: (blockId: string, patch: Partial<ToneAdjust>) => Promise<void>
+  /** 지운 자리 그림 (지우개 Patch). `null`이면 지운 것을 모두 되돌린다. */
+  eraseMaskOf: (blockId: string) => string | undefined
+  setEraseMask: (blockId: string, assetId: string | null) => Promise<void>
   /** 이 작업이 고른 생성 방식 (§6). */
   method: GenerationMethod
   setMethod: (method: GenerationMethod) => void
@@ -374,6 +379,8 @@ interface StudioStep {
    * 바꾼 뒤 `실행 취소`를 누르면 색도 돌아와야 한다 — 조각의 그림과 한 칸에 담긴다.
    */
   blockOrders: Record<string, BlockOrder>
+  /** 지운 자리 (지우개 Patch). */
+  eraseMasks: Record<string, string>
 }
 
 /** 되돌리기가 기억하는 칸 수. 넘으면 오래된 것부터 버린다. */
@@ -392,6 +399,7 @@ function stepAssetIds(step: StudioStep): string[] {
     ...Object.values(step.textObjects).flatMap((list) => list.map((o) => o.assetId)),
     ...Object.values(step.imageObjects).flatMap((list) => list.map((o) => o.assetId)),
     ...Object.values(step.backgrounds).map((b) => b.assetId),
+    ...Object.values(step.eraseMasks),
   ]
 }
 
@@ -405,6 +413,7 @@ function snapshotOf(job: StudioJob): StudioStep {
     tones: { ...job.tones },
     effects: { ...job.effects },
     blockOrders: { ...job.blockOrders },
+    eraseMasks: { ...job.eraseMasks },
   }
 }
 
@@ -521,6 +530,7 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
         tones: { ...step.tones },
         effects: { ...step.effects },
         blockOrders: { ...step.blockOrders },
+        eraseMasks: { ...step.eraseMasks },
         updatedAt: Date.now(),
       })
     },
@@ -582,6 +592,7 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
               bannerPages: { ...state.bannerPages },
               blink: { ...state.blink },
               backgroundLabs: { ...state.backgroundLabs },
+              eraseMasks: { ...state.eraseMasks },
               // 완성본은 파일에 담기지 않는다. 그런데 지금까지 이 자리는 **열기
               // 전에 보던 작업의 결과**를 그대로 물려받았다 — 다른 기획서를 열었는데
               // 앞 기획서의 완성본이 붙어 있는 셈이다. 파일이 말하지 않은 것은
@@ -608,8 +619,14 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
     if (current === null) return
     const next = withPageResult(current, result, Date.now())
     await saveStudioJob(next)
-    jobRef.current = next
-    setJob(next)
+    // 저장을 기다리는 사이에 다른 쓰기(실행 취소, 지운 것 되돌리기 …)가 끝났을 수 있다.
+    // 그때 저장 전에 읽은 작업을 그대로 걸면 그 쓰기가 **사라진다** (2026-09-17 지우개 검사에서
+    // 드러남: 되돌린 지우개 자리가 되살아났다). 결과만 가장 최근 작업 위에 다시 얹는다.
+    const latest = jobRef.current ?? next
+    const merged = latest === current ? next : withPageResult(latest, result, Date.now())
+    jobRef.current = merged
+    setJob(merged)
+    if (merged !== next) await saveStudioJob(merged)
   }, [])
 
   const api = useMemo<StudioJobApi | null>(() => {
@@ -669,6 +686,8 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       setTone: (pageId, patch) => mutate((j) => withTone(j, pageId, patch, Date.now())),
       objectToneOf: (blockId) => objectToneOf(job, blockId),
       setObjectTone: (blockId, patch) => mutate((j) => withObjectTone(j, blockId, patch, Date.now())),
+      eraseMaskOf: (blockId) => eraseMaskOf(job, blockId),
+      setEraseMask: (blockId, assetId) => mutate((j) => withEraseMask(j, blockId, assetId, Date.now())),
       method: methodOf(job),
       setMethod: (next) => void commit(withMethod(job, next, Date.now())),
       textObjectsOf: (pageId) => textObjectsOf(job, pageId),

@@ -17,7 +17,9 @@
 import { useEffect } from 'react'
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
-import { setTool, useDesignTools, type DesignTool } from '../../features/studio/designTools'
+import { eraserSettings, setEraser, setTool, useDesignTools, type DesignTool } from '../../features/studio/designTools'
+import { stepEraserSize } from '../../domain/eraseMask'
+import { EraserOptions } from './EraserOptions'
 import { useDesignTarget } from '../../features/studio/designTarget'
 import { SHAPE_KINDS } from '../../domain/shapeLook'
 import { useFillMissingPieces } from '../../features/studio/useCreateDesignBlock'
@@ -61,9 +63,18 @@ export function DesignBar() {
                 ? 'line'
                 : key === 'z'
                   ? 'zoom'
-                  : null
+                  : key === 'e'
+                    ? 'eraser'
+                    : null
       if (next !== null) {
         setTool(next)
+        return
+      }
+      // 지우개 붓 크기 (지우개 Patch) — 포토샵처럼 [ ].
+      if (tool === 'eraser' && (e.key === '[' || e.key === ']')) {
+        e.preventDefault()
+        const current = eraserSettings()
+        setEraser({ size: stepEraserSize(current.size, e.key === ']' ? 1 : -1) })
         return
       }
       if (e.key === 'Escape' && tool !== 'select') setTool('select')
@@ -152,12 +163,29 @@ export function DesignBar() {
         >
           ╱
         </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={tool === 'eraser'}
+          aria-label="지우개 (E) — 완성본에서 고른 조각을 문질러 지우기"
+          title="지우개 (E) — 완성본에서 고른 조각을 문질러 지웁니다 · [ ] 크기"
+          className={`design-bar__tool${tool === 'eraser' ? ' is-on' : ''}`}
+          onClick={() => setTool('eraser')}
+        >
+          <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+            <path d="M3 13.5 10.5 6l5 5-6 6H6.5z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+            <path d="M7 10l5 5" stroke="currentColor" strokeWidth="1.6" />
+            <line x1="9.5" y1="17" x2="17" y2="17" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+        </button>
       </div>
 
       <span className="design-bar__sep" aria-hidden="true" />
 
       <div className="design-bar__options" role="group" aria-label="고른 것의 옵션">
-        {tool === 'zoom' ? (
+        {tool === 'eraser' ? (
+          <EraserOptions onResult={generation?.view === 'compare' && generation.hasResult} label={target === null ? null : label} />
+        ) : tool === 'zoom' ? (
           <span className="design-bar__note">돋보기 — 캔버스를 클릭하면 확대 · Alt+클릭 축소 · Esc 끝</span>
         ) : tool !== 'select' ? (
           <span className="design-bar__note">
@@ -165,7 +193,7 @@ export function DesignBar() {
           </span>
         ) : target === null ? (
           <>
-            <span className="design-bar__note">블록이나 조각을 고르면 옵션이 나옵니다 · V 선택 · T 문자 · U 도형 · L 선 · Z 돋보기</span>
+            <span className="design-bar__note">블록이나 조각을 고르면 옵션이 나옵니다 · V 선택 · T 문자 · U 도형 · L 선 · E 지우개 · Z 돋보기</span>
             {fill !== null && fill.missing > 0 && (
               <button
                 type="button"

@@ -25,7 +25,7 @@ import type { ReferenceLayer } from '../../domain/pageSchema'
 import { BriefBlockCard } from './BriefBlockCard'
 import { OriginalOverlay } from '../studio/OriginalBrief'
 import { BackgroundHandle } from '../studio/BackgroundHandle'
-import { useDesignTools } from '../../features/studio/designTools'
+import { isCreateTool, useDesignTools } from '../../features/studio/designTools'
 import { dragBox, useCreateDesignBlock } from '../../features/studio/useCreateDesignBlock'
 import { useAltHeld } from '../../features/studio/useAltHeld'
 import { nudgeZoom } from '../../features/editor/canvasView'
@@ -142,7 +142,7 @@ export function BriefCanvas() {
         <div
           ref={sheetRef}
           className={`canvas__sheet${dragOver ? ' is-drag-over' : ''}${
-            tool === 'zoom' ? ` is-zooming${alt ? ' is-zoom-out' : ''}` : tool !== 'select' ? ' is-drawing' : ''
+            tool === 'zoom' ? ` is-zooming${alt ? ' is-zoom-out' : ''}` : isCreateTool(tool) ? ' is-drawing' : ''
           }`}
           style={{
             width: canvasWidth,
@@ -167,7 +167,7 @@ export function BriefCanvas() {
             const from = at(e)
 
             // ── 도구로 만들기 (도구 막대 Patch) ─────────────────────────────
-            if (tool !== 'select' && createBlock !== null) {
+            if (isCreateTool(tool) && createBlock !== null) {
               const current = tool
               const onDraw = (ev: PointerEvent) =>
                 setMarquee(dragBox(current, { from, to: at(ev), snap: ev.shiftKey }).rect)

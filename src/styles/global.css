@@ -3766,3 +3766,16 @@ button { font-family: inherit; }
 .studio-zoom__loupe.is-on { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
 .studio-zoom__loupe.is-on:hover { color: #fff; }
 .studio-zoom__loupe.is-on.is-out { cursor: zoom-out; }
+
+/* 지우개 (2026-09-17) — 완성본 위에서 붓 동그라미, 조각은 누름을 통과시킨다. */
+.result-objects.is-erasing { cursor: none; }
+.result-objects.is-erasing .result-object { pointer-events: none; }
+.result-objects__brush {
+  position: absolute;
+  z-index: 8;
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+.result-objects__brush.is-restore { border-style: dashed; }

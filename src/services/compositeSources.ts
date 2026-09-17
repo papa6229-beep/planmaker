@@ -12,8 +12,10 @@ import { getAsset } from './assetStore'
 import { analyzeImageBlob } from './imageAnalysisRunner'
 import { measurePhoto } from './photoContent'
 import { buildPaperCanvas, type PaperCanvas } from './paperCutoutShape'
-import { compositeAssetIds, type CompositePlan } from '../domain/composite'
+import { compositeAssetIds, compositeMaskIds, type CompositePlan } from '../domain/composite'
 import { FULL_CONTENT_BOX, type ContentBox } from '../domain/photoBox'
+import { LIVE_MASK_PREFIX } from '../domain/eraseMask'
+import { liveMaskBlob } from './liveMasks'
 import type { ImageAnalysis } from '../domain/imageAnalysis'
 
 export interface CollectedCompositeSources {
@@ -40,10 +42,19 @@ export async function collectCompositeSources(
   const papers = new Map<string, PaperCanvas>()
   const boxes = new Map<string, ContentBox>()
 
+  const masks = new Set(compositeMaskIds(plan))
   for (const assetId of compositeAssetIds(plan)) {
+    // 칠하는 중인 지우개 마스크는 저장소가 아니라 칠하는 판에서 온다 (지우개 Patch).
+    if (assetId.startsWith(LIVE_MASK_PREFIX)) {
+      const live = liveMaskBlob(assetId)
+      if (live !== undefined) blobs.set(assetId, live)
+      continue
+    }
     const asset = await getAsset(assetId)
     if (asset === undefined) continue
     blobs.set(assetId, asset.blob)
+    // 마스크는 그림이 아니라 지운 자리다 — 색을 잴 이유가 없다.
+    if (masks.has(assetId)) continue
     const analysis = await analyzeImageBlob(asset.blob)
     if (analysis !== null) analyses.set(assetId, analysis)
   }

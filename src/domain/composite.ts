@@ -44,6 +44,8 @@ export interface CompositeLayerPlan {
    * 된다. 없거나 넷 다 0이면 지금까지와 같은 길이다.
    */
   tone?: ToneAdjust
+  /** 지운 자리 그림 (지우개 Patch). 조각 상자에 펴서 그만큼 비운다. */
+  maskAssetId?: string
 }
 
 export interface CompositeTextPlan {
@@ -88,6 +90,8 @@ export interface CompositePlan {
     angle?: number
     /** 이 문구에만 거는 톤 (블록별 톤 Patch). */
     tone?: ToneAdjust
+    /** 지운 자리 그림 (지우개 Patch). */
+    maskAssetId?: string
   }[]
   layers: CompositeLayerPlan[]
   texts: CompositeTextPlan[]
@@ -112,7 +116,14 @@ export interface CompositePlanInput {
   foreground?: { assetId: string } | undefined
   /** 얹을 문구 오브젝트들 (텍스트 오브젝트 Patch §4). 차례는 `order`가 정한다. */
   textObjects?:
-    | readonly { assetId: string; rect: LayoutRect; order: number; angle?: number; tone?: ToneAdjust }[]
+    | readonly {
+        assetId: string
+        rect: LayoutRect
+        order: number
+        angle?: number
+        tone?: ToneAdjust
+        maskAssetId?: string
+      }[]
     | undefined
   /** 블록 id → 실제 사용 제품 이미지의 자산 id. */
   productImages: Readonly<Record<string, string>>
@@ -149,6 +160,8 @@ export interface CompositePlanInput {
   angleOverrides?: Readonly<Record<string, number>>
   /** 블록 id → 그 오브젝트에만 거는 톤 (블록별 톤 Patch). */
   objectTones?: Readonly<Record<string, ToneAdjust>>
+  /** 블록 id → 지운 자리 그림의 자산 id (지우개 Patch). */
+  eraseMasks?: Readonly<Record<string, string>>
 }
 
 const DEFAULT_PLAN_GRAIN = 0.08
@@ -187,6 +200,7 @@ export function planLocalComposite(input: CompositePlanInput): CompositePlan {
         order: input.orderOverrides?.[block.id] ?? index,
         ...(input.angleOverrides?.[block.id] === undefined ? {} : { angle: input.angleOverrides[block.id] }),
         ...(input.objectTones?.[block.id] === undefined ? {} : { tone: input.objectTones[block.id] }),
+        ...(input.eraseMasks?.[block.id] === undefined ? {} : { maskAssetId: input.eraseMasks[block.id] }),
       })
       continue
     }
@@ -226,5 +240,13 @@ export function compositeAssetIds(plan: CompositePlan): string[] {
   if (plan.background !== undefined) ids.push(plan.background.assetId)
   if (plan.foreground !== undefined) ids.push(plan.foreground.assetId)
   for (const text of plan.textObjects ?? []) ids.push(text.assetId)
+  return [...new Set([...ids, ...compositeMaskIds(plan)])]
+}
+
+/** 지운 자리 그림들 (지우개 Patch). 그림으로 읽기만 하고 색을 재지 않는다. */
+export function compositeMaskIds(plan: CompositePlan): string[] {
+  const ids: string[] = []
+  for (const layer of plan.layers) if (layer.maskAssetId !== undefined) ids.push(layer.maskAssetId)
+  for (const text of plan.textObjects ?? []) if (text.maskAssetId !== undefined) ids.push(text.maskAssetId)
   return [...new Set(ids)]
 }

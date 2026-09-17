@@ -18,7 +18,7 @@ import { paperOutset, PAPER_SHADOW } from '../domain/paperCutout'
 import { applyTone, normalizeTone, toneIsFlat, type ToneAdjust } from '../domain/toneAdjust'
 import { defringe } from '../domain/edgeMatte'
 import { photoImageStyle, type ContentBox } from '../domain/photoBox'
-import { fitSourceRect } from '../domain/imageLayout'
+import { fitSourceRect, type LayoutRect } from '../domain/imageLayout'
 import type { PaperCanvas } from './paperCutoutShape'
 import type { CompositeLayerPlan, CompositePlan } from '../domain/composite'
 import type { ImageAnalysis } from '../domain/imageAnalysis'
@@ -213,6 +213,44 @@ async function spun(
   ctx.rotate((angle * Math.PI) / 180)
   ctx.translate(-(rect.x + rect.width / 2), -(rect.y + rect.height / 2))
   await draw()
+  ctx.restore()
+}
+
+/**
+ * 지운 자리를 비우고 그린다 (지우개 Patch).
+ *
+ * 조각(그림자·종이·테두리 포함)을 따로 한 판에 그린 뒤, 마스크를 조각 상자에 펴서
+ * 그 알파만큼 지우고, 그 판을 얹는다 — 본 판에서 바로 지우면 배경까지 지워진다.
+ * 따로 그리는 판은 본 판과 같은 크기·같은 배수라 해상도가 떨어지지 않는다.
+ */
+async function maskedDraw(
+  ctx: CanvasRenderingContext2D,
+  maskBlob: Blob,
+  item: { rect: LayoutRect; angle: number | undefined },
+  draw: (target: CanvasRenderingContext2D) => Promise<void>,
+): Promise<void> {
+  const off = document.createElement('canvas')
+  off.width = ctx.canvas.width
+  off.height = ctx.canvas.height
+  const octx = off.getContext('2d')
+  if (!octx) {
+    await draw(ctx)
+    return
+  }
+  octx.imageSmoothingEnabled = true
+  octx.imageSmoothingQuality = 'high'
+  octx.setTransform(ctx.getTransform())
+  await draw(octx)
+  const mask = await toSource(maskBlob)
+  octx.save()
+  octx.globalCompositeOperation = 'destination-out'
+  await spun(octx, item.rect, item.angle, async () => {
+    octx.drawImage(mask, 0, 0, mask.width, mask.height, item.rect.x, item.rect.y, item.rect.width, item.rect.height)
+  })
+  octx.restore()
+  ctx.save()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.drawImage(off, 0, 0)
   ctx.restore()
 }
 
@@ -514,12 +552,18 @@ export async function renderComposite(
   const drawList: {
     order: number
     image: number
+    rect: LayoutRect
+    angle: number | undefined
+    mask: string | undefined
     tone?: ToneAdjust
     draw: (c: CanvasRenderingContext2D) => Promise<void>
   }[] = [
     ...plan.layers.map((layer) => ({
       order: layer.order,
       image: 0,
+      rect: layer.rect,
+      angle: layer.angle,
+      mask: layer.maskAssetId,
       ...(layer.tone === undefined ? {} : { tone: layer.tone }),
       draw: (c: CanvasRenderingContext2D) =>
         spun(c, layer.rect, layer.angle, () => drawLayer(c, layer, sources, backgroundTone)),
@@ -527,6 +571,9 @@ export async function renderComposite(
     ...(plan.textObjects ?? []).map((text) => ({
       order: text.order,
       image: 1,
+      rect: text.rect,
+      angle: text.angle,
+      mask: text.maskAssetId,
       ...(text.tone === undefined ? {} : { tone: text.tone }),
       draw: (c: CanvasRenderingContext2D) =>
         spun(c, text.rect, text.angle, async () => {
@@ -543,7 +590,14 @@ export async function renderComposite(
     })),
   ].toSorted((a, b) => a.order - b.order || a.image - b.image)
   // 블록별 톤이 먼저 걸리고, 다 그린 뒤에 페이지 전체 톤이 한 번 더 걸린다.
-  for (const item of drawList) await tonedDraw(ctx, plan.size, item.tone, item.draw)
+  for (const item of drawList) {
+    const maskBlob = item.mask === undefined ? undefined : sources.blobs.get(item.mask)
+    if (maskBlob === undefined) {
+      await tonedDraw(ctx, plan.size, item.tone, item.draw)
+      continue
+    }
+    await maskedDraw(ctx, maskBlob, item, (target) => tonedDraw(target, plan.size, item.tone, item.draw))
+  }
 
   // ── 전경 문구 레이어 (한방 생성 Patch 2 §4) ───────────────────────────────
   //

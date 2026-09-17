@@ -23,6 +23,8 @@
  *    호출은 기획서도 이전 결과도 건드리지 못한다.
  */
 
+import { hasLiveMask } from '../../services/liveMasks'
+import { liveMaskId } from '../../domain/eraseMask'
 import {
   createContext,
   useCallback,
@@ -998,6 +1000,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             : { textObjects: paid.textObjects.map((t) => ({ assetId: t.assetId, rect: t.rect, order: t.layer })) }),
           productImages: studio.job.productImages,
           effects: studio.job.effects ?? {},
+          // 다시 생성해도 지운 자리는 그 블록에 남는다 (지우개 Patch).
+          eraseMasks: studio.job.eraseMasks ?? {},
           grain: studio.grain,
           tone: studio.toneOf(paid.plan.pageId),
           onlyBlockIds: paid.plan.fixedBlockIds,
@@ -1148,7 +1152,13 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       // 서랍에서 꺼낸 조각과 그것을 한 벌 더 꺼낸 복제본은 연결 목록에 없는 새 번호를
       // 쓴다. 조각이 제 그림을 들고 있으므로 그것을 그대로 쓴다.
       const productImages: Record<string, string> = { ...job.productImages }
+      // 지운 자리 (지우개 Patch). 문지르는 중이면 칠하는 판의 것을 읽는다.
+      const maskOf = (blockId: string): string | undefined =>
+        hasLiveMask(blockId) ? liveMaskId(blockId) : job.eraseMasks?.[blockId]
+      const eraseMasks: Record<string, string> = {}
       for (const object of images) {
+        const mask = maskOf(object.blockId)
+        if (mask !== undefined) eraseMasks[object.blockId] = mask
         rectOverrides[object.blockId] = object.rect
         orderOverrides[object.blockId] = object.layer
         if (object.angle !== undefined) angleOverrides[object.blockId] = object.angle
@@ -1167,6 +1177,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           ...(t.angle === undefined ? {} : { angle: t.angle }),
           // 이 문구 하나에만 거는 톤 (블록별 톤 Patch). 전체 톤과 따로 산다.
           tone: objectToneIn(job, t.blockId),
+          ...(maskOf(t.blockId) === undefined ? {} : { maskAssetId: maskOf(t.blockId)! }),
         })),
         productImages,
         effects: job.effects ?? {},
@@ -1177,6 +1188,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         orderOverrides,
         angleOverrides,
         objectTones,
+        eraseMasks,
         includeTexts: false,
       })
     },

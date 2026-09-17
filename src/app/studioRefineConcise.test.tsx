@@ -518,7 +518,8 @@ describe('Patch 1-B §7·§8 긴 내용에도 하단 버튼이 남는다', () =>
   it('closes on Escape', async () => {
     await openEditConfirm()
     fireEvent.keyDown(window, { key: 'Escape' })
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'AI 부분수정' })).toBeNull())
+    // 전체 검사가 몰릴 때 1초를 넘긴 적이 있다 (2026-09-17) — 기다림만 넉넉히.
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'AI 부분수정' })).toBeNull(), { timeout: 5000 })
   }, 30000)
 
   it('keeps the overall proposal actionable however long it is', async () => {

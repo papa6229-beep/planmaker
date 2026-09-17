@@ -65,6 +65,7 @@ const RESTORED: Record<Carried, (job: StudioJob) => unknown> = {
   bannerPages: (job) => job.bannerPages,
   blink: (job) => job.blink,
   backgroundLabs: (job) => job.backgroundLabs,
+  eraseMasks: (job) => job.eraseMasks,
 }
 
 function sampleDoc(): BriefDocument {
@@ -121,6 +122,8 @@ function fullJob(): StudioJob {
         ],
       },
     },
+    // 지운 자리. 잃으면 파일을 다시 열었을 때 지운 곳이 되살아난다 (지우개 Patch).
+    eraseMasks: { blk_txt: 'asset_mask' },
     grain: 0.2,
     method: 'background_composite',
     // 완성본은 파일에 담기지 않는다. 열었을 때 이것이 묻어오면 안 된다.

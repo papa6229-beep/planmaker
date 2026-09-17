@@ -35,7 +35,7 @@ import type { BriefDocument } from '../domain/pageSchema'
 const PAGE_KEYED = ['backgrounds', 'styleRefs', 'keepReferenceBg', 'tones', 'textObjects', 'imageObjects', 'results', 'backgroundLabs']
 
 /** 블록 하나에 매달리는 칸 — 블록을 복제하면 **함께 따라와야 한다**. */
-const BLOCK_KEYED = ['productImages', 'effects', 'blockOrders', 'objectTones']
+const BLOCK_KEYED = ['productImages', 'effects', 'blockOrders', 'objectTones', 'eraseMasks']
 
 /** 칸이 아닌 것 — 이유가 있어 분류에서 뺀다. */
 const NOT_KEYED: Record<string, string> = {

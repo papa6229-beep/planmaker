@@ -18,6 +18,8 @@
  * 상태로 결과를 다시 합친다 (§4).
  */
 
+import { useEraser } from '../../features/studio/useEraser'
+import { localPoint } from '../../domain/eraseMask'
 import { useResultView } from '../../features/studio/useResultView'
 import { useAltHeld } from '../../features/studio/useAltHeld'
 import { nudgeZoom } from '../../features/editor/canvasView'
@@ -34,7 +36,7 @@ import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { SHADOW_OFFSET_MAX } from '../../domain/compositeEffects'
 import type { LayoutRect } from '../../domain/imageLayout'
 import type { StudioTextObject } from '../../domain/textObjects'
-import { useDesignTools } from '../../features/studio/designTools'
+import { isCreateTool, useDesignTools } from '../../features/studio/designTools'
 import { dragBox, useCreateDesignBlock } from '../../features/studio/useCreateDesignBlock'
 
 /** 조각 위 막대가 설 자리 (화면 px). 이보다 위에 붙은 조각은 막대를 아래로 내린다. */
@@ -77,7 +79,10 @@ export function ResultObjectLayer({ pageId, page }: Props) {
     '오브젝트'
   const boxRef = useRef<HTMLDivElement | null>(null)
   /** 든 도구 (도구 막대 Patch). 선택 도구가 아니면 빈 자리를 끌어 새 조각을 만든다. */
-  const { tool } = useDesignTools()
+  const { tool, eraser: brush } = useDesignTools()
+  const eraser = useEraser()
+  /** 지우개 붓이 지금 있는 자리 (지면 좌표). 판 밖이면 `null`. */
+  const [brushAt, setBrushAt] = useState<{ x: number; y: number } | null>(null)
   const view = useResultView()
   const alt = useAltHeld()
   const createBlock = useCreateDesignBlock()
@@ -332,12 +337,58 @@ export function ResultObjectLayer({ pageId, page }: Props) {
   return (
     <div
       className={`result-objects${
-        tool === 'zoom' ? ` is-zooming${alt ? ' is-zoom-out' : ''}` : tool !== 'select' ? ' is-drawing' : ''
+        tool === 'zoom'
+          ? ` is-zooming${alt ? ' is-zoom-out' : ''}`
+          : tool === 'eraser'
+            ? ' is-erasing'
+            : tool !== 'select'
+              ? ' is-drawing'
+              : ''
       }`}
       ref={boxRef}
       // 빈 곳을 누르면 선택이 풀린다. 조작 UI가 남아 있으면 무엇이 골라져
       // 있는지 화면이 거짓말을 한다. 도구를 들었으면 끌어서 새 조각을 만든다.
+      onPointerMove={(e) => {
+        if (tool !== 'eraser') return
+        const box = boxRef.current?.getBoundingClientRect()
+        if (box === undefined || box.width <= 0) return
+        const k = page.width / box.width
+        setBrushAt({ x: (e.clientX - box.left) * k, y: (e.clientY - box.top) * k })
+      }}
+      onPointerLeave={() => setBrushAt(null)}
       onPointerDown={(e) => {
+        // 지우개 (지우개 Patch) — 고른 조각만 지운다. 고른 것이 없으면 누른 자리의 맨 앞 조각을 고른다.
+        if (tool === 'eraser') {
+          if (e.button !== 0 || eraser === null) return
+          e.preventDefault()
+          const box = boxRef.current?.getBoundingClientRect()
+          if (box === undefined || box.width <= 0) return
+          const k = page.width / box.width
+          const at = (ev: { clientX: number; clientY: number }) => ({
+            x: (ev.clientX - box.left) * k,
+            y: (ev.clientY - box.top) * k,
+          })
+          const point = at(e)
+          const chosen = objects.find((o) => o.object.blockId === studio.selectedObjectBlockId)
+          if (chosen === undefined) {
+            const hit = [...objects].reverse().find(({ object }) => {
+              const { u, v } = localPoint(object.rect, object.angle, point)
+              return u >= 0 && u <= 1 && v >= 0 && v <= 1
+            })
+            studio.selectObject(hit?.object.blockId ?? null)
+            return
+          }
+          const stroke = eraser.begin(pageId, chosen.object, point)
+          const onRub = (ev: PointerEvent) => stroke.move(at(ev))
+          const onLift = () => {
+            window.removeEventListener('pointermove', onRub)
+            window.removeEventListener('pointerup', onLift)
+            void stroke.end()
+          }
+          window.addEventListener('pointermove', onRub)
+          window.addEventListener('pointerup', onLift)
+          return
+        }
         studio.selectObject(null)
         // 돋보기 (돋보기 도구 Patch) — 누른 자리를 붙든 채 5%씩.
         if (tool === 'zoom') {
@@ -355,7 +406,7 @@ export function ResultObjectLayer({ pageId, page }: Props) {
           view.nudge(direction)
           return
         }
-        if (tool === 'select' || createBlock === null || e.button !== 0) return
+        if (!isCreateTool(tool) || createBlock === null || e.button !== 0) return
         e.preventDefault()
         const box = boxRef.current?.getBoundingClientRect()
         if (box === undefined || box.width <= 0) return
@@ -377,6 +428,18 @@ export function ResultObjectLayer({ pageId, page }: Props) {
         window.addEventListener('pointerup', onDone)
       }}
     >
+      {tool === 'eraser' && brushAt !== null && (
+        <div
+          className={`result-objects__brush${brush.restore ? ' is-restore' : ''}`}
+          aria-hidden="true"
+          style={{
+            left: percent(brushAt.x - brush.size / 2, page.width),
+            top: percent(brushAt.y - brush.size / 2, page.height),
+            width: percent(brush.size, page.width),
+            height: percent(brush.size, page.height),
+          }}
+        />
+      )}
       {drawing !== null && (
         <div
           className="result-objects__drawing"

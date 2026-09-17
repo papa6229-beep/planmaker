@@ -196,6 +196,11 @@ export interface StudioJob {
    * 효과·블록 주문과 같이 블록 id 하나로 센다 — 블록은 페이지 하나에만 속한다.
    */
   objectTones?: Record<string, ToneAdjust>
+  /**
+   * 블록 id → 지운 자리 그림의 자산 id (지우개 Patch). 완성본의 조각을 합칠 때 그만큼 비운다.
+   * 칠할 때마다 새 자산이라, 되돌리기는 이전 id로 돌아가기만 하면 된다.
+   */
+  eraseMasks?: Record<string, string>
   /** 이 작업이 고른 생성 방식 (§6). */
   method?: GenerationMethod
   createdAt: number
@@ -337,7 +342,10 @@ export function withClonedBlock(job: StudioJob, from: string, to: string, now: n
   const product = job.productImages[from]
   const order = job.blockOrders?.[from]
   const tone = job.objectTones?.[from]
-  if (effects === undefined && product === undefined && order === undefined && tone === undefined) return job
+  const mask = job.eraseMasks?.[from]
+  if (effects === undefined && product === undefined && order === undefined && tone === undefined && mask === undefined) {
+    return job
+  }
   return {
     ...job,
     ...(effects === undefined ? {} : { effects: { ...job.effects, [to]: { ...effects } } }),
@@ -348,6 +356,8 @@ export function withClonedBlock(job: StudioJob, from: string, to: string, now: n
     ...(product === undefined ? {} : { productImages: { ...job.productImages, [to]: product } }),
     ...(order === undefined ? {} : { blockOrders: { ...job.blockOrders, [to]: { ...order } } }),
     ...(tone === undefined ? {} : { objectTones: { ...job.objectTones, [to]: { ...tone } } }),
+    // 지운 자리도 따라온다. 마스크 자산은 고쳐 쓰지 않으므로 같은 번호를 함께 써도 된다.
+    ...(mask === undefined ? {} : { eraseMasks: { ...job.eraseMasks, [to]: mask } }),
     updatedAt: now,
   }
 }
@@ -570,6 +580,8 @@ export function studioLiveAssetIds(job: StudioJob): string[] {
       // 남아 있고, 옮기거나 다시 디자인할 때마다 이 그림을 다시 그린다.
       ...Object.values(job.textObjects ?? {}).flatMap((list) => list.map((t) => t.assetId)),
       ...Object.values(job.imageObjects ?? {}).flatMap((list) => list.map((t) => t.assetId)),
+      // 지운 자리 그림도 같다 — 지우면 조각이 지운 적 없는 모습으로 돌아간다.
+      ...Object.values(job.eraseMasks ?? {}),
     ]),
   ]
 }
@@ -672,6 +684,18 @@ export function toneOf(job: StudioJob | null, pageId: string): ToneAdjust {
 
 export function objectToneOf(job: StudioJob | null, blockId: string): ToneAdjust {
   return job === null ? NO_TONE : normalizeTone(job.objectTones?.[blockId])
+}
+
+export function eraseMaskOf(job: StudioJob | null, blockId: string): string | undefined {
+  return job?.eraseMasks?.[blockId]
+}
+
+/** 지운 자리 그림을 바꾼다. `null`이면 지운 것을 모두 되돌린다. */
+export function withEraseMask(job: StudioJob, blockId: string, assetId: string | null, now: number): StudioJob {
+  const next = { ...job.eraseMasks }
+  if (assetId === null) delete next[blockId]
+  else next[blockId] = assetId
+  return { ...job, eraseMasks: next, updatedAt: now }
 }
 
 export function withObjectTone(

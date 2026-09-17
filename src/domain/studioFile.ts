@@ -16,6 +16,7 @@
  * 순수 모듈이다. ZIP도 저장소도 화면도 모른다.
  */
 
+import { readEraseMasks } from './eraseMask'
 import { dropMissingLabAssets, labAssetIds, readBackgroundLabs, remapLabs, type BackgroundLab } from './backgroundLab'
 import { normalizeTextLook } from './textLook'
 import { normalizeCharStyles } from './textArt'
@@ -41,10 +42,10 @@ import type { StudioTextObject } from './textObjects'
  * 예전 빌드는 "읽을 수 없다"고 분명히 말한다. 잃는 것이 같다면 소리 내는 쪽이
  * 낫다 (§12 마지막 줄).
  */
-export const STUDIO_FILE_VERSION = '0.15.0'
+export const STUDIO_FILE_VERSION = '0.16.0'
 
 /** 이 판이 **읽을 수 있는** 버전. 예전 파일은 그대로 열린다. */
-export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0', '0.4.0', '0.5.0', '0.6.0', '0.7.0', '0.8.0', '0.9.0', '0.10.0', '0.11.0', '0.12.0', '0.13.0', '0.14.0', '0.15.0']
+export const READABLE_STUDIO_FILE_VERSIONS: readonly string[] = ['0.1.0', '0.2.0', '0.3.0', '0.4.0', '0.5.0', '0.6.0', '0.7.0', '0.8.0', '0.9.0', '0.10.0', '0.11.0', '0.12.0', '0.13.0', '0.14.0', '0.15.0', '0.16.0']
 
 /** 파일이 기억하는 "이 작업이 어느 원본에서 시작했는가". */
 export interface StudioFileSource {
@@ -88,6 +89,8 @@ export interface StudioFileState {
   blink?: Record<string, StudioBlink>
   /** 페이지 id → 배경 후보 (0.15.0). */
   backgroundLabs?: Record<string, BackgroundLab>
+  /** 블록 id → 지운 자리 그림 (0.16.0). */
+  eraseMasks?: Record<string, string>
 }
 
 /** 지금 작업에서 파일에 남길 것만 추린다. */
@@ -116,6 +119,7 @@ export function toStudioFileState(job: StudioJob): StudioFileState {
     bannerPages: { ...job.bannerPages },
     blink: { ...job.blink },
     backgroundLabs: { ...job.backgroundLabs },
+    eraseMasks: { ...job.eraseMasks },
     ...(job.grain === undefined ? {} : { grain: job.grain }),
     ...(job.method === undefined ? {} : { method: job.method }),
   }
@@ -134,6 +138,8 @@ export function studioFileAssetIds(state: StudioFileState): string[] {
       ...Object.values(state.backgrounds ?? {}).map((b) => b.assetId),
       // 배경 후보도 담는다 — 다른 컴퓨터에서 열어도 비교를 이어 간다.
       ...labAssetIds(state.backgroundLabs),
+      // 지운 자리 그림도 담는다 — 빼면 다른 컴퓨터에서 지운 자리가 되살아난다.
+      ...Object.values(state.eraseMasks ?? {}),
       ...Object.values(state.styleRefs ?? {}),
       // 깜빡이는 GIF도 파일에 담긴다 — 빼면 다른 컴퓨터에서 열었을 때 켜져 있는데
       // 그림이 없는 상태가 된다.
@@ -162,6 +168,7 @@ export type StudioRefKind =
   | 'blink'
   | 'sceneCandidate'
   | 'sceneReference'
+  | 'eraseMask'
 
 export const STUDIO_REF_LABEL: Record<StudioRefKind, string> = {
   productImage: '연결한 제품 이미지',
@@ -173,6 +180,7 @@ export const STUDIO_REF_LABEL: Record<StudioRefKind, string> = {
   blink: '깜빡이는 버튼 GIF',
   sceneCandidate: '배경 후보',
   sceneReference: '배경 후보의 분위기 그림',
+  eraseMask: '지우개로 지운 자리',
 }
 
 /** 가리키는 그림이 사라진 연결 하나. */
@@ -256,10 +264,13 @@ export function dropMissingAssets(
   )
 
   const backgroundLabs = dropMissingLabAssets(state.backgroundLabs, gone)
+  const eraseMasks = Object.fromEntries(
+    Object.entries(state.eraseMasks ?? {}).filter(([blockId, id]) => !gone('eraseMask', id, blockId)),
+  )
 
   if (dropped.length === 0) return { state, dropped }
   return {
-    state: { ...state, productImages, backgrounds, styleRefs, textObjects, imageObjects, blockOrders, blink, backgroundLabs },
+    state: { ...state, productImages, backgrounds, styleRefs, textObjects, imageObjects, blockOrders, blink, backgroundLabs, eraseMasks },
     dropped,
   }
 }
@@ -306,7 +317,11 @@ export function remapStudioFileState(
       item.assetId === undefined ? item : { ...item, assetId: mapping.get(item.assetId) ?? item.assetId }
   }
   const backgroundLabs = remapLabs(state.backgroundLabs, mapping)
-  return { ...state, productImages, backgrounds, styleRefs, textObjects, imageObjects, blockOrders, blink, backgroundLabs }
+  const eraseMasks: Record<string, string> = {}
+  for (const [blockId, assetId] of Object.entries(state.eraseMasks ?? {})) {
+    eraseMasks[blockId] = mapping.get(assetId) ?? assetId
+  }
+  return { ...state, productImages, backgrounds, styleRefs, textObjects, imageObjects, blockOrders, blink, backgroundLabs, eraseMasks }
 }
 
 /**
@@ -542,6 +557,7 @@ export function parseStudioFileState(raw: unknown): StudioFileState | null {
       : {},
     blink: readBlink(raw.blink),
     backgroundLabs: readBackgroundLabs(raw.backgroundLabs),
+    eraseMasks: readEraseMasks(raw.eraseMasks),
     ...(typeof raw.grain === 'number' ? { grain: Math.min(1, Math.max(0, raw.grain)) } : {}),
     ...(raw.method === 'background_composite' || raw.method === 'full_ai' ? { method: raw.method } : {}),
   }

@@ -8,14 +8,21 @@
 
 import { useSyncExternalStore } from 'react'
 import type { ShapeKind } from '../../domain/shapeLook'
+import { clampEraser, DEFAULT_ERASER, type EraserSettings } from '../../domain/eraseMask'
 
 /**
  * `shadow`: 그림자만 남는 도형 (그림자 레이어 Patch).
  * `zoom`: 돋보기 — 캔버스를 누르면 확대, Alt+누르면 축소 (돋보기 도구 Patch). 무엇도 만들지 않는다.
+ * `eraser`: 지우개 — 완성본에서 고른 조각을 문질러 지운다 (지우개 Patch). 무엇도 만들지 않는다.
  */
-export type DesignTool = 'select' | 'text' | ShapeKind | 'shadow' | 'zoom'
+export type DesignTool = 'select' | 'text' | ShapeKind | 'shadow' | 'zoom' | 'eraser'
 /** 끌어서 무언가를 만드는 도구. */
-export type CreateTool = Exclude<DesignTool, 'select' | 'zoom'>
+export type CreateTool = Exclude<DesignTool, 'select' | 'zoom' | 'eraser'>
+
+/** 무언가를 만드는 도구인가 (돋보기·지우개·선택은 아니다). */
+export function isCreateTool(tool: DesignTool): tool is CreateTool {
+  return tool !== 'select' && tool !== 'zoom' && tool !== 'eraser'
+}
 
 interface ToolState {
   tool: DesignTool
@@ -29,6 +36,8 @@ interface ToolState {
   lastFamily: string | null
   /** 이벤트 페이지 배경의 크기·자리를 캔버스에서 조절하는 중인가 (배경 크기 Patch). */
   backgroundEdit: boolean
+  /** 지우개 붓 (지우개 Patch). 저장하지 않는다 — 이 화면의 손버릇이다. */
+  eraser: EraserSettings
 }
 
 let state: ToolState = {
@@ -38,6 +47,7 @@ let state: ToolState = {
   editRequest: null,
   lastFamily: null,
   backgroundEdit: false,
+  eraser: DEFAULT_ERASER,
 }
 const listeners = new Set<() => void>()
 
@@ -57,7 +67,7 @@ export function useDesignTools(): ToolState {
 
 export function setTool(tool: DesignTool): void {
   set(
-    tool !== 'select' && tool !== 'text' && tool !== 'line' && tool !== 'zoom'
+    tool !== 'select' && tool !== 'text' && tool !== 'line' && tool !== 'zoom' && tool !== 'eraser'
       ? { tool, lastShape: tool }
       : { tool },
   )
@@ -82,6 +92,14 @@ export function rememberFamily(family: string): void {
   if (state.lastFamily !== family) set({ lastFamily: family })
 }
 
+export function setEraser(patch: Partial<EraserSettings>): void {
+  set({ eraser: clampEraser(patch, state.eraser) })
+}
+
+export function eraserSettings(): EraserSettings {
+  return state.eraser
+}
+
 export function setBackgroundEdit(on: boolean): void {
   if (state.backgroundEdit !== on) set({ backgroundEdit: on })
 }
@@ -92,7 +110,7 @@ export function lastFamily(): string | null {
 
 /** 검사마다 처음 상태로. */
 export function resetDesignToolsForTests(): void {
-  state = { tool: 'select', lastShape: 'rect', selection: null, editRequest: null, lastFamily: null, backgroundEdit: false }
+  state = { tool: 'select', lastShape: 'rect', selection: null, editRequest: null, lastFamily: null, backgroundEdit: false, eraser: DEFAULT_ERASER }
   for (const l of listeners) l()
 }
 
