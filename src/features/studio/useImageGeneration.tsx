@@ -62,8 +62,8 @@ import {
 } from './apiKeySession'
 import { buildGenerationRequest } from '../../domain/generationRequest'
 import type { AccessMode } from '../../domain/serverAccess'
-import { readImageUsage, type UsageKind } from '../../domain/imageUsage'
-import { recordCall } from '../../services/usageStore'
+import type { UsageKind } from '../../domain/imageUsage'
+import { postImageRequest } from '../../services/imageRequest'
 import {
   bannerEditTargets,
   buildEditTargets,
@@ -109,7 +109,6 @@ import { resolveGptImageSize } from '../../domain/gptImageSize'
 import { pageAsEventBrief } from '../../domain/briefMigration'
 import {
   errorTextFor,
-  httpFailureCode,
   FIELD_IMAGES,
   FIELD_INTENT,
   FIELD_NOTE,
@@ -119,7 +118,6 @@ import {
   FIELD_REFERENCE_MODE,
   FIELD_TEXT_FINISH,
   FIELD_SIZE,
-  GENERATE_IMAGE_PATH,
   IMAGE_CALLS_PER_CLICK,
   IMAGE_MODEL,
   IMAGE_QUALITY,
@@ -421,14 +419,6 @@ const OPAQUE_ENOUGH = 0.98
  * 끝나면서도 그 선을 넘지 않는다.
  */
 export const TEXT_LAYER_BATCH = 3
-
-/** base64 → 이미지 한 장. 이 문자열은 여기서 끝나고 어디에도 저장되지 않는다. */
-function blobFromBase64(b64: string, mimeType: string): Blob {
-  const binary = atob(b64)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
-  return new Blob([bytes], { type: mimeType })
-}
 
 /**
  * 이 페이지를 두 뭉치로 가른다 (한방 생성 Patch 2 §1, §2).
@@ -1522,42 +1512,11 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // 자격은 이 요청의 헤더에만 실린다 — 주소에도, 본문에도 없다.
-      const response = await fetch(GENERATE_IMAGE_PATH, {
-        method: 'POST',
-        headers: auth,
-        body: form,
-      })
-
-      const payload: unknown = await response.json().catch(() => null)
-      if (!response.ok) {
-        const failure = (payload as { error?: { code?: string } } | null)?.error
-        // 우리 서버 함수는 실패해도 코드를 담는다. 코드가 없으면 그 함수까지
-        // 가지도 못한 요청이므로, 상태 코드로 이름을 붙인다 (부분수정 실패 Patch).
-        return failure?.code === undefined ? { code: httpFailureCode(response.status) } : { ...failure }
-      }
-      const body = payload as {
-        image?: { b64?: string; mimeType?: string }
-        metadata?: { model?: string; requestedSize?: string; requestId?: string; usage?: unknown }
-      } | null
-
-      // 여기까지 왔으면 값은 이미 치렀다 — 그림을 못 받았더라도. 그래서 장부는
-      // 그림을 확인하기 **전에** 적는다. 던져 놓고 잊는다: 못 적었다고 방금 만든
-      // 것을 잃을 이유가 없다.
-      const used = readImageUsage(body?.metadata?.usage)
-      void recordCall({ at: Date.now(), kind, ...(used === null ? {} : { usage: used }) })
-
-      const b64 = body?.image?.b64
-      if (typeof b64 !== 'string' || b64.length === 0) return { code: 'no_image' }
-
-      const mimeType = body?.image?.mimeType ?? 'image/png'
+      const reply = await postImageRequest(form, auth, kind)
+      if (!('blob' in reply)) return reply
       return {
-        blob: blobFromBase64(b64, mimeType),
-        mimeType,
-        requestedSize: body?.metadata?.requestedSize ?? sizeOverride ?? plan.size,
-        // 서버가 말해 준 모델 이름. 없으면 부르는 쪽이 지금까지의 상수를 쓴다.
-        ...(body?.metadata?.model === undefined ? {} : { model: body.metadata.model }),
-        ...(body?.metadata?.requestId === undefined ? {} : { requestId: body.metadata.requestId }),
+        ...reply,
+        requestedSize: reply.requestedSize ?? sizeOverride ?? plan.size,
       }
     },
     [collectImages],

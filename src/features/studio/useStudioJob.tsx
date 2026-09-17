@@ -18,6 +18,7 @@
  * 그대로 쓰이면서도 작성기에는 Studio가 조금도 나타나지 않는다.
  */
 
+import type { BackgroundLab } from '../../domain/backgroundLab'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   blockEffectsOf,
@@ -32,6 +33,8 @@ import {
   methodOf,
   blinkOf,
   withBlink,
+  backgroundLabOf,
+  withBackgroundLab,
   pageBackgroundOf,
   productImageOf,
   sourceChanged as jobSourceChanged,
@@ -161,6 +164,13 @@ export interface StudioJobApi {
    */
   blinkOf: (pageId: string) => StudioBlink | undefined
   setBlink: (pageId: string, blink: StudioBlink | null) => Promise<void>
+  /** 이 페이지의 배경 후보 칸 (배경 후보 Patch). */
+  backgroundLabOf: (pageId: string) => BackgroundLab
+  /**
+   * 배경 후보 칸을 고친다. **가장 최근 작업 위에서** 고친다 — 후보를 만드는 데 수십 초가
+   * 걸리고, 그 사이에 적힌 다른 값을 덮어쓰면 안 된다.
+   */
+  updateBackgroundLab: (pageId: string, change: (lab: BackgroundLab) => BackgroundLab) => Promise<void>
   bannerSpecOf: (pageId: string) => string | null
   /** 만들어 둔 배너 페이지들. 만든 차례대로. */
   bannerPageIds: string[]
@@ -571,6 +581,7 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
               objectTones: { ...state.objectTones },
               bannerPages: { ...state.bannerPages },
               blink: { ...state.blink },
+              backgroundLabs: { ...state.backgroundLabs },
               // 완성본은 파일에 담기지 않는다. 그런데 지금까지 이 자리는 **열기
               // 전에 보던 작업의 결과**를 그대로 물려받았다 — 다른 기획서를 열었는데
               // 앞 기획서의 완성본이 붙어 있는 셈이다. 파일이 말하지 않은 것은
@@ -642,6 +653,9 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       },
       blinkOf: (pageId) => blinkOf(job, pageId),
       setBlink: (pageId, blink) => mutate((j) => withBlink(j, pageId, blink, Date.now())),
+      backgroundLabOf: (pageId) => backgroundLabOf(job, pageId),
+      updateBackgroundLab: (pageId, change) =>
+        mutate((j) => withBackgroundLab(j, pageId, change(backgroundLabOf(j, pageId)), Date.now())),
       bannerSpecOf: (pageId) => job.bannerPages?.[pageId] ?? null,
       bannerPageIds: Object.keys(job.bannerPages ?? {}),
       // **가장 최근 작업 위에** 얹는다. 렌더 시점의 `job`을 통째로 다시 쓰면,

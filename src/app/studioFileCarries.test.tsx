@@ -64,6 +64,7 @@ const RESTORED: Record<Carried, (job: StudioJob) => unknown> = {
   objectTones: (job) => job.objectTones,
   bannerPages: (job) => job.bannerPages,
   blink: (job) => job.blink,
+  backgroundLabs: (job) => job.backgroundLabs,
 }
 
 function sampleDoc(): BriefDocument {
@@ -110,6 +111,16 @@ function fullJob(): StudioJob {
     tones: { page_1: { brightness: 0.4, contrast: -0.2, saturation: 0.1, temperature: -0.3 } },
     objectTones: { blk_txt: { brightness: -0.5, contrast: 0.25, saturation: 0, temperature: 0.6 } },
     bannerPages: { page_banner: '1020x70' },
+    // 쌓아 둔 배경 후보와 첨부한 분위기 그림. 잃으면 파일을 다시 열었을 때 비교할 것이
+    // 사라진다 (배경 후보 Patch).
+    backgroundLabs: {
+      page_1: {
+        referenceAssetId: 'asset_scene_ref',
+        candidates: [
+          { id: 'cand_1', assetId: 'asset_cand', note: '대리석 테이블', basis: 'attached', createdAt: 4_000, requestedSize: '832x1104' },
+        ],
+      },
+    },
     grain: 0.2,
     method: 'background_composite',
     // 완성본은 파일에 담기지 않는다. 열었을 때 이것이 묻어오면 안 된다.

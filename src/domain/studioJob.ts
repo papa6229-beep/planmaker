@@ -28,6 +28,7 @@ import { NO_TONE, normalizeTone, type ToneAdjust } from './toneAdjust'
 import type { BriefDocument } from './pageSchema'
 import type { TextLook } from './textLook'
 import type { CharStyle } from './textArt'
+import { EMPTY_LAB, labAssetIds, type BackgroundLab } from './backgroundLab'
 import type { ShapeLook } from './shapeLook'
 
 export const STUDIO_JOB_VERSION = '0.1.0'
@@ -176,6 +177,11 @@ export interface StudioJob {
    * 이미지 저장으로만 처리해야지."
    */
   blink?: Record<string, StudioBlink>
+  /**
+   * 페이지 id → 배경 후보 (배경 후보 Patch, 2026-09-17). 제품을 보고 만든 뒤 제품을 지운
+   * 배경들과 그 칸에만 첨부한 분위기 그림. 적용하기 전에는 결과에 닿지 않는다.
+   */
+  backgroundLabs?: Record<string, BackgroundLab>
   /** 완성 결과 전체에 얹는 그레인 (§9.5). */
   grain?: number
   /** 페이지 id → 완성 결과 전체의 톤 조절 (톤 조절 Patch). */
@@ -265,6 +271,15 @@ export function withBlink(job: StudioJob, pageId: string, blink: StudioBlink | n
   if (blink === null) delete next[pageId]
   else next[pageId] = blink
   return { ...job, blink: next, updatedAt: now }
+}
+
+/** 이 페이지의 배경 후보 칸. 없으면 빈 칸. */
+export function backgroundLabOf(job: StudioJob | null, pageId: string): BackgroundLab {
+  return job?.backgroundLabs?.[pageId] ?? EMPTY_LAB
+}
+
+export function withBackgroundLab(job: StudioJob, pageId: string, lab: BackgroundLab, now: number): StudioJob {
+  return { ...job, backgroundLabs: { ...job.backgroundLabs, [pageId]: lab }, updatedAt: now }
 }
 
 /** 이 페이지의 배경. 없으면 `undefined` — 배경 없이도 작업은 성립한다. */
@@ -480,6 +495,7 @@ export function withSource(job: StudioJob, doc: BriefDocument, now: number, file
     doc,
     productImages: {},
     backgrounds: {},
+    backgroundLabs: {},
     effects: {},
     styleRefs: {},
     textObjects: {},
@@ -538,6 +554,8 @@ export function studioLiveAssetIds(job: StudioJob): string[] {
       // 배경은 어떤 기획서도 참조하지 않는다 — 여기서 말하지 않으면 정리가
       // 작업자가 넣거나 결제해서 만든 배경을 고아로 오판해 지운다 (§5, §12).
       ...Object.values(job.backgrounds ?? {}).map((b) => b.assetId),
+      // 배경 후보도 같다 — 적용하지 않은 후보도 비교하려고 남겨 둔 그림이다.
+      ...labAssetIds(job.backgroundLabs),
       // 스타일 레퍼런스도 같다. 기획서 문서는 이 그림을 모른다.
       ...Object.values(job.styleRefs ?? {}),
       // 깜빡이는 GIF도 같다 — 빼면 정리가 지우고, 저장하려는 순간 사라져 있다.

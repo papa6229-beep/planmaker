@@ -18,6 +18,8 @@ import { MemoryRouter } from 'react-router-dom'
 import { AppRoutes } from './AppRoutes'
 import { resetAccessModeForTests } from '../features/studio/apiKeySession'
 import { resetOriginalViewForTests } from '../features/studio/originalView'
+import { resetBackgroundLabForTests } from '../features/studio/useBackgroundLab'
+import { saveApiKey } from '../features/studio/apiKeySession'
 import { clearAll, putAsset, getAsset, resetAssetStoreForTests, type StoredAsset } from '../services/assetStore'
 import { clearAllDocuments, resetDocumentStoreForTests } from '../services/documentStore'
 import { clearAllRequests, resetRequestStoreForTests } from '../services/requestStore'
@@ -773,5 +775,142 @@ describe('§3-4 도구 막대는 캔버스 위 한 줄, 설정 창은 세로 칸
     expect(screen.getByRole('dialog', { name: '테두리' })).toBeTruthy()
     fireEvent.click(within(menu).getByRole('button', { name: '테두리 닫기' }))
     expect(screen.queryByRole('dialog', { name: '테두리' })).toBeNull()
+  }, 25000)
+})
+
+// ── 배경 후보 (2026-09-17) ──────────────────────────────────────────────────
+
+describe('§3-5 배경 후보 — 제품을 보고 만들고, 제품을 지워 쌓고, 적용할 때만 바꾼다', () => {
+  // 페이지 id는 만들 때마다 새로 뽑힌다 — 저장한 작업의 것을 쓴다.
+  let pageId = ''
+  const PAGE = () => pageId
+  const sentForm = (i: number) => calls[i]!.init.body as FormData
+  const names = (form: FormData) => form.getAll('images[]').map((f) => (f as File).name)
+
+  beforeEach(async () => {
+    resetBackgroundLabForTests()
+    // 이미 깔린 배경이 있는 페이지 — 적용하면 이것이 후보로 밀려나야 한다.
+    await putAsset(storedAsset('asset_bg_old', 9))
+    const job = readyJob()
+    pageId = job.doc.pages[0]!.id
+    await saveStudioJob({ ...job, backgrounds: { [pageId]: { assetId: 'asset_bg_old', source: 'manual' } } })
+    saveApiKey(KEY)
+  })
+
+  // 작업판은 막 열린 뒤 한 번 다시 그려진다 — 칸을 붙들지 않고 매번 새로 찾는다.
+  const lab = () => screen.getByRole('region', { name: '배경 후보' })
+  const panel = async () => {
+    await waitFor(() => expect(lab().textContent).toContain('보여 줄 제품'))
+  }
+
+  it('makes one candidate with two calls: product scene, then product removal', async () => {
+    await openStudio()
+    await panel()
+    expect(lab().textContent).toContain('보여 줄 제품: 1장')
+    expect(lab().textContent).toContain('없음 — 제품만 보고 만듭니다')
+    fireEvent.change(within(lab()).getByLabelText('배경 후보 요청'), { target: { value: '대리석 테이블 위' } })
+    fireEvent.click(within(lab()).getByRole('button', { name: '후보 만들기' }))
+    await waitFor(() => expect(within(lab()).getAllByRole('listitem')).toHaveLength(1), { timeout: 8000 })
+
+    expect(calls).toHaveLength(2)
+    expect(sentForm(0).get('intent')).toBe('scene')
+    expect(sentForm(0).get('prompt')).toBe('대리석 테이블 위')
+    expect(names(sentForm(0))).toEqual(['product-1.png'])
+    expect(sentForm(1).get('intent')).toBe('scene-clean')
+    expect(names(sentForm(1))).toEqual(['scene.png'])
+
+    // 만들기만 했다 — 배경은 그대로다.
+    const job = (await loadStudioJob(STUDIO_JOB_ID))!
+    expect(job.backgrounds?.[PAGE()]?.assetId).toBe('asset_bg_old')
+    const cand = job.backgroundLabs?.[PAGE()]?.candidates ?? []
+    expect(cand).toHaveLength(1)
+    expect(cand[0]).toMatchObject({ note: '대리석 테이블 위', basis: 'none' })
+  }, 25000)
+
+  it('applies a candidate, keeps the old background as a candidate, and can swap back', async () => {
+    await openStudio()
+    await panel()
+    fireEvent.click(within(lab()).getByRole('button', { name: '후보 만들기' }))
+    await waitFor(() => expect(within(lab()).getAllByRole('listitem')).toHaveLength(1), { timeout: 8000 })
+    expect(calls).toHaveLength(2)
+    expect(sentForm(0).get('prompt')).toBe('제품과 어울리는 배경') // 비워 두면 기본 말
+
+    fireEvent.click(within(lab()).getByRole('button', { name: '제품만 적용' }))
+    await waitFor(async () => {
+      const job = (await loadStudioJob(STUDIO_JOB_ID))!
+      const candidates = job.backgroundLabs?.[PAGE()]?.candidates ?? []
+      expect(job.backgrounds?.[PAGE()]?.assetId).toBe(candidates.find((c) => c.basis === 'none')?.assetId)
+      expect(candidates.find((c) => c.basis === 'previous')?.assetId).toBe('asset_bg_old')
+    })
+    expect(within(lab()).getByText('적용 중')).toBeTruthy()
+    expect(calls).toHaveLength(2) // 적용은 AI를 부르지 않는다
+
+    fireEvent.click(await within(lab()).findByRole('button', { name: '이전 배경 적용' }))
+    await waitFor(async () => {
+      const job = (await loadStudioJob(STUDIO_JOB_ID))!
+      expect(job.backgrounds?.[PAGE()]?.assetId).toBe('asset_bg_old')
+      // 방금 밀려난 후보는 이미 목록에 있으므로 겹쳐 쌓이지 않는다.
+      expect(job.backgroundLabs?.[PAGE()]?.candidates).toHaveLength(2)
+    })
+  }, 25000)
+
+  it('sends an attached picture as the mood image, else the style reference', async () => {
+    await putAsset(storedAsset('asset_style', 7))
+    const job = (await loadStudioJob(STUDIO_JOB_ID))!
+    await saveStudioJob({ ...job, styleRefs: { [PAGE()]: 'asset_style' } })
+    await openStudio()
+    await panel()
+    expect(lab().textContent).toContain('스타일 레퍼런스')
+    fireEvent.click(within(lab()).getByRole('button', { name: '후보 만들기' }))
+    await waitFor(() => expect(calls).toHaveLength(2), { timeout: 8000 })
+    expect(names(sentForm(0))).toEqual(['product-1.png', 'scene-reference.png'])
+    await waitFor(() => expect(within(lab()).getAllByRole('listitem')).toHaveLength(1))
+
+    const file = new File([new Uint8Array([137, 80, 78, 71, 3])], 'mood.png', { type: 'image/png' })
+    fireEvent.change(within(lab()).getByLabelText('배경 후보 분위기 그림 첨부'), { target: { files: [file] } })
+    await waitFor(() => expect(lab().textContent).toContain('첨부 그림'))
+    fireEvent.click(within(lab()).getByRole('button', { name: '후보 만들기' }))
+    await waitFor(() => expect(calls).toHaveLength(4), { timeout: 8000 })
+    expect(names(sentForm(2))).toEqual(['product-1.png', 'scene-reference.png'])
+    await waitFor(async () => {
+      const saved = (await loadStudioJob(STUDIO_JOB_ID))!.backgroundLabs?.[PAGE()]
+      // 첨부한 그림은 새 자산이다 — 스타일 레퍼런스와 다른 것이 나갔다.
+      expect(saved?.referenceAssetId).toBeDefined()
+      expect(saved?.referenceAssetId).not.toBe('asset_style')
+      expect(saved?.candidates.map((c) => c.basis)).toEqual(['attached', 'style'])
+    })
+
+    fireEvent.click(within(lab()).getByRole('button', { name: '첨부 빼기' }))
+    await waitFor(() => expect(lab().textContent).toContain('스타일 레퍼런스'))
+  }, 25000)
+
+  it('refuses without a linked product', async () => {
+    const job = (await loadStudioJob(STUDIO_JOB_ID))!
+    await saveStudioJob({ ...job, productImages: {} })
+    await openStudio()
+    await panel()
+    expect((within(lab()).getByRole('button', { name: '후보 만들기' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(lab().textContent).toContain('이미지 블록에 실제 제품 이미지를 연결하면')
+    expect(calls).toHaveLength(0)
+  }, 25000)
+
+  it('keeps nothing when the removal call fails', async () => {
+    const base = globalThis.fetch
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const form = init?.body instanceof FormData ? init.body : null
+      if (form?.get('intent') === 'scene-clean') {
+        calls.push({ url: String(input), init: init ?? {} })
+        return new Response(JSON.stringify({ error: { code: 'provider_timeout' } }), { status: 504 })
+      }
+      return base(input, init)
+    }) as unknown as typeof fetch
+    await openStudio()
+    await panel()
+    fireEvent.click(within(lab()).getByRole('button', { name: '후보 만들기' }))
+    await waitFor(() => expect(within(lab()).getByRole('alert').textContent).toContain('제품을 지우지 못했습니다'), {
+      timeout: 8000,
+    })
+    expect(within(lab()).queryAllByRole('listitem')).toHaveLength(0)
+    expect((within(lab()).getByRole('button', { name: '후보 만들기' }) as HTMLButtonElement).disabled).toBe(false)
   }, 25000)
 })

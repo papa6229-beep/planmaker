@@ -3664,3 +3664,28 @@ button { font-family: inherit; }
 .design-menu__title { font-size: 12px; font-weight: 700; }
 .design-menu__close { border: 0; background: transparent; cursor: pointer; font-size: 12px; color: var(--color-muted); padding: 2px 4px; }
 .design-menu__close:hover { color: var(--color-text); }
+
+/* ── 배경 후보 (2026-09-17) ───────────────────────────────────────────────── */
+.bg-lab { display: flex; flex-direction: column; gap: 8px; }
+.bg-lab__hint { margin: 0; font-size: 11px; line-height: 1.5; color: var(--color-muted); }
+.bg-lab__ref { display: flex; gap: 8px; align-items: flex-start; }
+.bg-lab__ref-thumb { flex: none; width: 56px; height: 56px; object-fit: cover; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-panel-muted, #f1f2f6); }
+.bg-lab__ref-thumb--empty { display: block; }
+.bg-lab__ref-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.bg-lab__ref-label { font-size: 11px; color: var(--color-muted); }
+.bg-lab__ref-value { font-size: 12px; font-weight: 600; }
+.bg-lab__ref-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.bg-lab__small { padding: 2px 8px; font-size: 11px; }
+.bg-lab__products { margin: 0; font-size: 11px; color: var(--color-muted); }
+.bg-lab__note { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; font-size: 12px; padding: 6px 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+.bg-lab__make { width: 100%; }
+.bg-lab__muted { margin: 0; font-size: 11px; color: var(--color-muted); }
+.bg-lab__error { margin: 0; font-size: 12px; color: var(--color-danger, #b91c1c); }
+.bg-lab__list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.bg-lab__item { display: flex; flex-direction: column; gap: 4px; padding: 4px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); }
+.bg-lab__item.is-applied { border-color: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent); }
+.bg-lab__thumb { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 2px; background: var(--color-panel-muted, #f1f2f6); }
+.bg-lab__thumb--missing { display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--color-muted); }
+.bg-lab__caption { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bg-lab__item-actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.bg-lab__applied { font-size: 11px; font-weight: 700; color: var(--color-accent); }

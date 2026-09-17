@@ -55,6 +55,7 @@ import { ResultCompare } from '../components/studio/ResultCompare'
 import { EditPanel } from '../components/studio/EditPanel'
 import { SHOW_PARTIAL_EDIT } from './studioScreen'
 import { OriginalControls, OriginalSidePane } from '../components/studio/OriginalBrief'
+import { BackgroundLabPanel } from '../components/studio/BackgroundLabPanel'
 import { ImageGenerationProvider, useImageGeneration } from '../features/studio/useImageGeneration'
 import { InstructionRefineProvider } from '../features/studio/useInstructionRefine'
 
@@ -381,6 +382,8 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
                     <ResultAlignTools />
                     {/* AI 부분수정은 화면에서만 뺐다 — `studioScreen.ts`. */}
                     {SHOW_PARTIAL_EDIT && <EditPanel />}
+                    {/* 제품을 보고 만든 배경 후보 — 줄 맞춤 바로 아래 (배경 후보 Patch). */}
+                    <BackgroundLabPanel />
                     {/* 결과 전체의 톤 (톤 조절 Patch). 조각 하나의 톤은 위 도구 막대에서. */}
                     <ToneAdjustPanel />
                   </>
@@ -388,6 +391,8 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
                   <>
                     {/* 줄 맞춤은 상자의 종류를 가리지 않는다 (정렬 Patch). */}
                     <AlignTools />
+                    {/* 제품을 보고 만든 배경 후보 — 줄 맞춤 바로 아래 (배경 후보 Patch). */}
+                    <BackgroundLabPanel />
                     {/* 고른 블록의 배치 — 맞춤 방식과 레이어 순서 (§3.1, §4). */}
                     <BlockLayerTools />
                     {/* 아무것도 고르지 않았을 때만 선다. */}

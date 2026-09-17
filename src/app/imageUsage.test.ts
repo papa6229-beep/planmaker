@@ -91,6 +91,8 @@ describe('§U2 갈래별로 묶기', () => {
         'text-layer': { calls: 0, tokens: 0 },
         edit: { calls: 0, tokens: 0 },
         background: { calls: 0, tokens: 0 },
+        scene: { calls: 0, tokens: 0 },
+        'scene-clean': { calls: 0, tokens: 0 },
       },
     })
   })

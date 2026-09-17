@@ -32,7 +32,7 @@ import { STUDIO_JOB_ID } from '../services/studioStore'
 import type { BriefDocument } from '../domain/pageSchema'
 
 /** 페이지 하나에 매달리는 칸 — 복제할 때 블록 이름과 아무 상관이 없다. */
-const PAGE_KEYED = ['backgrounds', 'styleRefs', 'keepReferenceBg', 'tones', 'textObjects', 'imageObjects', 'results']
+const PAGE_KEYED = ['backgrounds', 'styleRefs', 'keepReferenceBg', 'tones', 'textObjects', 'imageObjects', 'results', 'backgroundLabs']
 
 /** 블록 하나에 매달리는 칸 — 블록을 복제하면 **함께 따라와야 한다**. */
 const BLOCK_KEYED = ['productImages', 'effects', 'blockOrders', 'objectTones']
