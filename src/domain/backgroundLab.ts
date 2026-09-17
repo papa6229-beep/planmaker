@@ -68,7 +68,7 @@ export function pickSceneProducts(page: BriefPage, productImages: Readonly<Recor
   const linked = page.blocks
     .filter((b) => isImageBlock(b.type) && b.aiVisibility !== 'publishing' && productImages[b.id] !== undefined)
     .map((b) => ({ assetId: productImages[b.id]!, area: b.position.width * b.position.height }))
-    .sort((a, b) => b.area - a.area)
+    .toSorted((a, b) => b.area - a.area)
   const out: string[] = []
   for (const item of linked) {
     if (!out.includes(item.assetId)) out.push(item.assetId)

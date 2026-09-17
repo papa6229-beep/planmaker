@@ -995,7 +995,7 @@ describe('§3-7 돋보기 — 도구를 켜고 캔버스를 클릭하면 5% 확�
     resetDesignToolsForTests()
     await openStudio()
     const value = () => screen.getByRole('group', { name: '캔버스 배율' }).querySelector('.studio-zoom__value')!.textContent
-    fireEvent.click(screen.getByRole('button', { name: '100%' }))
+    fireEvent.click(screen.getByRole('button', { name: /누르면 100%/ }))
     await waitFor(() => expect(value()).toBe('100%'))
     const loupe = screen.getByRole('button', { name: '돋보기 (Z)' })
     fireEvent.click(loupe)

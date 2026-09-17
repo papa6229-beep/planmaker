@@ -41,9 +41,17 @@ export function StudioZoom({ result }: { result: boolean }) {
           {!(zooming && alt) && <line x1="8.5" y1="6" x2="8.5" y2="11" stroke="currentColor" strokeWidth="1.6" />}
         </svg>
       </button>
-      <span className="studio-zoom__value" aria-live="polite" aria-label={`현재 배율 ${String(percent)}%`}>
+      {/* 배율 숫자를 누르면 100% — 막대 한 줄에 들어가도록 `100%` 단추를 합쳤다 (다크룸, 2026-09-17). */}
+      <button
+        type="button"
+        className="studio-zoom__value"
+        aria-live="polite"
+        aria-label={`현재 배율 ${String(percent)}% — 누르면 100%`}
+        title="누르면 실제 크기(100%)"
+        onClick={onResult ? view.resetTo100 : canvas.resetTo100}
+      >
         {percent}%
-      </span>
+      </button>
       {onResult ? (
         <>
           <button
@@ -64,9 +72,6 @@ export function StudioZoom({ result }: { result: boolean }) {
           >
             폭 맞춤
           </button>
-          <button type="button" className="btn studio-zoom__btn" title="실제 크기 (100%)" onClick={view.resetTo100}>
-            100%
-          </button>
         </>
       ) : (
         <>
@@ -78,9 +83,6 @@ export function StudioZoom({ result }: { result: boolean }) {
             onClick={canvas.enableFit}
           >
             화면 맞춤
-          </button>
-          <button type="button" className="btn studio-zoom__btn" title="실제 크기 (100%)" onClick={canvas.resetTo100}>
-            100%
           </button>
         </>
       )}

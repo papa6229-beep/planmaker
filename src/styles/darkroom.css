@@ -1,0 +1,235 @@
+/*
+ * 다크룸 (스킨 Patch, 2026-09-17).
+ *
+ * 사용자가 세 시안 중 고른 방향이다 — "포토샵·피그마처럼 어두운 작업실". 도구가 어두워야
+ * 완성본의 색과 밝기를 정확히 본다. 강조색은 황동색 하나, 나머지는 무채색.
+ * 시안: https://claude.ai/artifact/PNPwuCTVjpqp1Xj9asFFhD (B)
+ *
+ * `global.css` 뒤에 읽혀 **색만** 덮는다. 배치·크기 규칙은 그대로 저쪽에 있다.
+ * 기획서 판(`.canvas__sheet`)과 원본 기획서(`.orig-sheet`)는 인쇄될 종이이므로 밝은 색을
+ * 그대로 둔다 — 그 위에 떠 있는 도구막대·메뉴만 다시 어둡게 한다.
+ */
+
+:root {
+  color-scheme: dark;
+  --color-bg: #1b1c20;
+  --color-panel: #222328;
+  --color-panel-muted: #2a2b31;
+  --color-surface: #222328;
+  --color-hover: #2f3137;
+  --color-field: #18191c;
+  --color-well: #111214;
+  --color-canvas: #1b1c20;
+  --color-border: #33353b;
+  --color-border-strong: #43464e;
+  --color-text: #eceef1;
+  --color-muted: #a3a7b0;
+  --color-accent: #e6c07b;
+  --color-accent-strong: #f0cf94;
+  --color-accent-soft: rgba(230, 192, 123, 0.14);
+  --color-on-accent: #1b1c20;
+  --color-select: rgba(230, 192, 123, 0.75);
+  --color-design: #e6c07b;
+  --color-reference: #e3a55e;
+  --color-reference-soft: rgba(227, 165, 94, 0.14);
+  --color-publishing: #b3a6f2;
+  --color-publishing-soft: rgba(179, 166, 242, 0.14);
+  --color-success: #62c794;
+  --color-danger: #f07178;
+  --color-danger-soft: rgba(240, 113, 120, 0.14);
+  --color-warning: #e8b05a;
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.55);
+}
+
+/* 종이 — 인쇄될 판은 밝은 그대로. */
+.canvas__sheet,
+.orig-sheet,
+.orig-pane__frame {
+  color-scheme: light;
+  --color-panel: #ffffff;
+  --color-panel-muted: #f6f7f9;
+  --color-surface: #ffffff;
+  --color-hover: #eef0f4;
+  --color-field: #ffffff;
+  --color-border: #e4e7ec;
+  --color-border-strong: #d0d5dd;
+  --color-text: #171923;
+  --color-muted: #5b6070;
+  --color-design: #4f6ef7;
+  --color-reference: #b45309;
+  --color-reference-soft: #fff7ed;
+  --color-publishing: #7557e8;
+  --color-publishing-soft: #f1edfc;
+  color: var(--color-text);
+}
+/* 종이 위에 떠 있는 도구는 다시 작업실 색. */
+.canvas__sheet .block-toolbar,
+.canvas__sheet .block-card__menu-panel,
+.canvas__sheet .block-card__layer-panel,
+.canvas__sheet .block-card__link-editor,
+.canvas__sheet .block-card__link-mark,
+.canvas__sheet .banner-bg {
+  color-scheme: dark;
+  --color-panel: #222328;
+  --color-panel-muted: #2a2b31;
+  --color-surface: #222328;
+  --color-hover: #2f3137;
+  --color-field: #18191c;
+  --color-border: #3a3d44;
+  --color-border-strong: #4a4d55;
+  --color-text: #eceef1;
+  --color-muted: #a3a7b0;
+  color: var(--color-text);
+}
+
+body { background: var(--color-bg); color: var(--color-text); }
+
+/* ── 작업대: 판 둘레는 거의 검정 ───────────────────────────────────────────── */
+.stage,
+.canvas,
+.compare__viewport,
+.orig-pane__viewport { background: var(--color-well); }
+.canvas__sheet,
+.compare__stage { box-shadow: 0 10px 36px rgba(0, 0, 0, 0.6); }
+.canvas__sheet { border-color: transparent; }
+.orig-pane__frame { border-color: transparent; box-shadow: 0 10px 36px rgba(0, 0, 0, 0.6); }
+
+/* ── 입력칸 ─────────────────────────────────────────────────────────────────── */
+input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='color']):not([type='file']),
+textarea,
+select {
+  background-color: var(--color-field);
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+input::placeholder,
+textarea::placeholder { color: #6f737c; }
+input[type='range'],
+input[type='checkbox'],
+input[type='radio'] { accent-color: var(--color-accent); }
+:focus-visible { outline-color: var(--color-accent); }
+
+/* ── 강조색 위의 글자는 어둡게 (황동색 위 흰 글자는 읽히지 않는다) ──────────── */
+.btn--primary,
+.shell .btn--primary,
+.req-status-btn.is-active,
+.ref-view__mode.is-active,
+.studio-view__tab.is-active,
+.compare__with-brief.is-active,
+.compare__with-brief.is-active:hover,
+.edit-panel__hold:hover:not(:disabled),
+.edit-panel__hold[aria-pressed='true'],
+.edit-panel__chip,
+.result-object__layer:hover:not(:disabled),
+.orig-controls__btn.is-active,
+.orig-controls__btn.is-active:hover,
+.studio-zoom__loupe.is-on,
+.studio-zoom__loupe.is-on:hover,
+.fold__mark,
+.result-object__name,
+.drawer__placed { color: var(--color-on-accent); }
+.btn--primary { box-shadow: none; }
+.btn--primary:hover:not(:disabled) { background: var(--color-accent-strong); border-color: var(--color-accent-strong); }
+.studio-view__tab.is-active,
+.edit-panel__chip { background: var(--color-accent); border-color: var(--color-accent); }
+.drawer__placed { background: var(--color-accent); }
+
+/* 켜진 도구는 흰 채움 (시안 B). */
+.design-bar__tool.is-on {
+  border-color: var(--color-text);
+  background: var(--color-text);
+  color: var(--color-bg);
+}
+.design-bar__tool:hover { background: var(--color-hover); }
+
+/* ── 흰 바탕이 박혀 있던 칸 ─────────────────────────────────────────────────── */
+.req-status-btn,
+.page-tab,
+.ref-tools__thumb,
+.ref-view__mode,
+.page-tabs__add,
+.block-tools__btn,
+.method__option,
+.effects__toggle,
+.result-object__spin,
+.studio-slot,
+.font-pick__list,
+.banner__edge,
+.banner-tabs__tab,
+.drawer__piece,
+.work-list__item { background: var(--color-panel-muted); color: var(--color-text); }
+.block-card__menu-trigger:hover,
+.block-card__tool--text:hover,
+.font-pick__item:hover,
+.font-pick__item.is-on { background: var(--color-hover); }
+.curve__bg,
+.curve__point { fill: var(--color-field); }
+.curve__point { stroke: var(--color-text); }
+
+/* 접는 칸 — 카드 대신 선으로 (시안 공통). */
+.fold { border-color: var(--color-border); background: var(--color-panel); }
+.fold__head { background: transparent; color: var(--color-text); }
+.fold__head:hover { background: var(--color-hover); }
+.fold__mark { background: var(--color-accent); }
+
+/* 알림 띠 */
+.save-dialog__note,
+.compare__stale { background: rgba(232, 176, 90, 0.14); color: #f0c883; }
+.btn--key-saved { border-color: rgba(98, 199, 148, 0.6); background: rgba(98, 199, 148, 0.12); color: #8bdab2; }
+.edit-panel__targets > li.is-held { background: var(--color-accent-soft); }
+
+/* 모달 뒤 */
+.confirm-backdrop { background: rgba(0, 0, 0, 0.62); }
+
+/* ── 고른 것·끌기·손잡이 — 파랑 대신 황동색 ─────────────────────────────────── */
+.result-object:hover { outline-color: rgba(230, 192, 123, 0.45); }
+.result-object.is-selected { outline: 1px dashed var(--color-select); }
+.result-object.is-picked { outline: 1px dashed rgba(230, 192, 123, 0.5); }
+.result-object__handle { border-color: var(--color-select); background: rgba(27, 28, 32, 0.9); }
+.block-card--photo.is-selected { outline-color: var(--color-select); }
+.result-objects__drawing { border-color: var(--color-accent); background: rgba(230, 192, 123, 0.08); }
+.banner-bg__frame { outline-color: rgba(230, 192, 123, 0.6); }
+.banner-bg__grab { background: rgba(230, 192, 123, 0.92); color: var(--color-on-accent); }
+.banner-bg__handle { border-color: var(--color-accent); background: #1b1c20; }
+
+/* 투명 체크무늬는 어둡게 */
+.drawer__thumb { background: repeating-conic-gradient(#2a2c31 0% 25%, #1f2024 0% 50%) 50% / 8px 8px; }
+.banner__preview { background: repeating-conic-gradient(#2a2c31 0% 25%, #1f2024 0% 50%) 50% / 12px 12px; }
+
+/* 떠 있는 창 */
+.design-menu,
+.editor-topbar__menu-panel,
+.page-tab__menu-panel,
+.work-menu__panel,
+.block-card__menu-panel,
+.block-card__layer-panel,
+.block-toolbar { box-shadow: var(--shadow-pop); }
+.design-menu--dock { box-shadow: none; }
+
+/* 스크롤 막대 */
+* { scrollbar-color: #45474e transparent; }
+
+/* 원본 기획서 이름표 — 종이 위로 스크롤돼도 읽히게 (다크룸에서 드러남). */
+.orig-pane__head { background: rgba(17, 18, 20, 0.92); pointer-events: none; }
+
+/* ── 위 막대를 한 줄에 (다크룸에서 글자가 커진 만큼 여백을 줄인다) ─────────── */
+.studio-topbar { gap: 6px; padding: 4px 6px; }
+.studio-topbar .design-bar__options { gap: 3px; }
+.studio-topbar .design-bar__btn { padding: 0 6px; }
+.studio-topbar .design-bar__num { padding: 0 3px; }
+.studio-topbar .design-bar__num input { width: 36px; background: transparent; }
+.studio-zoom { gap: 3px; padding-left: 6px; }
+.studio-zoom__value {
+  min-width: 44px;
+  height: 28px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.studio-zoom__value:hover { border-color: var(--color-border-strong); color: var(--color-text); }
