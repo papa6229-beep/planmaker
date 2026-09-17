@@ -20,6 +20,14 @@ export interface CompositeEffects {
   /** 벽 그림자 — 광원 반대편으로 밀린 낮은 불투명도의 그림자 (§9.2). */
   wallShadow: number
   /**
+   * `contactShadow`가 기본값 0 이후에 적힌 값인가 (2026-09-17).
+   *
+   * 예전에는 기본이 0.7이었고, 후보정을 한 번이라도 만지면 그 0.7까지 통째로
+   * 저장됐다. 그래서 이 표시가 없는 0.7은 작업자가 고른 값이 아니라 옛 기본값으로
+   * 보고 0으로 읽는다. 읽고 나면 언제나 표시가 붙으므로, 그 뒤에 고른 70은 남는다.
+   */
+  floorDefaultZero?: true
+  /**
    * 그림자를 깔 것인가 (그림자 Patch).
    *
    * 세기 둘(접지·벽) 위에 있는 스위치 하나다. 세기를 0으로 내리는 것과 결과는
@@ -118,6 +126,9 @@ export const DEFAULT_COMPOSITE_EFFECTS: CompositeEffects = {
   shadowBlur: 0.4,
 }
 
+/** 2026-09-17까지의 바닥 그림자 기본값. */
+const LEGACY_CONTACT_SHADOW = 0.7
+
 /** 화면에 그대로 쓰는 이름 — 순서까지 여기서 정한다 (§11). */
 export const COMPOSITE_EFFECT_FIELDS: readonly { key: CompositeStrengthKey; label: string }[] = [
   { key: 'edge', label: '가장자리 보정' },
@@ -146,7 +157,11 @@ export function normalizeEffects(raw: unknown): CompositeEffects {
   const value = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {}
   return {
     edge: clamp01(value.edge, DEFAULT_COMPOSITE_EFFECTS.edge),
-    contactShadow: clamp01(value.contactShadow, DEFAULT_COMPOSITE_EFFECTS.contactShadow),
+    contactShadow:
+      value.floorDefaultZero !== true && value.contactShadow === LEGACY_CONTACT_SHADOW
+        ? DEFAULT_COMPOSITE_EFFECTS.contactShadow
+        : clamp01(value.contactShadow, DEFAULT_COMPOSITE_EFFECTS.contactShadow),
+    floorDefaultZero: true,
     wallShadow: clamp01(value.wallShadow, DEFAULT_COMPOSITE_EFFECTS.wallShadow),
     // 여기만 `paperCutout`과 반대다. 모르는 값은 **켜짐**이어야 한다 — 지금까지
     // 만든 작업 파일에는 이 항목이 없고, 꺼진 것으로 읽으면 예전 파일을 여는

@@ -76,3 +76,22 @@ describe('테두리', () => {
     expect(outlineWidthPx(rect, 0)).toBe(1)
   })
 })
+
+describe('바닥 그림자는 0에서 시작한다 (2026-09-17)', () => {
+  it('아무것도 없으면 0', () => {
+    expect(DEFAULT_COMPOSITE_EFFECTS.contactShadow).toBe(0)
+    expect(normalizeEffects({}).contactShadow).toBe(0)
+  })
+
+  it('예전에 통째로 저장된 기본값 0.7은 0으로 읽는다', () => {
+    expect(normalizeEffects({ contactShadow: 0.7, wallShadow: 0.5 }).contactShadow).toBe(0)
+    expect(normalizeEffects({ contactShadow: 0.4 }).contactShadow).toBeCloseTo(0.4)
+  })
+
+  it('한 번 읽은 뒤에 고른 70은 그대로 남는다', () => {
+    const once = normalizeEffects({ contactShadow: 0.7 })
+    const chosen = normalizeEffects({ ...once, contactShadow: 0.7 })
+    expect(chosen.contactShadow).toBeCloseTo(0.7)
+    expect(normalizeEffects(JSON.parse(JSON.stringify(chosen))).contactShadow).toBeCloseTo(0.7)
+  })
+})
