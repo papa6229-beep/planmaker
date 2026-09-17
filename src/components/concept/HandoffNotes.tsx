@@ -12,6 +12,7 @@
  * 어느 것도 이미지에 인쇄되지 않는다.
  */
 
+import { SHOW_REFINE_NOTE } from '../../app/studioScreen'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { PanelFold } from '../studio/PanelFold'
 import { useInstructionRefine } from '../../features/studio/useInstructionRefine'
@@ -114,7 +115,8 @@ export function AiNoteField() {
           onChange={(e) => setAiNote(e.target.value)}
         />
         <p className="concept__note">이미지에 인쇄되지 않습니다. 기획서 전달사항과 별도로 전달됩니다.</p>
-        <RefineNoteAction />
+        {/* 변환기가 이미 뒤에서 다듬는다 — 단추는 화면에서만 뺐다 (`studioScreen.ts`). */}
+        {SHOW_REFINE_NOTE && <RefineNoteAction />}
       </section>
     </>
   )

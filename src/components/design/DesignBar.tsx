@@ -102,7 +102,7 @@ export function DesignBar() {
         >
           {shapeIcon}
         </button>
-        <BarMenu label="도형 고르기" icon={<></>} width={200}>
+        <BarMenu label="도형 고르기" icon={<></>} width={200} floating>
           <div className="shape-pick" role="group" aria-label="도형 종류">
             {SHAPE_KINDS.filter((k) => k.kind !== 'line').map((k) => (
               <button

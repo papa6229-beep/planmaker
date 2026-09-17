@@ -37,7 +37,7 @@ import { GenerationRequestPreview } from '../components/studio/GenerationRequest
 import { ReadyPanel } from '../components/studio/ReadyPanel'
 import { LiveTextSync } from '../features/studio/LiveTextSync'
 import { DesignBar } from '../components/design/DesignBar'
-import { BarMenuInline } from '../components/design/BarMenu'
+import { BarMenuDock } from '../components/design/BarMenu'
 import { AlignTools, ResultAlignTools } from '../components/studio/AlignTools'
 import { BriefHandoff } from '../components/studio/BriefHandoff'
 import { BlockLayerTools } from '../components/studio/BlockLayerTools'
@@ -269,6 +269,8 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
    * 이 브라우저에만 기억한다.
    */
   const [leftFolded, setLeftFolded] = useState(() => readLeftFolded())
+  /** 설정 창이 열릴 세로 칸의 자리. 그려진 뒤에야 생긴다. */
+  const [dockEl, setDockEl] = useState<HTMLDivElement | null>(null)
   const toggleLeft = () => {
     const next = !leftFolded
     setLeftFolded(next)
@@ -356,12 +358,12 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
               {generation !== null && generation.hasResult && <StudioViewTabs />}
               {/* 받은 기획서를 옆에 세우거나 겹쳐 본다 (원본 기획서 보기 Patch). */}
               <OriginalControls />
+              {/* 배율은 세로 칸에 — 위 막대를 옵션 한 줄에 온전히 주려고. */}
               <div className="canvas-controls">
                 {compare ? <ResultZoomControls /> : <CanvasZoomControls />}
               </div>
-              <BarMenuInline.Provider value={true}>
-                <DesignBar />
-              </BarMenuInline.Provider>
+              {/* 막대에서 누른 설정 창이 여기 열린다 (막대 한 줄 Patch) — 캔버스를 가리지 않게. */}
+              <div className="design-dock" ref={setDockEl} aria-label="열린 설정" role="region" />
               {/* 옛 우측 패널의 도구들 (우측 패널 정리, 2026-09-17). 사용자: "쓸데없는 쪽이
                   우측패널이 되었어" — 우측을 걷어 캔버스 자리를 넓히고(나란히 보기에
                   두 장이 서야 한다), 남길 것만 이 칸 아래로 옮겼다.
@@ -395,6 +397,15 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
               </div>
             </aside>
             <div className="studio-main">
+              {/* 도구 막대는 캔버스 위에 **얇게 한 줄** (막대 한 줄 Patch, 2026-09-17). 사용자:
+                  "블록 셋팅 탭은 아까처럼 얇게 위로 한줄로" — 세로 칸에서는 이것저것 섞여 보였다.
+                  고른 것의 옵션이 한 줄에 서고(좁은 화면에서만 두 줄), 누른 창은 세로 칸의
+                  `열린 설정`에 열린다. */}
+              <div className="studio-topbar">
+                <BarMenuDock.Provider value={dockEl}>
+                  <DesignBar />
+                </BarMenuDock.Provider>
+              </div>
               {showStart && !compare && <StartChoice onDismiss={() => setStartDismissed(true)} />}
               <div className="stage">
                 <OriginalSide compare={compare} />

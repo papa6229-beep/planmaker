@@ -1,9 +1,9 @@
 /**
  * 도구 막대의 작은 부품들 (도구 막대 Patch, 2026-09-17).
  *
- *  - `BarMenu`: 아이콘을 누르면 그 아래로 펼쳐지는 창. 화면 위 층에 떠서 캔버스나
- *    완성본 판에 잘리지 않고, 화면 밖으로 나가지 않게 자리를 잡는다. 바깥을 누르거나
- *    Esc를 누르면 닫힌다.
+ *  - `BarMenu`: 아이콘을 누르면 열리는 창. 작업판에서는 세로 칸의 `열린 설정`에 도킹되고
+ *    (`BarMenuDock`), 도킹 자리가 없거나 `floating`이면 단추 아래 화면 위 층에 뜬다 —
+ *    그때는 화면 밖으로 나가지 않게 자리를 잡고, 바깥을 누르거나 Esc를 누르면 닫힌다.
  *  - `NumField` · `ColorField` · `ToggleButton` · `RangeField`: 막대에 바로 서는 칸.
  *    바꾸기 시작할 때 `onStart`(되돌리기 한 칸)를 한 번 부른다.
  */
@@ -12,11 +12,11 @@ import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState
 import { createPortal } from 'react-dom'
 
 /**
- * 펼침 창을 **제자리에서** 펼치는가 (세로 배치 Patch). 참이면 창이 단추 바로 아래 칸 안에
- * 열려 캔버스를 가리지 않고, 다른 곳을 눌러도 닫히지 않는다 — 포토샵의 패널처럼 열어 둔 채
- * 조각을 바꿔 가며 조절한다. 거짓이면 화면 위 층에 뜬다.
+ * 펼침 창을 **세로 칸에 도킹**하는가 (막대 한 줄 Patch, 2026-09-17). 막대는 캔버스 위에 얇게
+ * 한 줄로 서고, 누른 창은 이 자리(세로 칸)에 열린다 — 캔버스를 가리지 않고, 다른 곳을 눌러도
+ * 닫히지 않는다. 창마다 제목과 닫기가 붙는다. `null`이면 도킹하지 않는다.
  */
-export const BarMenuInline = createContext(false)
+export const BarMenuDock = createContext<HTMLElement | null>(null)
 
 export function BarMenu({
   label,
@@ -25,6 +25,7 @@ export function BarMenu({
   marked = false,
   width = 280,
   disabled = false,
+  floating = false,
   children,
 }: {
   label: string
@@ -35,9 +36,14 @@ export function BarMenu({
   marked?: boolean
   width?: number
   disabled?: boolean
+  /** 도킹 자리가 있어도 단추 아래에 띄운다 — 고르면 끝나는 작은 목록. */
+  floating?: boolean
   children: ReactNode
 }) {
-  const inline = useContext(BarMenuInline)
+  const dockAt = useContext(BarMenuDock)
+  const dock = floating ? null : dockAt
+  // 도킹한 창은 제자리에 선다 — 자리 계산도, 바깥 누름 닫기도 없다.
+  const inline = dock !== null
   const [open, setOpen] = useState(false)
   const buttonRef = useRef<HTMLButtonElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -115,18 +121,27 @@ export function BarMenu({
         {marked && <span className="design-bar__dot" aria-hidden="true" />}
         <span className="design-bar__caret" aria-hidden="true">▾</span>
       </button>
-      {open && inline && (
-        <div
-          ref={panelRef}
-          className="design-menu design-menu--inline"
-          role="dialog"
-          aria-label={label}
-          onPointerDown={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-        >
-          {children}
-        </div>
-      )}
+      {open &&
+        dock !== null &&
+        createPortal(
+          <div
+            ref={panelRef}
+            className="design-menu design-menu--dock"
+            role="dialog"
+            aria-label={label}
+            onPointerDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            <div className="design-menu__head">
+              <span className="design-menu__title">{label}</span>
+              <button type="button" className="design-menu__close" aria-label={`${label} 닫기`} onClick={() => setOpen(false)}>
+                ✕
+              </button>
+            </div>
+            {children}
+          </div>,
+          dock,
+        )}
       {open &&
         !inline &&
         typeof document !== 'undefined' &&

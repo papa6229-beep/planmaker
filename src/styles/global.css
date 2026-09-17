@@ -3529,15 +3529,6 @@ button { font-family: inherit; }
 .studio-rail .design-bar__sep { width: auto; height: 1px; margin: 0; }
 .studio-rail .design-bar__options { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; }
 .studio-rail .design-bar__note { width: 100%; line-height: 1.5; }
-.design-menu--inline {
-  position: static;
-  flex: 0 0 100%;
-  width: 100%;
-  max-height: none;
-  overflow: visible;
-  box-shadow: none;
-  background: var(--color-panel-muted, #f7f7fa);
-}
 
 /* 캔버스 아래로 여백 — 맨 아래 조각도 화면 가운데로 올려 놓고 작업한다. */
 .workspace__center--studio .canvas { padding-bottom: 50vh; }
@@ -3629,3 +3620,47 @@ button { font-family: inherit; }
 .orig-controls__range input { flex: 1; min-width: 0; }
 .orig-controls__value { min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
 .orig-controls__check { display: flex; align-items: center; gap: 4px; font-size: 12px; }
+
+/* ── 막대 한 줄 (2026-09-17) ─────────────────────────────────────────────────
+ * 도구 막대는 캔버스 위에 얇게 한 줄, 배율은 그 오른쪽 끝. 누른 설정 창은 세로 칸의
+ * `열린 설정`에 도킹된다. */
+.studio-topbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-panel);
+}
+.studio-topbar .design-bar {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  gap: 4px;
+}
+.studio-topbar .design-bar__options { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.studio-topbar .design-bar__note { font-size: 12px; color: var(--color-muted); white-space: nowrap; }
+/* 도구와 옵션이 한 줄에 — 옵션이 넘치면 옵션만 다음 줄로. */
+.studio-topbar .design-bar { flex-wrap: nowrap; align-items: flex-start; }
+.studio-topbar .design-bar__tools { flex: none; }
+.studio-topbar .design-bar__sep { flex: none; align-self: stretch; width: 1px; height: auto; margin: 2px 2px; }
+.studio-topbar .design-bar__options { flex: 1 1 auto; min-width: 0; }
+.design-dock { display: flex; flex-direction: column; gap: 8px; }
+.design-dock:empty { display: none; }
+.design-menu--dock {
+  position: static;
+  width: auto;
+  max-height: none;
+  overflow: visible;
+  box-shadow: none;
+  border-color: var(--color-accent);
+}
+.design-menu__head { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: -2px 0 2px; }
+.design-menu__title { font-size: 12px; font-weight: 700; }
+.design-menu__close { border: 0; background: transparent; cursor: pointer; font-size: 12px; color: var(--color-muted); padding: 2px 4px; }
+.design-menu__close:hover { color: var(--color-text); }

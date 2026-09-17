@@ -744,3 +744,34 @@ describe('§3-3 받은 기획서를 옆에 세우거나 겹쳐 본다 — 생성
     )
   }, 25000)
 })
+
+// ── 막대 한 줄 · 왼쪽 칸 정리 (2026-09-17) ───────────────────────────────────
+
+describe('§3-4 도구 막대는 캔버스 위 한 줄, 설정 창은 세로 칸에', () => {
+  it('keeps the refine button off the real screen (tests switch it on)', async () => {
+    const actual = await vi.importActual<typeof import('./studioScreen')>('./studioScreen')
+    expect(actual.SHOW_REFINE_NOTE).toBe(false)
+  })
+
+  it('puts the bar above the canvas, zoom and opened menus in the rail', async () => {
+    await openStudio()
+    const bar = await screen.findByRole('toolbar', { name: '디자인 도구' })
+    expect(bar.closest('.studio-topbar')).not.toBeNull()
+    expect(bar.closest('.studio-rail')).toBeNull()
+    expect(document.querySelector('.studio-rail .canvas-toolbar')).not.toBeNull()
+
+    const card = document.querySelector<HTMLElement>('.canvas__sheet .block-card[aria-label^="문구"]')
+      ?? document.querySelectorAll<HTMLElement>('.canvas__sheet .block-card')[0]!
+    fireEvent.pointerDown(card, { button: 0 })
+    fireEvent.pointerUp(window)
+    const border = await within(bar).findByRole('button', { name: '테두리' }, { timeout: 5000 })
+    fireEvent.click(border)
+    const menu = screen.getByRole('dialog', { name: '테두리' })
+    expect(menu.closest('.design-dock')).not.toBeNull()
+    // 캔버스 빈 곳을 눌러도 닫히지 않는다 — 열어 둔 채 조절한다.
+    fireEvent.mouseDown(document.body)
+    expect(screen.getByRole('dialog', { name: '테두리' })).toBeTruthy()
+    fireEvent.click(within(menu).getByRole('button', { name: '테두리 닫기' }))
+    expect(screen.queryByRole('dialog', { name: '테두리' })).toBeNull()
+  }, 25000)
+})

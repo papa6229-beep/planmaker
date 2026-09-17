@@ -6,3 +6,9 @@
  * 검사 환경은 `src/test/setup.ts`에서 이 값을 켠 채로 돌린다.
  */
 export const SHOW_PARTIAL_EDIT = false
+
+/**
+ * `AI로 지시 다듬기` 단추를 둘 것인가 (왼쪽 칸 정리, 2026-09-17). 사용자: "이미 변환기가 숨어서
+ * 역할을 하고 있으니" 필요 없다. 화면에서만 빼고 코드와 검사는 둔다.
+ */
+export const SHOW_REFINE_NOTE = false
