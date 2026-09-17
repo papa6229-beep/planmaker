@@ -20,6 +20,7 @@ import {
   fitToViewZoom,
   zoomIn,
   zoomOut,
+  nudgeZoom,
 } from '../editor/canvasView'
 
 /** 화면에 **통째로** 담을 것인가, 폭만 맞출 것인가, 사람이 정한 배율인가. */
@@ -30,6 +31,8 @@ interface ResultViewValue {
   fit: ResultFit
   stepIn: () => void
   stepOut: () => void
+  /** 돋보기 — 5%씩. */
+  nudge: (direction: 1 | -1) => void
   resetTo100: () => void
   fitWidth: () => void
   fitPage: () => void
@@ -97,6 +100,7 @@ export function ResultViewProvider({ children }: { children: ReactNode }) {
       fit,
       stepIn: () => setManual(zoomIn(zoom)),
       stepOut: () => setManual(zoomOut(zoom)),
+      nudge: (direction) => setManual(nudgeZoom(zoom, direction)),
       resetTo100: () => setManual(1),
       fitWidth: () => setFit('width'),
       fitPage: () => setFit('page'),

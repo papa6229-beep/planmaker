@@ -24,6 +24,7 @@ import {
   fitToViewZoom,
   zoomIn,
   zoomOut,
+  nudgeZoom,
 } from './canvasView'
 
 interface CanvasViewContextValue {
@@ -35,6 +36,8 @@ interface CanvasViewContextValue {
   stepIn: () => void
   /** Step down to the previous discrete level (switches to manual). */
   stepOut: () => void
+  /** 돋보기 — 5%씩 (switches to manual). */
+  nudge: (direction: 1 | -1) => void
   /** Snap to 100% / 1:1 (switches to manual). */
   resetTo100: () => void
   /** Re-enable fit-to-width and recompute from the last viewport report. */
@@ -82,6 +85,7 @@ export function CanvasViewProvider({ children }: { children: ReactNode }) {
 
   const stepIn = useCallback(() => setManual(zoomIn(zoom)), [setManual, zoom])
   const stepOut = useCallback(() => setManual(zoomOut(zoom)), [setManual, zoom])
+  const nudge = useCallback((direction: 1 | -1) => setManual(nudgeZoom(zoom, direction)), [setManual, zoom])
   const resetTo100 = useCallback(() => setManual(DEFAULT_ZOOM), [setManual])
 
   const enableFit = useCallback(() => {
@@ -95,13 +99,14 @@ export function CanvasViewProvider({ children }: { children: ReactNode }) {
       fitMode,
       stepIn,
       stepOut,
+      nudge,
       resetTo100,
       enableFit,
       reportViewport,
       canZoomIn: zoom < MAX_ZOOM - EPSILON,
       canZoomOut: zoom > MIN_ZOOM + EPSILON,
     }),
-    [zoom, fitMode, stepIn, stepOut, resetTo100, enableFit, reportViewport],
+    [zoom, fitMode, stepIn, stepOut, nudge, resetTo100, enableFit, reportViewport],
   )
 
   return <CanvasViewContext.Provider value={value}>{children}</CanvasViewContext.Provider>

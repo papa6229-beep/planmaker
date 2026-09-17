@@ -1559,8 +1559,9 @@ describe('§16 완성본이 가운데를 다 쓴다', () => {
     }, { timeout: 5000 })
     expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(0)
 
-    // 확대·축소는 **완성본의 것**이다. 기획서 막대는 이 화면에 없다.
-    expect(screen.queryByLabelText('축소')).toBeNull()
+    // 확대·축소는 **완성본의 것**이다 (돋보기 Patch — 막대 끝의 돋보기가 완성본 배율을 움직인다).
+    expect(screen.getByRole('group', { name: '완성본 배율' })).toBeTruthy()
+    expect(screen.queryByRole('group', { name: '캔버스 배율' })).toBeNull()
     const stage = () => container.querySelector<HTMLElement>('.compare__stage')!
     await waitFor(() => expect(stage()).not.toBeNull(), { timeout: 5000 })
     expect(stage().style.width).toBe('840px')
@@ -1568,7 +1569,7 @@ describe('§16 완성본이 가운데를 다 쓴다', () => {
     // 100%로 두면 페이지 폭 그대로, 확대하면 판이 그만큼 넓어진다.
     fireEvent.click(screen.getByRole('button', { name: '100%' }))
     await waitFor(() => expect(stage().style.width).toBe('840px'), { timeout: 5000 })
-    fireEvent.click(screen.getByLabelText('완성본 확대'))
+    fireEvent.click(screen.getByRole('button', { name: '돋보기' }))
     await waitFor(() => {
       expect(Number.parseInt(stage().style.width, 10)).toBeGreaterThan(840)
     }, { timeout: 5000 })
@@ -1730,11 +1731,11 @@ describe('§17 페이지 전환', () => {
       expect(screen.queryByRole('radio', { name: '완성본' })).toBeNull()
     }, { timeout: 5000 })
     expect(screen.queryByText('아직 생성한 결과가 없습니다.')).toBeNull()
-    expect(screen.queryByLabelText('완성본 확대')).toBeNull()
+    expect(screen.queryByRole('group', { name: '완성본 배율' })).toBeNull()
     // 기획서 캔버스가 서 있어야 2페이지 작업을 시작할 수 있다.
     expect(container.querySelector('.canvas__sheet')).not.toBeNull()
     // 생성 전 도구가 우측에 돌아온다.
-    expect(screen.getByLabelText('축소')).toBeTruthy()
+    expect(screen.getByRole('group', { name: '캔버스 배율' })).toBeTruthy()
 
     // 1페이지로 돌아오면 만들어 둔 결과가 그대로다.
     // 작업 목록에도 같은 이름의 칩이 선다 (작업 목록 Patch). 여기서 누르려는 것은
@@ -2517,6 +2518,56 @@ describe('§26 도구 막대로 만든다', () => {
       // 새 문구는 글꼴을 이어받는다 — 글꼴이 없으면 만들 수 없으니까.
       expect(job.blockOrders?.[text!.id]?.fontFamily).toBeTruthy()
     }, { timeout: 5000 })
+    expect(fetchSpy).not.toHaveBeenCalled()
+  }, 20000)
+
+  it('도형 고르기의 그림자는 도형 없이 그림자만 남는 블록을 만들고, 막대에서 그림자만을 끌 수 있다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    const sheet = container.querySelector<HTMLElement>('.canvas__sheet')!
+    const bar = await screen.findByRole('toolbar', { name: '디자인 도구' })
+
+    fireEvent.click(within(bar).getByRole('button', { name: '도형 고르기' }))
+    fireEvent.click(within(await screen.findByRole('dialog', { name: '도형 고르기' })).getByRole('button', { name: '그림자' }))
+    // 고르면 목록은 닫힌다.
+    expect(screen.queryByRole('dialog', { name: '도형 고르기' })).toBeNull()
+    fireEvent.pointerDown(sheet, { button: 0, clientX: 200, clientY: 700 })
+    fireEvent.pointerUp(window, { clientX: 500, clientY: 760 })
+
+    let id = ''
+    await waitFor(async () => {
+      const job = (await loadStudioJob(STUDIO_JOB_ID))!
+      const shadow = job.doc.pages[0]!.blocks.find((b) => b.type === 'design_shape')
+      expect(shadow?.label).toBe('그림자')
+      expect(shadow?.position).toEqual({ x: 200, y: 700, width: 300, height: 60 })
+      expect(job.blockOrders?.[shadow!.id]?.shape).toMatchObject({ kind: 'ellipse', shadowOnly: true, shadow: true })
+      // 그림자는 맨 뒤에서 시작한다 — 제품 밑에 까는 것이 쓰임이다.
+      expect(job.doc.pages[0]!.blocks[0]!.id).toBe(shadow!.id)
+      id = shadow!.id
+    }, { timeout: 5000 })
+
+    // 고르면 막대에 `그림자만`이 켜진 채 서고, 채우기·테두리는 묻지 않는다.
+    const card = await waitFor(() => {
+      const found = container.querySelector<HTMLElement>(`.canvas__sheet .block-card[aria-label="그림자"]`)
+      expect(found).not.toBeNull()
+      return found!
+    }, { timeout: 5000 })
+    fireEvent.pointerDown(card, { button: 0 })
+    fireEvent.pointerUp(window)
+    const only = await within(bar).findByRole('button', { name: '그림자만' }, { timeout: 5000 })
+    expect(only.getAttribute('aria-pressed')).toBe('true')
+    expect(within(bar).queryByRole('button', { name: '채우기' })).toBeNull()
+    expect(within(bar).queryByLabelText('테두리 색')).toBeNull()
+    expect(within(bar).getByRole('button', { name: '그림자' })).toBeTruthy()
+    expect(within(bar).getByLabelText('불투명도')).toBeTruthy()
+
+    fireEvent.click(only)
+    await waitFor(async () => {
+      const job = (await loadStudioJob(STUDIO_JOB_ID))!
+      expect(job.blockOrders?.[id]?.shape?.shadowOnly).toBe(false)
+    }, { timeout: 5000 })
+    await waitFor(() => expect(within(bar).getByRole('button', { name: '채우기' })).toBeTruthy())
     expect(fetchSpy).not.toHaveBeenCalled()
   }, 20000)
 

@@ -4,7 +4,7 @@
  * 모양은 `domain/shapeLook.ts`가 점으로 내놓고, 여기서 칠한다. 기획서 캔버스의
  * 미리보기와 완성본 조각이 같은 함수로 그려진다. AI 호출은 없다.
  *
- * 칠하는 차례: 그림자 → 채우기 → 테두리(선). 불투명도는 다 칠한 한 장에 한 번 건다
+ * 칠하는 차례: 그림자 → 채우기 → 테두리(선). `그림자만`이면 그림자에서 멈춘다. 불투명도는 다 칠한 한 장에 한 번 건다
  * — 채우기와 테두리가 겹친 곳이 두 번 옅어지지 않도록.
  */
 
@@ -125,7 +125,8 @@ export async function renderShapeArt(
       const a = (look.shadowAngle * Math.PI) / 180
       const far = pw + ph + 1000
       art.ctx.save()
-      art.ctx.globalAlpha = look.shadowOpacity
+      // 그림자만 남긴 도형은 `불투명도`가 곧 그림자의 불투명도다.
+      art.ctx.globalAlpha = look.shadowOnly ? look.shadowOpacity * look.opacity : look.shadowOpacity
       art.ctx.shadowColor = look.shadowColor
       art.ctx.shadowBlur = look.shadowBlur * k
       art.ctx.shadowOffsetX = Math.cos(a) * look.shadowDistance * k + far
@@ -135,14 +136,16 @@ export async function renderShapeArt(
     }
   }
 
-  const body = blank(pw, ph)
-  if (body === null) return null
-  place(body.ctx)
-  drawShape(body.ctx, look, w, h, false)
-  art.ctx.save()
-  art.ctx.globalAlpha = look.opacity
-  art.ctx.drawImage(body.canvas, 0, 0)
-  art.ctx.restore()
+  if (!look.shadowOnly) {
+    const body = blank(pw, ph)
+    if (body === null) return null
+    place(body.ctx)
+    drawShape(body.ctx, look, w, h, false)
+    art.ctx.save()
+    art.ctx.globalAlpha = look.opacity
+    art.ctx.drawImage(body.canvas, 0, 0)
+    art.ctx.restore()
+  }
 
   if (options.tone !== undefined && !toneIsFlat(options.tone)) {
     const pixels = art.ctx.getImageData(0, 0, pw, ph)

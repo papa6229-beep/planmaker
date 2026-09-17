@@ -759,12 +759,12 @@ describe('§3-4 도구 막대는 캔버스 위 한 줄, 설정 창은 세로 칸
     expect(actual.SHOW_REFINE_NOTE).toBe(false)
   })
 
-  it('puts the bar above the canvas, zoom and opened menus in the rail', async () => {
+  it('puts the bar and the magnifier above the canvas, opened menus in the rail', async () => {
     await openStudio()
     const bar = await screen.findByRole('toolbar', { name: '디자인 도구' })
     expect(bar.closest('.studio-topbar')).not.toBeNull()
     expect(bar.closest('.studio-rail')).toBeNull()
-    expect(document.querySelector('.studio-rail .canvas-toolbar')).not.toBeNull()
+    expect(document.querySelector('.studio-topbar .studio-zoom')).not.toBeNull()
 
     const card = document.querySelector<HTMLElement>('.canvas__sheet .block-card[aria-label^="문구"]')
       ?? document.querySelectorAll<HTMLElement>('.canvas__sheet .block-card')[0]!
@@ -983,5 +983,26 @@ describe('§3-6 이벤트 페이지 배경도 캔버스에서 옮기고 키운�
       expect(saved?.assetId).toBe('asset_cand')
       expect(saved?.rect).toEqual({ x: -50, y: 0, width: 1000, height: 1600 })
     })
+  }, 25000)
+})
+
+// ── 돋보기 (2026-09-17) ─────────────────────────────────────────────────────
+
+describe('§3-7 돋보기 — 클릭 5% 확대, Alt+클릭 5% 축소', () => {
+  it('nudges the canvas zoom in fine steps', async () => {
+    await openStudio()
+    const value = () => screen.getByRole('group', { name: '캔버스 배율' }).querySelector('.studio-zoom__value')!.textContent
+    fireEvent.click(screen.getByRole('button', { name: '100%' }))
+    await waitFor(() => expect(value()).toBe('100%'))
+    const loupe = screen.getByRole('button', { name: '돋보기' })
+    fireEvent.click(loupe)
+    await waitFor(() => expect(value()).toBe('105%'))
+    fireEvent.click(loupe)
+    await waitFor(() => expect(value()).toBe('110%'))
+    fireEvent.click(loupe, { altKey: true })
+    fireEvent.click(loupe, { altKey: true })
+    fireEvent.click(loupe, { altKey: true })
+    await waitFor(() => expect(value()).toBe('95%'))
+    expect(screen.queryByRole('button', { name: '확대' })).toBeNull()
   }, 25000)
 })

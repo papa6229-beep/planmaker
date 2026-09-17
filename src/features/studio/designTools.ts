@@ -9,12 +9,13 @@
 import { useSyncExternalStore } from 'react'
 import type { ShapeKind } from '../../domain/shapeLook'
 
-export type DesignTool = 'select' | 'text' | ShapeKind
+/** `shadow`: 그림자만 남는 도형 (그림자 레이어 Patch). */
+export type DesignTool = 'select' | 'text' | ShapeKind | 'shadow'
 
 interface ToolState {
   tool: DesignTool
   /** 마지막으로 든 도형 — `U` 단축키가 이것을 다시 든다. */
-  lastShape: Exclude<ShapeKind, 'line'>
+  lastShape: Exclude<ShapeKind, 'line'> | 'shadow'
   /** 문구에서 고른 글자 (글자 차례, `start` 이상 `end` 미만). */
   selection: { blockId: string; start: number; end: number } | null
   /** 이 블록의 글 고치기를 열어 달라는 부탁. 한 번 읽으면 비운다. */

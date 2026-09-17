@@ -97,3 +97,15 @@ describe('canvas zoom — view-only display control', () => {
     expect(fit.getAttribute('aria-pressed')).toBe('false')
   })
 })
+
+describe('돋보기 한 칸 (돋보기 Patch, 2026-09-17)', () => {
+  it('moves by 5% and snaps odd values to the next 5% first', async () => {
+    const { nudgeZoom } = await import('../features/editor/canvasView')
+    expect(nudgeZoom(1, 1)).toBe(1.05)
+    expect(nudgeZoom(1, -1)).toBe(0.95)
+    expect(nudgeZoom(0.757, 1)).toBe(0.8)
+    expect(nudgeZoom(0.757, -1)).toBe(0.75)
+    expect(nudgeZoom(2, 1)).toBe(2)
+    expect(nudgeZoom(0.25, -1)).toBe(0.25)
+  })
+})

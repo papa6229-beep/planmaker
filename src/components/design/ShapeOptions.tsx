@@ -19,6 +19,8 @@ export function ShapeOptions({ target, label }: { target: DesignTarget; label: s
   const id = target.blockId
   const look = normalizeShapeLook(studio.blockOrderOf(id).shape)
   const isLine = look.kind === 'line'
+  /** 그림자만 남긴 도형 — 채우기·테두리는 보이지 않으므로 묻지 않는다 (그림자 레이어 Patch). */
+  const shadowOnly = look.shadowOnly
   const mark = () => studio.markStep()
   const setShape = (patch: Partial<ShapeLook>) =>
     void studio.setBlockOrder(id, { shape: normalizeShapeLook({ ...look, ...patch }) })
@@ -45,6 +47,18 @@ export function ShapeOptions({ target, label }: { target: DesignTarget; label: s
       </label>
 
       {!isLine && (
+        <ToggleButton
+          label="그림자만"
+          icon="그림자만"
+          on={shadowOnly}
+          onToggle={() => {
+            mark()
+            setShape(shadowOnly ? { shadowOnly: false } : { shadowOnly: true, fill: true })
+          }}
+        />
+      )}
+
+      {!isLine && !shadowOnly && (
         <>
           <ToggleButton
             label="채우기"
@@ -80,37 +94,42 @@ export function ShapeOptions({ target, label }: { target: DesignTarget; label: s
           />
         </>
       )}
-      <ColorField
-        label={isLine ? '선 색' : '테두리 색'}
-        value={look.strokeColor}
-        disabled={!look.stroke}
-        onStart={mark}
-        onChange={(hex) => setShape({ strokeColor: hex })}
-      />
-      <NumField
-        label={isLine ? '선 두께' : '테두리 두께'}
-        suffix="px"
-        value={look.strokeWidth}
-        min={0.5}
-        max={60}
-        step={0.5}
-        disabled={!look.stroke}
-        onStart={mark}
-        onChange={(v) => setShape({ strokeWidth: v })}
-      />
-      <label className="design-bar__select" title="선 모양">
-        <select
-          aria-label="선 모양"
-          value={look.dash}
-          disabled={!look.stroke}
-          onFocus={mark}
-          onChange={(e) => setShape({ dash: e.target.value as StrokeDash })}
-        >
-          <option value="solid">━ 실선</option>
-          <option value="dashed">┅ 점선(긴)</option>
-          <option value="dotted">┈ 점선(점)</option>
-        </select>
-      </label>
+
+      {!shadowOnly && (
+        <>
+          <ColorField
+            label={isLine ? '선 색' : '테두리 색'}
+            value={look.strokeColor}
+            disabled={!look.stroke}
+            onStart={mark}
+            onChange={(hex) => setShape({ strokeColor: hex })}
+          />
+          <NumField
+            label={isLine ? '선 두께' : '테두리 두께'}
+            suffix="px"
+            value={look.strokeWidth}
+            min={0.5}
+            max={60}
+            step={0.5}
+            disabled={!look.stroke}
+            onStart={mark}
+            onChange={(v) => setShape({ strokeWidth: v })}
+          />
+          <label className="design-bar__select" title="선 모양">
+            <select
+              aria-label="선 모양"
+              value={look.dash}
+              disabled={!look.stroke}
+              onFocus={mark}
+              onChange={(e) => setShape({ dash: e.target.value as StrokeDash })}
+            >
+              <option value="solid">━ 실선</option>
+              <option value="dashed">┅ 점선(긴)</option>
+              <option value="dotted">┈ 점선(점)</option>
+            </select>
+          </label>
+        </>
+      )}
 
       {(look.kind === 'roundRect' || look.kind === 'bubble') && (
         <NumField

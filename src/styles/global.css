@@ -3706,3 +3706,45 @@ button { font-family: inherit; }
 
 .bg-tools__row { flex-wrap: wrap; }
 .bg-tools__row .btn { white-space: nowrap; }
+
+/* ── 돋보기 (2026-09-17) — 위 막대 오른쪽 끝 ─────────────────────────────── */
+.studio-zoom { flex: none; display: flex; align-items: center; gap: 4px; margin-left: auto; padding-left: 8px; border-left: 1px solid var(--color-border); }
+.studio-zoom__loupe {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: zoom-in;
+}
+.studio-zoom__loupe:hover { border-color: var(--color-accent); color: var(--color-accent); }
+.studio-zoom__loupe.is-out { cursor: zoom-out; }
+.studio-zoom__value { min-width: 40px; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--color-muted); }
+.studio-zoom__btn { padding: 3px 8px; font-size: 12px; white-space: nowrap; }
+.studio-zoom__btn.is-active { border-color: var(--color-accent); color: var(--color-accent); }
+
+/* ── 고른 조각의 테두리는 가늘고 옅게 (2026-09-17) ─────────────────────────
+ * 사용자: 선택 테두리가 너무 진해 그림자 미세조정 때 그림자가 안 보인다. 테두리는 1px 반투명 점선,
+ * 손잡이는 작고 옅게 — 자리만 알려 주고 그림을 가리지 않는다. 잡히는 면적(::before)은 그대로. */
+.result-object.is-selected { outline: 1px dashed rgba(79, 110, 247, 0.55); outline-offset: 0; }
+.result-object.is-picked { outline: 1px dashed rgba(79, 110, 247, 0.4); }
+.result-object__handle {
+  width: 8px;
+  height: 8px;
+  border: 1px solid rgba(79, 110, 247, 0.7);
+  background: rgba(255, 255, 255, 0.85);
+}
+.result-object__handle--nw { left: -4px; top: -4px; }
+.result-object__handle--ne { right: -4px; top: -4px; }
+.result-object__handle--sw { left: -4px; bottom: -4px; }
+.result-object__handle--se { right: -4px; bottom: -4px; }
+.block-card--photo.is-selected { outline: 1px dashed rgba(79, 110, 247, 0.55); box-shadow: none; }
+
+/* 도구를 든 동안에는 조각·블록 위에서 끌어도 새로 만든다 (그림자 레이어 Patch) — 제품 바로 밑에
+   그림자를 깔려고 제품 위에서 끌기 시작하면, 제품이 잡혀 아무것도 생기지 않았다. */
+.result-objects.is-drawing .result-object,
+.canvas__sheet.is-drawing .block-card { pointer-events: none; }

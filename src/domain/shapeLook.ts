@@ -69,6 +69,12 @@ export interface ShapeLook {
   line: LineDirection
   arrowStart: boolean
   arrowEnd: boolean
+  /**
+   * 도형은 그리지 않고 **그림자만** 남긴다 (그림자 레이어 Patch, 2026-09-17). 사용자: "그림자
+   * 기능을 도형 만들기처럼 따로 레이어로 … 원하는 위치에 원하는 크기로", "도형은 없어지고
+   * 조절 가능한 그림자만 남는". 켜 두면 그림자도 늘 켜져 있다. 선에는 없다.
+   */
+  shadowOnly: boolean
 }
 
 export const DEFAULT_SHAPE_LOOK: ShapeLook = {
@@ -94,6 +100,22 @@ export const DEFAULT_SHAPE_LOOK: ShapeLook = {
   line: 'h',
   arrowStart: false,
   arrowEnd: false,
+  shadowOnly: false,
+}
+
+/** 도형 고르기의 `그림자` — 부드러운 타원 그림자 한 덩이. 제품 밑에 깔기 좋은 값. */
+export const SHADOW_LAYER_LOOK: ShapeLook = {
+  ...DEFAULT_SHAPE_LOOK,
+  kind: 'ellipse',
+  fill: true,
+  stroke: false,
+  shadowOnly: true,
+  shadow: true,
+  shadowColor: '#000000',
+  shadowDistance: 0,
+  shadowAngle: 90,
+  shadowBlur: 24,
+  shadowOpacity: 0.45,
 }
 
 const KINDS = new Set<string>(SHAPE_KINDS.map((k) => k.kind))
@@ -102,6 +124,7 @@ export function normalizeShapeLook(raw: unknown): ShapeLook {
   const v = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {}
   const d = DEFAULT_SHAPE_LOOK
   const kind = typeof v.kind === 'string' && KINDS.has(v.kind) ? (v.kind as ShapeKind) : d.kind
+  const shadowOnly = v.shadowOnly === true && kind !== 'line'
   const angle = typeof v.shadowAngle === 'number' && Number.isFinite(v.shadowAngle) ? v.shadowAngle : d.shadowAngle
   return {
     kind,
@@ -117,7 +140,7 @@ export function normalizeShapeLook(raw: unknown): ShapeLook {
     strokeColor: hexOr(v.strokeColor, d.strokeColor),
     strokeWidth: rangeOr(v.strokeWidth, [0.5, 60], d.strokeWidth),
     dash: v.dash === 'dashed' || v.dash === 'dotted' ? v.dash : 'solid',
-    shadow: v.shadow === true,
+    shadow: shadowOnly || v.shadow === true,
     shadowColor: hexOr(v.shadowColor, d.shadowColor),
     shadowDistance: rangeOr(v.shadowDistance, [0, 200], d.shadowDistance),
     shadowAngle: ((Math.round(angle) % 360) + 360) % 360,
@@ -127,6 +150,7 @@ export function normalizeShapeLook(raw: unknown): ShapeLook {
     line: v.line === 'v' || v.line === 'down' || v.line === 'up' ? v.line : 'h',
     arrowStart: v.arrowStart === true,
     arrowEnd: v.arrowEnd === true,
+    shadowOnly,
   }
 }
 

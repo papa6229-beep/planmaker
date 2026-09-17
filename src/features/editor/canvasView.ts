@@ -46,6 +46,19 @@ export function zoomOut(zoom: number): number {
   return smaller.length > 0 ? smaller[smaller.length - 1]! : MIN_ZOOM
 }
 
+/** 돋보기 한 번에 움직이는 양 (돋보기 Patch, 2026-09-17 — 25%씩은 너무 크다). */
+export const FINE_ZOOM_STEP = 0.05
+
+/**
+ * 돋보기 — 5%씩. 지금 배율이 5%의 배수가 아니면(화면 맞춤 등) 먼저 그 방향의 가장
+ * 가까운 배수로 간다. 범위는 다른 배율과 같다.
+ */
+export function nudgeZoom(zoom: number, direction: 1 | -1): number {
+  const units = zoom / FINE_ZOOM_STEP
+  const next = direction > 0 ? Math.floor(units + 1e-6) + 1 : Math.ceil(units - 1e-6) - 1
+  return clampZoom(Math.round(next * FINE_ZOOM_STEP * 100) / 100)
+}
+
 /**
  * Computes the fit-to-view zoom for a page in the available width. Only shrinks
  * (never enlarges past 1:1): fit is min(1, available/logicalWidth).

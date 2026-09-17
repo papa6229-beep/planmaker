@@ -33,6 +33,9 @@ function isTyping(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
 }
 
+/** 도형 고르기의 `그림자` 표시. */
+const SHADOW_ICON = '◍'
+
 const IMAGE_TABS: readonly PostEditTab[] = ['color', 'levels', 'shadow', 'outline', 'shape']
 
 export function DesignBar() {
@@ -63,7 +66,7 @@ export function DesignBar() {
 
   const marks =
     target?.kind === 'image' ? postEditMarks(studio.objectToneOf(target.blockId), studio.effectsOf(target.blockId)) : null
-  const shapeIcon = SHAPE_KINDS.find((k) => k.kind === lastShape)?.icon ?? '▭'
+  const shapeIcon = lastShape === 'shadow' ? SHADOW_ICON : (SHAPE_KINDS.find((k) => k.kind === lastShape)?.icon ?? '▭')
   const label =
     (target !== null && generation?.editTargets.find((t) => t.blockId === target.blockId)?.label) ||
     target?.block?.label ||
@@ -116,6 +119,16 @@ export function DesignBar() {
                 <span aria-hidden="true">{k.icon}</span> {k.label}
               </button>
             ))}
+            {/* 도형은 없고 그림자만 남는 레이어 (그림자 레이어 Patch). */}
+            <button
+              type="button"
+              className={`design-bar__btn${tool === 'shadow' ? ' is-on' : ''}`}
+              aria-label="그림자"
+              title="그림자 — 도형은 그리지 않고 흐린 그림자만 남깁니다"
+              onClick={() => setTool('shadow')}
+            >
+              <span aria-hidden="true">{SHADOW_ICON}</span> 그림자
+            </button>
           </div>
         </BarMenu>
         <button
@@ -136,7 +149,7 @@ export function DesignBar() {
       <div className="design-bar__options" role="group" aria-label="고른 것의 옵션">
         {tool !== 'select' ? (
           <span className="design-bar__note">
-            캔버스에서 끌어 {tool === 'text' ? '문구' : tool === 'line' ? '선' : '도형'}을 만드세요 · Esc 취소
+            캔버스에서 끌어 {tool === 'text' ? '문구를' : tool === 'line' ? '선을' : tool === 'shadow' ? '그림자를' : '도형을'} 만드세요 · Esc 취소
           </span>
         ) : target === null ? (
           <>

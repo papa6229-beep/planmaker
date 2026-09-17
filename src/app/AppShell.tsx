@@ -23,7 +23,6 @@ import { PageTabs } from '../components/pages/PageTabs'
 import { BlockPalette } from '../components/palette/BlockPalette'
 import { BriefCanvas } from '../components/canvas/BriefCanvas'
 import { CanvasZoomControls } from '../components/canvas/CanvasZoomControls'
-import { ResultZoomControls } from '../components/studio/ResultZoomControls'
 import { ResultViewProvider, useResultView } from '../features/studio/useResultView'
 import { PropertiesPanel } from '../components/inspector/PropertiesPanel'
 import { BriefLibrary } from '../components/library/BriefLibrary'
@@ -56,6 +55,7 @@ import { EditPanel } from '../components/studio/EditPanel'
 import { SHOW_PARTIAL_EDIT } from './studioScreen'
 import { OriginalControls, OriginalSidePane } from '../components/studio/OriginalBrief'
 import { BackgroundLabPanel } from '../components/studio/BackgroundLabPanel'
+import { StudioZoom } from '../components/studio/StudioZoom'
 import { ImageGenerationProvider, useImageGeneration } from '../features/studio/useImageGeneration'
 import { InstructionRefineProvider } from '../features/studio/useInstructionRefine'
 
@@ -360,10 +360,6 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
               {generation !== null && generation.hasResult && <StudioViewTabs />}
               {/* 받은 기획서를 옆에 세우거나 겹쳐 본다 (원본 기획서 보기 Patch). */}
               <OriginalControls />
-              {/* 배율은 세로 칸에 — 위 막대를 옵션 한 줄에 온전히 주려고. */}
-              <div className="canvas-controls">
-                {compare ? <ResultZoomControls /> : <CanvasZoomControls />}
-              </div>
               {/* 막대에서 누른 설정 창이 여기 열린다 (막대 한 줄 Patch) — 캔버스를 가리지 않게. */}
               <div className="design-dock" ref={setDockEl} aria-label="열린 설정" role="region" />
               {/* 옛 우측 패널의 도구들 (우측 패널 정리, 2026-09-17). 사용자: "쓸데없는 쪽이
@@ -411,6 +407,8 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
                 <BarMenuDock.Provider value={dockEl}>
                   <DesignBar />
                 </BarMenuDock.Provider>
+                {/* 배율은 막대 오른쪽 끝의 돋보기 (돋보기 Patch) — 클릭 확대, Alt+클릭 축소. */}
+                <StudioZoom result={compare} />
               </div>
               {showStart && !compare && <StartChoice onDismiss={() => setStartDismissed(true)} />}
               <div className="stage">

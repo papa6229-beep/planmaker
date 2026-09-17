@@ -22,7 +22,7 @@ import { getBlockTypeMeta } from '../../domain/blockTypes'
 import { drawsBareText, textAlignOf } from '../../domain/simpleBlocks'
 import type { StudioTextObject } from '../../domain/textObjects'
 import type { LayoutRect } from '../../domain/imageLayout'
-import { DEFAULT_SHAPE_LOOK, SHAPE_KINDS, lineFromDrag, type ShapeLook } from '../../domain/shapeLook'
+import { DEFAULT_SHAPE_LOOK, SHADOW_LAYER_LOOK, SHAPE_KINDS, lineFromDrag, type ShapeLook } from '../../domain/shapeLook'
 import {
   imageObjectsOf,
   pageResultIsStale,
@@ -107,10 +107,15 @@ export function useCreateDesignBlock(): ((tool: Exclude<DesignTool, 'select'>, d
         editor.addBlockAt('free_text', id, rect, { content: NEW_TEXT, label: '문구' })
         await studio.setBlockOrder(id, { fontFamily: family })
       } else {
-        const label = SHAPE_KINDS.find((k) => k.kind === tool)?.label ?? '도형'
+        const label = tool === 'shadow' ? '그림자' : (SHAPE_KINDS.find((k) => k.kind === tool)?.label ?? '도형')
         editor.addBlockAt('design_shape', id, rect, { label })
+        // 그림자는 맨 뒤에서 시작한다 — 제품·문구 밑에 까는 것이 거의 언제나의 쓰임이다.
+        if (tool === 'shadow') editor.reorderBlock(id, 'back')
         await studio.setBlockOrder(id, {
-          shape: { ...DEFAULT_SHAPE_LOOK, kind: tool, ...(line === undefined ? {} : { line }) },
+          shape:
+            tool === 'shadow'
+              ? { ...SHADOW_LAYER_LOOK }
+              : { ...DEFAULT_SHAPE_LOOK, kind: tool, ...(line === undefined ? {} : { line }) },
         })
       }
       setTool('select')
@@ -123,7 +128,10 @@ export function useCreateDesignBlock(): ((tool: Exclude<DesignTool, 'select'>, d
       // ── 완성본에도 바로 얹는다 ───────────────────────────────────────────
       const job = studio.currentJob()
       const layers = [...imageObjectsOf(job, pageId), ...textObjectsOf(job, pageId)].map((o) => o.layer)
-      const layer = (layers.length === 0 ? 0 : Math.max(...layers)) + 1
+      const layer =
+        tool === 'shadow'
+          ? (layers.length === 0 ? 0 : Math.min(...layers)) - 1
+          : (layers.length === 0 ? 0 : Math.max(...layers)) + 1
       const painted =
         tool === 'text'
           ? await paintLiveText(

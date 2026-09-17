@@ -36,7 +36,7 @@ export function BarMenu({
   marked?: boolean
   width?: number
   disabled?: boolean
-  /** 도킹 자리가 있어도 단추 아래에 띄운다 — 고르면 끝나는 작은 목록. */
+  /** 도킹 자리가 있어도 단추 아래에 띄운다 — 고르면 끝나는 작은 목록. 안의 단추를 누르면 닫힌다. */
   floating?: boolean
   children: ReactNode
 }) {
@@ -158,6 +158,10 @@ export function BarMenu({
             }
             onPointerDown={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              // 고르면 끝나는 목록 — 하나 고르면 접는다.
+              if (floating && (e.target as HTMLElement).closest('button') !== null) setOpen(false)
+            }}
           >
             {children}
           </div>,
