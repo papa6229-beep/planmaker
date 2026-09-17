@@ -3313,3 +3313,37 @@ button { font-family: inherit; }
   touch-action: none;
 }
 .result-object__shadow-handle:focus-visible { outline: 2px solid var(--color-accent); }
+
+/* ── 글꼴 미리보기 (2026-09-17) ─────────────────────────────────────────────
+ * 문구 블록 위 막대의 "글꼴 ▾". 목록은 블록 옆에 뜨고, 가리키는 글꼴로 캔버스의
+ * 글자가 바로 바뀐다. 캔버스 배율을 되돌려 늘 같은 크기로 읽힌다. */
+.block-card__font-name {
+  display: inline-block;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  font-size: 12px;
+}
+.block-card__font-missing { color: var(--color-danger, #c0392b); }
+.block-card__font-panel {
+  position: absolute;
+  top: 0;
+  z-index: 30;
+  display: block;
+  width: 280px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-panel);
+  box-shadow: 0 6px 18px rgba(20, 23, 33, 0.16);
+  transform-origin: top left;
+  cursor: default;
+  white-space: normal;
+}
+.block-card__font-panel .font-pick__list { max-height: 320px; }
+/* 블록 옆에 붙인다. 배율을 되돌리는 기준점도 블록에 붙은 모서리다. */
+.block-card__font-panel--right { left: calc(100% + 12px); transform-origin: top left; }
+.block-card__font-panel--left { right: calc(100% + 12px); transform-origin: top right; }
+.block-card__font-panel--below { left: 0; top: calc(100% + 12px); transform-origin: top left; }
+.block-card__font .block-card__layer-trigger { gap: 2px; }

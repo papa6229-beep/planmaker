@@ -63,7 +63,8 @@ vi.mock('../services/fontLoader', async () => {
   const file = { file: 'test-700.woff2', family: TEST_FONT_FAMILY, weight: 700, group: '시험', script: 'ko' as const, bytes: 1 }
   return {
     ...actual,
-    fetchFontCatalog: async () => [file],
+    // 글꼴 목록을 바꿔 보는 검사는 `__testFontCatalog`에 목록을 둔다.
+    fetchFontCatalog: async () => (globalThis as { __testFontCatalog?: unknown[] }).__testFontCatalog ?? [file],
     loadFont: async () => true,
     loadFamilyWeight: async () => file,
   }

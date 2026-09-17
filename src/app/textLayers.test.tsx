@@ -2127,3 +2127,90 @@ describe('§21 드롭 그림자는 캔버스에서 끌어 옮긴다', () => {
     expect(fetchSpy.mock.calls.length).toBe(calls)
   })
 })
+
+// ── §23 글꼴은 블록 위에서 고르고, 캔버스가 바로 그 모양이 된다 (2026-09-17) ──
+
+describe('§23 글꼴 미리보기', () => {
+  const G = globalThis as { __noTestFont?: boolean; __testFontCatalog?: unknown[] | undefined }
+  const FONTS = [
+    { file: 'alpha-700.woff2', family: '알파체', weight: 700, group: '고딕', script: 'ko', bytes: 1 },
+    { file: 'beta-700.woff2', family: '베타체', weight: 700, group: '고딕', script: 'ko', bytes: 1 },
+  ]
+
+  it('막대의 글꼴 목록에서 가리키면 바뀌고, 벗어나면 돌아오고, 누르면 남는다 — 외부 호출은 없다', async () => {
+    G.__noTestFont = true
+    G.__testFontCatalog = FONTS
+    const { resetFontFamiliesForTests } = await load('features/studio/blockFont')
+    resetFontFamiliesForTests()
+    try {
+      await seedJob()
+      const { container } = renderStudio()
+      await documentReady(container)
+      const card = () => container.querySelector<HTMLElement>('.canvas__sheet .block-card[aria-label^="큰 문구"]')!
+      const text = () => card().querySelector<HTMLElement>('.block-card__content')!
+      expect(text().style.fontFamily).toBe('')
+
+      fireEvent.pointerDown(card(), { button: 0, clientX: 5, clientY: 5 })
+      fireEvent.pointerUp(window)
+      const trigger = await waitFor(() => within(card()).getByRole('button', { name: '글꼴 고르기' }))
+      fireEvent.click(trigger)
+      const panel = await waitFor(() => within(card()).getByRole('dialog', { name: '글꼴 목록' }))
+      const beta = await waitFor(() => within(panel).getByRole('radio', { name: '글꼴 베타체' }))
+
+      // 가리키면 캔버스의 글자가 그 글꼴이 된다.
+      fireEvent.mouseEnter(beta)
+      await waitFor(() => expect(text().style.fontFamily).toContain('pm-beta-700'), { timeout: 5000 })
+      // 목록을 벗어나면 고른 것이 없으므로 기본 글꼴로 돌아온다.
+      fireEvent.mouseLeave(within(panel).getByRole('radiogroup', { name: '글꼴 고르기' }))
+      await waitFor(() => expect(text().style.fontFamily).toBe(''), { timeout: 5000 })
+
+      // 누르면 저장되고, 목록을 닫아도 그 글꼴로 남는다.
+      const alpha = within(panel).getByRole('radio', { name: '글꼴 알파체' })
+      fireEvent.mouseEnter(alpha)
+      fireEvent.click(alpha)
+      await waitFor(async () => {
+        const job = await loadStudioJob(STUDIO_JOB_ID)
+        expect(job?.blockOrders?.blk_t1?.fontFamily).toBe('알파체')
+      })
+      fireEvent.keyDown(panel, { key: 'Escape' })
+      await waitFor(() => expect(within(card()).queryByRole('dialog', { name: '글꼴 목록' })).toBeNull())
+      await waitFor(() => expect(text().style.fontFamily).toContain('pm-alpha-700'), { timeout: 5000 })
+      expect(within(card()).getByRole('button', { name: '글꼴 고르기' }).textContent).toContain('알파체')
+
+      // 다른 문구는 그대로다.
+      const other = container.querySelector<HTMLElement>('.canvas__sheet .block-card[aria-label^="가까운 문구"] .block-card__content')!
+      expect(other.style.fontFamily).toBe('')
+      expect(fetchSpy).not.toHaveBeenCalled()
+    } finally {
+      G.__noTestFont = false
+      G.__testFontCatalog = undefined
+      resetFontFamiliesForTests()
+    }
+  })
+
+  it('오른쪽 칸의 목록에서 가리켜도 캔버스가 바뀐다', async () => {
+    G.__noTestFont = true
+    G.__testFontCatalog = FONTS
+    const { resetFontFamiliesForTests } = await load('features/studio/blockFont')
+    resetFontFamiliesForTests()
+    try {
+      await seedJob()
+      const { container } = renderStudio()
+      await documentReady(container)
+      const card = () => container.querySelector<HTMLElement>('.canvas__sheet .block-card[aria-label^="가까운 문구"]')!
+      fireEvent.pointerDown(card(), { button: 0, clientX: 5, clientY: 5 })
+      fireEvent.pointerUp(window)
+      const side = await screen.findByRole('region', { name: '이 블록의 디자인 주문' })
+      const beta = await waitFor(() => within(side).getByRole('radio', { name: '글꼴 베타체' }))
+      fireEvent.focus(beta)
+      await waitFor(
+        () => expect(card().querySelector<HTMLElement>('.block-card__content')!.style.fontFamily).toContain('pm-beta-700'),
+        { timeout: 5000 },
+      )
+    } finally {
+      G.__noTestFont = false
+      G.__testFontCatalog = undefined
+      resetFontFamiliesForTests()
+    }
+  })
+})

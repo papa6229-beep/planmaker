@@ -18,7 +18,7 @@
  * 한 번은 보여야 하는 칸이다. 접으면 그 상태는 이 세션 동안 유지된다.
  */
 
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useAssets } from '../../features/assets/useAssets'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useStudioJob } from '../../features/studio/useStudioJob'
@@ -26,6 +26,7 @@ import { getBlockTypeMeta } from '../../domain/blockTypes'
 import { ACCEPTED_MIME_TYPES } from '../../features/assets/imageUtils'
 import { PanelFold } from './PanelFold'
 import { FontPicker } from './FontPicker'
+import { clearFontPreview, setFontPreview } from '../../features/studio/blockFont'
 
 const IMAGE_ACCEPT = ACCEPTED_MIME_TYPES.join(',')
 
@@ -34,6 +35,12 @@ export function BlockOrderPanel() {
   const { selected } = useBriefEditor()
   const { storeImage, getUrl } = useAssets()
   const fileRef = useRef<HTMLInputElement | null>(null)
+  const selectedId = selected?.id
+  // 다른 블록으로 옮기거나 칸이 닫히면, 가리키던 글꼴을 캔버스에 남기지 않는다.
+  useEffect(() => {
+    if (selectedId === undefined) return
+    return () => clearFontPreview(selectedId)
+  }, [selectedId])
   if (studio === null || selected === null) return null
 
   const meta = getBlockTypeMeta(selected.type)
@@ -72,6 +79,9 @@ export function BlockOrderPanel() {
         family={order.fontFamily}
         weight={order.fontWeight}
         onPick={(patch) => void studio.setBlockOrder(selected.id, patch)}
+        onPreview={(point) =>
+          point === null ? clearFontPreview(selected.id) : setFontPreview({ blockId: selected.id, ...point })
+        }
       />
 
       <textarea

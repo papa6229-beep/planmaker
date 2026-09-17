@@ -15,7 +15,7 @@
  * The card is draggable (move) and resizable (corner handles).
  */
 
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { getBlockTypeMeta, type BlockCategory } from '../../domain/blockTypes'
 import { imageFitOf } from '../../domain/imageLayout'
 import { LAYER_MOVES, visibleLayerPosition } from '../../domain/layerOrder'
@@ -39,6 +39,8 @@ import type { BriefBlock } from '../../domain/briefSchema'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useAssets } from '../../features/assets/useAssets'
 import { useStudioJob } from '../../features/studio/useStudioJob'
+import { clearFontPreview, setFontPreview, useCanvasFace, useFontPreview } from '../../features/studio/blockFont'
+import { FontPicker } from '../studio/FontPicker'
 import { ACCEPTED_MIME_TYPES } from '../../features/assets/imageUtils'
 import { RESIZE_HANDLES, resizeRect, type ResizeHandle } from '../../features/editor/canvasGeometry'
 
@@ -71,6 +73,9 @@ const measureLine = createLineMeasurer()
 const DRAG_THRESHOLD_PX = 3
 /** 떠 있는 도구막대가 블록 위에 설 수 있는 최소 여유 (긴급 Patch §2). */
 const TOOLBAR_ROOM = 40
+/** 글꼴 목록의 화면 폭과 블록과의 틈 (px, 캔버스 배율과 무관). */
+const FONT_PANEL_WIDTH = 280
+const FONT_PANEL_GAP = 12
 
 /**
  * Alignment icon: three lines, the middle one short, pushed to the side the
@@ -171,6 +176,24 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   const paperOpacity = studio === null ? DEFAULT_PAPER_OPACITY : studio.effectsOf(block.id).paperOpacity
   const [paper, setPaper] = useState<PaperShape | null>(null)
   const [layerOpen, setLayerOpen] = useState(false)
+  /**
+   * 글꼴 (글꼴 미리보기 Patch, 2026-09-17).
+   *
+   * 문구·버튼처럼 글꼴을 고르는 블록만. 캔버스는 **고른 글꼴**로, 목록에서 가리키는
+   * 중이면 **그 글꼴**로 그린다. 작성기에는 작업판이 없어 언제나 기본 글꼴이다.
+   */
+  const takesFont = studio !== null && meta.hasText && !meta.requiresAsset
+  const order = takesFont ? studio.blockOrderOf(block.id) : null
+  const pointed = useFontPreview(block.id)
+  const face = useCanvasFace(
+    pointed?.family ?? order?.fontFamily,
+    pointed === null ? order?.fontWeight : pointed.weight,
+  )
+  const faceStyle = face === null ? undefined : { fontFamily: face.fontFamily, fontWeight: face.fontWeight }
+  const measure = useMemo(() => (face === null ? measureLine : createLineMeasurer(face)), [face])
+  const [fontOpen, setFontOpen] = useState(false)
+  const fontRef = useRef<HTMLSpanElement | null>(null)
+  const fontPanelRef = useRef<HTMLDivElement | null>(null)
   const drag = useRef<DragState | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
   const menuRef = useRef<HTMLDetailsElement | null>(null)
@@ -188,8 +211,8 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   // the kinds that keep a card are measured with that card's chrome.
   const bare = drawsBareText(block)
   const fitArea = bare
-    ? (measureLine ? { measure: measureLine } : {})
-    : { padX: CARD_PADDING_X, padY: CARD_CHROME_Y, ...(measureLine ? { measure: measureLine } : {}) }
+    ? (measure ? { measure } : {})
+    : { padX: CARD_PADDING_X, padY: CARD_CHROME_Y, ...(measure ? { measure } : {}) }
   const fit = fitTextSize(block.content ?? '', block.position.width, block.position.height, fitArea)
   // While typing, the wording on screen is the draft, so it is what decides the
   // size. An empty field shows the hint, which is not the user's wording and is
@@ -231,6 +254,25 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
     window.addEventListener('mousedown', onDown)
     return () => window.removeEventListener('mousedown', onDown)
   }, [layerOpen])
+
+  // 글꼴 목록도 같은 규칙이다. 닫히면 가리키던 글꼴을 거둔다.
+  useEffect(() => {
+    if (!fontOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (fontRef.current?.contains(e.target as Node)) return
+      if (fontPanelRef.current?.contains(e.target as Node)) return
+      setFontOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      clearFontPreview(block.id)
+    }
+  }, [fontOpen, block.id])
+  // 블록을 놓으면(선택 해제) 목록도 닫는다.
+  useEffect(() => {
+    if (!selected) setFontOpen(false)
+  }, [selected])
   /**
    * 더블클릭이 파일 선택창을 여는가 (손검수 Patch 2 §10).
    *
@@ -535,6 +577,27 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
         </span>
       )}
 
+      {/* 글꼴은 블록 바로 위에서 고른다 (글꼴 미리보기 Patch). 오른쪽 칸까지 가지
+          않고, 가리키는 동안 이 블록의 글자가 그 글꼴로 바뀐다. */}
+      {takesFont && studio !== null && order !== null && (
+        <span className="block-card__layer block-card__font" ref={fontRef}>
+          <button
+            type="button"
+            className={`block-card__tool block-card__layer-trigger${fontOpen ? ' is-open' : ''}${
+              order.fontFamily === undefined ? ' block-card__font-missing' : ''
+            }`}
+            aria-label="글꼴 고르기"
+            aria-expanded={fontOpen}
+            title={order.fontFamily ?? '글꼴을 골라야 만들 수 있습니다'}
+            onClick={() => setFontOpen((v) => !v)}
+          >
+            <span className="block-card__font-name" style={pointed === null ? faceStyle : undefined}>
+              {order.fontFamily ?? '글꼴'}
+            </span>{' '}
+            ▾
+          </button>
+        </span>
+      )}
       {/* 레이어 순서는 블록 바로 옆에서 바꾼다 — 우측 패널까지 갔다 오는 동안
           "무엇을 고르고 있었는지"를 놓치기 때문이다 (긴급 Patch §2). */}
       <span className="block-card__layer" ref={layerRef}>
@@ -628,6 +691,50 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
     </span>
   )
 
+  /**
+   * 글꼴 목록은 **블록 옆에** 뜬다. 막대 바로 아래에 띄웠더니 목록이 그 블록의
+   * 글자를 덮어, 가리키는 글꼴로 바뀌는 모습을 볼 수 없었다 (2026-09-17 확인).
+   * 오른쪽에 자리가 없으면 왼쪽, 둘 다 없으면 블록 아래로 간다.
+   */
+  const fontPanelSide = (() => {
+    const k = scale > 0 ? scale : 1
+    const room = (FONT_PANEL_WIDTH + FONT_PANEL_GAP) / k
+    if (block.position.x + block.position.width + room <= canvasWidth) return 'right'
+    if (block.position.x - room >= 0) return 'left'
+    return 'below'
+  })()
+  const fontPanel = fontOpen && takesFont && studio !== null && order !== null && (
+    <div
+      ref={fontPanelRef}
+      className={`block-card__font-panel block-card__font-panel--${fontPanelSide}`}
+      role="dialog"
+      aria-label="글꼴 목록"
+      // 캔버스가 줄어 있어도 목록은 제 크기로 읽힌다.
+      style={{ transform: `scale(${String(1 / (scale > 0 ? scale : 1))})` }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation()
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          setFontOpen(false)
+        }
+      }}
+      onWheel={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+    >
+      <FontPicker
+        sample={block.content ?? ''}
+        family={order.fontFamily}
+        weight={order.fontWeight}
+        autoFocus
+        onPick={(patch) => void studio.setBlockOrder(block.id, patch)}
+        onPreview={(point) =>
+          point === null ? clearFontPreview(block.id) : setFontPreview({ blockId: block.id, ...point })
+        }
+      />
+    </div>
+  )
+
   const linkBadge = linkUrl !== undefined && (
     <span className="block-card__link-badge" title={`연결됨: ${linkUrl}`} aria-label="연결된 주소 있음">
       <LinkIcon />
@@ -660,7 +767,7 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
         // 열려 있는 팝오버(링크 입력·⋯ 메뉴)만 뒤 카드보다 앞으로 나온다.
         // **선택만으로는 나오지 않는다** — 고른 것이 앞으로 튀어나오면 작업자가
         // 정한 레이어 순서가 클릭 한 번에 뒤집혀 보인다 (배경 합성 1차 §4).
-        editing || linkOpen ? 'is-front' : '',
+        editing || linkOpen || fontOpen ? 'is-front' : '',
         dropActive ? 'is-drop-target' : '',
         fit.overflow ? 'is-overflowing' : '',
       ]
@@ -773,7 +880,7 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
           autoFocus
           aria-label={`${block.label} 내용`}
           placeholder={meta.requiresAsset ? '어떤 이미지가 들어갈지 적어주세요' : `${meta.label} 입력…`}
-          style={{ fontSize: meta.requiresAsset ? undefined : draftFit, textAlign: align }}
+          style={{ fontSize: meta.requiresAsset ? undefined : draftFit, textAlign: align, ...faceStyle }}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commitEdit}
           onPointerDown={(e) => e.stopPropagation()}
@@ -886,11 +993,13 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
       ) : (
         <span
           className={`block-card__content${hasContent(block) ? '' : ' block-card__content--placeholder'}`}
-          style={{ fontSize: fit.fontSize, textAlign: align }}
+          style={{ fontSize: fit.fontSize, textAlign: align, ...faceStyle }}
         >
           {hasContent(block) ? block.content : `${meta.label} 입력…`}
         </span>
       )}
+
+      {fontPanel}
 
       {linkOpen && (
         <div className="block-card__link-editor" onPointerDown={(e) => e.stopPropagation()}>

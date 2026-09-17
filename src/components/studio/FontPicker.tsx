@@ -29,12 +29,12 @@ import {
   FONT_SCRIPTS,
   filterFamilies,
   groupFamilies,
-  parseFontCatalog,
   pickWeight,
   type FontFamily,
   type FontScript,
 } from '../../domain/fontCatalog'
-import { faceName, fetchFontCatalog, loadFont } from '../../services/fontLoader'
+import { faceName, loadFont } from '../../services/fontLoader'
+import { fontFamilies } from '../../features/studio/blockFont'
 
 /** 굵기 이름 — 숫자만 보여 주면 무엇이 굵은 쪽인지 화면이 말하지 못한다. */
 const WEIGHT_LABEL: readonly { weight: number; label: string }[] = [
@@ -45,8 +45,6 @@ const WEIGHT_LABEL: readonly { weight: number; label: string }[] = [
   { weight: 700, label: '굵게' },
   { weight: 900, label: '가장 굵게' },
 ]
-
-let cached: FontFamily[] | null = null
 
 /**
  * 목록의 한 줄. **보이기 시작할 때** 글꼴을 받는다.
@@ -60,12 +58,15 @@ function FontRow({
   weight,
   mine,
   onPick,
+  onPoint,
 }: {
   item: FontFamily
   sample: string
   weight: number
   mine: boolean
   onPick: () => void
+  /** 마우스가 올라가거나 키보드로 닿았을 때 — 캔버스가 이 글꼴로 바뀐다. */
+  onPoint: () => void
 }) {
   const ref = useRef<HTMLButtonElement | null>(null)
   const [ready, setReady] = useState(false)
@@ -111,6 +112,8 @@ function FontRow({
       aria-label={`글꼴 ${item.family}`}
       className={`font-pick__item${mine ? ' is-on' : ''}`}
       onClick={onPick}
+      onMouseEnter={onPoint}
+      onFocus={onPoint}
     >
       <span
         className="font-pick__sample"
@@ -128,30 +131,50 @@ export function FontPicker({
   family,
   weight,
   onPick,
+  onPreview,
+  autoFocus = false,
 }: {
   /** 미리보기에 쓸 글자 — 그 문구 자체를 보여 준다. */
   sample: string
   family: string | undefined
   weight: number | undefined
   onPick: (patch: { fontFamily?: string | undefined; fontWeight?: number | undefined }) => void
+  /**
+   * 가리키는 글꼴을 캔버스에 잠깐 보여 준다 (글꼴 미리보기 Patch). 목록을 벗어나면
+   * `null` — 고른 글꼴로 돌아간다. 저장하지 않는다.
+   */
+  onPreview?: (point: { family: string; weight?: number | undefined } | null) => void
+  /** 막대에서 열었을 때 검색칸에 바로 적을 수 있게. */
+  autoFocus?: boolean
 }) {
-  const [families, setFamilies] = useState<FontFamily[] | null>(cached)
+  const [families, setFamilies] = useState<FontFamily[] | null>(null)
   const [query, setQuery] = useState('')
+  const listRef = useRef<HTMLDivElement | null>(null)
   const chosenScript = families?.find((f) => f.family === family)?.script
   const [script, setScript] = useState<FontScript>(chosenScript ?? 'ko')
 
+  // 목록은 캔버스와 같은 곳에서 한 번만 읽는다 (`blockFont.ts`).
   useEffect(() => {
-    if (cached !== null) return
     let alive = true
     void (async () => {
-      const list = parseFontCatalog(await fetchFontCatalog())
-      cached = list
+      const list = await fontFamilies()
       if (alive) setFamilies(list)
     })()
     return () => {
       alive = false
     }
   }, [])
+
+  // 열리면 지금 고른 글꼴이 보이게 한다 — 97개 중 어디였는지 찾지 않도록.
+  const loaded = families !== null
+  useEffect(() => {
+    if (!loaded) return
+    const row = listRef.current?.querySelector<HTMLElement>('.font-pick__item.is-on')
+    const list = listRef.current
+    if (row && list) list.scrollTop = Math.max(0, row.offsetTop - list.offsetTop - 8)
+    // 처음 한 번만. 고를 때마다 목록이 튀면 훑던 자리를 잃는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded])
 
   // 다른 블록을 고르면 그 블록의 글꼴이 있는 쪽을 연다.
   useEffect(() => {
@@ -192,9 +215,39 @@ export function FontPicker({
         placeholder="글꼴 이름으로 찾기"
         aria-label="글꼴 이름으로 찾기"
         value={query}
+        autoFocus={autoFocus}
         onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={(e) => {
+          // 검색칸에서 아래 화살표를 누르면 목록의 첫 줄로 간다.
+          if (e.key !== 'ArrowDown') return
+          e.preventDefault()
+          listRef.current?.querySelector<HTMLButtonElement>('.font-pick__item')?.focus()
+        }}
       />
-      <div className="font-pick__list" role="radiogroup" aria-label="글꼴 고르기">
+      <div
+        ref={listRef}
+        className="font-pick__list"
+        role="radiogroup"
+        aria-label="글꼴 고르기"
+        onMouseLeave={() => {
+          // 키보드로 훑는 중이면 그 줄을 계속 보여 준다.
+          if (!listRef.current?.contains(document.activeElement)) onPreview?.(null)
+        }}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) onPreview?.(null)
+        }}
+        onKeyDown={(e) => {
+          // 위아래 화살표로 줄을 옮긴다 — 옮길 때마다 캔버스가 그 글꼴로 바뀐다.
+          if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+          const rows = [...(listRef.current?.querySelectorAll<HTMLButtonElement>('.font-pick__item') ?? [])]
+          const at = rows.indexOf(document.activeElement as HTMLButtonElement)
+          const next = rows[Math.min(rows.length - 1, Math.max(0, at + (e.key === 'ArrowDown' ? 1 : -1)))]
+          if (next === undefined) return
+          e.preventDefault()
+          next.focus()
+          next.scrollIntoView?.({ block: 'nearest' })
+        }}
+      >
         {shown.length === 0 && <p className="block-order__empty">맞는 글꼴이 없습니다.</p>}
         {groupFamilies(shown).map((group) => (
           <div key={group.group} className="font-pick__group">
@@ -207,6 +260,7 @@ export function FontPicker({
                 weight={weight ?? DEFAULT_WEIGHT}
                 mine={item.family === family}
                 onPick={() => onPick({ fontFamily: item.family })}
+                onPoint={() => onPreview?.({ family: item.family, weight })}
               />
             ))}
           </div>
@@ -223,6 +277,8 @@ export function FontPicker({
               aria-pressed={(weight ?? DEFAULT_WEIGHT) === w.weight}
               className={`btn font-pick__weight${(weight ?? DEFAULT_WEIGHT) === w.weight ? ' is-on' : ''}`}
               onClick={() => onPick({ fontWeight: w.weight })}
+              onMouseEnter={() => onPreview?.({ family: chosen.family, weight: w.weight })}
+              onMouseLeave={() => onPreview?.(null)}
             >
               {w.label}
             </button>
