@@ -988,21 +988,42 @@ describe('§3-6 이벤트 페이지 배경도 캔버스에서 옮기고 키운�
 
 // ── 돋보기 (2026-09-17) ─────────────────────────────────────────────────────
 
-describe('§3-7 돋보기 — 클릭 5% 확대, Alt+클릭 5% 축소', () => {
-  it('nudges the canvas zoom in fine steps', async () => {
+describe('§3-7 돋보기 — 도구를 켜고 캔버스를 클릭하면 5% 확대, Alt+클릭 5% 축소', () => {
+  afterEach(() => resetDesignToolsForTests())
+
+  it('does nothing by itself; zooms where the canvas is clicked while on', async () => {
+    resetDesignToolsForTests()
     await openStudio()
     const value = () => screen.getByRole('group', { name: '캔버스 배율' }).querySelector('.studio-zoom__value')!.textContent
     fireEvent.click(screen.getByRole('button', { name: '100%' }))
     await waitFor(() => expect(value()).toBe('100%'))
-    const loupe = screen.getByRole('button', { name: '돋보기' })
+    const loupe = screen.getByRole('button', { name: '돋보기 (Z)' })
     fireEvent.click(loupe)
+    // 단추를 누르는 것만으로는 배율이 그대로다 — 도구가 켜질 뿐.
+    expect(loupe.getAttribute('aria-pressed')).toBe('true')
+    expect(value()).toBe('100%')
+    const sheet = () => document.querySelector<HTMLElement>('.canvas__sheet')!
+    expect(sheet().classList.contains('is-zooming')).toBe(true)
+
+    fireEvent.pointerDown(sheet(), { button: 0, clientX: 50, clientY: 50 })
     await waitFor(() => expect(value()).toBe('105%'))
-    fireEvent.click(loupe)
+    // 블록 위를 눌러도 블록이 아니라 캔버스가 받는다 (조각은 누름을 통과시킨다 — CSS).
+    fireEvent.pointerDown(document.querySelector('.canvas')!, { button: 0, clientX: 5, clientY: 5 })
     await waitFor(() => expect(value()).toBe('110%'))
-    fireEvent.click(loupe, { altKey: true })
-    fireEvent.click(loupe, { altKey: true })
-    fireEvent.click(loupe, { altKey: true })
+    fireEvent.pointerDown(sheet(), { button: 0, altKey: true })
+    fireEvent.pointerDown(sheet(), { button: 0, altKey: true })
+    fireEvent.pointerDown(sheet(), { button: 0, altKey: true })
     await waitFor(() => expect(value()).toBe('95%'))
-    expect(screen.queryByRole('button', { name: '확대' })).toBeNull()
+    // 돋보기로 누른 것은 블록을 만들거나 고르지 않는다.
+    expect(document.querySelectorAll('.canvas__sheet .block-card')).toHaveLength(2)
+
+    // Esc로 끈다.
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.getByRole('button', { name: '돋보기 (Z)' }).getAttribute('aria-pressed')).toBe('false'))
+    fireEvent.pointerDown(sheet(), { button: 0 })
+    expect(value()).toBe('95%')
+    // Z로 켠다.
+    fireEvent.keyDown(window, { key: 'z' })
+    await waitFor(() => expect(screen.getByRole('button', { name: '돋보기 (Z)' }).getAttribute('aria-pressed')).toBe('true'))
   }, 25000)
 })

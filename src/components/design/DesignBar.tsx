@@ -51,7 +51,17 @@ export function DesignBar() {
       if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return
       const key = e.key.toLowerCase()
       const next: DesignTool | null =
-        key === 'v' ? 'select' : key === 't' ? 'text' : key === 'u' ? lastShape : key === 'l' ? 'line' : null
+        key === 'v'
+          ? 'select'
+          : key === 't'
+            ? 'text'
+            : key === 'u'
+              ? lastShape
+              : key === 'l'
+                ? 'line'
+                : key === 'z'
+                  ? 'zoom'
+                  : null
       if (next !== null) {
         setTool(next)
         return
@@ -147,13 +157,15 @@ export function DesignBar() {
       <span className="design-bar__sep" aria-hidden="true" />
 
       <div className="design-bar__options" role="group" aria-label="고른 것의 옵션">
-        {tool !== 'select' ? (
+        {tool === 'zoom' ? (
+          <span className="design-bar__note">돋보기 — 캔버스를 클릭하면 확대 · Alt+클릭 축소 · Esc 끝</span>
+        ) : tool !== 'select' ? (
           <span className="design-bar__note">
             캔버스에서 끌어 {tool === 'text' ? '문구를' : tool === 'line' ? '선을' : tool === 'shadow' ? '그림자를' : '도형을'} 만드세요 · Esc 취소
           </span>
         ) : target === null ? (
           <>
-            <span className="design-bar__note">블록이나 조각을 고르면 옵션이 나옵니다 · V 선택 · T 문자 · U 도형 · L 선</span>
+            <span className="design-bar__note">블록이나 조각을 고르면 옵션이 나옵니다 · V 선택 · T 문자 · U 도형 · L 선 · Z 돋보기</span>
             {fill !== null && fill.missing > 0 && (
               <button
                 type="button"

@@ -18,6 +18,10 @@
  * 상태로 결과를 다시 합친다 (§4).
  */
 
+import { useResultView } from '../../features/studio/useResultView'
+import { useAltHeld } from '../../features/studio/useAltHeld'
+import { nudgeZoom } from '../../features/editor/canvasView'
+import { zoomKeepingPoint } from '../../features/editor/zoomAt'
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
@@ -74,6 +78,8 @@ export function ResultObjectLayer({ pageId, page }: Props) {
   const boxRef = useRef<HTMLDivElement | null>(null)
   /** 든 도구 (도구 막대 Patch). 선택 도구가 아니면 빈 자리를 끌어 새 조각을 만든다. */
   const { tool } = useDesignTools()
+  const view = useResultView()
+  const alt = useAltHeld()
   const createBlock = useCreateDesignBlock()
   const [drawing, setDrawing] = useState<LayoutRect | null>(null)
   const texts = studio?.textObjectsOf(pageId) ?? []
@@ -325,12 +331,30 @@ export function ResultObjectLayer({ pageId, page }: Props) {
 
   return (
     <div
-      className={`result-objects${tool !== 'select' ? ' is-drawing' : ''}`}
+      className={`result-objects${
+        tool === 'zoom' ? ` is-zooming${alt ? ' is-zoom-out' : ''}` : tool !== 'select' ? ' is-drawing' : ''
+      }`}
       ref={boxRef}
       // 빈 곳을 누르면 선택이 풀린다. 조작 UI가 남아 있으면 무엇이 골라져
       // 있는지 화면이 거짓말을 한다. 도구를 들었으면 끌어서 새 조각을 만든다.
       onPointerDown={(e) => {
         studio.selectObject(null)
+        // 돋보기 (돋보기 도구 Patch) — 누른 자리를 붙든 채 5%씩.
+        if (tool === 'zoom') {
+          if (e.button !== 0 || view === null) return
+          e.preventDefault()
+          const direction = e.altKey ? -1 : 1
+          const stage = boxRef.current
+          zoomKeepingPoint(
+            stage?.closest<HTMLElement>('.compare__viewport') ?? null,
+            stage,
+            { x: e.clientX, y: e.clientY },
+            view.zoom,
+            nudgeZoom(view.zoom, direction),
+          )
+          view.nudge(direction)
+          return
+        }
         if (tool === 'select' || createBlock === null || e.button !== 0) return
         e.preventDefault()
         const box = boxRef.current?.getBoundingClientRect()

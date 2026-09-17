@@ -31,7 +31,7 @@ import {
   textObjectsOf,
 } from '../../domain/studioJob'
 import { planLines } from '../../domain/textLayers'
-import { lastFamily, requestEdit, setTool, type DesignTool } from './designTools'
+import { lastFamily, requestEdit, setTool, type CreateTool } from './designTools'
 import { paintLiveShape, paintLiveText } from './liveText'
 
 export const NEW_TEXT = '텍스트를 입력하세요'
@@ -50,7 +50,7 @@ export interface CreateDrag {
 }
 
 /** 끌어 놓은 두 점을 블록 상자로. */
-export function dragBox(tool: Exclude<DesignTool, 'select'>, drag: CreateDrag): { rect: LayoutRect; line?: ShapeLook['line'] } {
+export function dragBox(tool: CreateTool, drag: CreateDrag): { rect: LayoutRect; line?: ShapeLook['line'] } {
   const dx = drag.to.x - drag.from.x
   const dy = drag.to.y - drag.from.y
   const tiny = Math.abs(dx) < TINY && Math.abs(dy) < TINY
@@ -85,14 +85,14 @@ export function dragBox(tool: Exclude<DesignTool, 'select'>, drag: CreateDrag): 
   }
 }
 
-export function useCreateDesignBlock(): ((tool: Exclude<DesignTool, 'select'>, drag: CreateDrag) => Promise<string | null>) | null {
+export function useCreateDesignBlock(): ((tool: CreateTool, drag: CreateDrag) => Promise<string | null>) | null {
   const editor = useBriefEditor()
   const studio = useStudioJob()
   const generation = useImageGeneration()
   const { activePageId, getDocument } = useBriefDocument()
 
   const create = useCallback(
-    async (tool: Exclude<DesignTool, 'select'>, drag: CreateDrag): Promise<string | null> => {
+    async (tool: CreateTool, drag: CreateDrag): Promise<string | null> => {
       if (studio === null) return null
       const pageId = activePageId
       const id = createId('blk')

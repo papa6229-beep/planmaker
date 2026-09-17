@@ -9,8 +9,13 @@
 import { useSyncExternalStore } from 'react'
 import type { ShapeKind } from '../../domain/shapeLook'
 
-/** `shadow`: 그림자만 남는 도형 (그림자 레이어 Patch). */
-export type DesignTool = 'select' | 'text' | ShapeKind | 'shadow'
+/**
+ * `shadow`: 그림자만 남는 도형 (그림자 레이어 Patch).
+ * `zoom`: 돋보기 — 캔버스를 누르면 확대, Alt+누르면 축소 (돋보기 도구 Patch). 무엇도 만들지 않는다.
+ */
+export type DesignTool = 'select' | 'text' | ShapeKind | 'shadow' | 'zoom'
+/** 끌어서 무언가를 만드는 도구. */
+export type CreateTool = Exclude<DesignTool, 'select' | 'zoom'>
 
 interface ToolState {
   tool: DesignTool
@@ -52,7 +57,7 @@ export function useDesignTools(): ToolState {
 
 export function setTool(tool: DesignTool): void {
   set(
-    tool !== 'select' && tool !== 'text' && tool !== 'line'
+    tool !== 'select' && tool !== 'text' && tool !== 'line' && tool !== 'zoom'
       ? { tool, lastShape: tool }
       : { tool },
   )

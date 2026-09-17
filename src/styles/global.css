@@ -3748,3 +3748,21 @@ button { font-family: inherit; }
    그림자를 깔려고 제품 위에서 끌기 시작하면, 제품이 잡혀 아무것도 생기지 않았다. */
 .result-objects.is-drawing .result-object,
 .canvas__sheet.is-drawing .block-card { pointer-events: none; }
+
+/* 블록 도구막대의 글자 단추 — 복제·삭제 (2026-09-17). ⋯ 안에 숨기지 않고 바로 보인다. */
+.block-card__tool--text { padding: 2px 6px; font-size: 11px; font-weight: 600; color: var(--color-text); }
+.block-card__tool--text:hover { background: var(--color-panel-muted, #f1f2f6); }
+.block-card__tool--danger { color: var(--color-danger, #b91c1c); }
+
+/* 돋보기 도구 (2026-09-17) — 캔버스·완성본 위에서 누르면 확대, Alt+누르면 축소. 조각은 누름을 통과시킨다. */
+.canvas:has(.canvas__sheet.is-zooming),
+.canvas__sheet.is-zooming,
+.result-objects.is-zooming { cursor: zoom-in; }
+.canvas:has(.canvas__sheet.is-zoom-out),
+.canvas__sheet.is-zoom-out,
+.result-objects.is-zoom-out { cursor: zoom-out; }
+.canvas__sheet.is-zooming .block-card,
+.result-objects.is-zooming .result-object { pointer-events: none; }
+.studio-zoom__loupe.is-on { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
+.studio-zoom__loupe.is-on:hover { color: #fff; }
+.studio-zoom__loupe.is-on.is-out { cursor: zoom-out; }

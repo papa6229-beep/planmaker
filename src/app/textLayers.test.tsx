@@ -1569,7 +1569,10 @@ describe('§16 완성본이 가운데를 다 쓴다', () => {
     // 100%로 두면 페이지 폭 그대로, 확대하면 판이 그만큼 넓어진다.
     fireEvent.click(screen.getByRole('button', { name: '100%' }))
     await waitFor(() => expect(stage().style.width).toBe('840px'), { timeout: 5000 })
-    fireEvent.click(screen.getByRole('button', { name: '돋보기' }))
+    // 돋보기를 켜고 완성본을 누르면 커진다 (돋보기 도구 Patch).
+    fireEvent.click(screen.getByRole('button', { name: '돋보기 (Z)' }))
+    fireEvent.pointerDown(container.querySelector('.result-objects')!, { button: 0, clientX: 10, clientY: 10 })
+    fireEvent.keyDown(window, { key: 'Escape' })
     await waitFor(() => {
       expect(Number.parseInt(stage().style.width, 10)).toBeGreaterThan(840)
     }, { timeout: 5000 })

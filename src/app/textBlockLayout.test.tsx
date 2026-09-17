@@ -160,9 +160,8 @@ describe('§3.2 부유 도구막대', () => {
     const bar = card.querySelector('.block-toolbar') as HTMLElement
     expect(bar).not.toBeNull()
     expect(bar.textContent).toContain('문구')
-    expect(within(bar).getByLabelText('문구 블록 메뉴')).toBeTruthy()
-    // Deleting and duplicating still live there.
-    await user.click(within(bar).getByLabelText('문구 블록 메뉴'))
+    // 복제·삭제는 ⋯ 없이 바로 보인다 (2026-09-17). 문구에는 ⋯가 없다 — 그 안에 남을 것이 없다.
+    expect(within(bar).queryByLabelText('문구 블록 메뉴')).toBeNull()
     expect(within(bar).getByRole('button', { name: '블록 복제' })).toBeTruthy()
     expect(within(bar).getByRole('button', { name: '삭제' })).toBeTruthy()
 

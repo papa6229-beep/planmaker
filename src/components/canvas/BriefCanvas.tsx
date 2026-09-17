@@ -27,6 +27,9 @@ import { OriginalOverlay } from '../studio/OriginalBrief'
 import { BackgroundHandle } from '../studio/BackgroundHandle'
 import { useDesignTools } from '../../features/studio/designTools'
 import { dragBox, useCreateDesignBlock } from '../../features/studio/useCreateDesignBlock'
+import { useAltHeld } from '../../features/studio/useAltHeld'
+import { nudgeZoom } from '../../features/editor/canvasView'
+import { zoomKeepingPoint } from '../../features/editor/zoomAt'
 
 /** Horizontal padding of the `.canvas` scroll container (keep in sync with CSS). */
 const CANVAS_PADDING = 24
@@ -55,7 +58,8 @@ export function BriefCanvas() {
   // 작업판에서만 배경이 있다. 작성기에는 provider 자체가 없어 언제나 `null`이므로
   // 같은 캔버스가 두 표면에서 그대로 쓰인다 (배경 합성 1차 §5).
   const studio = useStudioJob()
-  const { zoom, reportViewport } = useCanvasView()
+  const { zoom, reportViewport, nudge } = useCanvasView()
+  const alt = useAltHeld()
   /** 든 도구 (도구 막대 Patch). 선택 도구가 아니면 빈 자리를 끌어 블록을 만든다. */
   const { tool } = useDesignTools()
   const createBlock = useCreateDesignBlock()
@@ -118,14 +122,28 @@ export function BriefCanvas() {
   }
 
   return (
-    <section className="canvas" aria-label="기획 캔버스" ref={canvasRef}>
+    <section
+      className="canvas"
+      aria-label="기획 캔버스"
+      ref={canvasRef}
+      onPointerDown={(e) => {
+        // 돋보기 (돋보기 도구 Patch) — 판 위든 둘레든 누른 자리를 붙든 채 5%씩.
+        if (tool !== 'zoom' || e.button !== 0) return
+        e.preventDefault()
+        const direction = e.altKey ? -1 : 1
+        zoomKeepingPoint(canvasRef.current, sheetRef.current, { x: e.clientX, y: e.clientY }, zoom, nudgeZoom(zoom, direction))
+        nudge(direction)
+      }}
+    >
       <div
         className="canvas__viewport"
         style={{ width: canvasWidth * zoom, height: canvasHeight * zoom + HEIGHT_HANDLE_ROOM }}
       >
         <div
           ref={sheetRef}
-          className={`canvas__sheet${dragOver ? ' is-drag-over' : ''}${tool !== 'select' ? ' is-drawing' : ''}`}
+          className={`canvas__sheet${dragOver ? ' is-drag-over' : ''}${
+            tool === 'zoom' ? ` is-zooming${alt ? ' is-zoom-out' : ''}` : tool !== 'select' ? ' is-drawing' : ''
+          }`}
           style={{
             width: canvasWidth,
             height: canvasHeight,
@@ -136,6 +154,7 @@ export function BriefCanvas() {
             // 빈 자리를 누르면 선택이 풀린다. 그대로 끌면 범위 선택이 된다
             // (범위 선택 Patch) — 누르는 순간에는 둘을 구별할 수 없으므로,
             // 먼저 풀고 끌기 시작한 뒤에야 고르기로 넘어간다.
+            if (tool === 'zoom') return
             if (e.target !== e.currentTarget || e.button !== 0) return
             selectBlock(null)
             const sheet = sheetRef.current

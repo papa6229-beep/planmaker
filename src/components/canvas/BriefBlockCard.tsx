@@ -613,46 +613,62 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
           <LinkIcon />
         </button>
       )}
-      <details className="block-card__menu" ref={menuRef}>
-        <summary className="block-card__menu-trigger" aria-label={`${block.label} 블록 메뉴`}>⋯</summary>
-        <div className="block-card__menu-panel">
-          {meta.requiresAsset && (
-            <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); openFilePicker() }}>
-              {studio === null
-                ? (thumbUrl ? '참고 이미지 교체' : '참고 이미지 넣기')
-                : (productAssetId === undefined ? '제품 이미지 넣기' : '제품 이미지 교체')}
-            </button>
-          )}
-          {meta.requiresAsset && studio === null && thumbUrl && (
-            <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); removeBlockAsset(block.id) }}>
-              참고 이미지 제거
-            </button>
-          )}
-          {/* 작업판에서 지우는 것은 연결한 제품 이미지뿐이다. 작성자가 붙인
-              참고 캡처는 기획서의 내용이라 여기서 지울 수 없다. */}
-          {meta.requiresAsset && studio !== null && productAssetId !== undefined && (
-            <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); setShowingReference(false); studio.removeProductImage(block.id) }}>
-              제품 이미지 제거
-            </button>
-          )}
-          {meta.requiresAsset && studio !== null && thumbUrl !== undefined && productAssetId !== undefined && (
-            <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); setShowingReference((v) => !v) }}>
-              {showingReference ? '제품 이미지 보기' : '참고 이미지 보기'}
-            </button>
-          )}
-          {meta.requiresAsset && thumbUrl && (
-            <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); beginEdit() }}>
-              설명 수정
-            </button>
-          )}
-          <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); duplicateBlock(block.id) }}>
-            블록 복제
-          </button>
-          <button type="button" className="block-card__menu-item block-card__menu-item--danger" onClick={() => { closeMenu(); deleteBlock(block.id) }}>
-            삭제
-          </button>
-        </div>
-      </details>
+      {/* 복제·삭제는 ⋯ 안에 숨기지 않는다 (2026-09-17 사용자: "굳이 … 안 눌러도 보이게"). */}
+      <button
+        type="button"
+        className="block-card__tool block-card__tool--text"
+        aria-label="블록 복제"
+        title="복제"
+        onClick={() => duplicateBlock(block.id)}
+      >
+        복제
+      </button>
+      <button
+        type="button"
+        className="block-card__tool block-card__tool--text block-card__tool--danger"
+        aria-label="삭제"
+        title="삭제"
+        onClick={() => deleteBlock(block.id)}
+      >
+        삭제
+      </button>
+      {/* 남는 ⋯는 이미지 블록의 그림 일뿐이다. */}
+      {meta.requiresAsset && (
+        <details className="block-card__menu" ref={menuRef}>
+          <summary className="block-card__menu-trigger" aria-label={`${block.label} 블록 메뉴`}>⋯</summary>
+          <div className="block-card__menu-panel">
+            {meta.requiresAsset && (
+              <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); openFilePicker() }}>
+                {studio === null
+                  ? (thumbUrl ? '참고 이미지 교체' : '참고 이미지 넣기')
+                  : (productAssetId === undefined ? '제품 이미지 넣기' : '제품 이미지 교체')}
+              </button>
+            )}
+            {meta.requiresAsset && studio === null && thumbUrl && (
+              <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); removeBlockAsset(block.id) }}>
+                참고 이미지 제거
+              </button>
+            )}
+            {/* 작업판에서 지우는 것은 연결한 제품 이미지뿐이다. 작성자가 붙인
+                참고 캡처는 기획서의 내용이라 여기서 지울 수 없다. */}
+            {meta.requiresAsset && studio !== null && productAssetId !== undefined && (
+              <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); setShowingReference(false); studio.removeProductImage(block.id) }}>
+                제품 이미지 제거
+              </button>
+            )}
+            {meta.requiresAsset && studio !== null && thumbUrl !== undefined && productAssetId !== undefined && (
+              <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); setShowingReference((v) => !v) }}>
+                {showingReference ? '제품 이미지 보기' : '참고 이미지 보기'}
+              </button>
+            )}
+            {meta.requiresAsset && thumbUrl && (
+              <button type="button" className="block-card__menu-item" onClick={() => { closeMenu(); beginEdit() }}>
+                설명 수정
+              </button>
+            )}
+          </div>
+        </details>
+      )}
     </span>
   )
 
