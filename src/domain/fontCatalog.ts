@@ -19,6 +19,18 @@
 /** 화면에서 갈래를 묶는 이름. 목록 파일이 정하는 값을 그대로 쓴다. */
 export type FontGroup = string
 
+/**
+ * 한글 글꼴인가, 외국어 글꼴인가 (글꼴 전체 Patch, 2026-09-17).
+ *
+ * 한글 음절을 2000자 넘게 가진 글꼴만 `ko`다. 영문 글꼴로 한글 문구를 고르면
+ * 모자란 글자가 다른 글꼴로 섞여 나온다 — 그래서 화면에서 따로 보인다.
+ */
+export type FontScript = 'ko' | 'latin'
+export const FONT_SCRIPTS: readonly { script: FontScript; label: string }[] = [
+  { script: 'ko', label: '한글' },
+  { script: 'latin', label: '외국어' },
+]
+
 export interface FontFile {
   /** `fonts/` 아래의 파일 이름. */
   file: string
@@ -27,6 +39,7 @@ export interface FontFile {
   /** 100(가늘게) ~ 900(굵게). */
   weight: number
   group: FontGroup
+  script: FontScript
   bytes: number
   /** 파일이 스스로 밝힌 저작권 문구. 나중에 확인할 일이 생긴다. */
   copyright?: string
@@ -36,6 +49,7 @@ export interface FontFile {
 export interface FontFamily {
   family: string
   group: FontGroup
+  script: FontScript
   /** 가는 것부터 굵은 것 순서. */
   weights: FontFile[]
 }
@@ -59,6 +73,8 @@ export function parseFontCatalog(raw: unknown): FontFamily[] {
       family: r.family,
       weight,
       group: typeof r.group === 'string' ? r.group : '기타',
+      // 예전 목록에는 이 칸이 없었고, 그때 실린 것은 전부 한글 글꼴이었다.
+      script: r.script === 'latin' ? 'latin' : 'ko',
       bytes: typeof r.bytes === 'number' ? r.bytes : 0,
       ...(typeof r.copyright === 'string' ? { copyright: r.copyright } : {}),
       ...(typeof r.licenseUrl === 'string' && r.licenseUrl.length > 0 ? { licenseUrl: r.licenseUrl } : {}),
@@ -68,7 +84,7 @@ export function parseFontCatalog(raw: unknown): FontFamily[] {
   const byFamily = new Map<string, FontFamily>()
   for (const file of files) {
     const found = byFamily.get(file.family)
-    if (found === undefined) byFamily.set(file.family, { family: file.family, group: file.group, weights: [file] })
+    if (found === undefined) byFamily.set(file.family, { family: file.family, group: file.group, script: file.script, weights: [file] })
     else found.weights.push(file)
   }
   for (const family of byFamily.values()) family.weights.sort((a, b) => a.weight - b.weight)
@@ -97,4 +113,21 @@ export function groupFamilies(families: readonly FontFamily[]): { group: FontGro
     else found.families.push(family)
   }
   return out
+}
+
+/**
+ * 화면에 보일 패밀리만 (글꼴 전체 Patch).
+ *
+ * 글꼴이 백 가지를 넘으면 목록만으로는 고를 수 없다. 글자 갈래(한글/외국어)로
+ * 먼저 나누고, 이름 일부로 좁힌다. 대소문자와 띄어쓰기는 가리지 않는다.
+ */
+export function filterFamilies(
+  families: readonly FontFamily[],
+  script: FontScript,
+  query: string,
+): FontFamily[] {
+  const q = query.replace(/\s+/g, '').toLowerCase()
+  return families.filter(
+    (f) => f.script === script && (q.length === 0 || f.family.replace(/\s+/g, '').toLowerCase().includes(q)),
+  )
 }

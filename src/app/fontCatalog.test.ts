@@ -10,6 +10,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   DEFAULT_WEIGHT,
+  filterFamilies,
   groupFamilies,
   parseFontCatalog,
   pickWeight,
@@ -72,7 +73,7 @@ describe('pickWeight', () => {
   })
 
   it('빈 패밀리는 아무것도 주지 않는다', () => {
-    expect(pickWeight({ family: '빈 것', group: '기타', weights: [] } as FontFamily)).toBeNull()
+    expect(pickWeight({ family: '빈 것', group: '기타', script: 'ko', weights: [] } as FontFamily)).toBeNull()
   })
 })
 
@@ -81,5 +82,26 @@ describe('groupFamilies', () => {
     const grouped = groupFamilies(parseFontCatalog(RAW))
     expect(grouped.map((g) => g.group)).toEqual(['본문·다목적', '임팩트'])
     expect(grouped[0]!.families.map((f) => f.family)).toEqual(['Pretendard'])
+  })
+})
+
+describe('filterFamilies — 글꼴 전체 Patch', () => {
+  const families = parseFontCatalog([
+    ...RAW,
+    { file: 'f100-antonio-700.woff2', family: 'Antonio', weight: 700, group: '산세리프', script: 'latin' },
+  ])
+
+  it('예전 목록(갈래 칸 없음)은 한글로 읽는다', () => {
+    expect(families.find((f) => f.family === 'Pretendard')!.script).toBe('ko')
+  })
+
+  it('한글과 외국어를 나눈다', () => {
+    expect(filterFamilies(families, 'latin', '').map((f) => f.family)).toEqual(['Antonio'])
+    expect(filterFamilies(families, 'ko', '').map((f) => f.family)).toEqual(['Pretendard', 'Black Han Sans'])
+  })
+
+  it('이름 일부로 좁힌다 — 대소문자·띄어쓰기는 가리지 않는다', () => {
+    expect(filterFamilies(families, 'ko', 'blackhan').map((f) => f.family)).toEqual(['Black Han Sans'])
+    expect(filterFamilies(families, 'ko', '없는 이름')).toEqual([])
   })
 })
