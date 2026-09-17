@@ -34,6 +34,8 @@ import { ObjectPostEditor, postEditMarks } from './ObjectPostEditor'
 
 /** 후보정 창의 폭과 조각과의 틈 (화면 px). */
 const EDITOR_WIDTH = 300
+/** 조각 위 막대 두 줄이 설 자리 (화면 px). 이보다 위에 붙은 조각은 막대를 아래로 내린다. */
+const TOOLBAR_ROOM_PX = 64
 const EDITOR_GAP = 14
 
 interface Props {
@@ -402,10 +404,14 @@ export function ResultObjectLayer({ pageId, page }: Props) {
         // 것인지 화면이 말해 주지 못한다.
         const selected = studio.selectedObjectBlockId === object.blockId
         const url = urls[object.assetId]
+        // 지면 맨 위의 조각은 위쪽 막대가 판 밖으로 나가 머리글 밑에 깔린다 — 그때는
+        // 막대를 조각 **아래**로 내린다 (2026-09-17 확인: 맨 위 문구의 후보정을 못 누름).
+        const pxPerUnit = (boxRef.current?.getBoundingClientRect().width ?? page.width) / page.width
+        const nearTop = object.rect.y * pxPerUnit < TOOLBAR_ROOM_PX
         return (
           <div
             key={`${kind}-${object.blockId}`}
-            className={`result-object ${kind}-object${picked ? ' is-picked' : ''}${selected ? ' is-selected' : ''}`}
+            className={`result-object ${kind}-object${picked ? ' is-picked' : ''}${selected ? ' is-selected' : ''}${nearTop ? ' is-near-top' : ''}`}
             role="button"
             tabIndex={0}
             aria-pressed={picked}

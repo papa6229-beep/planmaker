@@ -25,6 +25,7 @@ import type { LayoutRect } from './imageLayout'
 import type { StudioTextObject } from './textObjects'
 import { NO_TONE, normalizeTone, type ToneAdjust } from './toneAdjust'
 import type { BriefDocument } from './pageSchema'
+import type { TextLook } from './textLook'
 
 export const STUDIO_JOB_VERSION = '0.1.0'
 
@@ -414,7 +415,25 @@ export function withPageResult(job: StudioJob, result: GeneratedPageResult, now:
 export function pageResultIsStale(job: StudioJob | null, doc: BriefDocument, pageId: string): boolean {
   const result = pageResultOf(job, pageId)
   if (result === undefined) return false
-  return result.sourceFingerprint !== documentFingerprint(doc)
+  // 살아 있는 문구의 **문구 수정**은 기획서가 결과와 어긋난 것이 아니다 — 그 조각은
+  // 이미 새 문구로 다시 그려졌다 (살아 있는 문구 Patch). 만들 때의 문구로 되돌려 잰다.
+  const made = new Map(
+    textObjectsOf(job, pageId)
+      .filter((o) => o.live === true && o.text !== undefined)
+      .map((o) => [o.blockId, o.text!] as const),
+  )
+  const measured =
+    made.size === 0
+      ? doc
+      : {
+          ...doc,
+          pages: doc.pages.map((p) =>
+            p.id !== pageId
+              ? p
+              : { ...p, blocks: p.blocks.map((b) => (made.has(b.id) ? { ...b, content: made.get(b.id)! } : b)) },
+          ),
+        }
+  return result.sourceFingerprint !== documentFingerprint(measured)
 }
 
 /**
@@ -557,6 +576,11 @@ export interface BlockOrder {
   fontFamily?: string | undefined
   /** 100~900. 그 글꼴에 없는 굵기면 가장 가까운 것으로 그린다. */
   fontWeight?: number | undefined
+  /**
+   * 색 · 테두리 · 그림자 (살아 있는 문구 Patch). 없으면 꾸밈 없는 검정 글자다.
+   * 주문 글을 읽어 짐작하지 않는다 — 작업자가 고른 값이 곧 결과다.
+   */
+  look?: TextLook | undefined
 }
 
 export function blockOrderOf(job: StudioJob | null, blockId: string): BlockOrder {
@@ -575,12 +599,14 @@ export function withBlockOrder(
   if (next.referenceAssetId === undefined || next.referenceAssetId.length === 0) delete next.referenceAssetId
   if (next.fontFamily === undefined || next.fontFamily.length === 0) delete next.fontFamily
   if (next.fontWeight === undefined) delete next.fontWeight
+  if (next.look === undefined) delete next.look
   const orders = { ...job.blockOrders }
   const empty =
     next.note === undefined &&
     next.referenceAssetId === undefined &&
     next.fontFamily === undefined &&
-    next.fontWeight === undefined
+    next.fontWeight === undefined &&
+    next.look === undefined
   if (empty) delete orders[blockId]
   else orders[blockId] = next
   return { ...job, blockOrders: orders, updatedAt: now }
@@ -663,6 +689,24 @@ export function withTextObjects(
  * 나머지 오브젝트는 **같은 객체 그대로** 남는다. 하나를 손대는 일이 옆의 값을
  * 건드릴 자리를 만들지 않는다.
  */
+/** 상자가 `from`에서 `to`로 바뀔 때, 그 상자에 딸린 틀도 같은 비율로 옮긴다. */
+export function followFrame(frame: LayoutRect, from: LayoutRect, to: LayoutRect): LayoutRect {
+  const sx = from.width > 0 ? to.width / from.width : 1
+  const sy = from.height > 0 ? to.height / from.height : 1
+  return {
+    x: Math.round(to.x + (frame.x - from.x) * sx),
+    y: Math.round(to.y + (frame.y - from.y) * sy),
+    width: Math.max(1, Math.round(frame.width * sx)),
+    height: Math.max(1, Math.round(frame.height * sy)),
+  }
+}
+
+/** AI로 고친 문구는 그때부터 그림이다 — 살아 있는 표시를 걷는다. */
+export function asPictureText(object: StudioTextObject): StudioTextObject {
+  const { live: _live, frame: _frame, liveKey: _key, text: _text, lines: _lines, ...rest } = object
+  return rest
+}
+
 export function withTextObject(
   job: StudioJob,
   pageId: string,
@@ -674,6 +718,12 @@ export function withTextObject(
   const index = list.findIndex((t) => t.blockId === blockId)
   if (index < 0) return job
   const next = [...list]
-  next[index] = { ...list[index]!, ...patch }
+  const current = list[index]!
+  const merged: StudioTextObject = { ...current, ...patch }
+  // 살아 있는 문구의 틀은 조각과 **같이** 움직인다 — 옮기고 늘린 만큼 옮기고 늘린다.
+  if (patch.rect !== undefined && patch.frame === undefined && current.frame !== undefined) {
+    merged.frame = followFrame(current.frame, current.rect, patch.rect)
+  }
+  next[index] = merged
   return { ...job, textObjects: { ...job.textObjects, [pageId]: next }, updatedAt: now }
 }

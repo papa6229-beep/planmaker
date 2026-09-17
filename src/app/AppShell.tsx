@@ -35,6 +35,7 @@ import { ConceptField } from '../components/concept/ConceptField'
 import { AiNoteField, DesignerNoteField, TeamNoteField } from '../components/concept/HandoffNotes'
 import { GenerationRequestPreview } from '../components/studio/GenerationRequestPreview'
 import { ReadyPanel } from '../components/studio/ReadyPanel'
+import { LiveTextSync } from '../features/studio/LiveTextSync'
 import { AlignTools, ResultAlignTools } from '../components/studio/AlignTools'
 import { BriefHandoff } from '../components/studio/BriefHandoff'
 import { BlockLayerTools } from '../components/studio/BlockLayerTools'
@@ -371,6 +372,8 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
         )}
       </main>
       <KeyboardShortcuts />
+      {/* 완성본의 문구를 지금 글꼴·색에 맞춰 다시 그린다 (살아 있는 문구 Patch). */}
+      {mode === 'studio' && <LiveTextSync />}
       <GlobalPaste />
       <GlobalEventBriefDrop />
       <EventBriefIoDialogs />

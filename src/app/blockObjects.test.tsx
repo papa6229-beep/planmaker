@@ -197,7 +197,8 @@ async function generateOnce() {
     // eslint-disable-next-line testing-library/no-node-access
     Array.from(dialog.querySelectorAll('button')).find((b) => /생성 시작|저장하고 계속/.test(b.textContent ?? ''))!,
   )
-  await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(4), { timeout: 8000 })
+  // 배경 한 장뿐 — 문구는 브라우저가 그린다 (살아 있는 문구 Patch).
+  await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1), { timeout: 8000 })
   await waitFor(async () => {
     const job = await loadStudioJob(STUDIO_JOB_ID)
     expect((job?.imageObjects?.page_1 ?? []).length).toBe(2)

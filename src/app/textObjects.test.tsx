@@ -182,7 +182,8 @@ async function generateOnce() {
     // eslint-disable-next-line testing-library/no-node-access
     Array.from(dialog.querySelectorAll('button')).find((b) => /생성 시작|저장하고 계속/.test(b.textContent ?? ''))!,
   )
-  await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(3), { timeout: 8000 })
+  // 배경 한 장뿐 — 문구는 브라우저가 그린다 (살아 있는 문구 Patch).
+  await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1), { timeout: 8000 })
   await waitFor(async () => {
     const job = await loadStudioJob(STUDIO_JOB_ID)
     expect((job?.textObjects?.page_1 ?? []).length).toBe(2)
@@ -224,8 +225,9 @@ describe('§1 생성 결과가 블록별 오브젝트로 남는다', () => {
     expect(title.rect.height).toBeLessThanOrEqual(180)
     // 저마다 다른 그림이다.
     expect(new Set(objects.map((o) => o.assetId)).size).toBe(2)
-    // 배경 1 + 문구 2 = 3회. 문구는 블록 하나에 한 번씩 나간다.
-    expect(fetchSpy).toHaveBeenCalledTimes(3)
+    // 배경 한 장뿐이다. 문구는 브라우저가 그리고 살아 있는 문구로 남는다.
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(objects.every((o) => o.live === true)).toBe(true)
   })
 })
 

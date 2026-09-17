@@ -16,6 +16,7 @@
  * 순수 모듈이다. ZIP도 저장소도 화면도 모른다.
  */
 
+import { normalizeTextLook } from './textLook'
 import { normalizeEffects, type CompositeEffects } from './compositeEffects'
 import type { BlockOrder, GenerationMethod, StudioBackground, StudioBlink, StudioJob } from './studioJob'
 import { normalizeTone, type ToneAdjust } from './toneAdjust'
@@ -338,6 +339,9 @@ function readTextObjects(raw: unknown): Record<string, StudioTextObject[]> {
       const nums = ['x', 'y', 'width', 'height'].map((k) => rect[k])
       if (nums.some((n) => typeof n !== 'number' || !Number.isFinite(n))) continue
       const angle = item.angle
+      const frame = isRecord(item.frame) ? item.frame : null
+      const frameNums = frame === null ? [] : ['x', 'y', 'width', 'height'].map((k) => frame[k])
+      const frameOk = frame !== null && frameNums.every((n) => typeof n === 'number' && Number.isFinite(n))
       kept.push({
         blockId,
         assetId,
@@ -345,6 +349,23 @@ function readTextObjects(raw: unknown): Record<string, StudioTextObject[]> {
         layer: typeof layer === 'number' ? layer : 0,
         // 기울기는 예전 파일에 없다. 없으면 0이고, 그때는 아무것도 달라지지 않는다.
         ...(typeof angle === 'number' && Number.isFinite(angle) ? { angle } : {}),
+        // 살아 있는 문구 (살아 있는 문구 Patch). 예전 파일에는 없고, 그때는 그림 문구다.
+        ...(item.live === true && frameOk
+          ? {
+              live: true as const,
+              frame: {
+                x: frameNums[0] as number,
+                y: frameNums[1] as number,
+                width: frameNums[2] as number,
+                height: frameNums[3] as number,
+              },
+              ...(typeof item.liveKey === 'string' ? { liveKey: item.liveKey } : {}),
+              ...(typeof item.text === 'string' ? { text: item.text } : {}),
+              ...(Array.isArray(item.lines) && item.lines.every((l) => typeof l === 'string')
+                ? { lines: item.lines as string[] }
+                : {}),
+            }
+          : {}),
       })
     }
     out[pageId] = kept
@@ -377,11 +398,14 @@ function readBlockOrders(raw: unknown): Record<string, BlockOrder> {
     if (typeof value.fontWeight === 'number' && value.fontWeight >= 100 && value.fontWeight <= 950) {
       order.fontWeight = value.fontWeight
     }
+    // 색·테두리·그림자 (살아 있는 문구 Patch).
+    if (isRecord(value.look)) order.look = normalizeTextLook(value.look)
     if (
       order.note !== undefined ||
       order.referenceAssetId !== undefined ||
       order.fontFamily !== undefined ||
-      order.fontWeight !== undefined
+      order.fontWeight !== undefined ||
+      order.look !== undefined
     ) {
       out[blockId] = order
     }

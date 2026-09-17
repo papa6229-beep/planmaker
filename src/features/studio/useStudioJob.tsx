@@ -51,6 +51,7 @@ import {
   withImageObjects,
   textObjectsOf,
   withTextObject,
+  asPictureText,
   withTextObjects,
   withPageResult,
   withSource,
@@ -198,6 +199,8 @@ export interface StudioJobApi {
   moveTextObject: (pageId: string, blockId: string, rect: LayoutRect) => void
   /** 그림을 바꾼다. `rect`를 주면 자리도 함께 — 새 그림의 비율이 다를 때 (문구 꾸미기 Patch). */
   replaceTextObjectAsset: (pageId: string, blockId: string, assetId: string, rect?: LayoutRect) => Promise<void>
+  /** 살아 있는 문구의 그림·자리·지문을 적는다 (살아 있는 문구 Patch). */
+  setLiveText: (pageId: string, blockId: string, patch: Partial<Omit<StudioTextObject, 'blockId'>>) => Promise<void>
   /**
    * 이미지 조각이 그리는 그림을 갈아 끼운다 (조각 수정 Patch).
    *
@@ -356,6 +359,11 @@ interface StudioStep {
   objectTones: Record<string, ToneAdjust>
   tones: Record<string, ToneAdjust>
   effects: Record<string, CompositeEffects>
+  /**
+   * 블록별 글꼴·색·테두리·그림자 (살아 있는 문구 Patch). 완성본에서 문구의 색을
+   * 바꾼 뒤 `실행 취소`를 누르면 색도 돌아와야 한다 — 조각의 그림과 한 칸에 담긴다.
+   */
+  blockOrders: Record<string, BlockOrder>
 }
 
 /** 되돌리기가 기억하는 칸 수. 넘으면 오래된 것부터 버린다. */
@@ -386,6 +394,7 @@ function snapshotOf(job: StudioJob): StudioStep {
     objectTones: { ...job.objectTones },
     tones: { ...job.tones },
     effects: { ...job.effects },
+    blockOrders: { ...job.blockOrders },
   }
 }
 
@@ -501,6 +510,7 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
         objectTones: { ...step.objectTones },
         tones: { ...step.tones },
         effects: { ...step.effects },
+        blockOrders: { ...step.blockOrders },
         updatedAt: Date.now(),
       })
     },
@@ -653,8 +663,22 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       // 뒤따르며, 외부를 부르는 자리는 없다 (§2 마지막 줄).
       moveTextObject: (pageId, blockId, rect) =>
         void mutate((j) => withTextObject(j, pageId, blockId, { rect }, Date.now())),
+      // AI로 고친 문구는 그때부터 그림이다 (살아 있는 문구 Patch) — 살아 있는 표시를 걷는다.
       replaceTextObjectAsset: (pageId, blockId, assetId, rect) =>
-        mutate((j) => withTextObject(j, pageId, blockId, rect === undefined ? { assetId } : { assetId, rect }, Date.now())),
+        mutate((j) => {
+          const moved = withTextObject(j, pageId, blockId, rect === undefined ? { assetId } : { assetId, rect }, Date.now())
+          return {
+            ...moved,
+            textObjects: {
+              ...moved.textObjects,
+              [pageId]: textObjectsOf(moved, pageId).map((o) => (o.blockId === blockId ? asPictureText(o) : o)),
+            },
+          }
+        }),
+      // 살아 있는 문구를 다시 그린 결과를 적는다. 되돌리기 칸을 만들지 않는다 — 그 칸은
+      // 값을 바꾼 쪽(글꼴·색)이 이미 만들었다.
+      setLiveText: (pageId, blockId, patch) =>
+        mutate((j) => withTextObject(j, pageId, blockId, patch, Date.now())),
       imageObjectsOf: (pageId) => imageObjectsOf(job, pageId),
       setImageObjects: (pageId, objects) => mutate((j) => withImageObjects(j, pageId, objects, Date.now())),
       carryBanner: (pageId, work) =>

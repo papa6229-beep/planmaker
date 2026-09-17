@@ -191,7 +191,7 @@ async function documentReady(container: HTMLElement) {
 }
 
 /** 상단 버튼 한 번. 응답은 stub이라 실제 결제는 없다. */
-async function generateOnce(calls = 3): Promise<FormData[]> {
+async function generateOnce(calls = 1): Promise<FormData[]> {
   sessionStorage.setItem('planmaker.openai-key', 'sk-stub')
   // 매번 **새** Response를 만든다. 하나를 재사용하면 본문이 이미 읽혀 두 번째
   // 요청이 `no_image`로 떨어지고, 전경 레이어가 조용히 빠진다.
@@ -262,14 +262,14 @@ describe('§3 어디서 깨졌는가', () => {
     await seedJob({ effects: CUTOUTS })
     const { container } = renderStudio()
     await documentReady(container)
-    const [plate, foreground] = await generateOnce()
+    const forms = await generateOnce()
+    const [plate] = forms
 
-    // 배경 요청에는 스타일 레퍼런스뿐이고, 문구 요청마다 **이 도구가 방금 받아 온
-    // 배경** 한 장이 더 붙는다 — 사용자의 그림이 아니다.
+    // 배경 요청에는 스타일 레퍼런스뿐이다. 문구는 요청이 없다 (살아 있는 문구 Patch).
     expect(fileNames(plate!)).toEqual(['1-style-reference.png'])
-    expect(fileNames(foreground!)).toEqual(['1-style-reference.png', '2-background-plate.png'])
+    expect(forms).toHaveLength(1)
 
-    for (const form of [plate!, foreground!]) {
+    for (const form of forms) {
       const names = fileNames(form)
       for (const banned of ['big', 'small', 'logo', 'page-layout']) {
         expect(names.some((n) => n.includes(banned))).toBe(false)
@@ -421,25 +421,23 @@ describe('§2 문구는 전면 레이어다', () => {
     expect(prompt).not.toContain('asset_')
   })
 
-  it('두 요청 중 어느 쪽도 투명 배경을 요구하지 않고, 문구 생성은 한 번뿐이다', async () => {
+  it('배경 요청은 투명 배경을 요구하지 않고, 문구는 요청 없이 브라우저가 그린다', async () => {
     await seedJob({ effects: CUTOUTS })
     const { container } = renderStudio()
     await documentReady(container)
-    const [plate, foreground] = await generateOnce()
+    const [plate] = await generateOnce()
 
-    // `gpt-image-2`가 거절한 항목이다 — 이제 어느 요청에도 실리지 않는다.
+    // `gpt-image-2`가 거절한 항목이다 — 요청에 실리지 않는다.
     expect(plate!.get('background')).toBeNull()
-    expect(foreground!.get('background')).toBeNull()
-
-    // 배경 주문에는 문구 원문이 없고, 문구 주문에만 있다 — 기획서가 끊는 줄 그대로.
+    // 배경 주문에는 문구 원문이 없다.
     expect(promptOf(plate!)).not.toContain('여름 감사제')
-    expect(promptOf(foreground!)).toContain('여름 감사제')
-    // 배경 1 + 문구 2 = 3회. 문구 요청은 블록 수만큼이고, 한 요청에 한 문구다.
-    expect(fetchSpy).toHaveBeenCalledTimes(3)
-    const textCalls = fetchSpy.mock.calls.filter((c) =>
-      String((c[1].body as FormData).get('prompt')).includes('한 개**를 디자인해'),
-    )
-    expect(textCalls).toHaveLength(2)
+    // 배경 한 번뿐이다 (살아 있는 문구 Patch).
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect((job?.textObjects?.page_1 ?? []).length).toBeGreaterThan(0)
+      expect(job?.textObjects?.page_1?.every((o) => o.live === true)).toBe(true)
+    }, { timeout: 8000 })
   })
 
   it('문구 주문은 단색 배경을 시키고, 그 색을 글자에 쓰지 말라고 못 박는다', async () => {
@@ -768,7 +766,7 @@ describe('§4 배경 → 사진 → 문구', () => {
     expect(image.args.slice(4)).toEqual([-50, 0, 200, 200])
   })
 
-  it('한 번 눌러 두 번 나가고, 확인창이 그 수를 그대로 말한다', async () => {
+  it('한 번 눌러 한 번 나가고, 확인창이 그 수를 그대로 말한다', async () => {
     await seedJob({ effects: CUTOUTS })
     const { container } = renderStudio()
     await documentReady(container)
@@ -776,8 +774,8 @@ describe('§4 배경 → 사진 → 문구', () => {
     sessionStorage.setItem('planmaker.openai-key', 'sk-stub')
     fireEvent.click(await screen.findByRole('button', { name: /이미지 생성하기|다시 생성/ }))
     const dialog = await screen.findByRole('dialog')
-    expect(dialog.textContent).toContain('3회')
-    expect(dialog.textContent).toContain('3장')
+    expect(dialog.textContent).toContain('1회')
+    expect(dialog.textContent).toContain('1장')
   })
 
   it('생성이 끝나면 합성 결과가 남고 원본 바이트는 그대로다', async () => {

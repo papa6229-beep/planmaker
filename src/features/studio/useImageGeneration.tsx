@@ -47,6 +47,7 @@ import {
 import { bumpPreviewEpoch, previewEpoch, setLivePreview } from './livePreview'
 import { matchLevels } from '../../domain/toneMatch'
 import { aroundToneStats, objectToneStats } from '../../services/toneMatchStats'
+import { paintLiveText } from './liveText'
 import {
   apiKeyRemembered,
   authHeaders,
@@ -75,7 +76,6 @@ import { planGenerationInputs, MAX_INPUT_IMAGES, type GenerationInputImage } fro
 import { buildOpenAIImagePrompt } from '../../domain/imagePrompt'
 import {
   buildPlatePrompt,
-  buildTextLayerPrompt,
   planPlateInputs,
   planTextLayerInputs,
   type FixedObject,
@@ -635,8 +635,9 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           fingerprint,
           plate,
           ...(textBlocks.length === 0 ? {} : { textBlocks, textSizes, blockOrders }),
-          // 배경 한 번 + 문구·버튼 하나당 한 번. 확인창이 이 수를 그대로 말한다.
-          calls: 1 + textBlocks.length,
+          // 배경 한 번뿐이다. 문구·버튼은 브라우저가 그린다 (살아 있는 문구 Patch).
+          // 확인창이 이 수를 그대로 말한다.
+          calls: 1,
         },
       }
     }
@@ -835,39 +836,6 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       }
     },
     [studio],
-  )
-
-  /**
-   * 배경 위에 고정 오브젝트를 얹어 두고, 문구 자리마다 색을 잰다 (§2, §3).
-   *
-   * 외부 호출은 0건이다. 그리고 여기서 만든 **합성 페이지는 요청에 실리지 않는다** —
-   * 나가는 것은 이 함수가 돌려주는 숫자뿐이다.
-   */
-  const measureRegions = useCallback(
-    async (plan: GenerationPlan, plateAssetId: string | undefined): Promise<(TextLayerTone | null)[]> => {
-      const blocks = plan.textBlocks ?? []
-      const empty = blocks.map(() => null)
-      if (studio === null || plateAssetId === undefined || blocks.length === 0) return empty
-      try {
-        const brief = getDocument()
-        const page = brief.pages.find((p) => p.id === plan.pageId)
-        if (page === undefined) return empty
-        const composite = planLocalComposite({
-          page,
-          background: { assetId: plateAssetId, source: 'ai' },
-          productImages: studio.job.productImages,
-          effects: studio.job.effects ?? {},
-          grain: studio.grain,
-          onlyBlockIds: plan.fixedBlockIds,
-          includeTexts: false,
-        })
-        const blob = await renderComposite(composite, await collectCompositeSources(composite))
-        return await analyzeRegions(blob, blocks.map((b) => b.rect), composite.size)
-      } catch {
-        return empty
-      }
-    },
-    [studio, getDocument],
   )
 
   /**
@@ -2043,88 +2011,57 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         if (plan.mode === 'preserve' && textBlocks.length > 0 && studio !== null) {
           // ① 배경을 먼저 완성해 둔다 — 자산으로 남기고 이 페이지의 배경으로
           //    삼는다. 이어지는 요청마다 붙일 그림이 바로 이것이다.
-          const plateAssetId = await storePlate(plan, first)
+          await storePlate(plan, first)
 
-          // ② 고정 오브젝트 로컬 배치 + ③ 자리별 색. 둘 다 브라우저 안에서
-          //    끝난다 — 여기서 나가는 외부 호출은 0건이다. 합성 페이지 자체는
-          //    요청에 실리지 않고, 여기서 뽑은 숫자만 실린다.
-          const tones = await measureRegions(plan, plateAssetId)
-          const styleRefId = studio.styleReferenceOf(plan.pageId)
-          const note = getDocument().project.aiNote?.trim() ?? ''
-          const fixed = preserveParts(
-            getDocument().pages.find((p) => p.id === plan.pageId) ?? getDocument().pages[0]!,
-            studio.job.productImages,
-            (id) => studio.effectsOf(id).paperCutout,
-          ).fixed
+          // ② 문구는 브라우저가 그리므로(살아 있는 문구 Patch) 자리별 색을 재거나
+          //    주문을 만들 일이 없다. 외부 호출은 여기서 끝이다.
 
           // ④ 블록마다 한 번씩. 하나가 실패해도 나머지는 그대로 간다 — 값을 치른
           //    것을 잃지 않기 위해서다. 스스로 다시 부르는 자리는 없다.
           const made: (StudioTextObject | undefined)[] = Array.from<StudioTextObject | undefined>({ length: textBlocks.length })
-          /** 같은 그림의 대표색을 블록마다 다시 읽지 않는다. */
-          const palettes = new Map<string, { hex: string; share: number }[] | null>()
           const trouble: (string | undefined)[] = Array.from<string | undefined>({ length: textBlocks.length })
           let done = 0
           setState({ kind: 'running', done, total: textBlocks.length + 1 })
 
           /** 문구 겹 한 장. 자기 자리에만 적으므로 몇 장이 함께 돌아도 섞이지 않는다. */
           const makeOne = async (block: TextLayerBlock, index: number): Promise<void> => {
-            const withTone: TextLayerBlock = { ...block, tone: tones[index] ?? null }
-            // 첨부와 주문은 블록마다 다르다 — 이 블록에만 붙여 둔 참고 그림이
-            // 있으면 그 요청에만 실린다 (블록별 주문 Patch).
             const order = plan.blockOrders?.[block.blockId] ?? {}
 
-            // ── 글자는 글꼴로, 꾸밈은 코드로, 재질만 모델이 (문구 꾸미기 Patch) ──
+            // ── 문구는 AI를 거치지 않는다 (살아 있는 문구 Patch, 2026-09-17) ──────
             //
-            // 로컬 엔진은 한글을 쓰지 못한다 (2026-09-16: `여름 시즌오프` → `메롱 시셩므무`).
-            // 색을 말로 시키면 바탕까지 물든다 (2026-09-17). 그래서 틀리면 안 되는 것은
-            // 전부 여기서 정하고, 모델에게는 판 한 장과 재질 이름만 간다.
-            const decorated = await decorateText({
-              plan,
-              auth,
-              kind: 'text-layer',
-              paintOnFailure: true,
-              blockId: block.blockId,
-              content: block.content,
-              lines: block.lines,
-              rect: block.rect,
-              order,
-              ...(plateAssetId === undefined ? {} : { backgroundAssetId: plateAssetId }),
-              ...(tones[index] == null ? {} : { bright: tones[index]!.brightness }),
-              palettes,
-              // OpenAI 경로가 읽는 옛 주문. 로컬 경로는 이것을 보내지 않는다.
-              fallback: {
-                inputs: planTextLayerInputs({
-                  ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
-                  ...(plateAssetId === undefined ? {} : { backgroundAssetId: plateAssetId }),
-                  ...(order.referenceAssetId === undefined ? {} : { blockReferenceAssetId: order.referenceAssetId }),
-                }),
-                prompt: buildTextLayerPrompt({
-                  size: plan.working,
-                  ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
-                  ...(plateAssetId === undefined ? {} : { backgroundAssetId: plateAssetId }),
-                  block: withTone,
-                  siblings: textBlocks,
-                  fixed,
-                  ...(note.length === 0 ? {} : { note }),
-                  ...(order.note === undefined ? {} : { blockNote: order.note }),
-                  ...(order.referenceAssetId === undefined ? {} : { blockReference: true }),
-                }),
-              },
-            })
-            if (decorated === null) {
+            // AI 재질 단계가 흰 글자를 검게 바꾸고 `TENGA`를 `TEHBA`로 깨뜨렸다. 사용자:
+            // "AI에게 보정을 요청하기 전까지는 텍스트로 남아 있게 하자." 그래서 브라우저가
+            // 고른 글꼴·색·테두리·그림자로 그린 판을 그대로 얹고, 살아 있는 문구로 표시한다.
+            // 글꼴을 고르지 않았으면 만들지 않는다 (글꼴 필수).
+            if (order.fontFamily === undefined || order.fontFamily.length === 0) {
               trouble[index] = `"${block.content}": 글꼴을 고르지 않아 만들지 않았습니다. 문구 블록에서 글꼴을 골라 주세요.`
               return
             }
-            if ('assetId' in decorated) {
-              made[index] = {
-                blockId: block.blockId,
-                assetId: decorated.assetId,
-                // 기획서 상자를 넘지 않는 가장 큰 크기로, 가운데에.
-                rect: containRect(decorated.size, block.rect),
-                layer: block.layer,
-              }
+            const input = {
+              blockId: block.blockId,
+              text: block.content,
+              lines: block.lines,
+              family: order.fontFamily,
+              weight: order.fontWeight,
+              look: order.look,
             }
-            if (decorated.problem !== undefined) trouble[index] = decorated.problem
+            const painted = await paintLiveText(input, block.rect)
+            if (painted === null) {
+              trouble[index] = `"${block.content}"을(를) 그리지 못했습니다.`
+              return
+            }
+            made[index] = {
+              blockId: block.blockId,
+              assetId: painted.assetId,
+              // 기획서 상자를 넘지 않는 가장 큰 크기로, 가운데에.
+              rect: painted.rect,
+              layer: block.layer,
+              live: true,
+              frame: { ...block.rect },
+              liveKey: painted.liveKey,
+              text: block.content,
+              lines: [...block.lines],
+            }
           }
 
           /**
@@ -2177,7 +2114,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         runningRef.current = false
       }
     },
-    [requestLayer, finishFromPaid, studio, getDocument, recomposePage, storePlate, measureRegions, measureEditTones, decorateText, platePrompt],
+    [requestLayer, finishFromPaid, studio, getDocument, recomposePage, storePlate, measureEditTones, decorateText, platePrompt],
   )
 
   const confirm = useCallback(

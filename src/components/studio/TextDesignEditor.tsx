@@ -1,37 +1,40 @@
 /**
- * 문구 하나의 **생성 전** 디자인 — 글꼴 · 주문 · 참고 그림 (문구 디자인 창, 2026-09-17).
+ * 문구 하나의 모양 — 글꼴 · 꾸밈 (문구 디자인 창, 2026-09-17).
  *
- * 전에는 오른쪽 패널의 "이 문구 디자인 주문" 칸에 있었다. 사용자: "참고그림 추가와
- * AI에게 설명할 것도 텍스트 블록 가까이서 컨트롤하는 게 낫다 … 우측 요약 한 줄조차
- * 필요 없다." 그래서 이 편집기는 **블록 옆에 뜨는 창 안에만** 선다. 같은 일을 두
- * 곳에서 하게 두면 어느 쪽이 진짜인지 알 수 없다.
+ * 두 곳에서 같은 창을 쓴다.
  *
- * 셋 다 "이 문구를 어떻게 만들 것인가"라서 한 창에 탭으로 둔다.
+ *  - **기획서 캔버스**: 문구 블록 위 막대의 "글꼴 ▾" (생성 전)
+ *  - **완성본**: 문구 조각의 "후보정 → 글자" (생성 후, 살아 있는 문구)
  *
- *  - **글꼴**(필수): 로컬 엔진은 한글을 쓰지 못해 글자를 브라우저가 그린다. 디자인의
- *    폭을 정하는 것은 글꼴이다. 가리키면 캔버스의 글자가 그 글꼴로 바뀐다.
- *  - **주문**: 색·테두리·그림자 같은 말. 이 블록의 요청에만 실린다.
- *  - **참고 그림**: "라벨 위에 글자"처럼 말로 어려운 짜임새. 이 블록의 요청에만 실린다.
+ * 꾸밈은 색 · 테두리 · 그림자다. 주문 글을 읽어 짐작하지 않고, 작업자가 고른 값이
+ * 곧 결과다 (살아 있는 문구 Patch). 아무것도 고르지 않았으면 꾸밈 없는 검정 글자다.
  *
- * 창이 닫혀 있어도 무엇이 들어 있는지는 막대 버튼이 말한다 — 접어 둔 칸을 보고
- * "기능이 없어졌냐"는 말이 나온 적이 있다 (§16-B).
+ * AI 주문·참고 그림 탭은 지금 내려 두었다 — 사용자: "AI가 꾸미는 쪽은 다른 방식을
+ * 고려해 볼 거야. 지금은 염두에 두지 말고." 저장된 주문 값은 지우지 않는다.
  */
 
-import { useRef, useState } from 'react'
-import { useAssets } from '../../features/assets/useAssets'
+import { useState } from 'react'
 import { useStudioJob } from '../../features/studio/useStudioJob'
-import { ACCEPTED_MIME_TYPES } from '../../features/assets/imageUtils'
+import { useBriefEditor } from '../../features/editor/useBriefEditor'
+import {
+  DEFAULT_TEXT_LOOK,
+  OUTLINE_WIDTH_RANGE,
+  SHADOW_DISTANCE_RANGE,
+  lookIsPlain,
+  normalizeTextLook,
+  type TextLook,
+} from '../../domain/textLook'
 import { FontPicker } from './FontPicker'
 
-const IMAGE_ACCEPT = ACCEPTED_MIME_TYPES.join(',')
-
-export type TextDesignTab = 'font' | 'note' | 'reference'
+export type TextDesignTab = 'font' | 'look'
 
 export function TextDesignEditor({
   blockId,
   label,
   content,
   onPreview,
+  where = 'brief',
+  onChanged,
 }: {
   blockId: string
   /** 블록 이름 — 입력칸의 이름에 쓴다. */
@@ -39,30 +42,60 @@ export function TextDesignEditor({
   /** 글꼴 견본에 쓸 그 문구. */
   content: string
   onPreview: (point: { family: string; weight?: number | undefined } | null) => void
+  /**
+   * 어디서 열었나. 완성본에서는 바꿀 때마다 되돌리기 칸을 남기고, 문구 자체도
+   * 여기서 고칠 수 있다 (캔버스에서는 블록을 두 번 눌러 고친다).
+   */
+  where?: 'brief' | 'result'
+  /** 값이 바뀐 뒤 — 완성본이 다시 그릴 때를 알린다. */
+  onChanged?: () => void
 }) {
   const studio = useStudioJob()
-  const { storeImage, getUrl } = useAssets()
-  const fileRef = useRef<HTMLInputElement | null>(null)
+  const editor = useBriefEditor()
   const [tab, setTab] = useState<TextDesignTab>('font')
-  const [large, setLarge] = useState(false)
+  const [draft, setDraft] = useState<string | null>(null)
   if (studio === null) return null
 
   const order = studio.blockOrderOf(blockId)
-  const url = getUrl(order.referenceAssetId)
-  const hasNote = (order.note ?? '').trim().length > 0
-  const hasRef = order.referenceAssetId !== undefined
+  const look = normalizeTextLook(order.look ?? DEFAULT_TEXT_LOOK)
+  const block = editor.state.brief.blocks.find((b) => b.id === blockId)
+  const inResult = where === 'result'
 
-  const pick = async (file: File) => {
-    const asset = await storeImage(file)
-    if (asset === null) return
-    await studio.setBlockOrder(blockId, { referenceAssetId: asset.id })
+  const mark = () => {
+    if (inResult) studio.markStep()
+  }
+  const setLook = (patch: Partial<TextLook>) => {
+    void studio.setBlockOrder(blockId, { look: { ...look, ...patch } }).then(() => onChanged?.())
   }
 
   const TABS: readonly { key: TextDesignTab; label: string; marked: boolean; missing?: boolean }[] = [
     { key: 'font', label: '글꼴', marked: false, missing: order.fontFamily === undefined },
-    { key: 'note', label: '주문', marked: hasNote },
-    { key: 'reference', label: '참고 그림', marked: hasRef },
+    { key: 'look', label: '꾸밈', marked: !lookIsPlain(look) },
   ]
+
+  const colorInput = (value: string, aria: string, apply: (hex: string) => void) => (
+    <input
+      type="color"
+      className="text-design__color"
+      value={value}
+      aria-label={aria}
+      onFocus={mark}
+      onChange={(e) => apply(e.target.value)}
+    />
+  )
+
+  const rangeInput = (props: { value: number; range: readonly [number, number]; aria: string; apply: (v: number) => void }) => (
+    <input
+      type="range"
+      min={Math.round(props.range[0] * 100)}
+      max={Math.round(props.range[1] * 100)}
+      value={Math.round(props.value * 100)}
+      aria-label={props.aria}
+      onPointerDown={mark}
+      onKeyDown={mark}
+      onChange={(e) => props.apply(Number(e.target.value) / 100)}
+    />
+  )
 
   return (
     <section className="text-design" aria-label="이 블록의 디자인 주문">
@@ -85,77 +118,143 @@ export function TextDesignEditor({
         ))}
       </div>
 
+      {/* 완성본에서는 문구도 여기서 고친다 — 고치면 그 조각만 다시 그려진다. */}
+      {inResult && block !== undefined && (
+        <label className="text-design__field">
+          <span className="text-design__label">문구</span>
+          <textarea
+            className="field__input text-design__content"
+            aria-label={`${label} 문구`}
+            rows={2}
+            value={draft ?? block.content ?? ''}
+            onFocus={() => setDraft(block.content ?? '')}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => {
+              if (draft !== null && draft !== (block.content ?? '') && draft.trim().length > 0) {
+                // 문구만 바꾼다. 기획서 상자는 건드리지 않는다 — 완성본의 조각은 제 틀 안에서
+                // 다시 그려지고, 상자가 바뀌면 결과가 기획서와 어긋났다고 읽힌다.
+                editor.updateBlock(blockId, { content: draft })
+                onChanged?.()
+              }
+              setDraft(null)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) (e.target as HTMLTextAreaElement).blur()
+            }}
+          />
+        </label>
+      )}
+
       {tab === 'font' && (
         <FontPicker
           sample={content}
           family={order.fontFamily}
           weight={order.fontWeight}
-          autoFocus
-          onPick={(patch) => void studio.setBlockOrder(blockId, patch)}
+          autoFocus={!inResult}
+          onPick={(patch) => {
+            mark()
+            void studio.setBlockOrder(blockId, patch).then(() => onChanged?.())
+          }}
           onPreview={onPreview}
         />
       )}
 
-      {tab === 'note' && (
+      {tab === 'look' && (
         <div className="text-design__pane">
-          <p className="text-design__hint">
-            이 문구에만 붙는 주문입니다. 페이지 전체 지시보다 우선합니다. 비워 두면 배경에 어울리게 꾸밉니다.
-          </p>
-          <textarea
-            className="field__input text-design__note"
-            aria-label={`${label} 디자인 주문`}
-            rows={5}
-            autoFocus
-            placeholder="예: 알록달록하게, 흰색 테두리, 그림자. 둥근 라벨 위에 굵은 글씨로."
-            value={order.note ?? ''}
-            onChange={(e) => void studio.setBlockOrder(blockId, { note: e.target.value })}
-          />
-        </div>
-      )}
+          <div className="text-design__group" role="group" aria-label="글자색 설정">
+            <span className="text-design__label">글자색</span>
+            <div className="text-design__row">
+              {(
+                [
+                  { fill: 'solid', label: '단색' },
+                  { fill: 'gradient', label: '그라데이션' },
+                ] as const
+              ).map((f) => (
+                <button
+                  key={f.fill}
+                  type="button"
+                  className={`btn text-design__chip${look.fill === f.fill ? ' is-on' : ''}`}
+                  aria-pressed={look.fill === f.fill}
+                  onClick={() => {
+                    mark()
+                    setLook({ fill: f.fill })
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <div className="text-design__row">
+              {colorInput(look.color, look.fill === 'gradient' ? '글자 위쪽 색' : '글자색', (hex) => setLook({ color: hex }))}
+              {look.fill === 'gradient' && colorInput(look.color2, '글자 아래쪽 색', (hex) => setLook({ color2: hex }))}
+            </div>
+          </div>
 
-      {tab === 'reference' && (
-        <div className="text-design__pane">
-          <p className="text-design__hint">
-            말로 설명하기 어려운 짜임새는 그림 한 장이 정확합니다. 이 문구의 요청에만 실립니다.
-          </p>
-          {url === undefined ? (
-            <p className="text-design__empty">참고 그림 없음</p>
-          ) : (
-            <button
-              type="button"
-              className={`text-design__preview${large ? ' is-large' : ''}`}
-              aria-label={large ? '참고 그림 작게 보기' : '참고 그림 크게 보기'}
-              title={large ? '작게 보기' : '크게 보기'}
-              onClick={() => setLarge((v) => !v)}
-            >
-              <img src={url} alt={`${label} 참고 그림`} />
-            </button>
-          )}
-          <div className="text-design__actions">
-            <button type="button" className="btn" onClick={() => fileRef.current?.click()}>
-              {hasRef ? '교체' : '참고 그림 추가'}
-            </button>
-            {hasRef && (
-              <button
-                type="button"
-                className="btn"
-                onClick={() => void studio.setBlockOrder(blockId, { referenceAssetId: '' })}
-              >
-                제거
-              </button>
+          <div className="text-design__group" role="group" aria-label="테두리 설정">
+            <label className="text-design__switch">
+              <input
+                type="checkbox"
+                checked={look.outline}
+                aria-label="테두리"
+                onChange={() => {
+                  mark()
+                  setLook({ outline: !look.outline })
+                }}
+              />
+              테두리
+            </label>
+            {look.outline && (
+              <div className="text-design__row">
+                {colorInput(look.outlineColor, '테두리 색', (hex) => setLook({ outlineColor: hex }))}
+                <span className="text-design__label">두께 {Math.round(look.outlineWidth * 100)}</span>
+                {rangeInput({
+                  value: look.outlineWidth,
+                  range: OUTLINE_WIDTH_RANGE,
+                  aria: '테두리 두께',
+                  apply: (v) => setLook({ outlineWidth: v }),
+                })}
+              </div>
             )}
           </div>
-          <input
-            ref={fileRef}
-            type="file"
-            accept={IMAGE_ACCEPT}
-            className="text-design__file"
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) void pick(file)
-              e.target.value = ''
+
+          <div className="text-design__group" role="group" aria-label="그림자 설정">
+            <label className="text-design__switch">
+              <input
+                type="checkbox"
+                checked={look.shadow}
+                aria-label="글자 그림자"
+                onChange={() => {
+                  mark()
+                  setLook({ shadow: !look.shadow })
+                }}
+              />
+              그림자
+            </label>
+            {look.shadow && (
+              <div className="text-design__row">
+                {colorInput(look.shadowColor, '그림자 색', (hex) => setLook({ shadowColor: hex }))}
+                <span className="text-design__label">거리 {Math.round(look.shadowDistance * 100)}</span>
+                {rangeInput({
+                  value: look.shadowDistance,
+                  range: SHADOW_DISTANCE_RANGE,
+                  aria: '그림자 거리',
+                  apply: (v) => setLook({ shadowDistance: v }),
+                })}
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            className="btn text-design__reset"
+            disabled={lookIsPlain(look) && look.color === DEFAULT_TEXT_LOOK.color}
+            onClick={() => {
+              mark()
+              void studio.setBlockOrder(blockId, { look: undefined }).then(() => onChanged?.())
             }}
-          />
+          >
+            꾸밈 없애기
+          </button>
         </div>
       )}
     </section>

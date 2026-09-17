@@ -40,6 +40,7 @@ import { useAssets } from '../../features/assets/useAssets'
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { clearFontPreview, setFontPreview, useCanvasFace, useFontPreview } from '../../features/studio/blockFont'
 import { TextDesignEditor } from '../studio/TextDesignEditor'
+import { cssLookOf, lookIsPlain, normalizeTextLook } from '../../domain/textLook'
 import { ACCEPTED_MIME_TYPES } from '../../features/assets/imageUtils'
 import { RESIZE_HANDLES, resizeRect, type ResizeHandle } from '../../features/editor/canvasGeometry'
 
@@ -189,6 +190,8 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
     pointed === null ? order?.fontWeight : pointed.weight,
   )
   const faceStyle = face === null ? undefined : { fontFamily: face.fontFamily, fontWeight: face.fontWeight }
+  /** 고른 색·테두리·그림자 (살아 있는 문구 Patch). 캔버스에서 결과 모양을 미리 본다. */
+  const look = normalizeTextLook(order?.look)
   const measure = useMemo(() => (face === null ? measureLine : createLineMeasurer(face)), [face])
   const [fontOpen, setFontOpen] = useState(false)
   const fontRef = useRef<HTMLSpanElement | null>(null)
@@ -559,16 +562,15 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
             title={
               order.fontFamily === undefined
                 ? '글꼴을 골라야 만들 수 있습니다'
-                : `글꼴 ${order.fontFamily} — 글꼴 · 주문 · 참고 그림`
+                : `글꼴 ${order.fontFamily} — 글꼴 · 꾸밈`
             }
             onClick={() => setFontOpen((v) => !v)}
           >
             <span className="block-card__font-name" style={pointed === null ? faceStyle : undefined}>
               {order.fontFamily ?? '글꼴 고르기'}
             </span>
-            {/* 창을 닫아도 무엇이 들어 있는지 보인다 (§16-B). */}
-            {(order.note ?? '').trim().length > 0 && <span className="block-card__design-mark">주문</span>}
-            {order.referenceAssetId !== undefined && <span className="block-card__design-mark">참고</span>}
+            {/* 창을 닫아도 꾸밈이 들어 있는지 보인다 (§16-B). */}
+            {!lookIsPlain(look) && <span className="block-card__design-mark">꾸밈</span>}
             {' '}▾
           </button>
         </span>
@@ -1009,12 +1011,31 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
           {hasContent(block) ? block.content : '어떤 이미지가 들어갈지 적어주세요'}
         </span>
       ) : (
-        <span
-          className={`block-card__content${hasContent(block) ? '' : ' block-card__content--placeholder'}`}
-          style={{ fontSize: fit.fontSize, textAlign: align, ...faceStyle }}
-        >
-          {hasContent(block) ? block.content : `${meta.label} 입력…`}
-        </span>
+        (() => {
+          const styled = takesFont && hasContent(block) ? cssLookOf(look, fit.fontSize) : null
+          return (
+            <span
+              className={`block-card__content${hasContent(block) ? '' : ' block-card__content--placeholder'}${styled?.under ? ' block-card__content--layered' : ''}`}
+              style={{ fontSize: fit.fontSize, textAlign: align, ...faceStyle, ...(styled?.under ? {} : styled?.text) }}
+            >
+              {styled?.under ? (
+                <>
+                  {/* 그라데이션 몸통 밑에 테두리·그림자를 한 겹 깐다 — 같은 글자, 같은 줄바꿈. */}
+                  <span className="block-card__look-under" aria-hidden="true" style={styled.under}>
+                    {block.content}
+                  </span>
+                  <span className="block-card__look-top" style={styled.text}>
+                    {block.content}
+                  </span>
+                </>
+              ) : hasContent(block) ? (
+                block.content
+              ) : (
+                `${meta.label} 입력…`
+              )}
+            </span>
+          )
+        })()
       )}
 
       {fontPanel !== false && typeof document !== 'undefined' ? createPortal(fontPanel, document.body) : null}

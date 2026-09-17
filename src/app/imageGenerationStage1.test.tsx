@@ -125,7 +125,8 @@ function storedAsset(id: string, seed: number): StoredAsset {
  * 겹 방식은 **배경 판 한 번 + 문구·버튼 한 번씩**이다. 이 표본에는 문구 하나와
  * 버튼 하나가 있으므로 셋이다. 예전에는 통이미지 한 장이라 언제나 1이었다.
  */
-const GEN_CALLS = 3
+// 배경 한 장뿐 — 문구는 브라우저가 그린다 (살아 있는 문구 Patch).
+const GEN_CALLS = 1
 
 /** 이미지 자리 하나, 문구 하나, 버튼과 그 주소가 있는 한 장짜리 기획서. */
 function sampleDoc(): BriefDocument {

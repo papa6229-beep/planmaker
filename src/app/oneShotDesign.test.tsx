@@ -250,8 +250,14 @@ describe('§2 컷아웃이 없어도 겹으로 만든다', () => {
     // 실제 제품 사진은 모델에게 가지 않는다. 브라우저가 원본 그대로 얹는다.
     expect(names.some((n) => n.includes('page-layout'))).toBe(false)
     expect(names.some((n) => n.includes('product_image'))).toBe(false)
-    // 배경 판 한 번에 문구가 한 번씩 — 통이미지 한 장이 아니다.
-    await waitFor(() => expect(imageCalls().length).toBeGreaterThan(1), { timeout: 8000 })
+    // 통이미지 한 장이 아니라 겹이다 — 배경 판 위에 문구가 조각으로 남는다.
+    // 문구는 브라우저가 그리므로 요청은 배경 한 번뿐이다 (살아 있는 문구 Patch).
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect(job?.backgrounds?.page_1).toBeDefined()
+      expect((job?.textObjects?.page_1 ?? []).length).toBeGreaterThan(0)
+    }, { timeout: 8000 })
+    expect(imageCalls()).toHaveLength(1)
   })
 })
 

@@ -3438,3 +3438,24 @@ button { font-family: inherit; }
   background: var(--color-panel);
   cursor: default;
 }
+
+/* ── 살아 있는 문구 — 꾸밈 (2026-09-17) ──────────────────────────────────── */
+.block-card__content--layered { position: relative; }
+.block-card__look-under { position: absolute; inset: 0; pointer-events: none; }
+.block-card__look-top { position: relative; }
+.text-design__field { display: flex; flex-direction: column; gap: 4px; }
+.text-design__content { width: 100%; resize: vertical; font-size: 13px; }
+.text-design__label { font-size: 11px; color: var(--color-muted); white-space: nowrap; }
+.text-design__group { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; border-top: 1px dashed var(--color-border); }
+.text-design__row { display: flex; align-items: center; gap: 6px; }
+.text-design__row input[type='range'] { flex: 1; min-width: 60px; accent-color: var(--color-accent); }
+.text-design__chip { padding: 3px 10px; font-size: 11px; }
+.text-design__chip.is-on { border-color: var(--color-accent, #6c5ce7); color: var(--color-accent, #6c5ce7); font-weight: 700; }
+.text-design__color { width: 36px; height: 26px; padding: 0; border: 1px solid var(--color-border); border-radius: 6px; background: none; cursor: pointer; }
+.text-design__switch { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+.text-design__reset { align-self: flex-start; font-size: 11px; }
+.post-edit__note { margin: 0; font-size: 11px; line-height: 1.5; color: var(--color-muted); }
+/* 지면 맨 위의 조각 — 순서·지우기·후보정 막대를 조각 아래로 (이름표·기울기 손잡이 밑). */
+.result-object.is-near-top .result-object__layers,
+.result-object.is-near-top .result-object__remove { bottom: auto; top: calc(100% + 40px); }
+.result-object.is-near-top .result-object__editbar { bottom: auto; top: calc(100% + 66px); }
