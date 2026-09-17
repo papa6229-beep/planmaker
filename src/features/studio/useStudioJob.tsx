@@ -196,7 +196,8 @@ export interface StudioJobApi {
   textObjectsOf: (pageId: string) => StudioTextObject[]
   setTextObjects: (pageId: string, objects: readonly StudioTextObject[]) => Promise<void>
   moveTextObject: (pageId: string, blockId: string, rect: LayoutRect) => void
-  replaceTextObjectAsset: (pageId: string, blockId: string, assetId: string) => Promise<void>
+  /** 그림을 바꾼다. `rect`를 주면 자리도 함께 — 새 그림의 비율이 다를 때 (문구 꾸미기 Patch). */
+  replaceTextObjectAsset: (pageId: string, blockId: string, assetId: string, rect?: LayoutRect) => Promise<void>
   /**
    * 이미지 조각이 그리는 그림을 갈아 끼운다 (조각 수정 Patch).
    *
@@ -652,8 +653,8 @@ export function StudioJobProvider({ children }: { children: ReactNode }) {
       // 뒤따르며, 외부를 부르는 자리는 없다 (§2 마지막 줄).
       moveTextObject: (pageId, blockId, rect) =>
         void mutate((j) => withTextObject(j, pageId, blockId, { rect }, Date.now())),
-      replaceTextObjectAsset: (pageId, blockId, assetId) =>
-        mutate((j) => withTextObject(j, pageId, blockId, { assetId }, Date.now())),
+      replaceTextObjectAsset: (pageId, blockId, assetId, rect) =>
+        mutate((j) => withTextObject(j, pageId, blockId, rect === undefined ? { assetId } : { assetId, rect }, Date.now())),
       imageObjectsOf: (pageId) => imageObjectsOf(job, pageId),
       setImageObjects: (pageId, objects) => mutate((j) => withImageObjects(j, pageId, objects, Date.now())),
       carryBanner: (pageId, work) =>

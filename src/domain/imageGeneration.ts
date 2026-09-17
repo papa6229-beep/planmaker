@@ -74,6 +74,14 @@ export const FIELD_REFERENCE_MODE = 'referenceMode'
  * **말로** 했을 때만 장면의 색이 실제로 움직였다.
  */
 export const FIELD_PRODUCT_TONE = 'productTone'
+/**
+ * 문구 판에 입힐 재질의 **이름** (문구 꾸미기 Patch, 2026-09-17).
+ *
+ * `glossy`·`plastic`·`metal`·`glitter`·`neon` 중 하나. 문장이 아니라 이름만 간다 —
+ * 모델에게 무슨 말로 시킬지는 어댑터가 고정 문구로 갖고 있다. 색·테두리·그림자는
+ * 브라우저가 이미 칠했으므로 모델에게 색을 말하는 문장은 나가지 않는다.
+ */
+export const FIELD_TEXT_FINISH = 'textFinish'
 
 export interface ImageGenerationMetadata {
   /**

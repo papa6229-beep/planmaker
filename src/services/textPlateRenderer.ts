@@ -33,6 +33,22 @@ export interface TextPlateStyle {
   /** 그림자 — 글자 크기에 대한 비율. 0이면 그리지 않는다. */
   shadowRatio?: number
   shadowColor?: string
+  /**
+   * 몸통을 칠하는 법 (문구 꾸미기 Patch). 없으면 `color` 한 가지.
+   *
+   *  - `colorful`: 글자마다 `fills`를 돌려 가며
+   *  - `gradient`: 줄마다 위→아래로 `fills`
+   *  - `solid`: `fills[0]`
+   */
+  fill?: 'colorful' | 'gradient' | 'solid'
+  fills?: readonly string[]
+  /**
+   * 그림자를 흐리지 않고 **밀어서** 찍는다 (문구 꾸미기 Patch).
+   *
+   * 마젠타 바탕에 흐린 그림자를 깔면 가장자리가 바탕색과 섞여, 바탕을 지울 때
+   * 분홍 얼룩으로 남는다. 모델에게 보내는 판은 언제나 이쪽이다.
+   */
+  hardShadow?: boolean
 }
 
 export interface TextPlateRequest {
@@ -75,9 +91,13 @@ export async function renderTextPlate(request: TextPlateRequest): Promise<TextPl
 
   // 재는 자와 그리는 붓이 **같은 캔버스**여야 한다. 다른 곳에서 잰 너비로 그리면
   // 판을 넘치거나 덜 차고, 덜 찬 판에서는 모델이 빈 자리를 채운다.
+  // 테두리와 그림자도 판 안에 들어와야 한다 — 가장자리에서 잘린 테두리는 지울 때
+  // 바탕과 이어져 버린다. 그래서 그 두께만큼 넓게 잰다.
+  const style = request.style
+  const extra = 2 * (style?.strokeRatio ?? 0) + (style?.hardShadow === true ? (style.shadowRatio ?? 0) : 0)
   const layout = fitPlate(request.lines, { width, height }, (text, size) => {
     ctx.font = fontOf(size, request.style)
-    return ctx.measureText(text).width
+    return ctx.measureText(text).width + extra * size
   })
   if (layout === null) return null
 
@@ -86,35 +106,82 @@ export async function renderTextPlate(request: TextPlateRequest): Promise<TextPl
     ctx.fillRect(0, 0, width, height)
   }
 
-  const style = request.style
   ctx.font = fontOf(layout.fontSize, style)
-  ctx.textAlign = 'center'
+  ctx.textAlign = 'left'
   ctx.textBaseline = 'top'
+  const size = layout.fontSize
+  const stroke = (style?.strokeRatio ?? 0) * size
+  const shadow = (style?.shadowRatio ?? 0) * size
 
-  const shadow = (style?.shadowRatio ?? 0) * layout.fontSize
-  if (shadow > 0) {
-    ctx.shadowColor = style?.shadowColor ?? DEFAULT_STYLE.shadowColor
-    ctx.shadowBlur = shadow
-    ctx.shadowOffsetY = shadow * 0.35
+  /** 한 줄을 글자 단위로 — 글자마다 다른 색을 칠하려면 자리를 알아야 한다. */
+  const glyphs = (line: { text: string; cx: number; top: number }) => {
+    const total = ctx.measureText(line.text).width
+    let x = line.cx - total / 2
+    return [...line.text].map((ch) => {
+      const at = x
+      x += ctx.measureText(ch).width
+      return { ch, x: at, y: line.top }
+    })
   }
-
-  const stroke = (style?.strokeRatio ?? 0) * layout.fontSize
-  if (stroke > 0) {
-    // 외곽선을 먼저 굵게 그리고 그 위에 글자를 얹는다. 획 안쪽으로 파고들어
-    // 글자가 가늘어지는 것을 막는다.
+  const lines = layout.lines.map((line) => ({ line, glyphs: glyphs(line) }))
+  const drawAll = (paint: (g: { ch: string; x: number; y: number }, lineIndex: number, k: number) => void) => {
+    let k = 0
+    lines.forEach(({ glyphs: row }, li) => {
+      for (const g of row) {
+        paint(g, li, k)
+        if (g.ch.trim().length > 0) k += 1
+      }
+    })
+  }
+  const outline = (color: string, dx: number, dy: number) => {
     ctx.lineWidth = stroke * 2
     ctx.lineJoin = 'round'
     ctx.miterLimit = 2
-    ctx.strokeStyle = style?.strokeColor ?? DEFAULT_STYLE.strokeColor
-    for (const line of layout.lines) ctx.strokeText(line.text, line.cx, line.top)
+    ctx.strokeStyle = color
+    ctx.fillStyle = color
+    drawAll((g) => {
+      if (stroke > 0) ctx.strokeText(g.ch, g.x + dx, g.y + dy)
+      ctx.fillText(g.ch, g.x + dx, g.y + dy)
+    })
   }
 
-  // 글자 자체에는 그림자를 두 번 걸지 않는다 — 외곽선에서 이미 걸렸다.
-  ctx.shadowColor = 'transparent'
-  ctx.shadowBlur = 0
-  ctx.shadowOffsetY = 0
-  ctx.fillStyle = style?.color ?? DEFAULT_STYLE.color
-  for (const line of layout.lines) ctx.fillText(line.text, line.cx, line.top)
+  // ① 그림자
+  if (shadow > 0) {
+    const color = style?.shadowColor ?? DEFAULT_STYLE.shadowColor
+    if (style?.hardShadow === true) {
+      outline(color, shadow, shadow)
+    } else {
+      ctx.save()
+      ctx.shadowColor = color
+      ctx.shadowBlur = shadow
+      ctx.shadowOffsetY = shadow * 0.35
+      // 캔버스 그림자는 그리는 것의 알파를 따른다. 불투명한 것을 그려야 그림자가 진다 —
+      // 테두리(없으면 몸통) 색으로 그린다. 그 위에 ②·③이 다시 덮는다.
+      outline(stroke > 0 ? (style?.strokeColor ?? DEFAULT_STYLE.strokeColor) : (style?.fills?.[0] ?? style?.color ?? DEFAULT_STYLE.color), 0, 0)
+      ctx.restore()
+    }
+  }
+
+  // ② 테두리 — 먼저 굵게 그리고 그 위에 글자를 얹는다. 획 안쪽으로 파고들어
+  //    글자가 가늘어지는 것을 막는다.
+  if (stroke > 0) outline(style?.strokeColor ?? DEFAULT_STYLE.strokeColor, 0, 0)
+
+  // ③ 몸통
+  const fills = style?.fills !== undefined && style.fills.length > 0 ? style.fills : [style?.color ?? DEFAULT_STYLE.color]
+  const mode = style?.fill ?? 'solid'
+  drawAll((g, li, k) => {
+    if (mode === 'colorful') {
+      ctx.fillStyle = fills[k % fills.length]!
+    } else if (mode === 'gradient' && fills.length > 1) {
+      const top = layout.lines[li]!.top
+      const grad = ctx.createLinearGradient(0, top, 0, top + size)
+      fills.forEach((c, i) => grad.addColorStop(i / (fills.length - 1), c))
+      ctx.fillStyle = grad
+    } else {
+      ctx.fillStyle = fills[0]!
+    }
+    ctx.fillText(g.ch, g.x, g.y)
+  })
 
   const blob = await new Promise<Blob | null>((resolve) => {
     canvas.toBlob((result) => resolve(result), 'image/png')

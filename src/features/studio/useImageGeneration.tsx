@@ -106,6 +106,7 @@ import {
   FIELD_PROMPT,
   FIELD_REFERENCE,
   FIELD_REFERENCE_MODE,
+  FIELD_TEXT_FINISH,
   FIELD_SIZE,
   GENERATE_IMAGE_PATH,
   IMAGE_CALLS_PER_CLICK,
@@ -114,7 +115,18 @@ import {
   type GeneratedPageResult,
   type ImageRevision,
 } from '../../domain/imageGeneration'
-import type { ReferenceMode } from '../../domain/imageProvider'
+import type { ReferenceMode, TextFinishName } from '../../domain/imageProvider'
+import {
+  TEXT_FINISH_MIN_HEIGHT,
+  letteringColors,
+  mergeTextOrders,
+  plateSizeFor,
+  readTextOrder,
+  shadeOf,
+  shadowColorOf,
+  spokenColors,
+  type TextEmphasis,
+} from '../../domain/textStyle'
 import { deleteAsset, getAllAssets, getAsset, putAsset } from '../../services/assetStore'
 import { sizeLabel, toWorkingImage, workingImageTarget, type WorkingImageTarget } from '../../services/workingImage'
 import { renderPreviewPng } from '../../services/previewRenderer'
@@ -196,6 +208,8 @@ interface GenerationPlan {
     size: string
     /** 기획서 화면이 이 문구를 끊는 줄. 고쳐도 줄 수는 그대로다. */
     lines: readonly string[]
+    /** 기획서 블록의 상자 — 새 그림을 이 안에 앉힌다 (문구 꾸미기 Patch). */
+    blockRect: LayoutRect
     /** 이 블록에 붙여 둔 주문·참고 그림 (부분수정 재료 Patch). */
     blockNote?: string
     referenceAssetId?: string
@@ -370,6 +384,8 @@ const ImageGenerationContext = createContext<ImageGenerationApi | null>(null)
  * 그림이면 얹지 않고 그 사실을 말한다.
  */
 const FOREGROUND_MAX_OPAQUE = 0.92
+/** 어댑터가 문구 길을 알아보는 파일 이름. 이름이 곧 역할이다 (문구 판 Patch). */
+const TEXT_PLATE_FILE = 'text-plate.png'
 
 /**
  * 이 이상 불투명하면 **투명한 데가 없었다**고 본다 (조각 수정 Patch).
@@ -898,93 +914,6 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
   }, [])
 
   /**
-   * 문구 한 판을 **브라우저가 그린다** (문구 판 Patch).
-   *
-   * 로컬 엔진은 한글을 쓰지 못한다 (2026-09-16 확인). 그래서 글자는 여기서
-   * 정해지고 모델이 바꾸지 못한다. 그린 판은 바탕이 비어 있어 걷어 낼 색이 없다.
-   *
-   * 그리지 못하면 `null` — 부르는 쪽이 지금까지의 길(모델에게 맡기기)로 간다.
-   */
-  const drawLocalTextPlate = useCallback(
-    async (
-      block: TextLayerBlock,
-      size: { width: number; height: number },
-      order: { fontFamily?: string | undefined; fontWeight?: number | undefined },
-    ): Promise<{ object?: StudioTextObject; problem?: string } | null> => {
-      // **글꼴을 고른 블록에서만** 이 길로 간다. 고르지 않았으면 지금까지처럼
-      // 모델이 그린다 — 지금 쓰고 있는 페이지의 결과가 말없이 달라지지 않는다.
-      // 어느 쪽이 나은지는 작업자가 눈으로 보고 정할 일이다.
-      if (order.fontFamily === undefined || order.fontFamily.length === 0) return null
-      const families = await fontsOf()
-      const wanted = families.find((f) => f.family === order.fontFamily)
-        ?? families.find((f) => f.family === FALLBACK_FAMILY)
-      const file = wanted === undefined ? null : await loadFamilyWeight(wanted, order.fontWeight)
-      const rows = block.lines.length > 0 ? block.lines : [block.content]
-
-      const plate = await renderTextPlate({
-        lines: rows,
-        plate: size,
-        // 바탕을 비워 둔다. 모델을 거치지 않으므로 지울 색을 깔 이유가 없다.
-        keyed: false,
-        style: {
-          ...(file === null ? {} : { fontFamily: faceName(file), fontWeight: file.weight }),
-          ...(order.fontWeight === undefined || file !== null ? {} : { fontWeight: order.fontWeight }),
-        },
-      })
-      if (plate === null) return null
-
-      const trimmed = await trimToContent(plate.blob)
-      if (trimmed === null) return { problem: `"${block.content}"을(를) 그리지 못했습니다.` }
-      const assetId = createId('asset')
-      await putAsset({
-        id: assetId,
-        blob: trimmed.blob,
-        fileName: `text-${block.blockId}.png`,
-        mimeType: 'image/png',
-        byteSize: trimmed.blob.size,
-      })
-      return {
-        object: { blockId: block.blockId, assetId, rect: containRect(trimmed, block.rect), layer: block.layer },
-      }
-    },
-    [fontsOf],
-  )
-
-  const drawTextLayer = useCallback(
-    async (
-      blob: Blob,
-      block: TextLayerBlock,
-    ): Promise<{ object?: StudioTextObject; problem?: string }> => {
-      const keyed = await removeKeyBackground(blob)
-      if (keyed === null) return { problem: `"${block.content}"의 임시 배경을 걷어 내지 못했습니다.` }
-      if (keyed.opaqueRatio > FOREGROUND_MAX_OPAQUE) {
-        return { problem: `"${block.content}"이(가) 단색 배경 없이 돌아와 배경과 사진을 덮습니다.` }
-      }
-      const trimmed = await trimToContent(keyed.blob)
-      if (trimmed === null) return { problem: `"${block.content}"에서 글자를 찾지 못했습니다.` }
-
-      const assetId = createId('asset')
-      await putAsset({
-        id: assetId,
-        blob: trimmed.blob,
-        fileName: `text-${block.blockId}.png`,
-        mimeType: 'image/png',
-        byteSize: trimmed.blob.size,
-      })
-      return {
-        object: {
-          blockId: block.blockId,
-          assetId,
-          // 기획서 상자를 넘지 않는 가장 큰 크기로, 가운데에.
-          rect: containRect(trimmed, block.rect),
-          layer: block.layer,
-        },
-      }
-    },
-    [],
-  )
-
-  /**
    * 받아 둔 원본을 `840 × 페이지 세로길이` 작업본으로 맞춰 저장한다.
    *
    * Studio가 이후에 보고 고치고 저장하는 것은 전부 이 작업본이다. 모델 규격은
@@ -1443,7 +1372,21 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
        * 작업자가 쓴 말 그대로와 레퍼런스 한 장 (직접 전달 Patch). 첫 생성의 배경
        * 요청에만 붙는다. 서버가 로컬 공급자일 때만 이것을 쓴다.
        */
-      direct?: { note: string; referenceAssetId: string; mode?: ReferenceMode; productAssetId?: string },
+      direct?: {
+        note: string
+        /** 저장해 둔 레퍼런스. 줄여서 `style-reference.png`로 나간다. */
+        referenceAssetId?: string
+        /**
+         * 방금 그린 그림을 **그 이름, 그 크기 그대로** 보낸다 (문구 꾸미기 Patch).
+         * 문구 판은 줄이면 글자가 판을 덜 채우고, 이름(`text-plate.png`)이 곧 어댑터가
+         * 문구 길을 알아보는 표시다.
+         */
+        referenceFile?: { blob: Blob; fileName: string }
+        mode?: ReferenceMode
+        productAssetId?: string
+        /** 문구 판에 입힐 재질 이름 (문구 꾸미기 Patch). */
+        textFinish?: TextFinishName
+      },
     ): Promise<
       { blob: Blob; mimeType: string; requestedSize: string; model?: string; requestId?: string } | { code?: string }
     > => {
@@ -1460,11 +1403,17 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         form.append(FIELD_IMAGES, new File([file.blob], file.fileName, { type: file.blob.type || 'image/png' }))
       }
       if (direct !== undefined) {
-        const reference = await getAsset(direct.referenceAssetId)
+        const stored = direct.referenceAssetId === undefined ? undefined : await getAsset(direct.referenceAssetId)
+        const reference =
+          direct.referenceFile ??
+          (stored === undefined
+            ? undefined
+            : { blob: await shrinkReference(stored.blob), fileName: 'style-reference.png' })
         if (reference !== undefined) {
-          const blob = await shrinkReference(reference.blob)
+          const blob = reference.blob
           form.set(FIELD_NOTE, direct.note)
-          form.set(FIELD_REFERENCE, new File([blob], 'style-reference.png', { type: blob.type || 'image/png' }))
+          form.set(FIELD_REFERENCE, new File([blob], reference.fileName, { type: blob.type || 'image/png' }))
+          if (direct.textFinish !== undefined) form.set(FIELD_TEXT_FINISH, direct.textFinish)
           // 말이 비어 있을 때만 체크박스 상태를 싣는다 (레퍼런스만 Patch). 말이
           // 있으면 그 말이 지시이고, 여기에 문장을 하나 더 얹으면 둘이 싸운다.
           if (direct.note.length === 0 && direct.mode !== undefined) {
@@ -1527,6 +1476,161 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       }
     },
     [collectImages],
+  )
+
+  /**
+   * 문구 한 판을 꾸민다 (문구 꾸미기 Patch, 2026-09-17). 처음 만들기와 고치기가 함께 쓴다.
+   *
+   * 누가 무엇을 하는가 — 2026-09-17에 실물 작업 파일로 잰 결과다
+   * (`~/ai/planmaker-bench/REPORT-2026-09-17.md`):
+   *
+   *  1. **주문을 칸으로 읽는다** (`readTextOrder`). 색 방식·테두리·그림자·재질
+   *  2. **색을 정한다.** 주문의 색 > 블록 참고 그림의 색 > 먼저 만든 배경의 색.
+   *     그림은 어디에도 나가지 않는다 — 브라우저가 대표색만 읽는다
+   *  3. **글꼴로 그리고 칠한다.** 글자·색·테두리·그림자는 여기서 정해지고 모델이
+   *     바꾸지 못한다
+   *  4. **모델은 재질만.** 판 한 장 + 재질 이름. 색을 말하는 문장은 보내지 않는다 —
+   *     보냈더니 마젠타 바탕까지 물들었다
+   *  5. 바탕을 지우고 얹는다. 모델이 실패하면 3의 판을 그대로 얹고 이유를 알린다
+   *
+   * 블록마다 그림 한 장짜리 요청이므로 **블록 수에 제한이 없다.**
+   *
+   * 글꼴을 고르지 않았으면 `null` — 글꼴은 필수다 (2026-09-17 사용자 결정). AI가
+   * 한글을 그리는 옛 길로는 더 가지 않는다.
+   *
+   * OpenAI 경로는 `direct`를 읽지 않으므로 넘겨받은 옛 주문(`fallback`)으로 간다.
+   * 다만 판 크기는 이 규칙(`plateSizeFor`)을 따르므로, OpenAI가 받지 않는 비율이면
+   * 그쪽에서는 실패한다 — 이 서버는 로컬 엔진이다.
+   */
+  const decorateText = useCallback(
+    async (args: {
+      plan: GenerationPlan
+      auth: Record<string, string>
+      kind: UsageKind
+      blockId: string
+      content: string
+      lines: readonly string[]
+      /** 기획서의 자리 — 판의 모양과 얹을 곳이 여기서 나온다. */
+      rect: LayoutRect
+      order: BlockOrder
+      /** 고치기의 수정 지시. 원래 주문보다 앞선다. */
+      instruction?: string
+      /** 먼저 만든 배경 판 — 참고 그림이 없을 때 색을 여기서 읽는다. */
+      backgroundAssetId?: string
+      /** 이 자리에 깔린 색의 밝기 0..1. 어두우면 글자를 밝게 뒤집는다. */
+      bright?: number
+      fallback: { inputs: readonly GenerationInputImage[]; prompt: string }
+      palettes: Map<string, { hex: string; share: number }[] | null>
+      /**
+       * 재질 입히기가 실패하면 칠한 판을 대신 얹는가. 처음 만들기는 그렇다 — 빈자리보다
+       * 낫다. 고치기는 아니다 — "실패하면 아무것도 바꾸지 않는다"는 약속이 먼저다.
+       */
+      paintOnFailure: boolean
+    }): Promise<{ assetId: string; size: { width: number; height: number }; problem?: string } | { problem: string } | null> => {
+      const { order } = args
+      if (order.fontFamily === undefined || order.fontFamily.length === 0) return null
+
+      const page = getDocument().pages.find((p) => p.id === args.plan.pageId)
+      const emphasis = (page?.blocks.find((b) => b.id === args.blockId)?.layoutHint.emphasis ?? 'normal') as TextEmphasis
+      const spec =
+        args.instruction === undefined
+          ? readTextOrder(order.note, emphasis)
+          : mergeTextOrders(order.note, args.instruction, emphasis)
+
+      // ── 색 ───────────────────────────────────────────────────────────────
+      const paletteOf = async (assetId: string | undefined) => {
+        if (assetId === undefined) return null
+        if (!args.palettes.has(assetId)) {
+          const asset = await getAsset(assetId)
+          const analysis = asset === undefined ? null : await analyzeImageBlob(asset.blob)
+          args.palettes.set(assetId, analysis?.palette ?? null)
+        }
+        return args.palettes.get(assetId) ?? null
+      }
+      const wanted = spec.fill === 'colorful' ? 5 : spec.fill === 'gradient' ? 2 : 1
+      let colors: string[]
+      if (spec.colors.length > 0) {
+        colors = spokenColors(spec.colors, spec.pastel)
+      } else {
+        const palette = (await paletteOf(order.referenceAssetId)) ?? (await paletteOf(args.backgroundAssetId)) ?? []
+        colors = letteringColors(palette, {
+          emphasis,
+          pastel: spec.pastel,
+          max: wanted,
+          ...(args.bright === undefined ? {} : { bright: args.bright }),
+        })
+      }
+      if (spec.fill === 'gradient' && colors.length === 1) colors = [colors[0]!, shadeOf(colors[0]!)]
+
+      // ── 글꼴 ─────────────────────────────────────────────────────────────
+      const families = await fontsOf()
+      const family = families.find((f) => f.family === order.fontFamily) ?? families.find((f) => f.family === FALLBACK_FAMILY)
+      const file = family === undefined ? null : await loadFamilyWeight(family, order.fontWeight)
+      const rows = args.lines.length > 0 ? args.lines : [args.content]
+      const style = {
+        ...(file === null ? {} : { fontFamily: faceName(file), fontWeight: file.weight }),
+        fill: spec.fill,
+        fills: colors,
+        strokeRatio: spec.outline ? 0.09 : 0,
+        strokeColor: spec.outline ? spec.outlineColor : '#ffffff',
+        shadowRatio: spec.shadow ? 0.05 : 0,
+        shadowColor: shadowColorOf(colors),
+        hardShadow: true,
+      }
+
+      const store = async (blob: Blob) => {
+        const trimmed = await trimToContent(blob)
+        if (trimmed === null) return null
+        const assetId = createId('asset')
+        await putAsset({
+          id: assetId,
+          blob: trimmed.blob,
+          fileName: `text-${args.blockId}.png`,
+          mimeType: 'image/png',
+          byteSize: trimmed.blob.size,
+        })
+        return { assetId, size: { width: trimmed.width, height: trimmed.height } }
+      }
+      /** AI 없이 칠한 판 그대로. 바탕을 비워 그린다 — 지울 색이 없다. */
+      const painted = async (reason?: string) => {
+        const size = plateSizeFor(args.rect) ?? {
+          width: Math.max(1, Math.round(args.rect.width * 3)),
+          height: Math.max(1, Math.round(args.rect.height * 3)),
+        }
+        const plate = await renderTextPlate({ lines: rows, plate: size, keyed: false, style })
+        const stored = plate === null ? null : await store(plate.blob)
+        if (stored === null) return { problem: `"${args.content}"을(를) 그리지 못했습니다.` }
+        return reason === undefined ? stored : { ...stored, problem: `"${args.content}": ${reason} 글꼴로 칠한 그대로 얹었습니다.` }
+      }
+
+      const failed = (reason: string) =>
+        args.paintOnFailure ? painted(reason) : Promise.resolve({ problem: `"${args.content}": ${reason}` })
+
+      const size = plateSizeFor(args.rect)
+      if (spec.finish === 'none' || size === null || args.rect.height < TEXT_FINISH_MIN_HEIGHT) return painted()
+
+      const keyed = await renderTextPlate({ lines: rows, plate: size, keyed: true, style })
+      if (keyed === null) return painted()
+      const answer = await requestLayer(
+        args.plan,
+        args.auth,
+        args.kind,
+        args.fallback.inputs,
+        args.fallback.prompt,
+        `${String(size.width)}x${String(size.height)}`,
+        {
+          note: '',
+          referenceFile: { blob: keyed.blob, fileName: TEXT_PLATE_FILE },
+          textFinish: spec.finish,
+        },
+      )
+      if (!('blob' in answer)) return failed(`재질을 입히지 못했습니다 (${errorTextFor(answer.code)})`)
+      const cut = await removeKeyBackground(answer.blob)
+      if (cut === null || cut.opaqueRatio > FOREGROUND_MAX_OPAQUE) return failed('재질을 입힌 판의 바탕을 걷어 내지 못했습니다.')
+      const stored = await store(cut.blob)
+      return stored ?? failed('재질을 입힌 판에서 글자를 찾지 못했습니다.')
+    },
+    [fontsOf, getDocument, requestLayer],
   )
 
   /**
@@ -1630,65 +1734,70 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           }
           // 고칠 자리마다 그 아래에 실제로 깔려 있는 색. 외부 호출 0건이다.
           const tones = await measureEditTones(plan.pageId, edits.map((e) => e.rect))
+          /** 같은 그림의 대표색을 블록마다 다시 읽지 않는다. */
+          const palettes = new Map<string, { hex: string; share: number }[] | null>()
           const fixOne = async (edit: (typeof edits)[number], index: number): Promise<void> => {
-            const answer = await requestLayer(
+            // 첫 생성과 같은 길이다 (문구 꾸미기 Patch). 앞선 판은 여기서 그림 네 장과
+            // 긴 문서를 보냈고, 로컬 엔진(한도 3장)이 거절했다 (2026-09-17).
+            const decorated = await decorateText({
               plan,
               auth,
-              'edit',
-              planTextEditInputs({
-                currentAssetId: edit.assetId,
-                ...(context?.styleReferenceAssetId === undefined
-                  ? {}
-                  : { styleReferenceAssetId: context.styleReferenceAssetId }),
-                ...(context?.backgroundAssetId === undefined
-                  ? {}
-                  : { backgroundAssetId: context.backgroundAssetId }),
-                ...(edit.referenceAssetId === undefined
-                  ? {}
-                  : { blockReferenceAssetId: edit.referenceAssetId }),
-              }),
-              buildTextEditPrompt({
-                size: { width: edit.rect.width, height: edit.rect.height },
-                pageSize: context?.pageSize,
-                content: edit.content,
-                instruction: edit.instruction,
-                rect: edit.rect,
-                lines: edit.lines,
-                tone: tones[index] ?? null,
-                styleReference: context?.styleReferenceAssetId !== undefined,
-                background: context?.backgroundAssetId !== undefined,
-                blockReference: edit.referenceAssetId !== undefined,
-                blockNote: edit.blockNote,
-                fixed: context?.fixed,
-              }),
-              edit.size,
-            )
-            if (!('blob' in answer)) {
-              trouble[index] = `"${edit.content}": ${errorTextFor(answer.code)}`
-              return
-            }
-            const keyed = await removeKeyBackground(answer.blob)
-            if (keyed === null || keyed.opaqueRatio > FOREGROUND_MAX_OPAQUE) {
-              trouble[index] = `"${edit.content}": 임시 배경을 걷어 내지 못했습니다.`
-              return
-            }
-            const trimmed = await trimToContent(keyed.blob)
-            if (trimmed === null) {
-              trouble[index] = `"${edit.content}": 새 디자인에서 글자를 찾지 못했습니다.`
-              return
-            }
-            const assetId = createId('asset')
-            await putAsset({
-              id: assetId,
-              blob: trimmed.blob,
-              fileName: `text-${edit.blockId}.png`,
-              mimeType: 'image/png',
-              byteSize: trimmed.blob.size,
+              kind: 'edit',
+              paintOnFailure: false,
+              blockId: edit.blockId,
+              content: edit.content,
+              lines: edit.lines,
+              rect: edit.blockRect,
+              // 지금 블록에 붙어 있는 주문 — 확인창을 연 뒤에 바꿨어도 그것을 쓴다.
+              order: studio.blockOrderOf(edit.blockId),
+              instruction: edit.instruction,
+              ...(context?.backgroundAssetId === undefined ? {} : { backgroundAssetId: context.backgroundAssetId }),
+              ...(tones[index] == null ? {} : { bright: tones[index]!.brightness }),
+              palettes,
+              fallback: {
+                inputs: planTextEditInputs({
+                  currentAssetId: edit.assetId,
+                  ...(context?.styleReferenceAssetId === undefined
+                    ? {}
+                    : { styleReferenceAssetId: context.styleReferenceAssetId }),
+                  ...(context?.backgroundAssetId === undefined
+                    ? {}
+                    : { backgroundAssetId: context.backgroundAssetId }),
+                  ...(edit.referenceAssetId === undefined
+                    ? {}
+                    : { blockReferenceAssetId: edit.referenceAssetId }),
+                }),
+                prompt: buildTextEditPrompt({
+                  size: { width: edit.rect.width, height: edit.rect.height },
+                  pageSize: context?.pageSize,
+                  content: edit.content,
+                  instruction: edit.instruction,
+                  rect: edit.rect,
+                  lines: edit.lines,
+                  tone: tones[index] ?? null,
+                  styleReference: context?.styleReferenceAssetId !== undefined,
+                  background: context?.backgroundAssetId !== undefined,
+                  blockReference: edit.referenceAssetId !== undefined,
+                  blockNote: edit.blockNote,
+                  fixed: context?.fixed,
+                }),
+              },
             })
-            // 자리와 크기는 그대로. 바뀌는 것은 그림 하나뿐이다 — 판을 그 자리
-            // 모양으로 주문했으므로 늘어나거나 눌리지 않는다.
-            await studio.replaceTextObjectAsset(plan.pageId, edit.blockId, assetId)
-            changed += 1
+            if (decorated === null) {
+              trouble[index] = `"${edit.content}": 글꼴을 고르지 않아 고치지 않았습니다. 문구 블록에서 글꼴을 골라 주세요.`
+              return
+            }
+            if ('assetId' in decorated) {
+              // 테두리·그림자가 바뀌면 그림의 비율도 바뀐다. 자리는 블록 상자 안에서 다시 잡는다.
+              await studio.replaceTextObjectAsset(
+                plan.pageId,
+                edit.blockId,
+                decorated.assetId,
+                containRect(decorated.size, edit.blockRect),
+              )
+              changed += 1
+            }
+            if (decorated.problem !== undefined) trouble[index] = decorated.problem
           }
 
           // ── 이미지 조각 하나씩 다시 그리기 (조각 수정 Patch) ───────────────
@@ -1854,16 +1963,9 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
 
           // ④ 블록마다 한 번씩. 하나가 실패해도 나머지는 그대로 간다 — 값을 치른
           //    것을 잃지 않기 위해서다. 스스로 다시 부르는 자리는 없다.
-          /** 이 문구가 쓸 판의 크기. 이미 정해 둔 규격(`textSizes`)이 있으면 그것을 쓴다. */
-          const canvasOf = (block: TextLayerBlock): { width: number; height: number } => {
-            const parts = (plan.textSizes?.[block.blockId] ?? '').split('x')
-            const w = Number(parts[0])
-            const h = Number(parts[1])
-            return Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0
-              ? { width: w, height: h }
-              : { width: Math.max(1, Math.round(block.rect.width)), height: Math.max(1, Math.round(block.rect.height)) }
-          }
           const made: (StudioTextObject | undefined)[] = Array.from<StudioTextObject | undefined>({ length: textBlocks.length })
+          /** 같은 그림의 대표색을 블록마다 다시 읽지 않는다. */
+          const palettes = new Map<string, { hex: string; share: number }[] | null>()
           const trouble: (string | undefined)[] = Array.from<string | undefined>({ length: textBlocks.length })
           let done = 0
           setState({ kind: 'running', done, total: textBlocks.length + 1 })
@@ -1875,51 +1977,58 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             // 있으면 그 요청에만 실린다 (블록별 주문 Patch).
             const order = plan.blockOrders?.[block.blockId] ?? {}
 
-            // ── 글자는 브라우저가 그린다 (문구 판 Patch) ─────────────────────
+            // ── 글자는 글꼴로, 꾸밈은 코드로, 재질만 모델이 (문구 꾸미기 Patch) ──
             //
-            // 로컬 엔진은 한글을 쓰지 못한다. 2026-09-16에 같은 판으로 확인했다:
-            // `여름 시즌오프`를 그려 달라고 하면 `메롱 시셩므무`가 돌아온다. 규칙으로
-            // 부탁해서 될 일이 아니라, 틀리면 안 되는 것을 **말로 맡기지 않는다**.
-            //
-            // 그래서 문구 판은 여기서 그린다. 모델을 부르지 않으므로 값도 시간도
-            // 들지 않고, 글자는 한 글자도 틀리지 않는다. 그린 판을 모델에게 넘겨
-            // 재질만 입히는 길은 그 다음 조각이다.
-            const local = await drawLocalTextPlate(block, canvasOf(block), order)
-            if (local !== null) {
-              if (local.object !== undefined) made[index] = local.object
-              if (local.problem !== undefined) trouble[index] = local.problem
-              return
-            }
-
-            const answer = await requestLayer(
+            // 로컬 엔진은 한글을 쓰지 못한다 (2026-09-16: `여름 시즌오프` → `메롱 시셩므무`).
+            // 색을 말로 시키면 바탕까지 물든다 (2026-09-17). 그래서 틀리면 안 되는 것은
+            // 전부 여기서 정하고, 모델에게는 판 한 장과 재질 이름만 간다.
+            const decorated = await decorateText({
               plan,
               auth,
-              'text-layer',
-              planTextLayerInputs({
-                ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
-                ...(plateAssetId === undefined ? {} : { backgroundAssetId: plateAssetId }),
-                ...(order.referenceAssetId === undefined ? {} : { blockReferenceAssetId: order.referenceAssetId }),
-              }),
-              buildTextLayerPrompt({
-                size: plan.working,
-                ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
-                ...(plateAssetId === undefined ? {} : { backgroundAssetId: plateAssetId }),
-                block: withTone,
-                siblings: textBlocks,
-                fixed,
-                ...(note.length === 0 ? {} : { note }),
-                ...(order.note === undefined ? {} : { blockNote: order.note }),
-                ...(order.referenceAssetId === undefined ? {} : { blockReference: true }),
-              }),
-              plan.textSizes?.[block.blockId],
-            )
-            if (!('blob' in answer)) {
-              trouble[index] = `"${block.content}": ${errorTextFor(answer.code)}`
+              kind: 'text-layer',
+              paintOnFailure: true,
+              blockId: block.blockId,
+              content: block.content,
+              lines: block.lines,
+              rect: block.rect,
+              order,
+              ...(plateAssetId === undefined ? {} : { backgroundAssetId: plateAssetId }),
+              ...(tones[index] == null ? {} : { bright: tones[index]!.brightness }),
+              palettes,
+              // OpenAI 경로가 읽는 옛 주문. 로컬 경로는 이것을 보내지 않는다.
+              fallback: {
+                inputs: planTextLayerInputs({
+                  ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
+                  ...(plateAssetId === undefined ? {} : { backgroundAssetId: plateAssetId }),
+                  ...(order.referenceAssetId === undefined ? {} : { blockReferenceAssetId: order.referenceAssetId }),
+                }),
+                prompt: buildTextLayerPrompt({
+                  size: plan.working,
+                  ...(styleRefId === undefined ? {} : { styleReferenceAssetId: styleRefId }),
+                  ...(plateAssetId === undefined ? {} : { backgroundAssetId: plateAssetId }),
+                  block: withTone,
+                  siblings: textBlocks,
+                  fixed,
+                  ...(note.length === 0 ? {} : { note }),
+                  ...(order.note === undefined ? {} : { blockNote: order.note }),
+                  ...(order.referenceAssetId === undefined ? {} : { blockReference: true }),
+                }),
+              },
+            })
+            if (decorated === null) {
+              trouble[index] = `"${block.content}": 글꼴을 고르지 않아 만들지 않았습니다. 문구 블록에서 글꼴을 골라 주세요.`
               return
             }
-            const drawn = await drawTextLayer(answer.blob, withTone)
-            if (drawn.object !== undefined) made[index] = drawn.object
-            if (drawn.problem !== undefined) trouble[index] = drawn.problem
+            if ('assetId' in decorated) {
+              made[index] = {
+                blockId: block.blockId,
+                assetId: decorated.assetId,
+                // 기획서 상자를 넘지 않는 가장 큰 크기로, 가운데에.
+                rect: containRect(decorated.size, block.rect),
+                layer: block.layer,
+              }
+            }
+            if (decorated.problem !== undefined) trouble[index] = decorated.problem
           }
 
           /**
@@ -1972,7 +2081,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         runningRef.current = false
       }
     },
-    [requestLayer, finishFromPaid, studio, getDocument, recomposePage, storePlate, measureRegions, measureEditTones, drawTextLayer, platePrompt],
+    [requestLayer, finishFromPaid, studio, getDocument, recomposePage, storePlate, measureRegions, measureEditTones, decorateText, platePrompt],
   )
 
   const confirm = useCallback(
@@ -2125,6 +2234,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           blockId: object!.blockId,
           assetId: object!.assetId,
           rect: object!.rect,
+          blockRect: block === undefined ? object!.rect : block.position,
           content,
           instruction: item.instruction,
           size: resolved.ok ? resolved.size : size.size,

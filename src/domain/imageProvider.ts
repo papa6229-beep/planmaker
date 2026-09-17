@@ -45,6 +45,19 @@ export const REFERENCE_MODES = ['preserve', 'style'] as const
 export type ReferenceMode = (typeof REFERENCE_MODES)[number]
 
 /** 폼에서 읽은 값을 아는 상태로 좁힌다. 모르는 값은 없는 것으로 본다. */
+/**
+ * 문구 판 재질 이름 (문구 꾸미기 Patch). `domain/textStyle.ts`의 목록 중 AI를 부르는 것만.
+ * 서버 함수가 읽으므로 여기 따로 둔다 — 서버 빌드는 이 파일만 가져간다.
+ */
+export const TEXT_FINISH_NAMES = ['glossy', 'plastic', 'metal', 'glitter', 'neon'] as const
+export type TextFinishName = (typeof TEXT_FINISH_NAMES)[number]
+
+export function readTextFinishName(value: unknown): TextFinishName | undefined {
+  return typeof value === 'string' && (TEXT_FINISH_NAMES as readonly string[]).includes(value)
+    ? (value as TextFinishName)
+    : undefined
+}
+
 export function readReferenceMode(value: unknown): ReferenceMode | undefined {
   return typeof value === 'string' && (REFERENCE_MODES as readonly string[]).includes(value)
     ? (value as ReferenceMode)
@@ -102,6 +115,8 @@ export interface ImageProviderRequest {
     mode?: ReferenceMode
     /** 제품의 대표색 — `#rrggbb` 를 쉼표로 이은 것. 숫자만 간다. */
     productTone?: string
+    /** 문구 판에 입힐 재질 이름 (문구 꾸미기 Patch). 있으면 `note`는 비어 있다. */
+    textFinish?: TextFinishName
   }
 }
 

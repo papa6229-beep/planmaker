@@ -8,7 +8,7 @@
  * 그림 한 장**이고, 자산 저장소에 들어가는 것도 그것이다.
  */
 
-import { keyOutBackground, TEXT_KEY_COLOR, TEXT_KEY_TOLERANCE, unspillKeyEdges } from '../domain/chromaKey'
+import { borderKeyColor, keyOutBackground, TEXT_KEY_TOLERANCE, unspillKeyEdges } from '../domain/chromaKey'
 
 export interface KeyedLayer {
   blob: Blob
@@ -54,14 +54,17 @@ export async function removeKeyBackground(blob: Blob): Promise<KeyedLayer | null
 
     const pixels = ctx.getImageData(0, 0, width, height)
     const buffer = { data: pixels.data, width: pixels.width, height: pixels.height }
-    const opaqueRatio = keyOutBackground(buffer, TEXT_KEY_COLOR, TEXT_KEY_TOLERANCE)
+    // 바탕색은 결과 그림의 테두리에서 읽는다 — 엔진이 마젠타를 보라·분홍으로
+    // 바꿔 돌려주는 일이 있다 (2026-09-17). 테두리가 고르지 않으면 순수 마젠타다.
+    const key = borderKeyColor(buffer)
+    const opaqueRatio = keyOutBackground(buffer, key, TEXT_KEY_TOLERANCE)
     /**
      * 지우고 나서 가장자리를 되돌린다 (자주색 테두리 Patch).
      *
      * 비율은 **되돌리기 전에** 잰다. 그 값이 답하는 물음은 "모델이 단색 배경을
      * 지켰는가"이고, 가장자리 몇 겹이 반투명해졌는지와는 상관이 없다.
      */
-    unspillKeyEdges(buffer, TEXT_KEY_COLOR)
+    unspillKeyEdges(buffer, key)
     ctx.putImageData(pixels, 0, 0)
 
     const out = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))

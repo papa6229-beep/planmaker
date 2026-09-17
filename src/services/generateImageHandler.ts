@@ -27,6 +27,7 @@ import {
   FIELD_REFERENCE,
   FIELD_REFERENCE_MODE,
   FIELD_SIZE,
+  FIELD_TEXT_FINISH,
   IMAGE_MODEL,
   IMAGE_QUALITY,
   errorTextFor,
@@ -34,7 +35,7 @@ import {
   type GenerateImageSuccess,
   type ImageGenerationErrorCode,
 } from '../domain/imageGeneration.js'
-import { readImageIntent, readReferenceMode, type ImageProvider } from '../domain/imageProvider.js'
+import { readImageIntent, readReferenceMode, readTextFinishName, type ImageProvider } from '../domain/imageProvider.js'
 import { ImageProviderError, requestOpenAiImage } from './openAiImageClient.js'
 import { resolveApiKey, type ServerEnv } from './serverAccess.js'
 
@@ -123,6 +124,8 @@ export async function handleGenerateImage(request: Request, deps: HandlerDeps = 
   const tone = form.get(FIELD_PRODUCT_TONE)
   const productTone = typeof tone === 'string' && tone.trim().length > 0 ? tone.trim() : undefined
   const trimmedNote = typeof note === 'string' ? note.trim() : ''
+  // 문구 판의 재질 이름 (문구 꾸미기 Patch). 모르는 값은 없는 것으로 본다.
+  const textFinish = readTextFinishName(form.get(FIELD_TEXT_FINISH))
   const direct =
     reference !== null && typeof reference !== 'string'
       ? {
@@ -130,6 +133,7 @@ export async function handleGenerateImage(request: Request, deps: HandlerDeps = 
           reference: { fileName: reference.name, blob: reference },
           ...(trimmedNote.length > 0 || mode === undefined ? {} : { mode }),
           ...(productTone === undefined ? {} : { productTone }),
+          ...(textFinish === undefined ? {} : { textFinish }),
         }
       : undefined
 

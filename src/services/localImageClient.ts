@@ -57,6 +57,8 @@ export const LOCAL_FIELD_IMAGES = 'images[]'
 export const LOCAL_FIELD_REFERENCE_MODE = 'reference_mode'
 /** 제품의 대표색을 싣는 칸 (제품 색맞춤 Patch). 그림이 아니라 숫자다. */
 export const LOCAL_FIELD_PRODUCT_TONE = 'product_tone'
+/** 문구 판에 입힐 재질 이름 (문구 꾸미기 Patch). 어댑터가 고정 문장으로 바꾼다. */
+export const LOCAL_FIELD_TEXT_FINISH = 'text_finish'
 
 /**
  * 기다리는 시간의 기본값.
@@ -139,6 +141,9 @@ export function createLocalImageClient(config: LocalImageConfig): ImageProvider 
     if (request.direct?.productTone !== undefined && request.direct.productTone.length > 0) {
       form.set(LOCAL_FIELD_PRODUCT_TONE, request.direct.productTone)
     }
+    if (request.direct?.textFinish !== undefined) {
+      form.set(LOCAL_FIELD_TEXT_FINISH, request.direct.textFinish)
+    }
     form.set(LOCAL_FIELD_SIZE, request.size)
     if (request.intent !== undefined) form.set(LOCAL_FIELD_INTENT, request.intent)
     if (config.model !== undefined && config.model.length > 0) form.set(LOCAL_FIELD_MODEL, config.model)
@@ -187,7 +192,14 @@ export function createLocalImageClient(config: LocalImageConfig): ImageProvider 
         // 본문이 JSON이 아닐 수도 있다. 그때는 받은 글의 첫 줄을 손질해 남긴다 —
         // 키도 base64도 긴 인용도 지워진 뒤의 문자열이다.
         const detail = safeProviderDetail(fields.message ?? text)
-        throw new ImageProviderError(classifyLocalStatus(response.status), response.status, requestId, {
+        // 413은 둘이다 — 그림이 너무 크거나, **너무 많거나**. 어댑터가 붙인 이름으로
+        // 가른다. 앞선 판은 장수 초과(Klein 한도 3장)를 "너무 커서"라고 알려, 작업자가
+        // 멀쩡한 파일을 줄이러 갔다 (2026-09-17).
+        const code =
+          response.status === 413 && fields.code === 'too_many_images'
+            ? 'too_many_inputs'
+            : classifyLocalStatus(response.status)
+        throw new ImageProviderError(code, response.status, requestId, {
           ...(typeof fields.code === 'string' ? { code: fields.code } : {}),
           ...(typeof fields.type === 'string' ? { type: fields.type } : {}),
           ...(typeof fields.param === 'string' ? { param: fields.param } : {}),

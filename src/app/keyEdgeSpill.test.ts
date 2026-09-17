@@ -30,6 +30,7 @@
 
 import { describe, it, expect } from 'vitest'
 import {
+  borderKeyColor,
   keyEdgeAlpha,
   keyOutBackground,
   unspillKeyEdges,
@@ -344,5 +345,32 @@ describe('§26-3 단색 배경 확인 장치는 그대로 답한다', () => {
     const ratio = keyOutBackground(s, KEY)
     expect(ratio).toBeCloseTo(20 / 400, 3)
     expect(pixel(s, 19, 19)[3]).toBe(0)
+  })
+})
+
+describe('borderKeyColor — 바뀐 바탕색을 테두리에서 읽는다 (2026-09-17)', () => {
+  const plate = (w: number, h: number, bg: [number, number, number]) => {
+    const data = new Uint8ClampedArray(w * h * 4)
+    for (let i = 0; i < w * h; i += 1) data.set([...bg, 255], i * 4)
+    return { data, width: w, height: h }
+  }
+
+  it('보라로 바뀐 바탕을 그대로 읽는다', () => {
+    expect(borderKeyColor(plate(8, 6, [197, 26, 210]))).toEqual({ r: 197, g: 26, b: 210 })
+  })
+
+  it('테두리가 고르지 않으면 순수 마젠타로 돌아간다', () => {
+    const s = plate(8, 6, [255, 0, 255])
+    for (let x = 0; x < 4; x += 1) s.data.set([255, 255, 255, 255], x * 4)
+    expect(borderKeyColor(s)).toEqual({ r: 255, g: 0, b: 255 })
+  })
+
+  it('읽은 색으로 지우면 바탕이 걷힌다', () => {
+    const s = plate(10, 10, [197, 26, 210])
+    // 가운데 흰 글자 한 점
+    s.data.set([255, 255, 255, 255], (5 * 10 + 5) * 4)
+    const key = borderKeyColor(s)
+    const opaque = keyOutBackground(s, key)
+    expect(opaque).toBeCloseTo(1 / 100)
   })
 })

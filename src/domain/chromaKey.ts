@@ -78,6 +78,61 @@ function distance(data: Uint8ClampedArray, at: number, key: KeyColor): number {
   return Math.sqrt(dr * dr + dg * dg + db * db)
 }
 
+/**
+ * 결과 그림의 **테두리에서 읽은** 바탕색 (문구 꾸미기 Patch, 2026-09-17).
+ *
+ * 로컬 엔진은 마젠타 바탕을 그대로 돌려주지 않을 때가 있다. 같은 날 30장 중 여럿이
+ * 보라(197,26,210)·연분홍(255,130,242)으로 바뀌어 왔고, 순수 마젠타 기준으로는
+ * 통째로 지워지지 않았다. 테두리 평균색을 바탕으로 보면 30장 모두 걷혔다.
+ *
+ * 테두리 색이 고르지 않으면(글자나 그림자가 가장자리에 닿았거나 바탕을 무늬로
+ * 덮었으면) `fallback`을 돌려준다 — 그때 평균색은 바탕이 아니다.
+ */
+export const BORDER_KEY_MAX_SPREAD = 25
+
+export function borderKeyColor(pixels: PixelBuffer, fallback: KeyColor = TEXT_KEY_COLOR): KeyColor {
+  const { data, width, height } = pixels
+  if (width < 2 || height < 2) return fallback
+  let n = 0
+  let sr = 0
+  let sg = 0
+  let sb = 0
+  let qr = 0
+  let qg = 0
+  let qb = 0
+  const add = (x: number, y: number) => {
+    const at = (y * width + x) * 4
+    const r = data[at] ?? 0
+    const g = data[at + 1] ?? 0
+    const b = data[at + 2] ?? 0
+    n += 1
+    sr += r
+    sg += g
+    sb += b
+    qr += r * r
+    qg += g * g
+    qb += b * b
+  }
+  for (let x = 0; x < width; x += 1) {
+    add(x, 0)
+    add(x, height - 1)
+  }
+  for (let y = 1; y < height - 1; y += 1) {
+    add(0, y)
+    add(width - 1, y)
+  }
+  const mr = sr / n
+  const mg = sg / n
+  const mb = sb / n
+  const spread =
+    (Math.sqrt(Math.max(0, qr / n - mr * mr)) +
+      Math.sqrt(Math.max(0, qg / n - mg * mg)) +
+      Math.sqrt(Math.max(0, qb / n - mb * mb))) /
+    3
+  if (spread >= BORDER_KEY_MAX_SPREAD) return fallback
+  return { r: Math.round(mr), g: Math.round(mg), b: Math.round(mb) }
+}
+
 /** 네 이웃. 대각선까지 세면 겹이 뭉툭해져 글자가 굵기를 잃는다. */
 const NEIGHBOURS: [number, number][] = [
   [1, 0],

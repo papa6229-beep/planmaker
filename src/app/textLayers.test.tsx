@@ -390,7 +390,7 @@ describe('§2 문구 셋과 버튼 하나가 각각 한 장씩 만들어진다',
     expect(promptOf(texts[3]!)).toContain('배경판·테두리·글자를 한 덩어리로')
   })
 
-  it('한 장이 실패해도 나머지 셋은 그대로 남는다', async () => {
+  it('한 장의 재질 입히기가 실패해도 넷 모두 남는다 — 실패한 것은 글꼴로 칠한 판이 대신 얹힌다', async () => {
     trim.failFor = 'now'
     await seedJob()
     const { container } = renderStudio()
@@ -399,9 +399,11 @@ describe('§2 문구 셋과 버튼 하나가 각각 한 장씩 만들어진다',
 
     const job = await loadStudioJob(STUDIO_JOB_ID)
     const texts = job?.textObjects?.page_1 ?? []
-    expect(texts.map((o) => o.blockId)).toEqual(['blk_t2', 'blk_t3', 'blk_btn'])
-    // 무엇이 빠졌는지 말한다.
-    expect((await screen.findByText(/얹지 못했습니다/)).textContent).toContain(CONTENTS.blk_t1!)
+    // 문구 꾸미기 Patch (2026-09-17): 글자·색·테두리는 이미 브라우저가 칠했으므로,
+    // 재질을 못 입혀도 빈자리보다 칠한 판이 낫다.
+    expect(texts.map((o) => o.blockId)).toEqual(['blk_t1', 'blk_t2', 'blk_t3', 'blk_btn'])
+    // 무엇이 대신 얹혔는지 말한다.
+    expect((await screen.findByText(/칠한 그대로/)).textContent).toContain('글자를 찾지 못했습니다')
     // 배경과 이미지는 남는다. 자동 재시도는 없다.
     expect(job?.backgrounds?.page_1).toBeDefined()
     expect(job?.imageObjects?.page_1?.map((o) => o.blockId)).toEqual(IMAGE_IDS)
@@ -1053,15 +1055,16 @@ describe('§9 블록마다 미리 주문한다', () => {
 
     const [, ...texts] = bodies()
     // 붙여 둔 블록의 요청에만 그 그림과 그 주문이 실린다.
-    const mine = texts[SHEET_IDS.indexOf('blk_t2')]!
+    // 참고 그림이 붙은 블록은 그 색을 먼저 읽느라 요청이 늦게 나간다 — 차례가 아니라 글로 찾는다.
+    const mine = texts.find((form) => promptOf(form!).includes(`1행: "${CONTENTS.blk_t2!}"`))!
     expect(namesOf(mine)).toEqual(['1-background-plate.png', '2-block-reference.png'])
     expect(promptOf(mine)).toContain('둥근 라벨 위에 굵게')
     expect(promptOf(mine)).toContain('이 문구만을 위한 참고 그림')
     expect(promptOf(mine)).toContain('페이지 전체 지시보다 이 주문이 우선합니다')
 
     // 나머지 요청에는 없다.
-    for (const [i, form] of texts.entries()) {
-      if (SHEET_IDS[i] === 'blk_t2') continue
+    for (const form of texts) {
+      if (form === mine) continue
       expect(namesOf(form!)).toEqual(['1-background-plate.png'])
       expect(promptOf(form!)).not.toContain('둥근 라벨 위에 굵게')
     }
@@ -1088,7 +1091,8 @@ describe('§9 블록마다 미리 주문한다', () => {
 
     // 비우면 지워진다 — 없는 것과 빈 문자열이 다른 뜻이 되면 안 된다.
     job = studioJob.withBlockOrder(job, 'blk_t1', { note: '   ', referenceAssetId: '' }, 3_000)
-    expect(studioJob.blockOrderOf(job, 'blk_t1')).toEqual({})
+    // (저장된 값을 직접 본다 — 검사 환경은 `blockOrderOf`에 시험 글꼴을 채워 넣는다.)
+    expect(job.blockOrders?.blk_t1).toBeUndefined()
 
     const old = mod.parseStudioFileState({ version: '0.8.0', source: null, productImages: {} })
     expect(old?.blockOrders ?? {}).toEqual({})
@@ -1415,7 +1419,7 @@ describe('§13-b 고른 오브젝트의 그림자', () => {
     await openFold(/결과 톤 조절/)
     // 아무것도 고르지 않았으면 그림자 슬라이더도 없다 — 무엇에 걸리는지 화면이
     // 말하지 못하는 슬라이더는 두지 않는다.
-    expect(screen.queryByLabelText(/접지 그림자 세기/)).toBeNull()
+    expect(screen.queryByLabelText(/바닥 그림자 세기/)).toBeNull()
 
     const calls = fetchSpy.mock.calls.length
     const photo = Array.from(boxes).find((b) => labelOf(b) === '이미지 blk_photo')!
@@ -1423,7 +1427,7 @@ describe('§13-b 고른 오브젝트의 그림자', () => {
     await waitFor(() => expect(photo.getAttribute('aria-pressed')).toBe('true'), { timeout: 5000 })
     fireEvent.pointerUp(window)
 
-    const contact = await screen.findByLabelText(/접지 그림자 세기/)
+    const contact = await screen.findByLabelText(/바닥 그림자 세기/)
     fireEvent.change(contact, { target: { value: '20' } })
     fireEvent.pointerUp(contact)
 
@@ -1464,7 +1468,7 @@ describe('§13-b 고른 오브젝트의 그림자', () => {
     await waitFor(() => expect(photo.getAttribute('aria-pressed')).toBe('true'), { timeout: 5000 })
     fireEvent.pointerUp(window)
 
-    const contact = await screen.findByLabelText(/접지 그림자 세기/)
+    const contact = await screen.findByLabelText(/바닥 그림자 세기/)
     fireEvent.change(contact, { target: { value: '15' } })
     fireEvent.pointerUp(contact)
     await waitFor(async () => {
@@ -1475,7 +1479,7 @@ describe('§13-b 고른 오브젝트의 그림자', () => {
     fireEvent.click(await screen.findByRole('checkbox', { name: /그림자$/ }))
 
     // 슬라이더는 사라지지만 값은 지워지지 않는다 — 다시 켜면 그대로 돌아온다.
-    await waitFor(() => expect(screen.queryByLabelText(/접지 그림자 세기/)).toBeNull(), { timeout: 5000 })
+    await waitFor(() => expect(screen.queryByLabelText(/바닥 그림자 세기/)).toBeNull(), { timeout: 5000 })
     const job = await loadStudioJob(STUDIO_JOB_ID)
     expect(job?.effects?.blk_photo?.shadow).toBe(false)
     expect(job?.effects?.blk_photo?.contactShadow).toBeCloseTo(0.15, 5)
@@ -2005,3 +2009,63 @@ describe('§22 페이지 복제', () => {
   })
 })
 
+
+// ── §20 문구 꾸미기 (2026-09-17) ────────────────────────────────────────────
+
+describe('§20 문구는 글꼴로 그리고, 모델에게는 판 한 장과 재질 이름만 간다', () => {
+  it('블록마다 판 한 장이 제 이름으로 실리고, 재질 이름이 붙고, 판 크기는 높이 352 이상이다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    const [, ...texts] = bodies()
+    expect(texts).toHaveLength(SHEET_IDS.length)
+    for (const form of texts) {
+      const plate = form.get('reference')
+      expect(plate).toBeInstanceOf(File)
+      // 어댑터는 이 이름으로 문구 길을 알아본다.
+      expect((plate as File).name).toBe('text-plate.png')
+      // 주문이 없으면 광택. 색을 말하는 칸은 없다.
+      expect(form.get('textFinish')).toBe('glossy')
+      expect(form.get('note')).toBe('')
+      expect(form.get('productTone')).toBeNull()
+      const [w, h] = String(form.get('size')).split('x').map(Number)
+      expect(h).toBeGreaterThanOrEqual(336)
+      expect(w! % 16).toBe(0)
+    }
+  })
+
+  it('주문의 재질 낱말이 이름으로 옮겨진다 — 문장은 나가지 않는다', async () => {
+    await seedJob()
+    const seeded = await loadStudioJob(STUDIO_JOB_ID)
+    await saveStudioJob({ ...seeded!, blockOrders: { blk_t2: { note: '알록달록 네온사인처럼, 흰색 테두리' } } })
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+
+    const [, ...texts] = bodies()
+    const mine = texts.find((form) => promptOf(form).includes(`1행: "${CONTENTS.blk_t2!}"`))!
+    expect(mine.get('textFinish')).toBe('neon')
+    expect(mine.get('note')).toBe('')
+    for (const form of texts) if (form !== mine) expect(form.get('textFinish')).toBe('glossy')
+  })
+
+  it('글꼴을 고르지 않은 문구는 만들지 않고, 요청도 나가지 않으며, 이유를 말한다', async () => {
+    ;(globalThis as { __noTestFont?: boolean }).__noTestFont = true
+    try {
+      await seedJob()
+      const { container } = renderStudio()
+      await documentReady(container)
+      // 배경 한 장만 나간다.
+      await generateOnce(1)
+
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect(job?.textObjects?.page_1 ?? []).toEqual([])
+      expect((await screen.findByText(/글꼴을 고르지 않아/)).textContent).toContain(CONTENTS.blk_t1!)
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+    } finally {
+      ;(globalThis as { __noTestFont?: boolean }).__noTestFont = false
+    }
+  })
+})
