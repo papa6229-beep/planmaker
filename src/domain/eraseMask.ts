@@ -78,6 +78,39 @@ export function stepEraserSize(size: number, direction: 1 | -1): number {
   return Math.min(hi, Math.max(lo, size + direction * step))
 }
 
+/**
+ * 붓 한 점의 세기 — 한가운데 1, 가장자리 0 (지우개 부드러운 가장자리 Patch, 2026-09-17).
+ *
+ * 사용자: "포토샵은 브러시를 키우면 저 멀리 외곽부터 은은하게, 중심으로 갈수록 진하게."
+ * 앞선 판은 경도 이후를 **직선**으로 줄였다 — 그러면 바깥이 금방 진해진다. 이제 경도
+ * 안쪽은 1, 그 바깥은 가우스 꼴로 길게 사그라든다. 경도 0이면 한가운데부터 곧바로 줄기
+ * 시작해 가장자리에서 0이 된다 (포토샵의 부드러운 원과 같은 꼴).
+ *
+ * `t`는 한가운데로부터의 거리 / 반지름 (0 … 1).
+ */
+export function brushProfile(t: number, hardness: number): number {
+  const h = Math.min(0.99, Math.max(0, hardness))
+  if (t <= h) return 1
+  if (t >= 1) return 0
+  const u = (t - h) / (1 - h)
+  // 3이면 반지름 절반에서 약 0.44, 바깥 1/4에서 약 0.14 — 끝까지 은은하게 남는다.
+  const k = 3
+  const edge = Math.exp(-k)
+  return Math.max(0, (Math.exp(-k * u * u) - edge) / (1 - edge))
+}
+
+/** 방사형 그라데이션에 찍을 멈춤점 — 곡선을 이만큼 잘게 따라간다. */
+export function brushStops(hardness: number, count = 16): { at: number; value: number }[] {
+  const h = Math.min(0.99, Math.max(0, hardness))
+  const out = [{ at: 0, value: 1 }]
+  if (h > 0) out.push({ at: h, value: 1 })
+  for (let i = 1; i <= count; i += 1) {
+    const at = h + ((1 - h) * i) / count
+    out.push({ at: Math.min(1, at), value: brushProfile(at, h) })
+  }
+  return out
+}
+
 /** 두 점 사이에 붓 자국을 얼마나 촘촘히 찍을까 — 지름의 1/4 간격. */
 export function dabsBetween(
   from: { x: number; y: number },

@@ -2605,7 +2605,11 @@ describe('§26 도구 막대로 만든다', () => {
       beginPath: () => {},
       arc: () => {},
       fill: () => {},
+      fillRect: () => {},
       drawImage: () => {},
+      getImageData: (_x: number, _y: number, w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }),
+      createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }),
+      putImageData: () => {},
     }
     const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
       fakeCtx.canvas = this

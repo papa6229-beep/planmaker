@@ -6,6 +6,8 @@ import {
   localPoint,
   maskSizeFor,
   readEraseMasks,
+  brushProfile,
+  brushStops,
   stepEraserSize,
   DEFAULT_ERASER,
 } from '../domain/eraseMask'
@@ -70,5 +72,32 @@ describe('§E3 합치기 계획', () => {
     expect(plan.layers[0]!.maskAssetId).toBe('m_img')
     expect(compositeMaskIds(plan).toSorted()).toEqual(['m_img', 'm_txt'])
     expect(compositeAssetIds(plan)).toEqual(expect.arrayContaining(['photo', 'bg', 'txt', 'm_img', 'm_txt']))
+  })
+})
+
+describe('§E4 부드러운 가장자리', () => {
+  it('stays full inside the hardness and fades smoothly, long and faint towards the rim', () => {
+    expect(brushProfile(0, 0)).toBe(1)
+    expect(brushProfile(1, 0)).toBe(0)
+    expect(brushProfile(0.3, 0.5)).toBe(1)
+    // 경도 0: 반지름의 절반에서 절반 아래, 바깥 1/4은 옅게 남는다 — 직선(0.5, 0.25)보다 은은하다.
+    expect(brushProfile(0.5, 0)).toBeLessThan(0.5)
+    expect(brushProfile(0.75, 0)).toBeLessThan(0.2)
+    expect(brushProfile(0.75, 0)).toBeGreaterThan(0.05)
+    // 한가운데에서 멀어질수록 줄기만 한다.
+    let prev = 1
+    for (let t = 0; t <= 1; t += 0.05) {
+      const v = brushProfile(t, 0.2)
+      expect(v).toBeLessThanOrEqual(prev + 1e-9)
+      prev = v
+    }
+  })
+
+  it('lays gradient stops from centre to rim', () => {
+    const stops = brushStops(0.4)
+    expect(stops[0]).toEqual({ at: 0, value: 1 })
+    expect(stops[1]).toEqual({ at: 0.4, value: 1 })
+    expect(stops.at(-1)).toEqual({ at: 1, value: 0 })
+    expect(stops.every((s, i) => i === 0 || s.at >= stops[i - 1]!.at)).toBe(true)
   })
 })

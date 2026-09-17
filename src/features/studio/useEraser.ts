@@ -11,7 +11,7 @@ import { useStudioJob } from './useStudioJob'
 import { useImageGeneration } from './useImageGeneration'
 import { eraserSettings } from './designTools'
 import { createId } from '../../domain/factory'
-import { dabsBetween, localPoint, maskSizeFor } from '../../domain/eraseMask'
+import { brushStops, dabsBetween, localPoint, maskSizeFor } from '../../domain/eraseMask'
 import { getAsset, putAsset } from '../../services/assetStore'
 import { setLiveMask } from '../../services/liveMasks'
 import type { StudioTextObject } from '../../domain/textObjects'
@@ -64,13 +64,35 @@ export function useEraser(): EraserStroke | null {
       const settings = eraserSettings()
       // 이 문지르기 하나가 되돌리기 한 칸이다.
       studio.markStep()
+      /** 저장·미리보기로 나가는 마스크 = 누르기 전 마스크 + 이번 문지르기. */
       let canvas: HTMLCanvasElement | null = null
+      /** 누르기 전 마스크. */
+      let base: HTMLCanvasElement | null = null
+      /**
+       * 이번 문지르기의 세기 판 (불투명한 회색, 밝을수록 세게).
+       *
+       * 붓 자국은 `lighten`으로 찍는다 — 겹친 자리는 **더 센 쪽만** 남는다. 포토샵이 한 번
+       * 문지르는 동안 불투명도를 넘지 않는 것과 같은 규칙이다. 그래서 부드러운 가장자리가
+       * 겹쳐도 진해지지 않는다 (지우개 부드러운 가장자리 Patch).
+       */
+      let strength: HTMLCanvasElement | null = null
+      /** 세기 판을 알파로 옮긴 판. */
+      let alpha: HTMLCanvasElement | null = null
+      let dirty: { x0: number; y0: number; x1: number; y1: number } | null = null
+      const stops = brushStops(settings.hardness)
       const pending: Point[] = [start]
       let last = start
       let frame = 0
       let flushing = false
-      let dirty = false
+      let again = false
       let ended = false
+
+      const blank = (w: number, h: number) => {
+        const c = document.createElement('canvas')
+        c.width = w
+        c.height = h
+        return c
+      }
 
       const dab = (ctx: CanvasRenderingContext2D, p: Point) => {
         const { u, v } = localPoint(rect, object.angle, p)
@@ -81,40 +103,76 @@ export function useEraser(): EraserStroke | null {
         const r = Math.max(0.5, (settings.size / 2) * (w / Math.max(1, rect.width)))
         if (x < -r || y < -r || x > w + r || y > h + r) return
         const grad = ctx.createRadialGradient(x, y, 0, x, y, r)
-        const alpha = settings.strength
-        grad.addColorStop(0, `rgba(0,0,0,${String(alpha)})`)
-        grad.addColorStop(Math.min(0.999, Math.max(0, settings.hardness)), `rgba(0,0,0,${String(alpha)})`)
-        grad.addColorStop(1, 'rgba(0,0,0,0)')
-        ctx.globalCompositeOperation = settings.restore ? 'destination-out' : 'source-over'
+        for (const stop of stops) {
+          const g = Math.round(255 * settings.strength * stop.value)
+          grad.addColorStop(stop.at, `rgb(${String(g)},${String(g)},${String(g)})`)
+        }
+        ctx.globalCompositeOperation = 'lighten'
         ctx.fillStyle = grad
         ctx.beginPath()
         ctx.arc(x, y, r, 0, Math.PI * 2)
         ctx.fill()
+        const box = {
+          x0: Math.max(0, Math.floor(x - r)),
+          y0: Math.max(0, Math.floor(y - r)),
+          x1: Math.min(w, Math.ceil(x + r)),
+          y1: Math.min(h, Math.ceil(y + r)),
+        }
+        dirty =
+          dirty === null
+            ? box
+            : {
+                x0: Math.min(dirty.x0, box.x0),
+                y0: Math.min(dirty.y0, box.y0),
+                x1: Math.max(dirty.x1, box.x1),
+                y1: Math.max(dirty.y1, box.y1),
+              }
       }
 
       const paint = () => {
-        const ctx = canvas?.getContext('2d')
-        if (ctx === undefined || ctx === null) return
-        for (const p of pending.splice(0)) dab(ctx, p)
+        const sctx = strength?.getContext('2d')
+        if (sctx === undefined || sctx === null || canvas === null || base === null || alpha === null) return
+        for (const p of pending.splice(0)) dab(sctx, p)
+        if (dirty === null) return
+        const { x0, y0, x1, y1 } = dirty
+        dirty = null
+        const bw = x1 - x0
+        const bh = y1 - y0
+        if (bw <= 0 || bh <= 0) return
+        // 세기(밝기) → 알파. 바뀐 자리만 옮긴다.
+        const src = sctx.getImageData(x0, y0, bw, bh)
+        const actx = alpha.getContext('2d')
+        if (actx === null) return
+        const out = actx.createImageData(bw, bh)
+        for (let i = 0; i < src.data.length; i += 4) out.data[i + 3] = src.data[i]!
+        actx.putImageData(out, x0, y0)
+        // 누르기 전 마스크 위에 이번 문지르기를 얹는다 (되살리기면 그만큼 뺀다).
+        const ctx = canvas.getContext('2d')
+        if (ctx === null) return
+        ctx.globalCompositeOperation = 'copy'
+        ctx.drawImage(base, 0, 0)
+        ctx.globalCompositeOperation = settings.restore ? 'destination-out' : 'source-over'
+        ctx.drawImage(alpha, 0, 0)
+        ctx.globalCompositeOperation = 'source-over'
       }
 
       // 미리보기: 한 번에 하나만 흐르고, 그동안 더 칠했으면 끝난 뒤 한 번 더.
       const flush = async () => {
         if (canvas === null) return
         if (flushing) {
-          dirty = true
+          again = true
           return
         }
         flushing = true
         do {
-          dirty = false
+          again = false
           const blob = await toBlob(canvas)
           if (ended) break
           if (blob !== null) {
             setLiveMask(blockId, blob)
             generation?.previewPage(pageId)
           }
-        } while (dirty && !ended)
+        } while (again && !ended)
         flushing = false
       }
 
@@ -128,7 +186,20 @@ export function useEraser(): EraserStroke | null {
       }
 
       const ready = loadMask(studio.currentJob().eraseMasks?.[blockId], maskSizeFor(rect)).then((c) => {
-        canvas = c
+        if (c === null) return
+        base = c
+        canvas = blank(c.width, c.height)
+        alpha = blank(c.width, c.height)
+        strength = blank(c.width, c.height)
+        const sctx = strength.getContext('2d')
+        if (sctx === null) {
+          canvas = null
+          return
+        }
+        sctx.fillStyle = '#000'
+        sctx.fillRect(0, 0, c.width, c.height)
+        // 판 밖만 문질렀어도 저장되는 것은 누르기 전 그대로여야 한다.
+        canvas.getContext('2d')?.drawImage(c, 0, 0)
         schedule()
       })
 
