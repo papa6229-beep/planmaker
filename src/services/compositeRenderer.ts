@@ -16,14 +16,7 @@
 import { contactShadow, outlineWidthPx, wallShadow, type CompositeEffects } from '../domain/compositeEffects'
 import { paperOutset, PAPER_SHADOW } from '../domain/paperCutout'
 import { applyTone, normalizeTone, toneIsFlat, type ToneAdjust } from '../domain/toneAdjust'
-import {
-  PROBE_GREY,
-  applyLightLayer,
-  defringe,
-  fitProbe,
-  lightLayerFrom,
-  type ProbeFit,
-} from '../domain/lightLayer'
+import { defringe } from '../domain/edgeMatte'
 import { photoImageStyle, type ContentBox } from '../domain/photoBox'
 import { fitSourceRect } from '../domain/imageLayout'
 import type { PaperCanvas } from './paperCutoutShape'
@@ -163,25 +156,21 @@ function outlinePlate(shape: HTMLCanvasElement, width: number, color: string): H
 }
 
 /**
- * 그리기 직전의 제품 (가장자리 정리 · 빛 층 Patch, 2026-09-17).
+ * 그리기 직전의 제품 (가장자리 정리, 2026-09-17).
  *
- *  - `effects.edge` — 누끼 가장자리의 흰 매트를 걷는다. 이 값은 오래전부터 저장만
- *    되고 어디에서도 쓰이지 않았다. 이제 쓴다.
- *  - `effects.light` — 빛 맞추기로 만든 빛 층을 곱한다.
+ * `effects.edge` — 누끼 가장자리의 흰 매트를 걷는다. 이 값은 오래전부터 저장만 되고
+ * 어디에서도 쓰이지 않았다. 이제 쓴다.
  *
  * 그릴 크기의 두 배까지만 줄여서 고친다 — 원본 크기로 매번 훑으면 슬라이더를 놓을
- * 때마다 버벅인다. 어느 단계든 실패하면 원본을 그대로 쓴다: 꾸밈 하나 때문에 제품이
- * 빠지면 안 된다.
+ * 때마다 버벅인다. 실패하면 원본을 그대로 쓴다: 꾸밈 하나 때문에 제품이 빠지면 안 된다.
  */
 async function preparedSource(
   source: CanvasImageSource & { width: number; height: number },
   fit: { source: { x: number; y: number; width: number; height: number }; dest: { width: number; height: number } },
   effects: CompositeEffects,
-  sources: CompositeSources,
 ): Promise<{ image: CanvasImageSource; rect: { x: number; y: number; width: number; height: number } }> {
   const plain = { image: source, rect: fit.source }
-  const lightBlob = effects.light && effects.lightAssetId !== undefined ? sources.blobs.get(effects.lightAssetId) : undefined
-  if (effects.edge <= 0 && lightBlob === undefined) return plain
+  if (effects.edge <= 0) return plain
   try {
     const w = Math.max(1, Math.round(Math.min(fit.source.width, fit.dest.width * 2)))
     const h = Math.max(1, Math.round(Math.min(fit.source.height, fit.dest.height * 2)))
@@ -194,21 +183,7 @@ async function preparedSource(
     c.imageSmoothingQuality = 'high'
     c.drawImage(source, fit.source.x, fit.source.y, fit.source.width, fit.source.height, 0, 0, w, h)
     const pixels = c.getImageData(0, 0, w, h)
-    if (effects.edge > 0) defringe(pixels.data, w, h, effects.edge)
-    if (lightBlob !== undefined) {
-      const map = await toSource(lightBlob)
-      const lc = document.createElement('canvas')
-      lc.width = w
-      lc.height = h
-      const lctx = lc.getContext('2d', { willReadFrequently: true })
-      if (lctx) {
-        // 빛 층은 **원본 그림 전체**의 좌표다. 그리는 칸만큼 잘라 같은 크기로.
-        const kx = map.width / source.width
-        const ky = map.height / source.height
-        lctx.drawImage(map, fit.source.x * kx, fit.source.y * ky, fit.source.width * kx, fit.source.height * ky, 0, 0, w, h)
-        applyLightLayer(pixels.data, lctx.getImageData(0, 0, w, h).data, effects.lightStrength)
-      }
-    }
+    defringe(pixels.data, w, h, effects.edge)
     c.putImageData(pixels, 0, 0)
     return { image: canvas, rect: { x: 0, y: 0, width: w, height: h } }
   } catch {
@@ -331,7 +306,12 @@ async function drawLayer(
   // 스위치가 꺼져 있으면 둘 다 건너뛴다 (그림자 Patch). 세기를 0으로 내리는 것과
   // 결과는 같지만, 스위치는 맞춰 둔 세기를 지우지 않고 잠시 덮어 둔다.
   if (shape !== null && effects.shadow && effects.wallShadow > 0) {
-    const wall = wallShadow(layer.rect, light, effects.wallShadow)
+    const wall = wallShadow(layer.rect, effects.wallShadow, {
+      x: effects.shadowX,
+      y: effects.shadowY,
+      blur: effects.shadowBlur,
+      ...(layer.angle === undefined ? {} : { angle: layer.angle }),
+    })
     ctx.save()
     ctx.globalAlpha = wall.opacity
     ctx.filter = `blur(${Math.max(1, wall.blur)}px)`
@@ -372,7 +352,7 @@ async function drawLayer(
   ctx.beginPath()
   ctx.rect(layer.crop.dx, layer.crop.dy, layer.crop.dWidth, layer.crop.dHeight)
   ctx.clip()
-  const ready = await preparedSource(source, fit, effects, sources)
+  const ready = await preparedSource(source, fit, effects)
   ctx.drawImage(
     ready.image,
     ready.rect.x,
@@ -618,213 +598,4 @@ export async function renderComposite(
   const out = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
   if (!out) throw new Error('합성 결과 이미지를 만들지 못했습니다.')
   return out
-}
-
-// ── 빛 맞추기 (빛 층 Patch, 2026-09-17) ─────────────────────────────────────
-//
-// 제품 자리·크기·기울기 계산을 합성과 **같은 함수**로 해야 빛이 제품에 맞게 앉는다.
-// 그래서 여기 있다.
-
-/** 빛 층 그림의 긴 변. 빛은 흐린 정보라 이 정도면 충분하다. */
-export const LIGHT_MAP_MAX = 512
-
-function drawBackground(ctx: CanvasRenderingContext2D, plan: CompositePlan, source: CanvasImageSource & { width: number; height: number }): void {
-  const at = plan.background?.rect ?? { x: 0, y: 0, width: plan.size.width, height: plan.size.height }
-  const fit = fitSourceRect('cover', { width: source.width, height: source.height }, at)
-  if (fit === null) return
-  ctx.drawImage(source, fit.source.x, fit.source.y, fit.source.width, fit.source.height, fit.dest.x, fit.dest.y, fit.dest.width, fit.dest.height)
-}
-
-export interface LightProbe {
-  size: { width: number; height: number }
-  /** 배경 + 제품 자리의 회색 덩어리 — Klein에게 보낼 그림. */
-  probe: HTMLCanvasElement
-  /** 배경만. 새 배경 판을 만들 때의 바탕. */
-  background: HTMLCanvasElement
-  /** 덩어리들의 모양 (흰색, 나머지 투명). */
-  mask: HTMLCanvasElement
-}
-
-/**
- * Klein에게 보낼 그림을 만든다 — 지금 배경 위, 고른 이미지 오브젝트 자리마다
- * 그 모양 그대로의 **무늬 없는 회색 덩어리**.
- *
- * 제품 그림은 여기서 어디에도 실리지 않는다. 모양(알파)만 쓴다.
- */
-export async function renderLightProbe(
-  plan: CompositePlan,
-  sources: CompositeSources,
-  size: { width: number; height: number },
-  blockIds: readonly string[],
-): Promise<LightProbe> {
-  const make = () => {
-    const canvas = document.createElement('canvas')
-    canvas.width = size.width
-    canvas.height = size.height
-    const ctx = canvas.getContext('2d', { willReadFrequently: true })
-    if (!ctx) throw new Error('캔버스를 만들 수 없습니다.')
-    ctx.imageSmoothingEnabled = true
-    ctx.imageSmoothingQuality = 'high'
-    ctx.scale(size.width / plan.size.width, size.height / plan.size.height)
-    return { canvas, ctx }
-  }
-  const probe = make()
-  const background = make()
-  const mask = make()
-  for (const t of [probe, background]) {
-    t.ctx.fillStyle = '#ffffff'
-    t.ctx.fillRect(0, 0, plan.size.width, plan.size.height)
-  }
-  const bgBlob = plan.background === undefined ? undefined : sources.blobs.get(plan.background.assetId)
-  if (bgBlob !== undefined) {
-    const bg = await toSource(bgBlob)
-    drawBackground(probe.ctx, plan, bg)
-    drawBackground(background.ctx, plan, bg)
-  }
-  const wanted = new Set(blockIds)
-  for (const layer of plan.layers.toSorted((a, b) => a.order - b.order)) {
-    if (!wanted.has(layer.blockId)) continue
-    const blob = sources.blobs.get(layer.assetId)
-    if (blob === undefined || layer.crop === null) continue
-    const source = await toSource(blob)
-    const fit = frameOf(layer, { width: source.width, height: source.height }, sources.boxes?.get(layer.blockId))
-    if (fit === null) continue
-    const shape = silhouette(source, fit)
-    if (shape === null) continue
-    for (const [target, color] of [
-      [probe.ctx, `rgb(${String(PROBE_GREY)}, ${String(PROBE_GREY)}, ${String(PROBE_GREY)})`],
-      [mask.ctx, '#ffffff'],
-    ] as const) {
-      const tinted = document.createElement('canvas')
-      tinted.width = shape.width
-      tinted.height = shape.height
-      const tctx = tinted.getContext('2d')
-      if (!tctx) continue
-      tctx.drawImage(shape, 0, 0)
-      tctx.globalCompositeOperation = 'source-in'
-      tctx.fillStyle = color
-      tctx.fillRect(0, 0, tinted.width, tinted.height)
-      await spun(target, layer.rect, layer.angle, async () => {
-        target.drawImage(tinted, fit.dest.x, fit.dest.y, fit.dest.width, fit.dest.height)
-      })
-    }
-  }
-  return { size, probe: probe.canvas, background: background.canvas, mask: mask.canvas }
-}
-
-function grayOf(canvas: HTMLCanvasElement, w: number, h: number): Float32Array {
-  const small = document.createElement('canvas')
-  small.width = w
-  small.height = h
-  const ctx = small.getContext('2d', { willReadFrequently: true })
-  if (!ctx) throw new Error('캔버스를 만들 수 없습니다.')
-  ctx.drawImage(canvas, 0, 0, w, h)
-  const d = ctx.getImageData(0, 0, w, h).data
-  const out = new Float32Array(w * h)
-  for (let i = 0; i < out.length; i += 1) out[i] = (d[i * 4]! + d[i * 4 + 1]! + d[i * 4 + 2]!) / 3
-  return out
-}
-
-/**
- * Klein 결과를 보낸 그림에 맞춘다. Klein 편집 결과는 1.5~4% 작게 나온다 (2026-09-17).
- * 맞출 수 없으면(장면을 새로 그렸으면) `fit.ok`가 거짓이다.
- */
-export async function alignLit(probe: LightProbe, result: Blob): Promise<{ canvas: HTMLCanvasElement; fit: ProbeFit }> {
-  const { width: W, height: H } = probe.size
-  const raw = await toSource(result)
-  const resized = document.createElement('canvas')
-  resized.width = W
-  resized.height = H
-  const rctx = resized.getContext('2d')
-  if (!rctx) throw new Error('캔버스를 만들 수 없습니다.')
-  rctx.drawImage(raw, 0, 0, W, H)
-  const sw = 256
-  const sh = Math.max(16, Math.round((sw * H) / W))
-  const fit = fitProbe(grayOf(probe.probe, sw, sh), grayOf(resized, sw, sh), sw, sh)
-  const kx = W / sw
-  const ky = H / sh
-  const aligned = document.createElement('canvas')
-  aligned.width = W
-  aligned.height = H
-  const actx = aligned.getContext('2d')
-  if (!actx) throw new Error('캔버스를 만들 수 없습니다.')
-  // 결과 좌표 = s·x + o  →  맞춘 그림(x) = 결과(s·x + o)
-  const sx = fit.x.scale
-  const sy = fit.y.scale
-  actx.setTransform(1 / sx, 0, 0, 1 / sy, (-fit.x.offset * kx) / sx, (-fit.y.offset * ky) / sy)
-  actx.drawImage(resized, 0, 0)
-  return { canvas: aligned, fit }
-}
-
-/**
- * 한 오브젝트의 빛 층을 만든다 — 맞춘 결과를 **제품 그림 자신의 좌표**로 옮겨 온 뒤
- * `lightLayerFrom`으로 뗀다. 돌려준 PNG는 원본 그림과 같은 비율이다.
- */
-export async function lightMapFor(
-  plan: CompositePlan,
-  layer: CompositeLayerPlan,
-  sources: CompositeSources,
-  lit: HTMLCanvasElement,
-): Promise<Blob | null> {
-  const blob = sources.blobs.get(layer.assetId)
-  if (blob === undefined) return null
-  const source = await toSource(blob)
-  const fit = frameOf(layer, { width: source.width, height: source.height }, sources.boxes?.get(layer.blockId))
-  if (fit === null) return null
-  const m = Math.min(1, LIGHT_MAP_MAX / Math.max(source.width, source.height))
-  const mw = Math.max(1, Math.round(source.width * m))
-  const mh = Math.max(1, Math.round(source.height * m))
-  const kx = lit.width / plan.size.width
-  const ky = lit.height / plan.size.height
-
-  // 제품 그림의 한 칸 → 결과 그림의 한 칸 (합성과 같은 차례로 쌓는다)
-  const cx = layer.rect.x + layer.rect.width / 2
-  const cy = layer.rect.y + layer.rect.height / 2
-  const forward = new DOMMatrix()
-    .scale(kx, ky)
-    .translate(cx, cy)
-    .rotate(layer.angle ?? 0)
-    .translate(-cx, -cy)
-    .translate(fit.dest.x, fit.dest.y)
-    .scale(fit.dest.width / fit.source.width, fit.dest.height / fit.source.height)
-    .translate(-fit.source.x, -fit.source.y)
-    .scale(1 / m, 1 / m)
-
-  const frame = document.createElement('canvas')
-  frame.width = mw
-  frame.height = mh
-  const fctx = frame.getContext('2d', { willReadFrequently: true })
-  if (!fctx) return null
-  fctx.setTransform(forward.inverse())
-  fctx.drawImage(lit, 0, 0)
-  const litData = fctx.getImageData(0, 0, mw, mh).data
-
-  const alphaCanvas = document.createElement('canvas')
-  alphaCanvas.width = mw
-  alphaCanvas.height = mh
-  const actx = alphaCanvas.getContext('2d', { willReadFrequently: true })
-  if (!actx) return null
-  actx.drawImage(source, 0, 0, mw, mh)
-  const a = actx.getImageData(0, 0, mw, mh).data
-  const alpha = new Uint8ClampedArray(mw * mh)
-  for (let i = 0; i < alpha.length; i += 1) alpha[i] = a[i * 4 + 3]!
-
-  // 실험의 값(결과 그림에서 깎기 9px·흐림 8px)을 이 그림의 크기로 옮긴다.
-  const perResultPx = mw / Math.max(1, fit.dest.width * kx * (fit.source.width / source.width))
-  const layerData = lightLayerFrom(litData, alpha, mw, mh, {
-    inset: Math.max(2, 9 * perResultPx),
-    blur: Math.max(2, 8 * perResultPx),
-  })
-  const out = document.createElement('canvas')
-  out.width = mw
-  out.height = mh
-  const octx = out.getContext('2d')
-  if (!octx) return null
-  octx.putImageData(new ImageData(layerData, mw, mh), 0, 0)
-  return new Promise((resolve) => out.toBlob(resolve, 'image/png'))
-}
-
-/** 보낼 그림을 PNG로. */
-export function canvasToPng(canvas: HTMLCanvasElement): Promise<Blob | null> {
-  return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
 }

@@ -27,6 +27,7 @@ import { keepAspect } from '../../domain/photoBox'
 import { LAYER_MOVES } from '../../domain/layerOrder'
 import { boundsOf, layerOrderOf, pickBehind, scaleWithin, spunResize, toLocalDelta } from '../../domain/textLayers'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
+import { SHADOW_OFFSET_MAX } from '../../domain/compositeEffects'
 import type { LayoutRect } from '../../domain/imageLayout'
 import type { StudioTextObject } from '../../domain/textObjects'
 
@@ -269,6 +270,45 @@ export function ResultObjectLayer({ pageId, page }: Props) {
 
   const percent = (value: number, total: number) => `${((value / total) * 100).toFixed(4)}%`
 
+  /**
+   * 드롭 그림자 손잡이 끌기 (드롭 그림자 Patch, 2026-09-17).
+   *
+   * 포토샵의 드롭 섀도 창을 연 채로 캔버스를 끌면 그림자가 따라오는 것과 같다. 자리는
+   * 오브젝트 가운데에서 손잡이까지의 거리를 짧은 변으로 나눈 값이고, 페이지 기준이다.
+   * 끄는 동안 값만 바꾸고, 놓을 때 한 번 다시 합친다.
+   */
+  const startShadowDrag = (blockId: string, rect: LayoutRect) => (e: ReactPointerEvent) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    studio.markStep()
+    const box = boxRef.current?.getBoundingClientRect()
+    if (box === undefined) return
+    const short = Math.max(1, Math.min(rect.width, rect.height))
+    const cx = rect.x + rect.width / 2
+    const cy = rect.y + rect.height / 2
+    const limit = SHADOW_OFFSET_MAX
+    let moved = false
+    const onMove = (ev: PointerEvent) => {
+      moved = true
+      const px = ((ev.clientX - box.left) / box.width) * page.width
+      const py = ((ev.clientY - box.top) / box.height) * page.height
+      const clamp = (v: number) => Math.round(Math.min(limit, Math.max(-limit, v)) * 100) / 100
+      studio.setEffects(blockId, { shadowX: clamp((px - cx) / short), shadowY: clamp((py - cy) / short) })
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      if (moved) settle()
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+  const shadowTarget = objects.find(
+    ({ kind, object }) => kind === 'image' && object.blockId === studio.selectedObjectBlockId,
+  )
+  const shadowFx = shadowTarget === undefined ? null : studio.effectsOf(shadowTarget.object.blockId)
+
   return (
     <div
       className="result-objects"
@@ -444,6 +484,49 @@ export function ResultObjectLayer({ pageId, page }: Props) {
           </div>
         )
       })}
+      {shadowTarget !== undefined && shadowFx !== null && shadowFx.shadow && shadowFx.wallShadow > 0 && (() => {
+        const r = shadowTarget.object.rect
+        const short = Math.min(r.width, r.height)
+        const cx = r.x + r.width / 2
+        const cy = r.y + r.height / 2
+        const hx = cx + shadowFx.shadowX * short
+        const hy = cy + shadowFx.shadowY * short
+        return (
+          <>
+            <svg className="result-object__shadow-line" viewBox={`0 0 ${String(page.width)} ${String(page.height)}`} preserveAspectRatio="none" aria-hidden="true">
+              <line x1={cx} y1={cy} x2={hx} y2={hy} />
+            </svg>
+            <span
+              className="result-object__shadow-handle"
+              role="slider"
+              tabIndex={0}
+              aria-label="드롭 그림자 위치"
+              aria-valuetext={`가로 ${String(Math.round(shadowFx.shadowX * 100))}% · 세로 ${String(Math.round(shadowFx.shadowY * 100))}%`}
+              title="끌어서 그림자 옮기기 · 화살표 키로 1%씩"
+              style={{ left: percent(hx, page.width), top: percent(hy, page.height) }}
+              onPointerDown={startShadowDrag(shadowTarget.object.blockId, r)}
+              onKeyDown={(e) => {
+                const step = 0.01 * (e.shiftKey ? 10 : 1)
+                const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0
+                const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0
+                if (dx === 0 && dy === 0) return
+                e.preventDefault()
+                e.stopPropagation()
+                studio.markStep()
+                studio.setEffects(shadowTarget.object.blockId, {
+                  shadowX: Math.round((shadowFx.shadowX + dx) * 100) / 100,
+                  shadowY: Math.round((shadowFx.shadowY + dy) * 100) / 100,
+                })
+              }}
+              onKeyUp={(e) => {
+                if (e.key.startsWith('Arrow')) settle()
+              }}
+            >
+              그림자
+            </span>
+          </>
+        )
+      })()}
     </div>
   )
 }

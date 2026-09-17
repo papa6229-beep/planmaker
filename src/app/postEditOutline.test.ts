@@ -16,31 +16,36 @@ import {
 const rect = { x: 100, y: 100, width: 400, height: 600 }
 const FRONT = { light: { x: 0, y: 0 } }
 
-describe('뒤 그림자', () => {
-  it('정면광이어도 제품 밖으로 밀린다 — 뒤에 숨어 보이지 않던 까닭', () => {
-    const wall = wallShadow(rect, FRONT, 1)
-    expect(wall.dx).toBeGreaterThan(0)
-    expect(wall.dy).toBeGreaterThan(0)
-    expect(Math.hypot(wall.dx, wall.dy)).toBeGreaterThan(rect.width * 0.08)
+describe('드롭 그림자 — 자리는 작업자가 정한다 (2026-09-17)', () => {
+  it('정한 자리로 민다 — 왼쪽·위도 된다', () => {
+    const left = wallShadow(rect, 1, { x: -0.5, y: 0, blur: 0.3 })
+    expect(left.dx).toBeCloseTo(-200)
+    expect(left.dy).toBeCloseTo(0)
+    const up = wallShadow(rect, 1, { x: 0, y: -0.25, blur: 0.3 })
+    expect(up.dy).toBeCloseTo(-100)
   })
 
-  it('세게 할수록 멀고 진하고 또렷하다', () => {
-    const weak = wallShadow(rect, FRONT, 0.2)
-    const strong = wallShadow(rect, FRONT, 1)
-    expect(strong.opacity).toBeGreaterThan(weak.opacity)
-    expect(Math.hypot(strong.dx, strong.dy)).toBeGreaterThan(Math.hypot(weak.dx, weak.dy))
-    expect(strong.blur).toBeLessThan(weak.blur)
-    expect(strong.opacity).toBeGreaterThanOrEqual(0.5)
+  it('제품을 돌려도 그림자는 페이지에서 같은 쪽에 진다', () => {
+    // 90° 돌린 좌표계 안에서 그리므로, 오른쪽(+x)은 그 안에서 -y 쪽이어야 한다.
+    const w = wallShadow(rect, 1, { x: 0.5, y: 0, blur: 0, angle: 90 })
+    expect(w.dx).toBeCloseTo(0)
+    expect(w.dy).toBeCloseTo(-200)
   })
 
-  it('빛이 있으면 그 반대쪽으로', () => {
-    const wall = wallShadow(rect, { light: { x: 1, y: 0 } }, 1)
-    expect(wall.dx).toBeLessThan(0)
-  })
-
-  it('0은 진짜 0이다', () => {
-    expect(wallShadow(rect, FRONT, 0).opacity).toBe(0)
+  it('흐림과 진하기', () => {
+    const sharp = wallShadow(rect, 1, { x: 0.1, y: 0.1, blur: 0 })
+    const soft = wallShadow(rect, 1, { x: 0.1, y: 0.1, blur: 1 })
+    expect(soft.blur).toBeGreaterThan(sharp.blur)
+    expect(wallShadow(rect, 1, { x: 0, y: 0, blur: 0 }).opacity).toBeGreaterThanOrEqual(0.75)
+    expect(wallShadow(rect, 0, { x: 0.1, y: 0.1, blur: 0.4 }).opacity).toBe(0)
     expect(contactShadow(rect, FRONT, 0).opacity).toBe(0)
+  })
+
+  it('자리 값은 짧은 변의 1.5배까지, 예전 파일은 기본 자리', () => {
+    const e = normalizeEffects({ shadowX: 9, shadowY: -9 })
+    expect(e.shadowX).toBe(1.5)
+    expect(e.shadowY).toBe(-1.5)
+    expect(normalizeEffects({}).shadowX).toBe(DEFAULT_COMPOSITE_EFFECTS.shadowX)
   })
 })
 

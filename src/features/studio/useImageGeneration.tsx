@@ -91,7 +91,6 @@ import { toneOf as productToneOf } from '../../domain/imageAnalysis'
 import { analyzeImageBlob } from '../../services/imageAnalysisRunner'
 import type { StudioTextObject } from '../../domain/textObjects'
 import { planLocalComposite, type CompositePlan } from '../../domain/composite'
-import { lightKeyOf } from '../../domain/lightLayer'
 import { getBlockTypeMeta } from '../../domain/blockTypes'
 import { drawsBareText, isPairedLinkUrl, textAlignOf } from '../../domain/simpleBlocks'
 import { resolveGptImageSize } from '../../domain/gptImageSize'
@@ -131,13 +130,7 @@ import {
 import { deleteAsset, getAllAssets, getAsset, putAsset } from '../../services/assetStore'
 import { sizeLabel, toWorkingImage, workingImageTarget, type WorkingImageTarget } from '../../services/workingImage'
 import { renderPreviewPng } from '../../services/previewRenderer'
-import {
-  alignLit,
-  canvasToPng,
-  lightMapFor,
-  renderComposite,
-  renderLightProbe,
-} from '../../services/compositeRenderer'
+import { renderComposite } from '../../services/compositeRenderer'
 import { shrinkReference } from '../../services/referenceUpload'
 import { collectCompositeSources } from '../../services/compositeSources'
 import { createId } from '../../domain/factory'
@@ -354,18 +347,6 @@ export interface ImageGenerationApi {
   rebuildPage: (pageId: string) => Promise<void>
   /** 지금 페이지에 되살릴 재료가 있는가 — 배경이 있고 완성본이 없을 때다. */
   canRebuild: boolean
-  /**
-   * 빛 맞추기 (빛 층 Patch). 이미지 오브젝트 모양의 회색 덩어리에 Klein이 장면의 빛을
-   * 입히고, 그 빛만 떼어 원본 제품에 얹는다. 제품 둘레의 배경에는 그림자가 생긴다.
-   * **외부 호출 1회.** `blockIds`가 없으면 이 페이지의 이미지 오브젝트 전부.
-   */
-  matchLight: (pageId: string, options?: { blockIds?: readonly string[]; concept?: string }) => Promise<void>
-  /**
-   * 생성이 끝나면 곧바로 빛 맞추기까지 할 것인가 (2026-09-17 저녁). 사용자: 그림자는
-   * 생성할 때부터 있어야 한다. 이 브라우저에 기억한다. 기본은 켬.
-   */
-  autoLight: boolean
-  setAutoLight: (on: boolean) => void
   dismiss: () => void
 
   // ── 부분수정 (부분수정 1단계) ──────────────────────────────────────────────
@@ -405,25 +386,6 @@ const ImageGenerationContext = createContext<ImageGenerationApi | null>(null)
 const FOREGROUND_MAX_OPAQUE = 0.92
 /** 어댑터가 문구 길을 알아보는 파일 이름. 이름이 곧 역할이다 (문구 판 Patch). */
 const TEXT_PLATE_FILE = 'text-plate.png'
-/** 어댑터가 빛 맞추기 길을 알아보는 파일 이름 (빛 층 Patch). */
-const LIGHT_PROBE_FILE = 'light-probe.png'
-const AUTO_LIGHT_KEY = 'planmaker.autoLight'
-
-function readAutoLight(): boolean {
-  try {
-    return localStorage.getItem(AUTO_LIGHT_KEY) !== '0'
-  } catch {
-    return true
-  }
-}
-
-function writeAutoLight(on: boolean): void {
-  try {
-    localStorage.setItem(AUTO_LIGHT_KEY, on ? '1' : '0')
-  } catch {
-    // 기억하지 못해도 이번 화면에서는 따른다.
-  }
-}
 
 /**
  * 이 이상 불투명하면 **투명한 데가 없었다**고 본다 (조각 수정 Patch).
@@ -529,12 +491,6 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
   const [instructions, setInstructions] = useState<Record<string, string>>({})
   /** 요청이 나가 있는 동안은 한 번도 더 나가지 않는다. */
   const runningRef = useRef(false)
-  // 생성 직후 빛 맞추기 (2026-09-17 저녁). 생성 함수가 빛 맞추기보다 먼저 만들어지므로
-  // 가장 최근 것을 쥐고 있다가 부른다.
-  const [autoLight, setAutoLightState] = useState<boolean>(readAutoLight)
-  const autoLightRef = useRef(autoLight)
-  autoLightRef.current = autoLight
-  const matchLightRef = useRef<((pageId: string) => Promise<void>) | null>(null)
   /** 다시 합치기의 차례표. 늦게 끝난 예전 합성이 최신 결과를 덮지 않게 한다. */
   const recomposeRef = useRef(0)
 
@@ -1317,113 +1273,6 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     [studio, composePage, storeComposed, dropOrphan],
   )
 
-  /**
-   * 빛 맞추기 (빛 층 Patch, 2026-09-17).
-   *
-   * 사용자의 아이디어를 실측으로 다듬은 흐름이다 (REPORT-2026-09-17 §7~11):
-   *
-   *  1. 지금 배경 위, 이미지 오브젝트 자리마다 **그 모양의 회색 덩어리**를 놓은 한 장
-   *     — 제품 그림은 나가지 않는다. 테두리를 씌워도 Klein은 제품을 다시 그렸다
-   *  2. Klein: "덩어리를 장면과 같은 빛을 받는 점토 물체로" (어댑터가 고정 문장을 쥔다)
-   *  3. 결과의 크기 어긋남(1.5~4%)을 되돌린다. 못 되돌리면 장면을 새로 그린 것 — 버린다
-   *  4. 오브젝트마다 **빛만** 떼어 제품 좌표의 빛 층으로 저장 → 원본 제품에 곱한다
-   *  5. 배경은 그대로. 그림자는 만들지 않는다 — 후보정 그림자로 (2026-09-17 밤)
-   *
-   * 제품 자리가 정해진 **뒤에** 누르는 버튼이다. 많이 옮기면 다시 누른다.
-   * 스스로 다시 부르지 않는다.
-   */
-  const matchLight = useCallback(
-    async (pageId: string, options: { blockIds?: readonly string[]; concept?: string } = {}) => {
-      if (studio === null || runningRef.current) return
-      const auth = authHeaders()
-      if (auth === null) {
-        setState({ kind: 'blocked', message: '접속 암구호(또는 키)를 먼저 입력해 주세요.' })
-        return
-      }
-      const job = studio.currentJob()
-      const background = job.backgrounds?.[pageId]
-      const objects = (job.imageObjects?.[pageId] ?? []).filter(
-        (o) => options.blockIds === undefined || options.blockIds.includes(o.blockId),
-      )
-      const plan = compositePlanFor(pageId)
-      if (plan === null || background === undefined) {
-        setState({ kind: 'blocked', message: '배경이 있는 완성본에서만 빛을 맞출 수 있습니다.' })
-        return
-      }
-      if (objects.length === 0) {
-        setState({ kind: 'blocked', message: '빛을 맞출 이미지 오브젝트가 없습니다.' })
-        return
-      }
-      runningRef.current = true
-      setState({ kind: 'running', done: 0, total: 1 })
-      try {
-        const sources = await collectCompositeSources(plan)
-        // 약 100만 화소, 16의 배수 — Klein이 받는 규격이다.
-        const k = Math.sqrt(1_000_000 / (plan.size.width * plan.size.height))
-        const size = {
-          width: Math.max(16, Math.floor((plan.size.width * k) / 16) * 16),
-          height: Math.max(16, Math.floor((plan.size.height * k) / 16) * 16),
-        }
-        const ids = objects.map((o) => o.blockId)
-        const probe = await renderLightProbe(plan, sources, size, ids)
-        const probeBlob = await canvasToPng(probe.probe)
-        if (probeBlob === null) throw new Error('probe')
-
-        const form = new FormData()
-        // 서버 함수는 빈 주문을 받지 않는다. 로컬 경로는 이 칸 대신 `note`를 보낸다.
-        form.set(FIELD_PROMPT, 'light')
-        form.set(FIELD_SIZE, `${String(size.width)}x${String(size.height)}`)
-        form.set(FIELD_INTENT, 'light')
-        form.set(FIELD_NOTE, (options.concept ?? '').trim())
-        form.set(FIELD_REFERENCE, new File([probeBlob], LIGHT_PROBE_FILE, { type: 'image/png' }))
-        const response = await fetch(GENERATE_IMAGE_PATH, { method: 'POST', headers: auth, body: form })
-        const body = (await response.json().catch(() => null)) as {
-          image?: { b64?: string; mimeType?: string }
-          error?: { code?: string }
-          metadata?: { usage?: unknown }
-        } | null
-        if (!response.ok || typeof body?.image?.b64 !== 'string') {
-          setState({ kind: 'failed', message: `빛을 맞추지 못했습니다 — ${errorTextFor(body?.error?.code ?? httpFailureCode(response.status))}` })
-          return
-        }
-        void recordCall({ at: Date.now(), kind: 'light' })
-        const lit = await alignLit(probe, blobFromBase64(body.image.b64, body.image.mimeType ?? 'image/png'))
-        if (!lit.fit.ok) {
-          setState({
-            kind: 'failed',
-            message: '빛을 맞추지 못했습니다 — 엔진이 장면을 새로 그려 제품 자리를 찾을 수 없었습니다. 다시 눌러 보거나 컨셉 문장을 줄여 주세요.',
-          })
-          return
-        }
-
-        // 그림자는 AI에게 맡기지 않는다 (2026-09-17 밤, 사용자 결정). 엔진은 빛 방향을 따져
-        // 바닥에 그림자를 눕히지 못했다 — bg2에서 원본의 V자 그림자 대신 반대쪽에 덩어리를
-        // 만들었다 (REPORT §14). 그림자는 후보정(바닥·뒤)으로, 이 버튼은 빛만 입힌다.
-        studio.markStep()
-        for (const object of objects) {
-          const layer = plan.layers.find((l) => l.blockId === object.blockId)
-          if (layer === undefined) continue
-          const map = await lightMapFor(plan, layer, sources, lit.canvas)
-          if (map === null) continue
-          const assetId = createId('asset')
-          await putAsset({ id: assetId, blob: map, fileName: `light-${object.blockId}.png`, mimeType: 'image/png', byteSize: map.size })
-          studio.setEffects(object.blockId, {
-            light: true,
-            lightAssetId: assetId,
-            lightKey: lightKeyOf(object.rect, object.angle),
-          })
-        }
-        await recomposePage(pageId)
-        setState({ kind: 'idle' })
-      } catch {
-        setState({ kind: 'failed', message: `빛을 맞추지 못했습니다 — ${errorTextFor('network_error')}` })
-      } finally {
-        runningRef.current = false
-      }
-    },
-    [studio, compositePlanFor, recomposePage],
-  )
-  matchLightRef.current = matchLight
 
   /**
    * 완성본을 **재료에서 되살린다** (다시 합치기 Patch).
@@ -2264,19 +2113,9 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         setState({ kind: 'blocked', message: errorTextFor('missing_api_key') })
         return
       }
-      const startedAt = Date.now()
-      void run(plan, auth).then(() => {
-        // 생성 직후 빛·그림자까지 (2026-09-17 저녁). 편집이 아닌 첫 생성에서만,
-        // 이번에 만든 결과가 있고 얹힌 이미지가 있을 때만.
-        if (!autoLightRef.current || plan.kind === 'edit' || studio === null) return
-        const job = studio.currentJob()
-        const result = pageResultOf(job, plan.pageId)
-        if (result === undefined || result.createdAt < startedAt) return
-        if ((job.imageObjects?.[plan.pageId] ?? []).length === 0) return
-        void matchLightRef.current?.(plan.pageId)
-      })
+      void run(plan, auth)
     },
-    [state, run, studio],
+    [state, run],
   )
 
   // ── 부분수정 ───────────────────────────────────────────────────────────────
@@ -2647,12 +2486,6 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             recomposePage,
             rebuildPage,
             canRebuild,
-            matchLight,
-            autoLight,
-            setAutoLight: (on: boolean) => {
-              writeAutoLight(on)
-              setAutoLightState(on)
-            },
             editTargets,
             selectedTargetIds,
             toggleTarget,
@@ -2673,7 +2506,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           },
     [
       studio, state, hasResult, hasKey, keyRemembered, accessMode, askAccessMode, view, begin, confirm, retryConversion, recomposePage,
-      rebuildPage, canRebuild, matchLight, autoLight,
+      rebuildPage, canRebuild,
       editTargets, selectedTargetIds, toggleTarget, instructionFor, setInstructionFor,
       canEdit, editBlockedReason, beginEdit, confirmEdit,
       revisions.length, cursor, canGoPrevious, canGoNext, goTo,

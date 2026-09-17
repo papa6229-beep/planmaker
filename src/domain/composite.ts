@@ -223,8 +223,6 @@ export function planLocalComposite(input: CompositePlanInput): CompositePlan {
 /** 이 계획이 필요로 하는 자산 번호 전부 — 배경과 전경까지. */
 export function compositeAssetIds(plan: CompositePlan): string[] {
   const ids = plan.layers.map((l) => l.assetId)
-  // 빛 층 (빛 층 Patch). 켜 둔 것만 — 꺼 둔 층을 읽을 이유가 없다.
-  for (const l of plan.layers) if (l.effects.light && l.effects.lightAssetId !== undefined) ids.push(l.effects.lightAssetId)
   if (plan.background !== undefined) ids.push(plan.background.assetId)
   if (plan.foreground !== undefined) ids.push(plan.foreground.assetId)
   for (const text of plan.textObjects ?? []) ids.push(text.assetId)

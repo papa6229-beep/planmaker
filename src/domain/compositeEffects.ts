@@ -64,20 +64,16 @@ export interface CompositeEffects {
   /** 테두리 색 `#rrggbb`. */
   outlineColor: string
   /**
-   * 빛 맞추기 (빛 층 Patch, 2026-09-17).
+   * 드롭 그림자의 자리 (드롭 그림자 Patch, 2026-09-17).
    *
-   * Klein이 제품 모양의 회색 덩어리에 입힌 빛을 떼어 낸 **빛 층**을 원본 제품에
-   * 곱해 그린다. 제품 픽셀은 AI가 만든 것을 쓰지 않는다 — 세부 보존 0.91~0.97로
-   * 쟀다 (REPORT-2026-09-17 §11). 빛 층은 제품 그림 자체의 좌표로 저장되므로 제품을
-   * 옮겨도 명암이 따라간다.
+   * 오브젝트 짧은 변에 대한 비율이고, **페이지 기준** 방향이다 — 제품을 돌려도 그림자는
+   * 같은 쪽에 진다. 포토샵 드롭 섀도처럼 캔버스에서 끌어 옮기거나 숫자로 맞춘다.
+   * 사용자: "항상 하단 그림자만 쓰는 게 아니라 우측면, 좌측면 다양하게 쓴다."
    */
-  light: boolean
-  /** 빛 층 세기 0..1. */
-  lightStrength: number
-  /** 빛 층 그림 (RGB = 배율 × 127.5, 즉 128이 그대로). 없으면 빛 맞추기를 안 한 것. */
-  lightAssetId?: string
-  /** 빛 맞추기를 한 **그때의 자리** — 지금 자리와 다르면 다시 맞추라고 알린다. */
-  lightKey?: string
+  shadowX: number
+  shadowY: number
+  /** 드롭 그림자의 흐림 0..1. */
+  shadowBlur: number
 }
 
 /** 세기로 조절하는 항목만 — 종이 컷아웃은 체크 하나라 여기 끼지 않는다. */
@@ -91,10 +87,9 @@ export type CompositeStrengthKey = Exclude<
   | 'outlineWidth'
   | 'outlineOpacity'
   | 'outlineColor'
-  | 'light'
-  | 'lightStrength'
-  | 'lightAssetId'
-  | 'lightKey'
+  | 'shadowX'
+  | 'shadowY'
+  | 'shadowBlur'
 >
 
 /**
@@ -118,15 +113,16 @@ export const DEFAULT_COMPOSITE_EFFECTS: CompositeEffects = {
   outlineWidth: 0.35,
   outlineOpacity: 1,
   outlineColor: '#ffffff',
-  light: false,
-  lightStrength: 1,
+  shadowX: 0.04,
+  shadowY: 0.06,
+  shadowBlur: 0.4,
 }
 
 /** 화면에 그대로 쓰는 이름 — 순서까지 여기서 정한다 (§11). */
 export const COMPOSITE_EFFECT_FIELDS: readonly { key: CompositeStrengthKey; label: string }[] = [
   { key: 'edge', label: '가장자리 보정' },
   { key: 'contactShadow', label: '접지 그림자' },
-  { key: 'wallShadow', label: '벽 그림자' },
+  { key: 'wallShadow', label: '드롭 그림자' },
   { key: 'grading', label: '색상 통일' },
   { key: 'rimLight', label: '림라이트' },
 ]
@@ -171,12 +167,18 @@ export function normalizeEffects(raw: unknown): CompositeEffects {
       typeof value.outlineColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.outlineColor)
         ? value.outlineColor.toLowerCase()
         : DEFAULT_COMPOSITE_EFFECTS.outlineColor,
-    // 빛 층은 그림이 있을 때만 켤 수 있다.
-    light: value.light === true && typeof value.lightAssetId === 'string',
-    lightStrength: clamp01(value.lightStrength, DEFAULT_COMPOSITE_EFFECTS.lightStrength),
-    ...(typeof value.lightAssetId === 'string' && value.lightAssetId.length > 0 ? { lightAssetId: value.lightAssetId } : {}),
-    ...(typeof value.lightKey === 'string' ? { lightKey: value.lightKey } : {}),
+    shadowX: offsetOf(value.shadowX, DEFAULT_COMPOSITE_EFFECTS.shadowX),
+    shadowY: offsetOf(value.shadowY, DEFAULT_COMPOSITE_EFFECTS.shadowY),
+    shadowBlur: clamp01(value.shadowBlur, DEFAULT_COMPOSITE_EFFECTS.shadowBlur),
   }
+}
+
+/** 드롭 그림자를 짧은 변의 몇 배까지 밀 수 있는가. */
+export const SHADOW_OFFSET_MAX = 1.5
+
+function offsetOf(value: unknown, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+  return Math.min(SHADOW_OFFSET_MAX, Math.max(-SHADOW_OFFSET_MAX, value))
 }
 
 /**
@@ -252,29 +254,30 @@ export function contactShadow(rect: ShadowSubject, source: LightDirection, stren
   }
 }
 
-export function wallShadow(rect: ShadowSubject, source: LightDirection, strength: number): WallShadow {
+/**
+ * 드롭 그림자 (드롭 그림자 Patch, 2026-09-17) — 포토샵의 드롭 섀도와 같다.
+ *
+ * 자리는 작업자가 정한다(`shadowX`·`shadowY`, 페이지 기준). 앞선 판은 사진의 빛
+ * 방향으로 자동으로 밀었는데, 실무에서는 아래·오른쪽·왼쪽을 골라 쓴다.
+ *
+ * 합성은 오브젝트를 **돌린 좌표계** 안에서 그리므로, 페이지 기준 자리를 그 기울기만큼
+ * 거꾸로 돌려 돌려준다 — 제품을 돌려도 그림자는 같은 쪽에 진다.
+ */
+export function wallShadow(
+  rect: ShadowSubject,
+  strength: number,
+  place: { x: number; y: number; blur: number; angle?: number },
+): WallShadow {
   const s = clamp01(strength, 0)
-  // 빛의 반대쪽으로 민다. 정면광이면 밀 곳이 없어 그림자가 제품 뒤에 통째로
-  // 숨었다 — 끝까지 올려도 보이지 않던 이유다 (2026-09-17). 빛이 약하면 오른쪽
-  // 아래를 기본으로 삼는다. 사진 속 빛이 대개 왼쪽 위에서 오기 때문이다.
-  let ux = -source.light.x
-  let uy = -source.light.y
-  const len = Math.hypot(ux, uy)
-  if (len < 0.35) {
-    ux = 0.6
-    uy = 0.8
-  } else {
-    ux /= len
-    uy /= len
-  }
   const short = Math.min(rect.width, rect.height)
-  const distance = short * (0.02 + 0.07 * s)
+  const px = place.x * short
+  const py = place.y * short
+  const a = (-(place.angle ?? 0) * Math.PI) / 180
   return {
-    dx: ux * distance,
-    dy: uy * distance,
-    // 세게 할수록 또렷하게. 흐릴수록 넓게 퍼져 옅어 보인다.
-    blur: short * (0.05 - 0.025 * s),
-    // 접지 그림자보다는 옅게 (여기 상한 0.6 대 위 0.8).
-    opacity: s === 0 ? 0 : 0.12 + 0.48 * s,
+    dx: px * Math.cos(a) - py * Math.sin(a),
+    dy: px * Math.sin(a) + py * Math.cos(a),
+    blur: short * (0.005 + 0.12 * clamp01(place.blur, 0)),
+    // 끝까지 올리면 뚜렷하게 (상한 0.8).
+    opacity: s === 0 ? 0 : 0.12 + 0.68 * s,
   }
 }

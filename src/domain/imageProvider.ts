@@ -32,8 +32,7 @@ import type { ImageGenerationErrorCode } from './imageGeneration.js'
  * 다르기 때문이다: 하나는 "돈이 어디서 나갔나"의 기록이고, 하나는 공급자에게
  * 주는 힌트다. 둘이 어긋나면 검사가 잡는다 (`localImageProvider.test.ts`).
  */
-/** `light` — 빛 맞추기 (빛 층 Patch). 제품 모양의 회색 덩어리를 얹은 한 장이 간다. */
-export const IMAGE_INTENTS = ['plate', 'text-layer', 'edit', 'background', 'light'] as const
+export const IMAGE_INTENTS = ['plate', 'text-layer', 'edit', 'background'] as const
 export type ImageIntent = (typeof IMAGE_INTENTS)[number]
 
 /**

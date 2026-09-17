@@ -2069,3 +2069,61 @@ describe('§20 문구는 글꼴로 그리고, 모델에게는 판 한 장과 재
     }
   })
 })
+
+// ── §21 드롭 그림자 (2026-09-17) ────────────────────────────────────────────
+
+describe('§21 드롭 그림자는 캔버스에서 끌어 옮긴다', () => {
+  it('고른 이미지에 손잡이가 붙고, 끌면 자리가 바뀌어 계획까지 가며, 외부 호출은 없다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+    const boxes = await waitFor(() => {
+      const found = container.querySelectorAll<HTMLElement>('.result-object')
+      expect(found.length).toBe(6)
+      return found
+    }, { timeout: 5000 })
+    // 고르기 전에는 손잡이가 없다
+    expect(container.querySelector('.result-object__shadow-handle')).toBeNull()
+
+    const calls = fetchSpy.mock.calls.length
+    const photo = Array.from(boxes).find((b) => labelOf(b) === '이미지 blk_photo')!
+    fireEvent.pointerDown(photo, { button: 0, clientX: 5, clientY: 5 })
+    await waitFor(() => expect(photo.getAttribute('aria-pressed')).toBe('true'), { timeout: 5000 })
+    fireEvent.pointerUp(window)
+
+    const handle = await waitFor(() => {
+      const h = container.querySelector<HTMLElement>('.result-object__shadow-handle')
+      expect(h).not.toBeNull()
+      return h!
+    })
+    // jsdom에는 화면 크기가 없다 — 판의 크기를 페이지와 같게 흉내 낸다.
+    const layer = container.querySelector<HTMLElement>('.result-objects')!
+    layer.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 840, height: 1200, right: 840, bottom: 1200, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect
+
+    // 사진(PHOTO_RECT)의 왼쪽 바깥으로 끈다 → 가로 위치가 음수
+    fireEvent.pointerDown(handle, { button: 0, clientX: 0, clientY: 0 })
+    fireEvent.pointerMove(window, { clientX: 5, clientY: 600 })
+    fireEvent.pointerUp(window)
+
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect(job?.effects?.blk_photo?.shadowX).toBeLessThan(0)
+    }, { timeout: 5000 })
+    await waitFor(() => {
+      const plan = composed.mock.calls.at(-1)![0] as { layers: { blockId: string; effects: { shadowX: number } }[] }
+      expect(plan.layers.find((l) => l.blockId === 'blk_photo')?.effects.shadowX).toBeLessThan(0)
+    }, { timeout: 5000 })
+
+    // 화살표로도 옮긴다
+    const before = (await loadStudioJob(STUDIO_JOB_ID))!.effects!.blk_photo!.shadowY
+    fireEvent.keyDown(handle, { key: 'ArrowDown' })
+    fireEvent.keyUp(handle, { key: 'ArrowDown' })
+    await waitFor(async () => {
+      const job = await loadStudioJob(STUDIO_JOB_ID)
+      expect(job?.effects?.blk_photo?.shadowY).toBeCloseTo(before + 0.01, 5)
+    }, { timeout: 5000 })
+    expect(fetchSpy.mock.calls.length).toBe(calls)
+  })
+})

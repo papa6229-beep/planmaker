@@ -542,10 +542,12 @@ describe('§13-10 그림자', () => {
     expect(contact.ry).toBeLessThan(contact.rx / 2)
     expect(contact.opacity).toBeGreaterThan(0)
 
-    const wall = wallShadow(rect, analysis, 1)
-    // 광원 반대편으로 밀린다. 이 fixture는 왼쪽이 밝으므로 오른쪽으로.
+    // 드롭 그림자의 자리는 작업자가 정한다 (드롭 그림자 Patch, 2026-09-17). 기본은 오른쪽 아래.
+    const { DEFAULT_COMPOSITE_EFFECTS: d } = await load('domain/compositeEffects')
+    const wall = wallShadow(rect, 1, { x: d.shadowX, y: d.shadowY, blur: d.shadowBlur })
     expect(wall.dx).toBeGreaterThan(0)
-    expect(wall.opacity).toBeLessThan(contact.opacity)
+    expect(wall.dy).toBeGreaterThan(0)
+    expect(wall.opacity).toBeLessThanOrEqual(contact.opacity)
   })
 
   it('광원 방향은 낮은 신뢰도로 표기된다', async () => {

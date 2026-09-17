@@ -3291,11 +3291,25 @@ button { font-family: inherit; }
 .curve__actions { display: flex; align-items: center; gap: 8px; }
 .curve__touched { font-size: 10px; color: var(--color-accent, #6c5ce7); }
 
-/* ── 빛 맞추기 (빛 층 Patch, 2026-09-17) ─────────────────────────────────── */
-.light-match { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
-.light-match__concept { padding: 5px 8px; font-size: 12px; }
-.light-match__run { align-self: flex-start; }
-.light-match__stale { margin: 0; font-size: 11px; color: var(--color-danger, #c0392b); }
 
-.ready-panel__auto-light { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 12px; margin: 4px 0 8px; }
-.ready-panel__hint { flex-basis: 100%; font-size: 10px; color: var(--color-muted); }
+
+/* ── 드롭 그림자 손잡이 (드롭 그림자 Patch, 2026-09-17) ───────────────────── */
+.result-object__shadow-line { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 6; overflow: visible; }
+.result-object__shadow-line line { stroke: #111; stroke-width: 1.5; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.result-object__shadow-handle {
+  position: absolute;
+  z-index: 7;
+  transform: translate(-50%, -50%);
+  padding: 2px 6px;
+  border: 1.5px dashed #111;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #111;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+}
+.result-object__shadow-handle:focus-visible { outline: 2px solid var(--color-accent); }
