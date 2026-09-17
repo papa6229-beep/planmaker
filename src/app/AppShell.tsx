@@ -37,6 +37,7 @@ import { GenerationRequestPreview } from '../components/studio/GenerationRequest
 import { ReadyPanel } from '../components/studio/ReadyPanel'
 import { LiveTextSync } from '../features/studio/LiveTextSync'
 import { DesignBar } from '../components/design/DesignBar'
+import { BarMenuInline } from '../components/design/BarMenu'
 import { AlignTools, ResultAlignTools } from '../components/studio/AlignTools'
 import { BriefHandoff } from '../components/studio/BriefHandoff'
 import { BlockLayerTools } from '../components/studio/BlockLayerTools'
@@ -294,31 +295,48 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
           {mode === 'studio' ? <AiNoteField /> : <DesignerNoteField />}
           {mode !== 'studio' && <TeamNoteField />}
         </div>
+        {mode === 'studio' ? (
+          /* 작업판은 **세로 배치**다 (세로 배치 Patch, 2026-09-17). 사용자: "조작 패널도 왼쪽,
+             작업 창과 캔버스도 세로형으로 길게." 캔버스 위에 쌓이던 가로 줄(페이지 탭·작업 목록·
+             배율·도구 막대)을 캔버스 왼쪽 세로 칸에 모으고, 캔버스가 남은 높이를 모두 쓴다.
+             조작 창도 이 칸 안에서 펼쳐져 캔버스를 가리지 않는다. */
+          <div className="workspace__center workspace__center--studio">
+            <aside className="studio-rail" aria-label="작업 도구">
+              <PageTabs />
+              {/* 만든 것들의 목록 — 이벤트 페이지와 배너, 그리고 그 한 장의 저장. */}
+              <WorkList />
+              {statusPanel}
+              {generation !== null && generation.hasResult && <StudioViewTabs />}
+              <div className="canvas-controls">
+                {compare ? <ResultZoomControls /> : <CanvasZoomControls />}
+              </div>
+              <BarMenuInline.Provider value={true}>
+                <DesignBar />
+              </BarMenuInline.Provider>
+            </aside>
+            <div className="studio-main">
+              {showStart && !compare && <StartChoice onDismiss={() => setStartDismissed(true)} />}
+              <div className="stage">
+                {compare ? <ResultCompare /> : <BriefCanvas />}
+              </div>
+            </div>
+          </div>
+        ) : (
         <div className="workspace__center">
           <PageTabs />
-          {/* 만든 것들의 목록 — 이벤트 페이지와 배너, 그리고 그 한 장의 저장
-              (작업 목록 Patch). 만든 것이 없으면 나오지 않는다. */}
-          {mode === 'studio' && <WorkList />}
           {statusPanel}
-          {/* 작업판에서 결과가 생기면, 중앙이 무엇을 보여 줄지 고를 수 있다.
-              결과가 없을 때는 고를 것이 없으므로 나타나지도 않는다. */}
-          {generation !== null && generation.hasResult && <StudioViewTabs />}
           <div className="canvas-controls">
             {/* 오버레이는 참고 이미지를 겹쳐 보는 조작이다. 작업판에는 그 자료가
                 없으므로 조작도 두지 않는다. */}
-            {mode !== 'studio' && <ReferenceViewControls />}
-            {/* 완성본을 보는 동안 기획서 배율을 움직여 봐야 아무것도 달라지지
-                않는다. 그래서 같은 자리에 완성본의 배율이 선다. */}
-            {compare ? <ResultZoomControls /> : <CanvasZoomControls />}
+            <ReferenceViewControls />
+            <CanvasZoomControls />
           </div>
-          {/* 포토샵·일러스트레이터식 도구 막대 (도구 막대 Patch). 기획서 캔버스와
-              완성본에서 같은 막대다. */}
-          {mode === 'studio' && <DesignBar />}
-          {showStart && !compare && <StartChoice onDismiss={() => setStartDismissed(true)} />}
+          {showStart && <StartChoice onDismiss={() => setStartDismissed(true)} />}
           <div className="stage">
-            {compare ? <ResultCompare /> : <BriefCanvas />}
+            <BriefCanvas />
           </div>
         </div>
+        )}
         {/* 기획서 모드의 우측은 보관함; 작업판과 이미지 요청 화면은 공통 편집기의
             기본 패널을 그대로 쓴다. 제품 이미지는 이미지 블록에서 직접 넣으므로
             같은 정보를 받는 패널을 따로 두지 않는다 (첫 사용 흐름 §8). */}

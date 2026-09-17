@@ -98,6 +98,13 @@ export function ResultCompare() {
   }, [result, blinkAssetId, pageId, studio])
 
   const zoom = view?.zoom ?? 1
+  // 배율이 바뀌거나 결과가 처음 걸리면 판을 가로 가운데로.
+  const shown = url !== null
+  useLayoutEffect(() => {
+    const box = viewportRef.current
+    if (box === null) return
+    box.scrollLeft = Math.max(0, (box.scrollWidth - box.clientWidth) / 2)
+  }, [zoom, shown])
   /** 끄는 동안의 그림 (후보정 창 Patch). 저장된 완성본이 새로 걸리면 거둔다. */
   const live = useLivePreview(pageId)
   useEffect(() => {
@@ -150,6 +157,9 @@ export function ResultCompare() {
           /* 원본 비율 그대로. 폭만 기획서와 맞춘다. 이미지와 꾸며진 문구는 그림
              위에 겹쳐 두어, 결과를 보면서 바로 옮기고 크기를 바꿀 수 있다 (§2). */
           <div className="compare__viewport" ref={viewportRef}>
+            {/* 판 둘레 여백 (세로 배치 Patch) — 좌우·아래로 밀어 어느 조각이든 화면 가운데에 두고
+                작업한다. 여는 순간에는 판이 가운데 오도록 스크롤을 맞춘다. */}
+            <div className="compare__pad">
             {/* 판의 폭을 픽셀로 못박는다. 오브젝트 겹은 자기 상자의 실제 폭에서
                 배율을 되짚으므로(`ResultObjectLayer`의 `scale`), 이 한 줄로
                 확대해도 잡는 자리와 그려지는 자리가 어긋나지 않는다. */}
@@ -162,6 +172,7 @@ export function ResultCompare() {
                   배경이라 어디를 눌러도 배경이 먼저 걸려 조각을 못 잡는다. */}
               <BannerBackgroundHandle pageId={pageId} page={logical} />
               <ResultObjectLayer pageId={pageId} page={logical} />
+            </div>
             </div>
           </div>
         )}

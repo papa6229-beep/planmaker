@@ -8,8 +8,15 @@
  *    바꾸기 시작할 때 `onStart`(되돌리기 한 칸)를 한 번 부른다.
  */
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+
+/**
+ * 펼침 창을 **제자리에서** 펼치는가 (세로 배치 Patch). 참이면 창이 단추 바로 아래 칸 안에
+ * 열려 캔버스를 가리지 않고, 다른 곳을 눌러도 닫히지 않는다 — 포토샵의 패널처럼 열어 둔 채
+ * 조각을 바꿔 가며 조절한다. 거짓이면 화면 위 층에 뜬다.
+ */
+export const BarMenuInline = createContext(false)
 
 export function BarMenu({
   label,
@@ -30,12 +37,14 @@ export function BarMenu({
   disabled?: boolean
   children: ReactNode
 }) {
+  const inline = useContext(BarMenuInline)
   const [open, setOpen] = useState(false)
   const buttonRef = useRef<HTMLButtonElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
   const [at, setAt] = useState<{ left: number; top: number; maxHeight: number } | null>(null)
 
   useLayoutEffect(() => {
+    if (inline) return
     if (!open) {
       setAt(null)
       return
@@ -64,11 +73,12 @@ export function BarMenu({
       window.removeEventListener('resize', place)
       window.removeEventListener('scroll', place, true)
     }
-  }, [open, width])
+  }, [open, width, inline])
 
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
+      if (inline) return
       const t = e.target as Node
       if (buttonRef.current?.contains(t) || panelRef.current?.contains(t)) return
       setOpen(false)
@@ -82,7 +92,7 @@ export function BarMenu({
       window.removeEventListener('mousedown', onDown)
       window.removeEventListener('keydown', onKey)
     }
-  }, [open])
+  }, [open, inline])
 
   useEffect(() => {
     if (disabled) setOpen(false)
@@ -105,7 +115,20 @@ export function BarMenu({
         {marked && <span className="design-bar__dot" aria-hidden="true" />}
         <span className="design-bar__caret" aria-hidden="true">▾</span>
       </button>
+      {open && inline && (
+        <div
+          ref={panelRef}
+          className="design-menu design-menu--inline"
+          role="dialog"
+          aria-label={label}
+          onPointerDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          {children}
+        </div>
+      )}
       {open &&
+        !inline &&
         typeof document !== 'undefined' &&
         createPortal(
           <div

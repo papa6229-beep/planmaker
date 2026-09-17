@@ -3491,3 +3491,60 @@ button { font-family: inherit; }
 .canvas__sheet.is-drawing,
 .result-objects.is-drawing { cursor: crosshair; }
 .result-objects__drawing { position: absolute; border: 1px dashed var(--color-accent); background: rgba(99, 102, 241, 0.08); pointer-events: none; }
+
+/* ── 세로 배치 (세로 배치 Patch, 2026-09-17) ────────────────────────────────
+ * 작업판은 [도구 칸 | 캔버스]. 캔버스 위에 쌓이던 가로 줄을 왼쪽 세로 칸에 모으고
+ * 캔버스가 남은 높이를 모두 쓴다. 조작 창도 이 칸 안에서 펼쳐진다. */
+.workspace__center--studio { flex-direction: row; }
+.studio-rail {
+  flex: none;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-panel);
+}
+.studio-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.studio-rail .page-tabs { padding: 0; border-bottom: 0; background: transparent; }
+.studio-rail .page-tabs__strip { flex-wrap: wrap; overflow-x: visible; }
+.studio-rail .work-list { flex-wrap: wrap; padding: 0; border-bottom: 0; background: transparent; }
+.studio-rail .work-list__save { margin-left: 0; }
+.studio-rail .studio-view { padding: 0; }
+.studio-rail .canvas-controls { border-bottom: 0; background: transparent; }
+.studio-rail .canvas-toolbar { margin-left: 0; padding: 0; flex-wrap: wrap; }
+
+/* 도구 막대 → 세로 칸 */
+.studio-rail .design-bar {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin: 0;
+  padding: 8px;
+}
+.studio-rail .design-bar__tools { justify-content: flex-start; }
+.studio-rail .design-bar__sep { width: auto; height: 1px; margin: 0; }
+.studio-rail .design-bar__options { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; }
+.studio-rail .design-bar__note { width: 100%; line-height: 1.5; }
+.design-menu--inline {
+  position: static;
+  flex: 0 0 100%;
+  width: 100%;
+  max-height: none;
+  overflow: visible;
+  box-shadow: none;
+  background: var(--color-panel-muted, #f7f7fa);
+}
+
+/* 캔버스 아래로 여백 — 맨 아래 조각도 화면 가운데로 올려 놓고 작업한다. */
+.workspace__center--studio .canvas { padding-bottom: 50vh; }
+
+.workspace__center--studio .compare__head { padding: 4px 12px; }
+.compare__pad { display: flex; justify-content: center; align-items: flex-start; width: max-content; min-width: calc(100% + 400px); padding: 0 200px; box-sizing: border-box; }
+.workspace__center--studio .compare__pad .compare__stage { margin: 0 0 50vh; }
+.studio-rail { overflow-x: hidden; }
+.studio-rail .canvas-controls { flex-wrap: wrap; }
+.studio-rail .canvas-controls > * { flex-wrap: wrap; margin-left: 0; max-width: 100%; }
