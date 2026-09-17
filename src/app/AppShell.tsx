@@ -36,6 +36,7 @@ import { AiNoteField, DesignerNoteField, TeamNoteField } from '../components/con
 import { GenerationRequestPreview } from '../components/studio/GenerationRequestPreview'
 import { ReadyPanel } from '../components/studio/ReadyPanel'
 import { LiveTextSync } from '../features/studio/LiveTextSync'
+import { DesignBar } from '../components/design/DesignBar'
 import { AlignTools, ResultAlignTools } from '../components/studio/AlignTools'
 import { BriefHandoff } from '../components/studio/BriefHandoff'
 import { BlockLayerTools } from '../components/studio/BlockLayerTools'
@@ -310,6 +311,9 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
                 않는다. 그래서 같은 자리에 완성본의 배율이 선다. */}
             {compare ? <ResultZoomControls /> : <CanvasZoomControls />}
           </div>
+          {/* 포토샵·일러스트레이터식 도구 막대 (도구 막대 Patch). 기획서 캔버스와
+              완성본에서 같은 막대다. */}
+          {mode === 'studio' && <DesignBar />}
           {showStart && !compare && <StartChoice onDismiss={() => setStartDismissed(true)} />}
           <div className="stage">
             {compare ? <ResultCompare /> : <BriefCanvas />}

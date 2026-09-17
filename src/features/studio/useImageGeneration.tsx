@@ -40,6 +40,7 @@ import {
   imageObjectsOf,
   objectToneOf as objectToneIn,
   pageResultOf,
+  resultFingerprint,
   revisionsOf,
   studioLiveAssetIds,
   toneOf as toneIn,
@@ -47,7 +48,7 @@ import {
 import { bumpPreviewEpoch, previewEpoch, setLivePreview } from './livePreview'
 import { matchLevels } from '../../domain/toneMatch'
 import { aroundToneStats, objectToneStats } from '../../services/toneMatchStats'
-import { paintLiveText } from './liveText'
+import { paintLiveShape, paintLiveText } from './liveText'
 import {
   apiKeyRemembered,
   authHeaders,
@@ -102,10 +103,9 @@ import { toneOf as productToneOf } from '../../domain/imageAnalysis'
 import { analyzeImageBlob } from '../../services/imageAnalysisRunner'
 import type { StudioTextObject } from '../../domain/textObjects'
 import { planLocalComposite, type CompositePlan } from '../../domain/composite'
-import { getBlockTypeMeta } from '../../domain/blockTypes'
+import { getBlockTypeMeta, isShapeBlock } from '../../domain/blockTypes'
 import { drawsBareText, isPairedLinkUrl, textAlignOf } from '../../domain/simpleBlocks'
 import { resolveGptImageSize } from '../../domain/gptImageSize'
-import { documentFingerprint } from '../../domain/documentFingerprint'
 import { pageAsEventBrief } from '../../domain/briefMigration'
 import {
   errorTextFor,
@@ -200,6 +200,8 @@ interface GenerationPlan {
    */
   plate?: PlateInput
   textBlocks?: TextLayerBlock[]
+  /** 브라우저가 그릴 도형·선 (도형 도구 Patch). */
+  shapeBlocks?: ShapeLayerBlock[]
   /** 블록 id → 그 문구를 주문할 판 크기. 블록과 같은 모양이다 (2차 Patch). */
   textSizes?: Record<string, string>
   /** 블록 id → 그 블록에만 붙는 주문과 참고 그림 (블록별 주문 Patch). */
@@ -445,9 +447,10 @@ function preserveParts(
   page: BriefPage,
   productImages: Readonly<Record<string, string>>,
   isCutout: (blockId: string) => boolean,
-): { texts: PreserveTextEntry[]; fixed: FixedObject[] } {
+): { texts: PreserveTextEntry[]; fixed: FixedObject[]; shapes: ShapeLayerBlock[] } {
   const texts: PreserveTextEntry[] = []
   const fixed: FixedObject[] = []
+  const shapes: ShapeLayerBlock[] = []
 
   page.blocks.forEach((block, layer) => {
     // 퍼블리싱 주소는 디자인이 아니다 — 합성 계획과 같은 규칙으로 뺀다.
@@ -459,6 +462,12 @@ function preserveParts(
       const assetId = productImages[block.id] ?? block.assetId
       if (assetId === undefined) return
       fixed.push({ blockId: block.id, assetId, rect, layer, cutout: isCutout(block.id) })
+      return
+    }
+
+    // 도형·선은 브라우저가 그린다 (도형 도구 Patch). AI 주문에는 실리지 않는다.
+    if (isShapeBlock(block.type)) {
+      shapes.push({ blockId: block.id, rect, layer })
       return
     }
 
@@ -484,7 +493,14 @@ function preserveParts(
     text.overlapsImage = fixed.some((item) => rectsOverlap(text.rect, item.rect))
   }
 
-  return { texts, fixed }
+  return { texts, fixed, shapes }
+}
+
+/** 생성 때 함께 그릴 도형 하나 (도형 도구 Patch). */
+export interface ShapeLayerBlock {
+  blockId: string
+  rect: LayoutRect
+  layer: number
 }
 
 export function ImageGenerationProvider({ children }: { children: ReactNode }) {
@@ -536,7 +552,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     const size = resolveGptImageSize(page.canvasWidth, page.canvasHeight)
     if (!size.ok) return { blocked: size.message }
     const working = workingImageTarget(page.canvasHeight)
-    const fingerprint = documentFingerprint(current)
+    const fingerprint = resultFingerprint(current)
 
     // ── 갈림길 (§1). 작업자는 고르지 않는다 ─────────────────────────────────
     const parts = preserveParts(page, studio.job.productImages, (id) => studio.effectsOf(id).paperCutout)
@@ -567,7 +583,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
      * 얹을 것이 하나도 없는 페이지 — 이미지도 문구도 없는 빈 장 — 에서만 예전
      * 길로 간다. 그때는 겹이라고 할 것이 없어서 결과가 어차피 같다.
      */
-    if (parts.fixed.length > 0 || parts.texts.length > 0) {
+    if (parts.fixed.length > 0 || parts.texts.length > 0 || parts.shapes.length > 0) {
       const styleRefId = studio.styleReferenceOf(page.id)
       const note = current.project.aiNote?.trim() ?? ''
       const pageSize = { width: page.canvasWidth, height: page.canvasHeight }
@@ -601,7 +617,10 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
       }))
       // 블록마다 붙여 둔 주문과 참고 그림 (블록별 주문 Patch).
       const blockOrders = Object.fromEntries(
-        textBlocks.map((block) => [block.blockId, studio.blockOrderOf(block.blockId)]),
+        [...textBlocks.map((b) => b.blockId), ...parts.shapes.map((b) => b.blockId)].map((id) => [
+          id,
+          studio.blockOrderOf(id),
+        ]),
       )
       // 문구마다 **블록과 같은 모양의 판**을 요청한다. 세로로 긴 페이지 판을
       // 그대로 쓰면 한 줄짜리 문구가 여러 줄로 쌓여 돌아온다 (2차 Patch).
@@ -634,7 +653,9 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           inputs: plateInputs,
           fingerprint,
           plate,
-          ...(textBlocks.length === 0 ? {} : { textBlocks, textSizes, blockOrders }),
+          ...(textBlocks.length === 0 ? {} : { textBlocks, textSizes }),
+          ...(parts.shapes.length === 0 ? {} : { shapeBlocks: parts.shapes }),
+          ...(textBlocks.length === 0 && parts.shapes.length === 0 ? {} : { blockOrders }),
           // 배경 한 번뿐이다. 문구·버튼은 브라우저가 그린다 (살아 있는 문구 Patch).
           // 확인창이 이 수를 그대로 말한다.
           calls: 1,
@@ -1362,7 +1383,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           // 적는다 — 지어내지 않는다.
           requestedSize: background.requestedSize ?? sizeLabel(composed.size),
           workingSize: sizeLabel(composed.size),
-          sourceFingerprint: documentFingerprint(getDocument()),
+          sourceFingerprint: resultFingerprint(getDocument()),
           createdAt: Date.now(),
           originalAssetId: assetId,
           targets: buildEditTargets(getDocument(), job, pageId),
@@ -2008,7 +2029,8 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
 
         // ── 두 번째 겹부터: 문구·버튼 한 블록에 한 장 (블록별 문구 Patch) ────
         const textBlocks = plan.textBlocks ?? []
-        if (plan.mode === 'preserve' && textBlocks.length > 0 && studio !== null) {
+        const shapeBlocks = plan.shapeBlocks ?? []
+        if (plan.mode === 'preserve' && (textBlocks.length > 0 || shapeBlocks.length > 0) && studio !== null) {
           // ① 배경을 먼저 완성해 둔다 — 자산으로 남기고 이 페이지의 배경으로
           //    삼는다. 이어지는 요청마다 붙일 그림이 바로 이것이다.
           await storePlate(plan, first)
@@ -2021,7 +2043,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           const made: (StudioTextObject | undefined)[] = Array.from<StudioTextObject | undefined>({ length: textBlocks.length })
           const trouble: (string | undefined)[] = Array.from<string | undefined>({ length: textBlocks.length })
           let done = 0
-          setState({ kind: 'running', done, total: textBlocks.length + 1 })
+          setState({ kind: 'running', done, total: textBlocks.length + shapeBlocks.length + 1 })
 
           /** 문구 겹 한 장. 자기 자리에만 적으므로 몇 장이 함께 돌아도 섞이지 않는다. */
           const makeOne = async (block: TextLayerBlock, index: number): Promise<void> => {
@@ -2038,12 +2060,15 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
               return
             }
             const input = {
+              kind: 'text' as const,
               blockId: block.blockId,
               text: block.content,
               lines: block.lines,
               family: order.fontFamily,
               weight: order.fontWeight,
               look: order.look,
+              chars: order.chars,
+              align: block.align,
             }
             const painted = await paintLiveText(input, block.rect)
             if (painted === null) {
@@ -2061,6 +2086,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
               liveKey: painted.liveKey,
               text: block.content,
               lines: [...block.lines],
+              align: block.align,
             }
           }
 
@@ -2087,14 +2113,42 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
               batch.map(async (block, i) => {
                 await makeOne(block, at + i)
                 done += 1
-                setState({ kind: 'running', done, total: textBlocks.length + 1 })
+                setState({ kind: 'running', done, total: textBlocks.length + shapeBlocks.length + 1 })
               }),
             )
           }
 
+          // ── 도형·선 (도형 도구 Patch) — 브라우저가 그린다. 외부 호출 0건.
+          const shapes: StudioTextObject[] = []
+          for (const block of shapeBlocks) {
+            const painted = await paintLiveShape(
+              { kind: 'shape', blockId: block.blockId, look: plan.blockOrders?.[block.blockId]?.shape },
+              block.rect,
+            )
+            done += 1
+            setState({ kind: 'running', done, total: textBlocks.length + shapeBlocks.length + 1 })
+            if (painted === null) {
+              trouble.push('도형 하나를 그리지 못했습니다.')
+              continue
+            }
+            shapes.push({
+              blockId: block.blockId,
+              assetId: painted.assetId,
+              rect: painted.rect,
+              layer: block.layer,
+              kind: 'shape',
+              live: true,
+              frame: { ...block.rect },
+              liveKey: painted.liveKey,
+            })
+          }
+
           // 화면의 앞뒤는 블록 차례 그대로여야 한다. 자기 자리에 적어 두었으므로
           // 먼저 끝난 순서가 아니라 **원래 차례**로 모인다.
-          const objects = made.filter((o): o is StudioTextObject => o !== undefined)
+          // 문구와 도형은 한 줄(앞 겹)에 선다 — 기획서 차례대로.
+          const objects = [...made.filter((o): o is StudioTextObject => o !== undefined), ...shapes].toSorted(
+            (a, b) => a.layer - b.layer,
+          )
           const problems = trouble.filter((t): t is string => t !== undefined)
 
           paidRef.current = {

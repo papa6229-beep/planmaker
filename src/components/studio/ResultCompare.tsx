@@ -89,7 +89,11 @@ export function ResultCompare() {
     })()
     return () => {
       cancelled = true
-      if (revoked !== null) URL.revokeObjectURL(revoked)
+      // 화면이 새 주소로 바뀐 뒤에 놓는다 — 곧바로 놓으면 바뀌기 전 한 번 깨진 주소를 부른다.
+      if (revoked !== null) {
+        const old = revoked
+        setTimeout(() => URL.revokeObjectURL(old), 1000)
+      }
     }
   }, [result, blinkAssetId, pageId, studio])
 

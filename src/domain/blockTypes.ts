@@ -50,6 +50,8 @@ export type BlockType =
   | 'cta_button'
   | 'divider_section_title'
   | 'group_container'
+  // 작업판의 도형·선 (도형 도구 Patch, 2026-09-17)
+  | 'design_shape'
   // §7.2 Reference / publishing
   | 'product_detail_link'
   | 'button_url'
@@ -114,6 +116,8 @@ export const BLOCK_TYPE_LIST = [
   { type: 'cta_button', label: 'CTA 버튼', category: 'structure', defaultVisibility: 'design', requiresAsset: false, hasText: true },
   { type: 'divider_section_title', label: '구분선/섹션 제목', category: 'structure', defaultVisibility: 'design', requiresAsset: false, hasText: true },
   { type: 'group_container', label: '그룹 컨테이너', category: 'structure', defaultVisibility: 'design', requiresAsset: false, hasText: false },
+  // 도형·선은 브라우저가 그린다 — AI에게 가는 주문에는 실리지 않는다.
+  { type: 'design_shape', label: '도형', category: 'structure', defaultVisibility: 'design', requiresAsset: false, hasText: false },
 
   // ── §7.2 Reference / publishing blocks ──────────────────────────────────
   { type: 'product_detail_link', label: '상품 상세페이지 링크', category: 'reference', defaultVisibility: 'publishing', requiresAsset: false, hasText: true },
@@ -140,6 +144,11 @@ export function getBlockTypeMeta(type: BlockType): BlockTypeMeta {
 /** True when the block type stores an image asset. */
 export function isImageBlock(type: BlockType): boolean {
   return BLOCK_TYPES[type].category === 'image'
+}
+
+/** 작업판에서 그린 도형·선인가 (도형 도구 Patch). */
+export function isShapeBlock(type: BlockType): boolean {
+  return type === 'design_shape'
 }
 
 /** True when the block type is a reference/publishing block. */

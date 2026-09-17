@@ -31,6 +31,7 @@ import { normalizeEffects } from '../domain/compositeEffects'
 import { resetFoldsForTests } from '../components/studio/PanelFold'
 import { clearUsage, listCalls, resetUsageStoreForTests } from '../services/usageStore'
 import { summarizeUsage } from '../domain/imageUsage'
+import { resetDesignToolsForTests } from '../features/studio/designTools'
 import type { BriefDocument } from '../domain/pageSchema'
 import type { LayoutRect } from '../domain/imageLayout'
 
@@ -246,26 +247,38 @@ const labelOf = (el: HTMLElement) => el.getAttribute('aria-label') ?? ''
 /**
  * 완성본 조각을 고르고 그 옆 "후보정" 창을 연다 (후보정 창 Patch). 탭을 주면 그리로 간다.
  */
-async function openPostEdit(box: HTMLElement, tab?: RegExp): Promise<HTMLElement> {
+async function openPostEdit(box: HTMLElement, tab: RegExp = /^색/): Promise<HTMLElement> {
   fireEvent.pointerDown(box, { button: 0, clientX: 5, clientY: 5 })
   await waitFor(() => expect(box.getAttribute('aria-pressed')).toBe('true'), { timeout: 5000 })
   fireEvent.pointerUp(window)
-  const dialog = () => document.querySelector<HTMLElement>('.result-object__editor')
-  if (dialog() === null) fireEvent.click(await waitFor(() => within(box).getByRole('button', { name: '후보정' })))
-  const found = await waitFor(() => {
-    const d = dialog()
-    expect(d).not.toBeNull()
-    return d!
-  })
-  if (tab !== undefined) fireEvent.click(within(found).getByRole('tab', { name: tab }))
-  return found
+  return openBarMenu(tab)
 }
+
+/** 도구 막대의 펼침 창 하나를 연다 (도구 막대 Patch). 이미 열려 있으면 그대로 쓴다. */
+async function openBarMenu(name: RegExp): Promise<HTMLElement> {
+  const bar = await screen.findByRole('toolbar', { name: '디자인 도구' })
+  const button = await waitFor(
+    () => {
+      const found = within(bar)
+        .getAllByRole('button')
+        .find((b) => b.getAttribute('aria-haspopup') === 'dialog' && name.test(b.getAttribute('aria-label') ?? ''))
+      expect(found).toBeDefined()
+      return found!
+    },
+    { timeout: 5000 },
+  )
+  const label = button.getAttribute('aria-label')!
+  if (button.getAttribute('aria-expanded') !== 'true') fireEvent.click(button)
+  return waitFor(() => screen.getByRole('dialog', { name: label }))
+}
+
 const bodies = () => fetchSpy.mock.calls.map((c) => c[1].body as FormData)
 const promptOf = (form: FormData) => String(form.get('prompt'))
 const namesOf = (form: FormData) =>
   form.getAll('images[]').filter((v): v is File => typeof v !== 'string').map((f) => f.name)
 
 beforeEach(async () => {
+  resetDesignToolsForTests()
   trim.failFor = null
   trim.size = { width: 400, height: 100 }
   fetchSpy.mockReset()
@@ -394,10 +407,12 @@ describe('§2 문구 셋과 버튼 하나가 각각 한 장씩 만들어진다',
   })
 
   it('한 장을 그리지 못해도 나머지는 남고, 그 이유를 말한다', async () => {
-    trim.failFor = 'now'
     await seedJob()
     const { container } = renderStudio()
     await documentReady(container)
+    // 캔버스 미리보기도 같은 자르기를 쓴다 — 미리보기가 다 그려진 뒤에 실패를 건다.
+    await new Promise((r) => setTimeout(r, 150))
+    trim.failFor = 'now'
     await generateOnce()
 
     const job = await loadStudioJob(STUDIO_JOB_ID)
@@ -1571,13 +1586,8 @@ describe('§16 완성본이 가운데를 다 쓴다', () => {
   })
 })
 
-describe('§16-B 생성 전 블록별 주문은 펴진 채로 있다', () => {
-  /**
-   * 접어 두었더니 제목 한 줄만 남아, 기획서를 불러온 작업자가 기능이 통째로
-   * 사라진 줄 알았다 — "왜 없어진 거야?" 블록을 고르면 접기를 누르지 않고도
-   * 적을 칸이 바로 나와야 한다.
-   */
-  it('문구 블록 옆 "문구 디자인" 창에서 꾸밈을 고르면 캔버스에 바로 보인다 — 오른쪽에는 없다', async () => {
+describe('§16-B 문구의 모양은 위쪽 도구 막대에서', () => {
+  it('문구 블록을 고르면 막대에 문자 옵션이 서고, 테두리를 켜면 캔버스 그림에 바로 들어간다 — 오른쪽에는 없다', async () => {
     resetFoldsForTests()
     await seedJob()
     const { container } = renderStudio()
@@ -1588,35 +1598,110 @@ describe('§16-B 생성 전 블록별 주문은 펴진 채로 있다', () => {
     fireEvent.pointerDown(cards[2]!, { button: 0 })
     fireEvent.pointerUp(window)
 
-    // 오른쪽 패널에는 주문 칸도, 생성 준비도 없다 (2026-09-17).
+    // 오른쪽 패널에는 주문 칸도, 생성 준비도 없다.
     const right = container.querySelector('.side-right')!
     expect(within(right as HTMLElement).queryByRole('region', { name: '이 블록의 디자인 주문' })).toBeNull()
     expect(screen.queryByRole('region', { name: '생성 준비' })).toBeNull()
 
-    // 닫혀 있어도 막대 버튼이 무엇이 들어 있는지 말한다.
-    const trigger = await waitFor(() => within(cards[2]!).getByRole('button', { name: '문구 디자인' }))
-    expect(trigger.textContent).not.toContain('꾸밈')
-    fireEvent.click(trigger)
-    const panel = await waitFor(() => screen.getByRole('dialog', { name: '문구 디자인' }))
-    // 꾸밈 탭 — 고르면 저장되고, 캔버스 글자에 바로 걸린다.
-    fireEvent.click(within(panel).getByRole('tab', { name: /꾸밈/ }))
-    fireEvent.click(within(panel).getByRole('checkbox', { name: '테두리' }))
+    const bar = await screen.findByRole('toolbar', { name: '디자인 도구' })
+    await waitFor(() => expect(within(bar).getByRole('button', { name: '글꼴' })).toBeTruthy())
+    // 캔버스의 문구는 완성본과 같은 붓으로 그린 그림이다.
+    const art = () => cards[2]!.querySelector<HTMLImageElement>('.block-card__art')
+    await waitFor(() => expect(art()).not.toBeNull(), { timeout: 5000 })
+
+    const menu = await openBarMenu(/^테두리$/)
+    fireEvent.click(within(menu).getByRole('button', { name: '안쪽 테두리' }))
     await waitFor(async () => {
       const job = await loadStudioJob(STUDIO_JOB_ID)
       expect(job?.blockOrders?.blk_t1?.look?.outline).toBe(true)
     })
-    await waitFor(() => expect(trigger.textContent).toContain('꾸밈'))
-    const words = cards[2]!.querySelector<HTMLElement>('.block-card__content')!
-    await waitFor(() => expect(words.style.textShadow).not.toBe(''))
-    // AI 주문·참고 그림 탭은 내려 두었다.
-    expect(within(panel).queryByRole('tab', { name: /주문/ })).toBeNull()
-    expect(within(panel).queryByRole('tab', { name: /참고 그림/ })).toBeNull()
+    await waitFor(() => expect(art()?.dataset.artKey).toContain('"outline":true'), { timeout: 5000 })
+    // 테두리 메뉴에 켜진 표시가 붙는다.
+    expect(within(bar).getByRole('button', { name: '테두리' }).querySelector('.design-bar__dot')).not.toBeNull()
 
-    // 블록을 놓으면 창이 닫히고 생성 준비가 돌아온다.
-    fireEvent.keyDown(panel, { key: 'Escape' })
+    // 블록을 놓으면 생성 준비가 돌아오고 막대는 도구만 남는다.
+    fireEvent.keyDown(window, { key: 'Escape' })
     fireEvent.pointerDown(container.querySelector('.canvas__sheet')!, { button: 0 })
     fireEvent.pointerUp(window)
     await waitFor(() => expect(screen.getByRole('region', { name: '생성 준비' })).toBeTruthy(), { timeout: 5000 })
+    expect(within(bar).queryByRole('button', { name: '글꼴' })).toBeNull()
+  })
+
+  it('글자를 골라 색과 크기를 주면 그 글자에만 들어간다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    const card = container.querySelector<HTMLElement>('.canvas__sheet .block-card[aria-label^="큰 문구"]')!
+    fireEvent.pointerDown(card, { button: 0 })
+    fireEvent.pointerUp(window)
+    const bar = await screen.findByRole('toolbar', { name: '디자인 도구' })
+
+    // 고르기 전에는 크기 칸이 잠겨 있다 — 크기는 글자에만 준다.
+    await waitFor(() => expect((within(bar).getByLabelText('크기') as HTMLInputElement).disabled).toBe(true))
+
+    // "여름 감사제 40%"의 "감사제"(3~5번째)를 끌어 고른다.
+    const picker = await openBarMenu(/글자 선택/)
+    const chips = within(picker).getAllByRole('option')
+    expect(chips).toHaveLength([...CONTENTS.blk_t1!].length)
+    fireEvent.pointerDown(chips[3]!)
+    fireEvent.pointerEnter(chips[5]!)
+    fireEvent.pointerUp(chips[5]!)
+    expect(chips.filter((c) => c.getAttribute('aria-selected') === 'true')).toHaveLength(3)
+
+    fireEvent.change(within(bar).getByLabelText('고른 글자 색'), { target: { value: '#ff0000' } })
+    const size = within(bar).getByLabelText('크기') as HTMLInputElement
+    expect(size.disabled).toBe(false)
+    fireEvent.focus(size)
+    fireEvent.change(size, { target: { value: '150' } })
+
+    await waitFor(async () => {
+      const order = (await loadStudioJob(STUDIO_JOB_ID))?.blockOrders?.blk_t1
+      expect(order?.chars).toEqual([null, null, null, { color: '#ff0000', scale: 1.5 }, { color: '#ff0000', scale: 1.5 }, { color: '#ff0000', scale: 1.5 }])
+      expect(order?.charsFor).toBe(CONTENTS.blk_t1)
+      // 문구 전체 색은 그대로다.
+      expect(order?.look).toBeUndefined()
+    })
+
+    // 고르기를 풀고 색을 주면 문구 전체 — 글자별 색은 걷히고 크기는 남는다.
+    fireEvent.click(within(picker).getByRole('button', { name: '고르기 해제' }))
+    fireEvent.change(within(bar).getByLabelText('글자색'), { target: { value: '#00ff00' } })
+    await waitFor(async () => {
+      const order = (await loadStudioJob(STUDIO_JOB_ID))?.blockOrders?.blk_t1
+      expect(order?.look?.color).toBe('#00ff00')
+      expect(order?.chars?.[3]).toEqual({ scale: 1.5 })
+    })
+  })
+
+  it('세로쓰기·자간·행간·휘기·그림자가 저장되고, 꾸밈 없애기로 모두 걷힌다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    const card = container.querySelector<HTMLElement>('.canvas__sheet .block-card[aria-label^="가까운 문구"]')!
+    fireEvent.pointerDown(card, { button: 0 })
+    fireEvent.pointerUp(window)
+    const bar = await screen.findByRole('toolbar', { name: '디자인 도구' })
+    fireEvent.click(await within(bar).findByRole('button', { name: '세로쓰기' }))
+    await waitFor(() => expect(within(bar).getByRole('button', { name: '영문·숫자 세우기' })).toBeTruthy())
+    fireEvent.change(within(bar).getByLabelText('자간'), { target: { value: '20' } })
+    fireEvent.change(within(bar).getByLabelText('행간'), { target: { value: '150' } })
+    const shadow = await openBarMenu(/^그림자$/)
+    fireEvent.click(within(shadow).getByRole('button', { name: '그림자 켜기' }))
+    fireEvent.click(within(shadow).getByRole('button', { name: '그림자 왼쪽 위' }))
+    fireEvent.change(within(shadow).getByLabelText('흐림'), { target: { value: '20' } })
+    await waitFor(async () => {
+      const look = (await loadStudioJob(STUDIO_JOB_ID))?.blockOrders?.blk_t2?.look
+      expect(look).toMatchObject({ vertical: true, letterSpacing: 0.2, lineHeight: 1.5, shadow: true, shadowAngle: 225, shadowBlur: 0.2 })
+    })
+    fireEvent.keyDown(window, { key: 'Escape' })
+    const arc = await openBarMenu(/^휘기$/)
+    // 세로쓰기에서는 휘지 않는다.
+    expect((within(arc).getByLabelText('원호로 휘기') as HTMLInputElement).disabled).toBe(true)
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    fireEvent.click(within(bar).getByRole('button', { name: '꾸밈 없애기' }))
+    await waitFor(async () => {
+      expect((await loadStudioJob(STUDIO_JOB_ID))?.blockOrders?.blk_t2?.look).toBeUndefined()
+    })
   })
 })
 
@@ -2019,9 +2104,8 @@ describe('§20 문구는 글꼴로 그리고, 모델에게는 판 한 장과 재
     composed.mockClear()
 
     const t2 = boxes.find((b) => labelOf(b) === '꾸며진 문구 blk_t2')!
-    const editor = await openPostEdit(t2, /글자/)
-    fireEvent.click(within(editor).getByRole('tab', { name: /꾸밈/ }))
-    fireEvent.click(within(editor).getByRole('checkbox', { name: '테두리' }))
+    const outline = await openPostEdit(t2, /^테두리$/)
+    fireEvent.click(within(outline).getByRole('button', { name: '안쪽 테두리' }))
 
     await waitFor(async () => {
       const now = (await loadStudioJob(STUDIO_JOB_ID))!.textObjects!.page_1!
@@ -2035,6 +2119,8 @@ describe('§20 문구는 글꼴로 그리고, 모델에게는 판 한 장과 재
 
     // 문구를 고치면 또 다시 그려진다.
     const mid = assetOf((await loadStudioJob(STUDIO_JOB_ID))!.textObjects!.page_1!, 'blk_t2')
+    fireEvent.keyDown(window, { key: 'Escape' })
+    const editor = await openBarMenu(/문구 고치기/)
     const words = within(editor).getByRole('textbox', { name: /문구$/ })
     fireEvent.focus(words)
     fireEvent.change(words, { target: { value: '전 품목 반값' } })
@@ -2162,9 +2248,7 @@ describe('§23 글꼴 미리보기', () => {
 
       fireEvent.pointerDown(card(), { button: 0, clientX: 5, clientY: 5 })
       fireEvent.pointerUp(window)
-      const trigger = await waitFor(() => within(card()).getByRole('button', { name: '문구 디자인' }))
-      fireEvent.click(trigger)
-      const panel = await waitFor(() => screen.getByRole('dialog', { name: '문구 디자인' }))
+      const panel = await openBarMenu(/^글꼴$/)
       const beta = await waitFor(() => within(panel).getByRole('radio', { name: '글꼴 베타체' }))
 
       // 가리키면 캔버스의 글자가 그 글꼴이 된다.
@@ -2182,10 +2266,11 @@ describe('§23 글꼴 미리보기', () => {
         const job = await loadStudioJob(STUDIO_JOB_ID)
         expect(job?.blockOrders?.blk_t1?.fontFamily).toBe('알파체')
       })
-      fireEvent.keyDown(panel, { key: 'Escape' })
-      await waitFor(() => expect(screen.queryByRole('dialog', { name: '문구 디자인' })).toBeNull())
+      fireEvent.keyDown(window, { key: 'Escape' })
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: '글꼴' })).toBeNull())
       await waitFor(() => expect(text().style.fontFamily).toContain('pm-alpha-700'), { timeout: 5000 })
-      expect(within(card()).getByRole('button', { name: '문구 디자인' }).textContent).toContain('알파체')
+      const bar = screen.getByRole('toolbar', { name: '디자인 도구' })
+      expect(within(bar).getByRole('button', { name: '글꼴' }).textContent).toContain('알파체')
 
       // 다른 문구는 그대로다.
       const other = container.querySelector<HTMLElement>('.canvas__sheet .block-card[aria-label^="가까운 문구"] .block-card__content')!
@@ -2198,7 +2283,7 @@ describe('§23 글꼴 미리보기', () => {
     }
   })
 
-  it('꾸밈 탭으로 넘어가면 가리키던 글꼴을 거둔다', async () => {
+  it('목록을 닫으면 가리키던 글꼴을 거둔다', async () => {
     G.__noTestFont = true
     G.__testFontCatalog = FONTS
     const { resetFontFamiliesForTests } = await load('features/studio/blockFont')
@@ -2211,12 +2296,11 @@ describe('§23 글꼴 미리보기', () => {
       const text = () => card().querySelector<HTMLElement>('.block-card__content')!
       fireEvent.pointerDown(card(), { button: 0, clientX: 5, clientY: 5 })
       fireEvent.pointerUp(window)
-      fireEvent.click(await waitFor(() => within(card()).getByRole('button', { name: '문구 디자인' })))
-      const panel = await waitFor(() => screen.getByRole('dialog', { name: '문구 디자인' }))
+      const panel = await openBarMenu(/^글꼴$/)
       const beta = await waitFor(() => within(panel).getByRole('radio', { name: '글꼴 베타체' }))
       fireEvent.focus(beta)
       await waitFor(() => expect(text().style.fontFamily).toContain('pm-beta-700'), { timeout: 5000 })
-      fireEvent.click(within(panel).getByRole('tab', { name: /꾸밈/ }))
+      fireEvent.keyDown(window, { key: 'Escape' })
       await waitFor(() => expect(text().style.fontFamily).toBe(''), { timeout: 5000 })
     } finally {
       G.__noTestFont = false
@@ -2244,7 +2328,7 @@ describe('§24 후보정 창', () => {
     const { container } = renderStudio()
     const boxes = await ready(container)
     const photo = boxes.find((b) => labelOf(b) === '이미지 blk_photo')!
-    const editor = await openPostEdit(photo, /^색/)
+    const editor = await openPostEdit(photo, /^색$/)
     const before = (await loadStudioJob(STUDIO_JOB_ID))?.results?.page_1?.assetId
     const calls = fetchSpy.mock.calls.length
     composed.mockClear()
@@ -2281,8 +2365,11 @@ describe('§24 후보정 창', () => {
       expect(fx?.wallShadow).toBeGreaterThan(0)
     }, { timeout: 5000 })
     expect(within(editor).getByRole('button', { name: '그림자 왼쪽 위' }).getAttribute('aria-pressed')).toBe('true')
-    // 막대 버튼이 손댄 것을 말한다.
-    expect(within(photo).getByRole('button', { name: '후보정' }).textContent).toContain('그림자')
+    // 막대의 그림자 단추가 켜진 것을 말한다.
+    const bar = screen.getByRole('toolbar', { name: '디자인 도구' })
+    await waitFor(() =>
+      expect(within(bar).getByRole('button', { name: '그림자' }).querySelector('.design-bar__dot')).not.toBeNull(),
+    )
   })
 
   it('배경에 맞추기 — 잴 수 없으면 아무것도 바꾸지 않고 그렇다고 말한다', async () => {
@@ -2297,26 +2384,27 @@ describe('§24 후보정 창', () => {
     expect((await loadStudioJob(STUDIO_JOB_ID))?.objectTones?.blk_photo).toBeUndefined()
   })
 
-  it('창을 연 채로 다른 조각을 누르면 그 조각의 창이 되고, Esc로 닫힌다', async () => {
+  it('막대는 고른 조각을 따라간다 — 이미지는 후보정, 문구는 문자 옵션 · Esc로 창이 닫힌다', async () => {
     await seedJob()
     const { container } = renderStudio()
     const boxes = await ready(container)
     const photo = boxes.find((b) => labelOf(b) === '이미지 blk_photo')!
-    await openPostEdit(photo)
+    const menu = await openPostEdit(photo, /^레벨/)
+    expect(menu).toBeTruthy()
+    const bar = screen.getByRole('toolbar', { name: '디자인 도구' })
+    expect(within(bar).queryByRole('button', { name: '글꼴' })).toBeNull()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '레벨·커브' })).toBeNull())
+
     const title = boxes.find((b) => labelOf(b) === '꾸며진 문구 blk_t1')!
-    fireEvent.mouseDown(title)
     fireEvent.pointerDown(title, { button: 0, clientX: 5, clientY: 5 })
     fireEvent.pointerUp(window)
-    const editor = await waitFor(() => {
-      const d = document.querySelector<HTMLElement>('.result-object__editor')
-      expect(d).not.toBeNull()
-      // 문구 조각이라 그림자 탭이 없다.
-      expect(within(d!).queryByRole('tab', { name: /그림자/ })).toBeNull()
-      return d!
-    })
-    fireEvent.keyDown(editor, { key: 'Escape' })
-    await waitFor(() => expect(document.querySelector('.result-object__editor')).toBeNull())
+    await waitFor(() => expect(within(bar).getByRole('button', { name: '글꼴' })).toBeTruthy())
+    // 문구에는 이미지의 그림자·테두리 대신 문자 도구의 것이 선다.
+    expect(within(bar).getByRole('button', { name: '색 조절' })).toBeTruthy()
+    expect(within(bar).getByRole('button', { name: '기울기' })).toBeTruthy()
   })
+
 })
 
 // ── §25 그림 문구를 텍스트로 되돌린다 (2026-09-17) ─────────────────────────
@@ -2348,10 +2436,13 @@ describe('§25 그림이 된 문구', () => {
     const calls = fetchSpy.mock.calls.length
 
     const t1 = boxes.find((b) => labelOf(b) === '꾸며진 문구 blk_t1')!
-    const editor = await openPostEdit(t1, /글자/)
+    fireEvent.pointerDown(t1, { button: 0, clientX: 5, clientY: 5 })
+    fireEvent.pointerUp(window)
+    const bar = await screen.findByRole('toolbar', { name: '디자인 도구' })
     // 그림 문구에는 글꼴·꾸밈 대신 되돌리기가 있다.
-    expect(within(editor).queryByRole('tab', { name: /꾸밈/ })).toBeNull()
-    fireEvent.click(within(editor).getByRole('button', { name: '텍스트로 되돌리기' }))
+    const revert = await within(bar).findByRole('button', { name: '텍스트로 되돌리기' })
+    expect(within(bar).queryByRole('button', { name: '글꼴' })).toBeNull()
+    fireEvent.click(revert)
 
     await waitFor(async () => {
       const now = (await loadStudioJob(STUDIO_JOB_ID))!.textObjects!.page_1!.find((o) => o.blockId === 'blk_t1')!
@@ -2361,7 +2452,165 @@ describe('§25 그림이 된 문구', () => {
       // 틀은 되돌린 순간의 자리다.
       expect(now.frame).toEqual(before.rect)
     }, { timeout: 5000 })
-    await waitFor(() => expect(within(editor).getByRole('tab', { name: /꾸밈/ })).toBeTruthy())
+    await waitFor(() => expect(within(bar).getByRole('button', { name: '글꼴' })).toBeTruthy())
     expect(fetchSpy.mock.calls.length).toBe(calls)
   }, 30000)
+})
+
+// ── §26 도구로 만든다 — 문자·도형·선 (2026-09-17) ───────────────────────────
+
+describe('§26 도구 막대로 만든다', () => {
+  const shapeDoc = async (extra: BriefDocument['pages'][number]['blocks'] = []) => {
+    const doc = sampleDoc()
+    doc.pages[0]!.blocks.push(...extra)
+    const job = withSource(createStudioJob(doc, 1_000, STUDIO_JOB_ID), doc, 1_000, '도형.eventbrief')
+    await saveStudioJob({
+      ...job,
+      productImages: { blk_photo: 'asset_photo', blk_cut: 'asset_cut' },
+      effects: { blk_cut: normalizeEffects({ paperCutout: true }) },
+      blockOrders: {
+        blk_box: { shape: { ...(await load('domain/shapeLook')).DEFAULT_SHAPE_LOOK, kind: 'star', fillColor: '#ffcc00' } },
+      },
+    })
+  }
+
+  it('캔버스에서 끌면 문구·도형·선 블록이 그 자리에 생기고, 단축키로 도구를 든다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    const sheet = container.querySelector<HTMLElement>('.canvas__sheet')!
+    const bar = await screen.findByRole('toolbar', { name: '디자인 도구' })
+
+    // T → 문자 도구. 끌어서 상자를 만든다.
+    fireEvent.keyDown(window, { key: 't' })
+    await waitFor(() => expect(within(bar).getByRole('radio', { name: /^문자/ }).getAttribute('aria-checked')).toBe('true'))
+    fireEvent.pointerDown(sheet, { button: 0, clientX: 100, clientY: 400 })
+    fireEvent.pointerMove(window, { clientX: 300, clientY: 460 })
+    fireEvent.pointerUp(window, { clientX: 300, clientY: 460 })
+    await waitFor(() => expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(7))
+    // 하나 만들면 선택 도구로 돌아온다.
+    expect(within(bar).getByRole('radio', { name: /^선택/ }).getAttribute('aria-checked')).toBe('true')
+
+    // U → 도형(사각형), Shift로 정사각.
+    fireEvent.keyDown(window, { key: 'u' })
+    fireEvent.pointerDown(sheet, { button: 0, clientX: 500, clientY: 100 })
+    fireEvent.pointerUp(window, { clientX: 560, clientY: 200, shiftKey: true })
+    // L → 선.
+    fireEvent.keyDown(window, { key: 'l' })
+    fireEvent.pointerDown(sheet, { button: 0, clientX: 100, clientY: 1000 })
+    fireEvent.pointerUp(window, { clientX: 400, clientY: 1003 })
+
+    await waitFor(async () => {
+      const job = (await loadStudioJob(STUDIO_JOB_ID))!
+      const blocks = job.doc.pages[0]!.blocks
+      const text = blocks.find((b) => b.type === 'free_text' && b.content === '텍스트를 입력하세요')
+      expect(text?.position).toEqual({ x: 100, y: 400, width: 200, height: 60 })
+      const shapes = blocks.filter((b) => b.type === 'design_shape')
+      expect(shapes).toHaveLength(2)
+      const square = shapes.find((b) => job.blockOrders?.[b.id]?.shape?.kind === 'rect')!
+      expect(square.position.width).toBe(square.position.height)
+      const line = shapes.find((b) => job.blockOrders?.[b.id]?.shape?.kind === 'line')!
+      expect(job.blockOrders?.[line.id]?.shape?.line).toBe('h')
+      expect(line.position.width).toBe(300)
+      // 새 문구는 글꼴을 이어받는다 — 글꼴이 없으면 만들 수 없으니까.
+      expect(job.blockOrders?.[text!.id]?.fontFamily).toBeTruthy()
+    }, { timeout: 5000 })
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('도형 블록은 AI에게 가지 않고, 생성 때 브라우저가 그려 앞 겹에 얹으며, 부분수정 대상도 아니다', async () => {
+    await shapeDoc([
+      createBlock('design_shape', { id: 'blk_box', label: '별', position: { x: 600, y: 50, width: 120, height: 120 } }),
+    ])
+    const { container } = renderStudio()
+    await waitFor(() => expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(7), { timeout: 5000 })
+    await generateOnce()
+
+    // 배경 요청 하나 — 도형 이야기는 없다.
+    expect(bodies()).toHaveLength(1)
+    const job = (await loadStudioJob(STUDIO_JOB_ID))!
+    const shape = job.textObjects!.page_1!.find((o) => o.blockId === 'blk_box')!
+    expect(shape).toMatchObject({ kind: 'shape', live: true, frame: { x: 600, y: 50, width: 120, height: 120 } })
+    expect(shape.liveKey).toContain('"star"')
+    // 부분수정 목록에 없다.
+    expect((job.results!.page_1!.targets ?? []).some((t) => t.blockId === 'blk_box')).toBe(false)
+    // 완성본에 도형 조각으로 선다.
+    await waitFor(() => expect(container.querySelector('.result-object[aria-label="도형 blk_box"]')).not.toBeNull(), { timeout: 5000 })
+  })
+
+  it('완성본에서 도형 옵션을 바꾸면 그 조각만 다시 그려지고, 도형을 옮겨도 "기획서 수정 전"이 뜨지 않는다', async () => {
+    await shapeDoc([
+      createBlock('design_shape', { id: 'blk_box', label: '별', position: { x: 600, y: 50, width: 120, height: 120 } }),
+    ])
+    const { container } = renderStudio()
+    await waitFor(() => expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(7), { timeout: 5000 })
+    await generateOnce()
+    const box = await waitFor(() => {
+      const found = container.querySelector<HTMLElement>('.result-object[aria-label="도형 blk_box"]')
+      expect(found).not.toBeNull()
+      return found!
+    }, { timeout: 5000 })
+    const before = (await loadStudioJob(STUDIO_JOB_ID))!.textObjects!.page_1!.find((o) => o.blockId === 'blk_box')!
+    const calls = fetchSpy.mock.calls.length
+
+    fireEvent.pointerDown(box, { button: 0, clientX: 5, clientY: 5 })
+    fireEvent.pointerUp(window)
+    const bar = await screen.findByRole('toolbar', { name: '디자인 도구' })
+    const kind = await within(bar).findByLabelText('도형 모양')
+    fireEvent.change(kind, { target: { value: 'heart' } })
+    fireEvent.click(within(bar).getByRole('button', { name: '테두리' }))
+    fireEvent.change(within(bar).getByLabelText('테두리 두께'), { target: { value: '8' } })
+
+    await waitFor(async () => {
+      const now = (await loadStudioJob(STUDIO_JOB_ID))!.textObjects!.page_1!.find((o) => o.blockId === 'blk_box')!
+      expect(now.assetId).not.toBe(before.assetId)
+      expect(now.liveKey).toContain('"heart"')
+      expect(now.liveKey).toContain('"strokeWidth":8')
+    }, { timeout: 5000 })
+    expect(screen.queryByText('기획서 수정 전 생성 결과')).toBeNull()
+    expect(fetchSpy.mock.calls.length).toBe(calls)
+  })
+
+  it('완성본에서 끌어 만든 도형은 바로 조각이 되고, 결과가 기획서와 어긋났다고 하지 않는다', async () => {
+    await seedJob()
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+    await waitFor(() => expect(container.querySelectorAll('.result-object').length).toBe(6), { timeout: 5000 })
+    const layer = container.querySelector('.result-objects') as HTMLElement
+    Object.defineProperty(layer, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ left: 0, top: 0, width: 840, height: 1200, right: 840, bottom: 1200 }),
+    })
+    const calls = fetchSpy.mock.calls.length
+
+    fireEvent.keyDown(window, { key: 'u' })
+    fireEvent.pointerDown(layer, { button: 0, clientX: 50, clientY: 1000 })
+    fireEvent.pointerUp(window, { clientX: 250, clientY: 1100 })
+
+    await waitFor(async () => {
+      const job = (await loadStudioJob(STUDIO_JOB_ID))!
+      const shape = job.textObjects!.page_1!.find((o) => o.kind === 'shape')
+      expect(shape).toMatchObject({ live: true, frame: { x: 50, y: 1000, width: 200, height: 100 } })
+      expect(job.doc.pages[0]!.blocks.some((b) => b.id === shape!.blockId && b.type === 'design_shape')).toBe(true)
+    }, { timeout: 5000 })
+    await waitFor(() => expect(container.querySelectorAll('.result-object').length).toBe(7), { timeout: 5000 })
+    expect(screen.queryByText('기획서 수정 전 생성 결과')).toBeNull()
+    expect(fetchSpy.mock.calls.length).toBe(calls)
+  })
+
+  it('도형의 모양값이 작업 파일에 남고, 예전 파일은 도형 없이 읽힌다', async () => {
+    const mod = await load('domain/studioFile')
+    const studioJob = await load('domain/studioJob')
+    const job = studioJob.withBlockOrder(
+      createStudioJob(sampleDoc(), 1_000, STUDIO_JOB_ID),
+      'blk_s',
+      { shape: { kind: 'line', dash: 'dotted', arrowEnd: true }, chars: [null, { color: '#FF0000' }], charsFor: '가나' },
+      2_000,
+    )
+    const parsed = mod.parseStudioFileState(JSON.parse(JSON.stringify(mod.toStudioFileState(job))))
+    expect(parsed?.blockOrders?.blk_s?.shape).toMatchObject({ kind: 'line', dash: 'dotted', arrowEnd: true, stroke: true, fill: false })
+    expect(parsed?.blockOrders?.blk_s?.chars).toEqual([null, { color: '#ff0000' }])
+    expect(parsed?.blockOrders?.blk_s?.charsFor).toBe('가나')
+  })
 })

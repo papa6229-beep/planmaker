@@ -17,6 +17,8 @@
  */
 
 import { normalizeTextLook } from './textLook'
+import { normalizeCharStyles } from './textArt'
+import { normalizeShapeLook } from './shapeLook'
 import { normalizeEffects, type CompositeEffects } from './compositeEffects'
 import type { BlockOrder, GenerationMethod, StudioBackground, StudioBlink, StudioJob } from './studioJob'
 import { normalizeTone, type ToneAdjust } from './toneAdjust'
@@ -349,6 +351,7 @@ function readTextObjects(raw: unknown): Record<string, StudioTextObject[]> {
         layer: typeof layer === 'number' ? layer : 0,
         // 기울기는 예전 파일에 없다. 없으면 0이고, 그때는 아무것도 달라지지 않는다.
         ...(typeof angle === 'number' && Number.isFinite(angle) ? { angle } : {}),
+        ...(item.kind === 'shape' ? { kind: 'shape' as const } : {}),
         // 살아 있는 문구 (살아 있는 문구 Patch). 예전 파일에는 없고, 그때는 그림 문구다.
         ...(item.live === true && frameOk
           ? {
@@ -363,6 +366,9 @@ function readTextObjects(raw: unknown): Record<string, StudioTextObject[]> {
               ...(typeof item.text === 'string' ? { text: item.text } : {}),
               ...(Array.isArray(item.lines) && item.lines.every((l) => typeof l === 'string')
                 ? { lines: item.lines as string[] }
+                : {}),
+              ...(item.align === 'left' || item.align === 'center' || item.align === 'right'
+                ? { align: item.align }
                 : {}),
             }
           : {}),
@@ -400,12 +406,21 @@ function readBlockOrders(raw: unknown): Record<string, BlockOrder> {
     }
     // 색·테두리·그림자 (살아 있는 문구 Patch).
     if (isRecord(value.look)) order.look = normalizeTextLook(value.look)
+    // 글자별 모양과 도형 (문자·도형 도구 Patch).
+    const chars = normalizeCharStyles(value.chars)
+    if (chars !== undefined) {
+      order.chars = chars
+      if (typeof value.charsFor === 'string') order.charsFor = value.charsFor
+    }
+    if (isRecord(value.shape)) order.shape = normalizeShapeLook(value.shape)
     if (
       order.note !== undefined ||
       order.referenceAssetId !== undefined ||
       order.fontFamily !== undefined ||
       order.fontWeight !== undefined ||
-      order.look !== undefined
+      order.look !== undefined ||
+      order.chars !== undefined ||
+      order.shape !== undefined
     ) {
       out[blockId] = order
     }

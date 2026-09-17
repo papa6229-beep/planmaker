@@ -80,3 +80,17 @@ vi.mock('../services/textPlateRenderer', async () => {
     }),
   }
 })
+
+// 문자·도형 도구의 붓 (2026-09-17). jsdom에는 캔버스가 없다 — 그림 한 장만 흉내 낸다.
+// 자리 규칙은 `textLook.test.ts`가 순수 함수로 잰다.
+vi.mock('../services/textArt', () => ({
+  renderTextArt: async () => ({ blob: new Blob([new Uint8Array([11])], { type: 'image/png' }), width: 400, height: 100 }),
+}))
+vi.mock('../services/shapeArt', () => ({
+  renderShapeArt: async (_look: unknown, box: { width: number; height: number }) => ({
+    blob: new Blob([new Uint8Array([12])], { type: 'image/png' }),
+    width: Math.round(box.width * 2),
+    height: Math.round(box.height * 2),
+    pad: { left: 0, top: 0, right: 0, bottom: 0 },
+  }),
+}))

@@ -46,6 +46,8 @@ export interface BriefEditorApi {
   canUndo: boolean
   canRedo: boolean
   addBlock: (blockType: BlockType, label?: string) => void
+  /** 정한 자리에 블록을 놓고 고른다 (문자·도형 도구 Patch). */
+  addBlockAt: (blockType: BlockType, id: string, rect: Rect, options?: { content?: string; label?: string }) => void
   /** Creates a 버튼·링크: paired design button + publishing URL block. */
   addButtonLink: (label: string) => void
   /** Sets (or clears, when empty) the publishing URL attached to a block. */
@@ -137,6 +139,15 @@ export function BriefEditorProvider({
       addButtonLink: (label) => dispatch({ type: 'ADD_BUTTON_LINK', label }),
       setBlockLink: (blockId, url) => dispatch({ type: 'SET_BLOCK_LINK', blockId, url }),
       selectBlock: (blockId, additive = false) => dispatch({ type: 'SELECT_BLOCK', blockId, additive }),
+      addBlockAt: (blockType, id, rect, options) =>
+        dispatch({
+          type: 'ADD_BLOCK_AT',
+          blockType,
+          id,
+          rect,
+          ...(options?.content === undefined ? {} : { content: options.content }),
+          ...(options?.label === undefined ? {} : { label: options.label }),
+        }),
       deleteBlock: (blockId) => dispatch({ type: 'DELETE_BLOCK', blockId }),
       deleteSelected: () => dispatch({ type: 'DELETE_SELECTED' }),
       updateBlock: (blockId, patch, coalesceKey) =>

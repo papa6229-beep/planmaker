@@ -15,8 +15,7 @@
  * The card is draggable (move) and resizable (corner handles).
  */
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { getBlockTypeMeta, type BlockCategory } from '../../domain/blockTypes'
 import { imageFitOf } from '../../domain/imageLayout'
 import { LAYER_MOVES, visibleLayerPosition } from '../../domain/layerOrder'
@@ -38,9 +37,13 @@ import type { BriefBlock } from '../../domain/briefSchema'
 import { useBriefEditor } from '../../features/editor/useBriefEditor'
 import { useAssets } from '../../features/assets/useAssets'
 import { useStudioJob } from '../../features/studio/useStudioJob'
-import { clearFontPreview, setFontPreview, useCanvasFace, useFontPreview } from '../../features/studio/blockFont'
-import { TextDesignEditor } from '../studio/TextDesignEditor'
-import { cssLookOf, lookIsPlain, normalizeTextLook } from '../../domain/textLook'
+import { useCanvasFace, useFontPreview } from '../../features/studio/blockFont'
+import { normalizeTextLook } from '../../domain/textLook'
+import { normalizeShapeLook } from '../../domain/shapeLook'
+import { isShapeBlock } from '../../domain/blockTypes'
+import { planLines } from '../../domain/textLayers'
+import { useArtPreview, type ArtRequest } from '../../features/studio/artPreview'
+import { charIndexAt, requestEdit, setTextSelection, useDesignTools } from '../../features/studio/designTools'
 import { ACCEPTED_MIME_TYPES } from '../../features/assets/imageUtils'
 import { RESIZE_HANDLES, resizeRect, type ResizeHandle } from '../../features/editor/canvasGeometry'
 
@@ -73,9 +76,6 @@ const measureLine = createLineMeasurer()
 const DRAG_THRESHOLD_PX = 3
 /** 떠 있는 도구막대가 블록 위에 설 수 있는 최소 여유 (긴급 Patch §2). */
 const TOOLBAR_ROOM = 40
-/** 글꼴 목록의 화면 폭과 블록과의 틈 (px, 캔버스 배율과 무관). */
-const FONT_PANEL_WIDTH = 280
-const FONT_PANEL_GAP = 12
 
 /**
  * Alignment icon: three lines, the middle one short, pushed to the side the
@@ -193,9 +193,6 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   /** 고른 색·테두리·그림자 (살아 있는 문구 Patch). 캔버스에서 결과 모양을 미리 본다. */
   const look = normalizeTextLook(order?.look)
   const measure = useMemo(() => (face === null ? measureLine : createLineMeasurer(face)), [face])
-  const [fontOpen, setFontOpen] = useState(false)
-  const fontRef = useRef<HTMLSpanElement | null>(null)
-  const fontPanelRef = useRef<HTMLDivElement | null>(null)
   const drag = useRef<DragState | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
   const menuRef = useRef<HTMLDetailsElement | null>(null)
@@ -225,6 +222,34 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
       : fitTextSize(draft, block.position.width, block.position.height, fitArea).fontSize
     : fit.fontSize
 
+  /**
+   * 문구·도형은 **완성본과 같은 붓**으로 그린 그림을 캔버스에 건다 (문자·도형 도구 Patch).
+   * 글자별 색·세로쓰기·원호·테두리·그림자·레벨·커브가 결과와 똑같이 보인다.
+   * 고치는 동안에는 글상자가 선다.
+   */
+  const shape = studio !== null && isShapeBlock(block.type)
+  const objectTone = studio !== null && (takesFont || shape) ? studio.objectToneOf(block.id) : undefined
+  const box = { width: block.position.width, height: block.position.height }
+  const artRequest: ArtRequest | null =
+    takesFont && order !== null && order.fontFamily !== undefined && hasContent(block) && !editing
+      ? {
+          kind: 'text',
+          content: block.content ?? '',
+          lines: planLines(block.content ?? '', block.position, bare),
+          family: pointed?.family ?? order.fontFamily,
+          weight: pointed === null ? order.fontWeight : pointed.weight,
+          chars: order.chars,
+          look,
+          align,
+          box,
+          tone: objectTone,
+        }
+      : shape && studio !== null
+        ? { kind: 'shape', look: normalizeShapeLook(studio.blockOrderOf(block.id).shape), box, tone: objectTone }
+        : null
+  const art = useArtPreview(artRequest)
+  const designTools = useDesignTools()
+
   const beginEdit = () => {
     if (!takesInlineText) return
     setDraft(block.content ?? '')
@@ -243,6 +268,13 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
     }
   }
   const openFilePicker = () => fileRef.current?.click()
+  // 문자 도구로 막 만든 블록은 곧바로 글 고치기가 열린다.
+  useEffect(() => {
+    if (designTools.editRequest !== block.id) return
+    requestEdit(null)
+    beginEdit()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [designTools.editRequest, block.id])
   const layerRef = useRef<HTMLSpanElement | null>(null)
 
   // 메뉴가 열려 있는 동안만 바깥 클릭을 듣는다. 고른 블록은 그대로 두고 메뉴만
@@ -257,24 +289,6 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
     return () => window.removeEventListener('mousedown', onDown)
   }, [layerOpen])
 
-  // 글꼴 목록도 같은 규칙이다. 닫히면 가리키던 글꼴을 거둔다.
-  useEffect(() => {
-    if (!fontOpen) return
-    const onDown = (e: MouseEvent) => {
-      if (fontRef.current?.contains(e.target as Node)) return
-      if (fontPanelRef.current?.contains(e.target as Node)) return
-      setFontOpen(false)
-    }
-    window.addEventListener('mousedown', onDown)
-    return () => {
-      window.removeEventListener('mousedown', onDown)
-      clearFontPreview(block.id)
-    }
-  }, [fontOpen, block.id])
-  // 블록을 놓으면(선택 해제) 목록도 닫는다.
-  useEffect(() => {
-    if (!selected) setFontOpen(false)
-  }, [selected])
   /**
    * 더블클릭이 파일 선택창을 여는가 (손검수 Patch 2 §10).
    *
@@ -548,33 +562,6 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
           (후보정 창 Patch, 2026-09-17). 알맞은 두께는 완성된 배경 위에서라야 보인다.
           여기에는 켜고 끄기만 남긴다. */}
 
-      {/* 글꼴은 블록 바로 위에서 고른다 (글꼴 미리보기 Patch). 오른쪽 칸까지 가지
-          않고, 가리키는 동안 이 블록의 글자가 그 글꼴로 바뀐다. */}
-      {takesFont && studio !== null && order !== null && (
-        <span className="block-card__layer block-card__font" ref={fontRef}>
-          <button
-            type="button"
-            className={`block-card__tool block-card__layer-trigger${fontOpen ? ' is-open' : ''}${
-              order.fontFamily === undefined ? ' block-card__font-missing' : ''
-            }`}
-            aria-label="문구 디자인"
-            aria-expanded={fontOpen}
-            title={
-              order.fontFamily === undefined
-                ? '글꼴을 골라야 만들 수 있습니다'
-                : `글꼴 ${order.fontFamily} — 글꼴 · 꾸밈`
-            }
-            onClick={() => setFontOpen((v) => !v)}
-          >
-            <span className="block-card__font-name" style={pointed === null ? faceStyle : undefined}>
-              {order.fontFamily ?? '글꼴 고르기'}
-            </span>
-            {/* 창을 닫아도 꾸밈이 들어 있는지 보인다 (§16-B). */}
-            {!lookIsPlain(look) && <span className="block-card__design-mark">꾸밈</span>}
-            {' '}▾
-          </button>
-        </span>
-      )}
       {/* 레이어 순서는 블록 바로 옆에서 바꾼다 — 우측 패널까지 갔다 오는 동안
           "무엇을 고르고 있었는지"를 놓치기 때문이다 (긴급 Patch §2). */}
       <span className="block-card__layer" ref={layerRef}>
@@ -668,104 +655,18 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
     </span>
   )
 
-  /**
-   * 문구 디자인 창은 **화면 위에** 뜬다 (2026-09-17 두 번째 판).
-   *
-   * 처음에는 블록 옆에 붙였는데, 캔버스 안에 있어서 페이지 아래쪽 블록을 고르면
-   * 창이 캔버스 끝에서 잘렸다 — 굵기 버튼이 안 보여 블록을 위로 올렸다 내려야 했다.
-   * 이제는 문서 맨 위 층에 띄우고, 블록의 화면 자리를 보고 **화면 안에 들어가게**
-   * 놓는다. 오른쪽 → 왼쪽 → 아래 → 위 순서로 자리를 찾고, 높이가 모자라면 창
-   * 안에서 스크롤된다.
-   */
-  const [fontAt, setFontAt] = useState<{ left: number; top: number; maxHeight: number } | null>(null)
-  useLayoutEffect(() => {
-    if (!fontOpen) {
-      setFontAt(null)
-      return
-    }
-    const place = () => {
-      const anchor = fontRef.current?.closest('.block-card')
-      if (!anchor) return
-      const r = anchor.getBoundingClientRect()
-      const vw = window.innerWidth
-      const vh = window.innerHeight
-      const w = fontPanelRef.current?.offsetWidth || FONT_PANEL_WIDTH
-      const h = Math.min(fontPanelRef.current?.offsetHeight ?? 520, vh - 16)
-      const gap = FONT_PANEL_GAP
-      let left: number
-      let top: number
-      if (r.right + gap + w <= vw - 8) {
-        left = r.right + gap
-        top = r.top
-      } else if (r.left - gap - w >= 8) {
-        left = r.left - gap - w
-        top = r.top
-      } else {
-        left = Math.min(Math.max(8, r.left), vw - w - 8)
-        top = r.bottom + gap + h <= vh - 8 ? r.bottom + gap : r.top - gap - h
-      }
-      top = Math.min(Math.max(8, top), Math.max(8, vh - h - 8))
-      setFontAt({ left: Math.round(left), top: Math.round(top), maxHeight: vh - 16 })
-    }
-    place()
-    // 목록을 받아 창 높이가 정해진 뒤 한 번 더 맞춘다.
-    const again = requestAnimationFrame(place)
-    window.addEventListener('resize', place)
-    window.addEventListener('scroll', place, true)
-    // 탭을 바꾸거나 참고 그림을 크게 보면 창 크기가 바뀐다 — 그때도 화면 안으로.
-    const sized = typeof ResizeObserver === 'function' ? new ResizeObserver(place) : null
-    if (fontPanelRef.current) sized?.observe(fontPanelRef.current)
-    return () => {
-      sized?.disconnect()
-      cancelAnimationFrame(again)
-      window.removeEventListener('resize', place)
-      window.removeEventListener('scroll', place, true)
-    }
-  }, [fontOpen, block.position.x, block.position.y, block.position.width, block.position.height, scale])
-  const fontPanel = fontOpen && takesFont && studio !== null && order !== null && (
-    <div
-      ref={fontPanelRef}
-      className="block-card__font-panel"
-      role="dialog"
-      aria-label="문구 디자인"
-      style={
-        fontAt === null
-          ? { visibility: 'hidden', width: FONT_PANEL_WIDTH }
-          : { left: fontAt.left, top: fontAt.top, maxHeight: fontAt.maxHeight, width: FONT_PANEL_WIDTH }
-      }
-      onPointerDown={(e) => e.stopPropagation()}
-      onKeyDown={(e) => {
-        e.stopPropagation()
-        if (e.key === 'Escape') {
-          e.preventDefault()
-          setFontOpen(false)
-        }
-      }}
-      onWheel={(e) => e.stopPropagation()}
-      onDoubleClick={(e) => e.stopPropagation()}
-    >
-      <TextDesignEditor
-        blockId={block.id}
-        label={block.label}
-        content={block.content ?? ''}
-        onPreview={(point) =>
-          point === null ? clearFontPreview(block.id) : setFontPreview({ blockId: block.id, ...point })
-        }
-      />
-    </div>
-  )
-
   const linkBadge = linkUrl !== undefined && (
     <span className="block-card__link-badge" title={`연결됨: ${linkUrl}`} aria-label="연결된 주소 있음">
       <LinkIcon />
     </span>
   )
   /** 카드 대신 떠 있는 도구막대를 쓰는가 — 인쇄되는 문구와 사진. */
-  const floating = bare || photo
+  const floating = bare || photo || shape
   /** 캔버스 위쪽에 도구막대가 설 자리가 없으면 블록 아래로 내린다. */
   const toolbarBelow = block.position.y < TOOLBAR_ROOM
 
-  const overflowBadge = fit.overflow && (
+  // 그림으로 그린 문구는 상자에 맞춰 줄어들므로 넘치지 않는다.
+  const overflowBadge = fit.overflow && art === null && (
     <span className="block-card__overflow" title="글이 블록보다 깁니다. 블록을 키워 주세요.">
       블록이 작아요
     </span>
@@ -782,14 +683,15 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
         bare ? 'block-card--bare' : '',
         // 연결된 제품 이미지는 그림 그 자체다 — CSS가 이 하나로 껍데기를 걷는다.
         photo ? 'block-card--photo' : '',
+        shape ? 'block-card--shape' : '',
         paperOn ? 'block-card--paper' : '',
         selected ? 'is-selected' : '',
         // 열려 있는 팝오버(링크 입력·⋯ 메뉴)만 뒤 카드보다 앞으로 나온다.
         // **선택만으로는 나오지 않는다** — 고른 것이 앞으로 튀어나오면 작업자가
         // 정한 레이어 순서가 클릭 한 번에 뒤집혀 보인다 (배경 합성 1차 §4).
-        editing || linkOpen || fontOpen ? 'is-front' : '',
+        editing || linkOpen ? 'is-front' : '',
         dropActive ? 'is-drop-target' : '',
-        fit.overflow ? 'is-overflowing' : '',
+        fit.overflow && art === null ? 'is-overflowing' : '',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -902,6 +804,15 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
           placeholder={meta.requiresAsset ? '어떤 이미지가 들어갈지 적어주세요' : `${meta.label} 입력…`}
           style={{ fontSize: meta.requiresAsset ? undefined : draftFit, textAlign: align, ...faceStyle }}
           onChange={(e) => setDraft(e.target.value)}
+          // 고른 글자를 도구 막대에 알린다 — 그 글자에만 색·크기·글꼴을 준다.
+          onSelect={(e) => {
+            const t = e.currentTarget
+            setTextSelection({
+              blockId: block.id,
+              start: charIndexAt(t.value, t.selectionStart),
+              end: charIndexAt(t.value, t.selectionEnd),
+            })
+          }}
           onBlur={commitEdit}
           onPointerDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
@@ -1011,34 +922,48 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
           {hasContent(block) ? block.content : '어떤 이미지가 들어갈지 적어주세요'}
         </span>
       ) : (
-        (() => {
-          const styled = takesFont && hasContent(block) ? cssLookOf(look, fit.fontSize) : null
-          return (
-            <span
-              className={`block-card__content${hasContent(block) ? '' : ' block-card__content--placeholder'}${styled?.under ? ' block-card__content--layered' : ''}`}
-              style={{ fontSize: fit.fontSize, textAlign: align, ...faceStyle, ...(styled?.under ? {} : styled?.text) }}
-            >
-              {styled?.under ? (
-                <>
-                  {/* 그라데이션 몸통 밑에 테두리·그림자를 한 겹 깐다 — 같은 글자, 같은 줄바꿈. */}
-                  <span className="block-card__look-under" aria-hidden="true" style={styled.under}>
-                    {block.content}
-                  </span>
-                  <span className="block-card__look-top" style={styled.text}>
-                    {block.content}
-                  </span>
-                </>
-              ) : hasContent(block) ? (
-                block.content
-              ) : (
-                `${meta.label} 입력…`
-              )}
-            </span>
-          )
-        })()
+        <>
+          <span
+            className={`block-card__content${hasContent(block) ? '' : ' block-card__content--placeholder'}${art !== null ? ' is-behind-art' : ''}`}
+            style={{ fontSize: fit.fontSize, textAlign: align, ...faceStyle }}
+          >
+            {hasContent(block) ? block.content : shape ? '' : `${meta.label} 입력…`}
+          </span>
+          {art !== null && !shape && (
+            <img
+              className="block-card__art"
+              src={art.url}
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              data-art-key={art.key}
+              style={{
+                objectPosition: look.vertical
+                  ? `center ${align === 'left' ? 'top' : align === 'right' ? 'bottom' : 'center'}`
+                  : `${align} center`,
+              }}
+            />
+          )}
+          {art !== null && shape && (
+            // 그림은 테두리·그림자만큼 상자 밖으로 나간다.
+            <img
+              className="block-card__shape-art"
+              src={art.url}
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              data-art-key={art.key}
+              style={{
+                left: -(art.pad?.left ?? 0),
+                top: -(art.pad?.top ?? 0),
+                width: block.position.width + (art.pad?.left ?? 0) + (art.pad?.right ?? 0),
+                height: block.position.height + (art.pad?.top ?? 0) + (art.pad?.bottom ?? 0),
+              }}
+            />
+          )}
+        </>
       )}
 
-      {fontPanel !== false && typeof document !== 'undefined' ? createPortal(fontPanel, document.body) : null}
 
       {linkOpen && (
         <div className="block-card__link-editor" onPointerDown={(e) => e.stopPropagation()}>

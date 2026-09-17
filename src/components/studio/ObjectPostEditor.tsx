@@ -7,10 +7,10 @@
  * 띄우고 탭으로 나눈다.
  *
  *   색 | 레벨·커브 | 그림자 | 테두리 | 모양      (이미지)
- *   글자 | 색 | 레벨·커브 | 모양                 (문구)
+ *   색 | 레벨·커브 | 모양                        (문구·도형)
  *
- * 문구의 "글자" 탭은 글꼴·꾸밈·문구를 바꾼다 (살아 있는 문구 Patch). 바꾸면 그 조각만
- * 브라우저가 다시 그린다 — `LiveTextSync`.
+ * 도구 막대(`DesignBar`)가 탭 하나씩을 펼침 창으로 연다(`only`). 문구의 글꼴·꾸밈은
+ * 막대의 문자 도구가 맡는다.
  *
  * 그림자·테두리·종이·가장자리는 이미지를 합칠 때만 그려지므로 문구에는 없다.
  *
@@ -27,13 +27,10 @@ import { imageObjectsOf } from '../../domain/studioJob'
 import { DEFAULT_COMPOSITE_EFFECTS, type CompositeEffects } from '../../domain/compositeEffects'
 import { PAPER_WEIGHT_MAX, PAPER_WEIGHT_MIN } from '../../domain/paperCutout'
 import { ToneCurvePanel } from './ToneCurvePanel'
-import { TextDesignEditor } from './TextDesignEditor'
-import { useBriefEditor } from '../../features/editor/useBriefEditor'
 
-export type PostEditTab = 'text' | 'color' | 'levels' | 'shadow' | 'outline' | 'shape'
+export type PostEditTab = 'color' | 'levels' | 'shadow' | 'outline' | 'shape'
 
-const TAB_LABEL: Record<PostEditTab, string> = {
-  text: '글자',
+export const TAB_LABEL: Record<PostEditTab, string> = {
   color: '색',
   levels: '레벨·커브',
   shadow: '그림자',
@@ -86,16 +83,18 @@ export function ObjectPostEditor({
   blockId,
   kind,
   label,
+  only,
 }: {
   pageId: string
   blockId: string
   kind: 'image' | 'text'
   label: string
+  /** 이 탭 하나만 — 탭 줄 없이 (도구 막대의 펼침 창). */
+  only?: PostEditTab
 }) {
   const studio = useStudioJob()
   const generation = useImageGeneration()
-  const editor = useBriefEditor()
-  const [tab, setTab] = useState<PostEditTab>(kind === 'text' ? 'text' : 'color')
+  const [tab, setTab] = useState<PostEditTab>(only ?? 'color')
   const [matching, setMatching] = useState<'idle' | 'running' | 'failed'>('idle')
   if (studio === null || generation === null) return null
 
@@ -107,11 +106,10 @@ export function ObjectPostEditor({
     (o) => o.blockId === blockId,
   )
   const tabs: PostEditTab[] =
-    kind === 'image' ? ['color', 'levels', 'shadow', 'outline', 'shape'] : ['text', 'color', 'levels', 'shape']
-  const shown = tabs.includes(tab) ? tab : tabs[0]!
-  const textObject = kind === 'text' ? (studio.job.textObjects?.[pageId] ?? []).find((o) => o.blockId === blockId) : undefined
-  /** 기획서의 지금 문구 — 글꼴 견본과 되돌리기에 쓴다. */
-  const liveText = editor.state.brief.blocks.find((b) => b.id === blockId)?.content
+    kind === 'image' ? ['color', 'levels', 'shadow', 'outline', 'shape'] : ['color', 'levels', 'shape']
+  const shown = only ?? (tabs.includes(tab) ? tab : tabs[0]!)
+  /** 완성본이 있어야 잴 수 있다 — 생성 전 캔버스에서는 "배경에 맞추기"가 없다. */
+  const hasResult = studio.job.results?.[pageId] !== undefined
 
   const preview = () => generation.previewPage(pageId)
   const settle = () => void generation.recomposePage(pageId)
@@ -128,7 +126,7 @@ export function ObjectPostEditor({
   })
   const setFx = (patch: Partial<CompositeEffects>) => studio.setEffects(blockId, patch)
 
-  const matchButton = (
+  const matchButton = !hasResult ? null : (
     <div className="post-edit__match">
       <button
         type="button"
@@ -185,6 +183,7 @@ export function ObjectPostEditor({
 
   return (
     <section className="post-edit" aria-label={`${label} 후보정`}>
+      {only === undefined && (
       <div className="post-edit__tabs" role="tablist" aria-label="후보정 종류">
         {tabs.map((t) => {
           const marked =
@@ -202,50 +201,11 @@ export function ObjectPostEditor({
               onClick={() => setTab(t)}
             >
               {TAB_LABEL[t]}
-              {marked && <span className="text-design__dot" aria-label="손댄 값 있음" />}
+              {marked && <span className="post-edit__dot" aria-label="손댄 값 있음" />}
             </button>
           )
         })}
       </div>
-
-      {shown === 'text' && textObject !== undefined && (
-        <div className="post-edit__pane">
-          {textObject.live === true ? (
-            <TextDesignEditor
-              blockId={blockId}
-              label={label}
-              content={liveText ?? textObject.text ?? ''}
-              where="result"
-              // 완성본에서는 가리키기만으로 다시 그리지 않는다 — 누르면 바뀐다.
-              onPreview={() => undefined}
-            />
-          ) : (
-            <>
-              <p className="post-edit__note">
-                AI가 그림으로 만든 문구입니다. 텍스트로 되돌리면 글꼴·색·테두리·그림자를 여기서 바꿀 수 있습니다.
-              </p>
-              <button
-                type="button"
-                className="btn"
-                disabled={busy}
-                onClick={() => {
-                  studio.markStep()
-                  // 지문을 비워 두면 `LiveTextSync`가 지금 글꼴·꾸밈으로 다시 그린다.
-                  void studio.setLiveText(pageId, blockId, {
-                    live: true,
-                    frame: { ...textObject.rect },
-                    liveKey: '',
-                    // 지금의 문구를 "만들 때의 문구"로 적어 둔다 — 이후 문구를 고쳐도 결과가
-                    // 기획서와 어긋났다고 하지 않는다.
-                    ...(liveText === undefined ? {} : { text: liveText }),
-                  })
-                }}
-              >
-                텍스트로 되돌리기
-              </button>
-            </>
-          )}
-        </div>
       )}
 
       {shown === 'color' && (

@@ -23,6 +23,8 @@ import { blocksInRect, marqueeRect, type Rect } from '../../features/editor/canv
 const MARQUEE_MIN_PX = 4
 import type { ReferenceLayer } from '../../domain/pageSchema'
 import { BriefBlockCard } from './BriefBlockCard'
+import { useDesignTools } from '../../features/studio/designTools'
+import { dragBox, useCreateDesignBlock } from '../../features/studio/useCreateDesignBlock'
 
 /** Horizontal padding of the `.canvas` scroll container (keep in sync with CSS). */
 const CANVAS_PADDING = 24
@@ -52,6 +54,9 @@ export function BriefCanvas() {
   // 같은 캔버스가 두 표면에서 그대로 쓰인다 (배경 합성 1차 §5).
   const studio = useStudioJob()
   const { zoom, reportViewport } = useCanvasView()
+  /** 든 도구 (도구 막대 Patch). 선택 도구가 아니면 빈 자리를 끌어 블록을 만든다. */
+  const { tool } = useDesignTools()
+  const createBlock = useCreateDesignBlock()
   const { project, blocks } = state.brief
   const { canvasWidth, canvasHeight } = project
   const selected = new Set(state.selectedIds)
@@ -115,7 +120,7 @@ export function BriefCanvas() {
       >
         <div
           ref={sheetRef}
-          className={`canvas__sheet${dragOver ? ' is-drag-over' : ''}`}
+          className={`canvas__sheet${dragOver ? ' is-drag-over' : ''}${tool !== 'select' ? ' is-drawing' : ''}`}
           style={{
             width: canvasWidth,
             height: canvasHeight,
@@ -136,6 +141,22 @@ export function BriefCanvas() {
               y: (ev.clientY - box.top) / zoom,
             })
             const from = at(e)
+
+            // ── 도구로 만들기 (도구 막대 Patch) ─────────────────────────────
+            if (tool !== 'select' && createBlock !== null) {
+              const current = tool
+              const onDraw = (ev: PointerEvent) =>
+                setMarquee(dragBox(current, { from, to: at(ev), snap: ev.shiftKey }).rect)
+              const onDone = (ev: PointerEvent) => {
+                window.removeEventListener('pointermove', onDraw)
+                window.removeEventListener('pointerup', onDone)
+                setMarquee(null)
+                void createBlock(current, { from, to: at(ev), snap: ev.shiftKey })
+              }
+              window.addEventListener('pointermove', onDraw)
+              window.addEventListener('pointerup', onDone)
+              return
+            }
             let drew = false
 
             const onMove = (ev: PointerEvent) => {

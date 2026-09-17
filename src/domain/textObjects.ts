@@ -48,4 +48,11 @@ export interface StudioTextObject {
   /** 그린 문구와 줄 — 기획서에 블록이 없는 조각(배너)도 다시 그릴 수 있게. */
   text?: string
   lines?: readonly string[]
+  /** 문구가 틀 안에서 기대는 쪽 (문자 도구 Patch). 없으면 가운데. */
+  align?: 'left' | 'center' | 'right'
+  /**
+   * 무엇을 그린 조각인가 (도형 도구 Patch). 없으면 문구다 — 예전 결과도 그렇다.
+   * 도형은 문구와 같은 줄(앞 겹)에 서고, 같은 길로 다시 그려진다.
+   */
+  kind?: 'shape'
 }

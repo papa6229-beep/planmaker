@@ -17,6 +17,7 @@
  */
 
 import { createId } from './factory'
+import { isShapeBlock } from './blockTypes'
 import { documentFingerprint } from './documentFingerprint'
 import { referencedAssetIds } from './pageOps'
 import { normalizeEffects, type CompositeEffects } from './compositeEffects'
@@ -26,6 +27,8 @@ import type { StudioTextObject } from './textObjects'
 import { NO_TONE, normalizeTone, type ToneAdjust } from './toneAdjust'
 import type { BriefDocument } from './pageSchema'
 import type { TextLook } from './textLook'
+import type { CharStyle } from './textArt'
+import type { ShapeLook } from './shapeLook'
 
 export const STUDIO_JOB_VERSION = '0.1.0'
 
@@ -433,7 +436,23 @@ export function pageResultIsStale(job: StudioJob | null, doc: BriefDocument, pag
               : { ...p, blocks: p.blocks.map((b) => (made.has(b.id) ? { ...b, content: made.get(b.id)! } : b)) },
           ),
         }
-  return result.sourceFingerprint !== documentFingerprint(measured)
+  return result.sourceFingerprint !== resultFingerprint(measured)
+}
+
+/**
+ * 완성본이 기억하는 기획서 지문 (도형 도구 Patch).
+ *
+ * 도형·선 블록은 뺀다 — 브라우저가 그리는 것이라 AI 결과와 무관하고, 완성본에서
+ * 바로 다시 그려진다. 넣으면 도형 하나 옮겼다고 "기획서 수정 전 결과"가 뜬다.
+ * 도형이 없던 예전 결과의 지문과는 그대로 같다.
+ */
+export function resultFingerprint(doc: BriefDocument): string {
+  const hasShape = doc.pages.some((p) => p.blocks.some((b) => isShapeBlock(b.type)))
+  if (!hasShape) return documentFingerprint(doc)
+  return documentFingerprint({
+    ...doc,
+    pages: doc.pages.map((p) => ({ ...p, blocks: p.blocks.filter((b) => !isShapeBlock(b.type)) })),
+  })
 }
 
 /**
@@ -581,6 +600,14 @@ export interface BlockOrder {
    * 주문 글을 읽어 짐작하지 않는다 — 작업자가 고른 값이 곧 결과다.
    */
   look?: TextLook | undefined
+  /**
+   * 글자 하나하나의 색·크기·글꼴 (문자 도구 Patch). 문구의 글자 차례에 붙는다.
+   * `charsFor`는 이 모양을 맞춰 둔 문구 — 문구가 바뀌면 모양을 옮긴다.
+   */
+  chars?: (CharStyle | null)[] | undefined
+  charsFor?: string | undefined
+  /** 도형 블록의 모양 (도형 도구 Patch). */
+  shape?: ShapeLook | undefined
 }
 
 export function blockOrderOf(job: StudioJob | null, blockId: string): BlockOrder {
@@ -600,13 +627,21 @@ export function withBlockOrder(
   if (next.fontFamily === undefined || next.fontFamily.length === 0) delete next.fontFamily
   if (next.fontWeight === undefined) delete next.fontWeight
   if (next.look === undefined) delete next.look
+  if (next.chars === undefined || next.chars.length === 0) {
+    delete next.chars
+    delete next.charsFor
+  }
+  if (next.charsFor === undefined) delete next.charsFor
+  if (next.shape === undefined) delete next.shape
   const orders = { ...job.blockOrders }
   const empty =
     next.note === undefined &&
     next.referenceAssetId === undefined &&
     next.fontFamily === undefined &&
     next.fontWeight === undefined &&
-    next.look === undefined
+    next.look === undefined &&
+    next.chars === undefined &&
+    next.shape === undefined
   if (empty) delete orders[blockId]
   else orders[blockId] = next
   return { ...job, blockOrders: orders, updatedAt: now }
@@ -703,7 +738,7 @@ export function followFrame(frame: LayoutRect, from: LayoutRect, to: LayoutRect)
 
 /** AI로 고친 문구는 그때부터 그림이다 — 살아 있는 표시를 걷는다. */
 export function asPictureText(object: StudioTextObject): StudioTextObject {
-  const { live: _live, frame: _frame, liveKey: _key, text: _text, lines: _lines, ...rest } = object
+  const { live: _live, frame: _frame, liveKey: _key, text: _text, lines: _lines, align: _align, ...rest } = object
   return rest
 }
 

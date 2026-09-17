@@ -18,7 +18,7 @@
  * 상태로 결과를 다시 합친다 (§4).
  */
 
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
 import { getAsset } from '../../services/assetStore'
@@ -30,13 +30,11 @@ import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { SHADOW_OFFSET_MAX } from '../../domain/compositeEffects'
 import type { LayoutRect } from '../../domain/imageLayout'
 import type { StudioTextObject } from '../../domain/textObjects'
-import { ObjectPostEditor, postEditMarks } from './ObjectPostEditor'
+import { useDesignTools } from '../../features/studio/designTools'
+import { dragBox, useCreateDesignBlock } from '../../features/studio/useCreateDesignBlock'
 
-/** 후보정 창의 폭과 조각과의 틈 (화면 px). */
-const EDITOR_WIDTH = 300
-/** 조각 위 막대 두 줄이 설 자리 (화면 px). 이보다 위에 붙은 조각은 막대를 아래로 내린다. */
-const TOOLBAR_ROOM_PX = 64
-const EDITOR_GAP = 14
+/** 조각 위 막대가 설 자리 (화면 px). 이보다 위에 붙은 조각은 막대를 아래로 내린다. */
+const TOOLBAR_ROOM_PX = 36
 
 interface Props {
   pageId: string
@@ -74,13 +72,10 @@ export function ResultObjectLayer({ pageId, page }: Props) {
     pages.find((p) => p.id === pageId)?.blocks.find((b) => b.id === blockId)?.label ??
     '오브젝트'
   const boxRef = useRef<HTMLDivElement | null>(null)
-  /**
-   * 후보정 창 (후보정 창 Patch). 열린 채로 다른 조각을 누르면 그 조각의 창이 된다 —
-   * 포토샵의 속성 창처럼. 빈 곳을 누르거나 Esc를 누르면 닫힌다.
-   */
-  const [editOpen, setEditOpen] = useState(false)
-  const editorRef = useRef<HTMLDivElement | null>(null)
-  const [editorAt, setEditorAt] = useState<{ left: number; top: number } | null>(null)
+  /** 든 도구 (도구 막대 Patch). 선택 도구가 아니면 빈 자리를 끌어 새 조각을 만든다. */
+  const { tool } = useDesignTools()
+  const createBlock = useCreateDesignBlock()
+  const [drawing, setDrawing] = useState<LayoutRect | null>(null)
   const texts = studio?.textObjectsOf(pageId) ?? []
   const images = studio?.imageObjectsOf(pageId) ?? []
   // 화면의 앞뒤가 합성의 앞뒤와 같아야 한다. 나중에 놓인 것이 위에 그려지므로,
@@ -114,76 +109,14 @@ export function ResultObjectLayer({ pageId, page }: Props) {
     })()
     return () => {
       alive = false
-      for (const url of made) URL.revokeObjectURL(url)
+      // 새 주소가 걸린 뒤에 놓는다 (깨진 주소를 한 번 부르지 않게).
+      setTimeout(() => {
+        for (const url of made) URL.revokeObjectURL(url)
+      }, 1000)
     }
   }, [ids])
 
-  const editTarget = objects.find((o) => o.object.blockId === studio?.selectedObjectBlockId)
-  const editRect = editTarget?.object.rect
-  const editKey = editRect === undefined ? '' : `${editTarget!.object.blockId}:${String(editRect.x)},${String(editRect.y)},${String(editRect.width)},${String(editRect.height)}`
-  useEffect(() => {
-    if (editTarget === undefined) setEditOpen(false)
-  }, [editTarget])
-  // 창은 화면에 고정해 둔다. 완성본 판이 스크롤되는 상자 안이라, 판 안에 두면 조각이
-  // 오른쪽 끝일 때 창이 판 밖으로 나가 잘린다. 조각 오른쪽에 자리가 없으면 왼쪽으로.
-  useLayoutEffect(() => {
-    if (!editOpen || editRect === undefined) {
-      setEditorAt(null)
-      return
-    }
-    const place = () => {
-      const box = boxRef.current?.getBoundingClientRect()
-      if (box === undefined) return
-      const k = box.width / page.width
-      const left = box.left + editRect.x * k
-      const right = box.left + (editRect.x + editRect.width) * k
-      const top = box.top + editRect.y * k
-      const height = editorRef.current?.offsetHeight ?? 420
-      const vw = window.innerWidth
-      const vh = window.innerHeight
-      const x =
-        right + EDITOR_GAP + EDITOR_WIDTH <= vw
-          ? right + EDITOR_GAP
-          : left - EDITOR_GAP - EDITOR_WIDTH >= 0
-            ? left - EDITOR_GAP - EDITOR_WIDTH
-            : Math.max(8, vw - EDITOR_WIDTH - 8)
-      const y = Math.min(Math.max(8, top), Math.max(8, vh - height - 8))
-      setEditorAt({ left: Math.round(x), top: Math.round(y) })
-    }
-    place()
-    window.addEventListener('resize', place)
-    window.addEventListener('scroll', place, true)
-    return () => {
-      window.removeEventListener('resize', place)
-      window.removeEventListener('scroll', place, true)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editOpen, editKey, page.width])
-  useEffect(() => {
-    if (!editOpen) return
-    const onDown = (e: MouseEvent) => {
-      const target = e.target as Element | null
-      if (editorRef.current?.contains(target)) return
-      // 다른 조각을 누르면 창은 그 조각을 따라간다. 빈 곳은 선택 해제가 닫는다.
-      if (target?.closest('.result-object')) return
-      setEditOpen(false)
-    }
-    // 초점이 창 밖(페이지)에 있어도 Esc로 닫힌다. 다른 입력칸에서 누른 Esc는 그쪽 몫이다.
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      const t = e.target as Element | null
-      if (t !== null && t !== document.body && !editorRef.current?.contains(t) && t.closest('input, textarea, [role="dialog"]')) return
-      setEditOpen(false)
-    }
-    window.addEventListener('mousedown', onDown)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('mousedown', onDown)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [editOpen])
-
-  if (studio === null || objects.length === 0) return null
+  if (studio === null) return null
 
   /** 화면 1px이 페이지 좌표로 몇인가. */
   const scale = () => {
@@ -392,12 +325,46 @@ export function ResultObjectLayer({ pageId, page }: Props) {
 
   return (
     <div
-      className="result-objects"
+      className={`result-objects${tool !== 'select' ? ' is-drawing' : ''}`}
       ref={boxRef}
       // 빈 곳을 누르면 선택이 풀린다. 조작 UI가 남아 있으면 무엇이 골라져
-      // 있는지 화면이 거짓말을 한다.
-      onPointerDown={() => studio.selectObject(null)}
+      // 있는지 화면이 거짓말을 한다. 도구를 들었으면 끌어서 새 조각을 만든다.
+      onPointerDown={(e) => {
+        studio.selectObject(null)
+        if (tool === 'select' || createBlock === null || e.button !== 0) return
+        e.preventDefault()
+        const box = boxRef.current?.getBoundingClientRect()
+        if (box === undefined || box.width <= 0) return
+        const k = page.width / box.width
+        const at = (ev: { clientX: number; clientY: number }) => ({
+          x: (ev.clientX - box.left) * k,
+          y: (ev.clientY - box.top) * k,
+        })
+        const from = at(e)
+        const current = tool
+        const onDraw = (ev: PointerEvent) => setDrawing(dragBox(current, { from, to: at(ev), snap: ev.shiftKey }).rect)
+        const onDone = (ev: PointerEvent) => {
+          window.removeEventListener('pointermove', onDraw)
+          window.removeEventListener('pointerup', onDone)
+          setDrawing(null)
+          void createBlock(current, { from, to: at(ev), snap: ev.shiftKey })
+        }
+        window.addEventListener('pointermove', onDraw)
+        window.addEventListener('pointerup', onDone)
+      }}
     >
+      {drawing !== null && (
+        <div
+          className="result-objects__drawing"
+          aria-hidden="true"
+          style={{
+            left: percent(drawing.x, page.width),
+            top: percent(drawing.y, page.height),
+            width: percent(drawing.width, page.width),
+            height: percent(drawing.height, page.height),
+          }}
+        />
+      )}
       {objects.map(({ kind, object }) => {
         const picked = studio.selectedObjectBlockIds.includes(object.blockId)
         // 조작점은 마지막에 고른 하나에만 붙는다 — 여럿에 붙으면 무엇을 잡은
@@ -415,7 +382,7 @@ export function ResultObjectLayer({ pageId, page }: Props) {
             role="button"
             tabIndex={0}
             aria-pressed={picked}
-            aria-label={`${kind === 'image' ? '이미지' : '꾸며진 문구'} ${object.blockId}`}
+            aria-label={`${kind === 'image' ? '이미지' : object.kind === 'shape' ? '도형' : '꾸며진 문구'} ${object.blockId}`}
             title="끌어서 이동 · Alt+클릭으로 밑에 깔린 조각 잡기"
             style={{
               left: percent(object.rect.x, page.width),
@@ -451,36 +418,6 @@ export function ResultObjectLayer({ pageId, page }: Props) {
             {/* 앞뒤 순서는 고른 오브젝트 옆에서 바꾼다 — 우측 패널까지 갔다 오는
                 동안 무엇을 고르고 있었는지 놓치기 때문이다. 끝에 닿은 버튼은
                 흐리게 둔다: 눌러도 아무 일이 없는 것보다 미리 말하는 편이 낫다. */}
-            {/* 후보정은 순서 막대 **위** 줄에 따로 선다 — 같은 줄에 두면 작은 조각에서
-                왼쪽의 지우기 버튼과 겹쳤다 (2026-09-17 확인). */}
-            {selected && (
-              <span className="result-object__editbar" onPointerDown={(e) => e.stopPropagation()}>
-                {(() => {
-                  const marks = postEditMarks(
-                    studio.objectToneOf(object.blockId),
-                    kind === 'image' ? studio.effectsOf(object.blockId) : null,
-                  )
-                  const on = [
-                    marks.color || marks.levels ? '톤' : null,
-                    marks.shadow ? '그림자' : null,
-                    marks.outline ? '테두리' : null,
-                  ].filter((m): m is string => m !== null)
-                  return (
-                    <button
-                      type="button"
-                      className={`result-object__edit${editOpen ? ' is-open' : ''}`}
-                      aria-label="후보정"
-                      aria-expanded={editOpen}
-                      title={on.length > 0 ? `후보정 — 손댄 것: ${on.join(', ')}` : '후보정 — 색 · 레벨·커브 · 그림자 · 테두리 · 모양'}
-                      onClick={() => setEditOpen((v) => !v)}
-                    >
-                      후보정
-                      {on.length > 0 && <span className="result-object__edit-mark">{on.join('·')}</span>} ▾
-                    </button>
-                  )
-                })()}
-              </span>
-            )}
             {selected && (
               <span
                 className="result-object__layers"
@@ -599,35 +536,6 @@ export function ResultObjectLayer({ pageId, page }: Props) {
           </div>
         )
       })}
-      {editOpen && editTarget !== undefined && (
-        <div
-          ref={editorRef}
-          className="result-object__editor"
-          role="dialog"
-          aria-label="후보정"
-          style={
-            editorAt === null
-              ? { visibility: 'hidden', width: EDITOR_WIDTH }
-              : { left: editorAt.left, top: editorAt.top, width: EDITOR_WIDTH }
-          }
-          onPointerDown={(e) => e.stopPropagation()}
-          onKeyDown={(e) => {
-            e.stopPropagation()
-            if (e.key === 'Escape') {
-              e.preventDefault()
-              setEditOpen(false)
-            }
-          }}
-        >
-          <ObjectPostEditor
-            key={editTarget.object.blockId}
-            pageId={pageId}
-            blockId={editTarget.object.blockId}
-            kind={editTarget.kind}
-            label={labelOf(editTarget.object.blockId)}
-          />
-        </div>
-      )}
       {shadowTarget !== undefined && shadowFx !== null && shadowFx.shadow && shadowFx.wallShadow > 0 && (() => {
         const r = shadowTarget.object.rect
         const short = Math.min(r.width, r.height)

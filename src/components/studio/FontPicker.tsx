@@ -176,6 +176,11 @@ export function FontPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded])
 
+  // 목록이 닫히면 가리키던 글꼴을 거둔다 — 캔버스에 남지 않게.
+  const previewRef = useRef(onPreview)
+  previewRef.current = onPreview
+  useEffect(() => () => previewRef.current?.(null), [])
+
   // 다른 블록을 고르면 그 블록의 글꼴이 있는 쪽을 연다.
   useEffect(() => {
     if (chosenScript !== undefined) setScript(chosenScript)

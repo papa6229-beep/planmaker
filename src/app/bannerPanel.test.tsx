@@ -670,7 +670,7 @@ describe('§35-6 조각 서랍', () => {
     }, { timeout: 3500 })
   }, 15_000)
 
-  it('컷아웃을 올리면 그 조각의 후보정 창에 종이 테두리 두께가 나온다', async () => {
+  it('컷아웃을 올리면 도구 막대의 모양 창에 종이 테두리 두께가 나온다', async () => {
     // 손검수: "배너에서는 컷오프의 두께 조절하는 부분이 없는데?" 설정이 안 따라오면
     // 이 슬라이더는 영영 안 나온다. 오른쪽 칸이 아니라 조각 옆 "후보정 → 모양"에 있다.
     const drawer = await openDrawer()
@@ -689,13 +689,10 @@ describe('§35-6 조각 서랍', () => {
     }, { timeout: 3500 })
     fireEvent.pointerDown(box, { button: 0, clientX: 5, clientY: 5 })
     fireEvent.pointerUp(window)
-    fireEvent.click(await waitFor(() => within(box).getByRole('button', { name: '후보정' })))
-    const editor = await waitFor(() => {
-      const found = document.querySelector<HTMLElement>('.result-object__editor')
-      expect(found).not.toBeNull()
-      return found!
-    })
-    fireEvent.click(within(editor).getByRole('tab', { name: /모양/ }))
+    // 위쪽 도구 막대의 "모양" 창에 있다 (도구 막대 Patch).
+    const bar = await screen.findByRole('toolbar', { name: '디자인 도구' })
+    fireEvent.click(await waitFor(() => within(bar).getByRole('button', { name: '모양' })))
+    const editor = await screen.findByRole('dialog', { name: '모양' })
     expect(within(editor).getByLabelText(/종이 테두리 두께/)).toBeTruthy()
   }, 15_000)
 

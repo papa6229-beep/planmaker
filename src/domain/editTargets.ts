@@ -13,7 +13,7 @@
  * 순수 모듈이다. 저장소도 화면도 네트워크도 모른다.
  */
 
-import { isImageBlock } from './blockTypes'
+import { isImageBlock, isShapeBlock } from './blockTypes'
 import { productImageOf, type StudioJob } from './studioJob'
 import type { BriefDocument, BriefPage } from './pageSchema'
 
@@ -79,6 +79,8 @@ export function buildEditTargets(doc: BriefDocument, job: StudioJob, pageId: str
   const ordered = [...page.blocks]
     // 연결 주소는 이미지에 인쇄되지 않으므로 고칠 대상도 아니다.
     .filter((b) => b.aiVisibility !== 'publishing')
+    // 도형·선은 브라우저가 그린 것이라 AI로 고칠 대상이 아니다 (도형 도구 Patch).
+    .filter((b) => !isShapeBlock(b.type))
     .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x)
 
   let textNo = 0

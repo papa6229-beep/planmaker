@@ -85,6 +85,8 @@ export interface BlockPatch {
 
 export type EditorAction =
   | { type: 'ADD_BLOCK'; blockType: BlockType; label?: string }
+  /** 끌어서 만든 자리에 놓는다 (문자·도형 도구 Patch). id는 부르는 쪽이 정한다. */
+  | { type: 'ADD_BLOCK_AT'; blockType: BlockType; id: string; rect: Rect; content?: string; label?: string }
   | { type: 'ADD_BUTTON_LINK'; label: string }
   | { type: 'SET_BLOCK_LINK'; blockId: string; url: string }
   | { type: 'SELECT_BLOCK'; blockId: string | null; additive?: boolean }
@@ -809,6 +811,20 @@ export function briefReducer(state: EditorState, action: EditorAction): EditorSt
   switch (action.type) {
     case 'ADD_BLOCK':
       return addBlock(state, action.blockType, action.label)
+    case 'ADD_BLOCK_AT': {
+      const block = createBlock(action.blockType, {
+        id: action.id,
+        position: {
+          x: Math.round(action.rect.x),
+          y: Math.round(action.rect.y),
+          width: Math.max(1, Math.round(action.rect.width)),
+          height: Math.max(1, Math.round(action.rect.height)),
+        },
+        ...(action.content === undefined ? {} : { content: action.content }),
+        ...(action.label === undefined ? {} : { label: action.label }),
+      })
+      return { brief: { ...state.brief, blocks: [...state.brief.blocks, block] }, selectedIds: [block.id] }
+    }
     case 'ADD_BUTTON_LINK':
       return addButtonLink(state, action.label)
     case 'SET_BLOCK_LINK':
