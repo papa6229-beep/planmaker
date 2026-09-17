@@ -1683,7 +1683,7 @@ describe('§16-B 생성 전 블록별 주문은 펴진 채로 있다', () => {
     const trigger = await waitFor(() => within(cards[2]!).getByRole('button', { name: '문구 디자인' }))
     expect(trigger.textContent).not.toContain('주문')
     fireEvent.click(trigger)
-    const panel = await waitFor(() => within(cards[2]!).getByRole('dialog', { name: '문구 디자인' }))
+    const panel = await waitFor(() => screen.getByRole('dialog', { name: '문구 디자인' }))
     fireEvent.click(within(panel).getByRole('tab', { name: /주문/ }))
     const note = within(panel).getByLabelText('큰 문구 디자인 주문')
     fireEvent.change(note, { target: { value: '알록달록하게' } })
@@ -2200,7 +2200,7 @@ describe('§23 글꼴 미리보기', () => {
       fireEvent.pointerUp(window)
       const trigger = await waitFor(() => within(card()).getByRole('button', { name: '문구 디자인' }))
       fireEvent.click(trigger)
-      const panel = await waitFor(() => within(card()).getByRole('dialog', { name: '문구 디자인' }))
+      const panel = await waitFor(() => screen.getByRole('dialog', { name: '문구 디자인' }))
       const beta = await waitFor(() => within(panel).getByRole('radio', { name: '글꼴 베타체' }))
 
       // 가리키면 캔버스의 글자가 그 글꼴이 된다.
@@ -2219,7 +2219,7 @@ describe('§23 글꼴 미리보기', () => {
         expect(job?.blockOrders?.blk_t1?.fontFamily).toBe('알파체')
       })
       fireEvent.keyDown(panel, { key: 'Escape' })
-      await waitFor(() => expect(within(card()).queryByRole('dialog', { name: '문구 디자인' })).toBeNull())
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: '문구 디자인' })).toBeNull())
       await waitFor(() => expect(text().style.fontFamily).toContain('pm-alpha-700'), { timeout: 5000 })
       expect(within(card()).getByRole('button', { name: '문구 디자인' }).textContent).toContain('알파체')
 
@@ -2248,7 +2248,7 @@ describe('§23 글꼴 미리보기', () => {
       fireEvent.pointerDown(card(), { button: 0, clientX: 5, clientY: 5 })
       fireEvent.pointerUp(window)
       fireEvent.click(await waitFor(() => within(card()).getByRole('button', { name: '문구 디자인' })))
-      const panel = await waitFor(() => within(card()).getByRole('dialog', { name: '문구 디자인' }))
+      const panel = await waitFor(() => screen.getByRole('dialog', { name: '문구 디자인' }))
       const beta = await waitFor(() => within(panel).getByRole('radio', { name: '글꼴 베타체' }))
       fireEvent.focus(beta)
       await waitFor(() => expect(text().style.fontFamily).toContain('pm-beta-700'), { timeout: 5000 })

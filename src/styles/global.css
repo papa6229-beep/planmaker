@@ -3327,25 +3327,20 @@ button { font-family: inherit; }
 }
 .block-card__font-missing { color: var(--color-danger, #c0392b); }
 .block-card__font-panel {
-  position: absolute;
-  top: 0;
-  z-index: 30;
+  position: fixed;
+  z-index: 60;
   display: block;
   width: 280px;
+  overflow-y: auto;
   padding: 10px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-panel);
   box-shadow: 0 6px 18px rgba(20, 23, 33, 0.16);
-  transform-origin: top left;
   cursor: default;
   white-space: normal;
 }
 .block-card__font-panel .font-pick__list { max-height: 320px; }
-/* 블록 옆에 붙인다. 배율을 되돌리는 기준점도 블록에 붙은 모서리다. */
-.block-card__font-panel--right { left: calc(100% + 12px); transform-origin: top left; }
-.block-card__font-panel--left { right: calc(100% + 12px); transform-origin: top right; }
-.block-card__font-panel--below { left: 0; top: calc(100% + 12px); transform-origin: top left; }
 .block-card__font .block-card__layer-trigger { gap: 2px; }
 
 /* ── 문구 디자인 창 (2026-09-17) — 글꼴 · 주문 · 참고 그림 ───────────────── */
@@ -3390,7 +3385,7 @@ button { font-family: inherit; }
 .text-design__preview.is-large img { max-height: 520px; }
 .text-design__actions { display: flex; gap: 6px; }
 .text-design__file { display: none; }
-.block-card__font-panel:has(.text-design__preview.is-large) { width: 520px; }
+.block-card__font-panel:has(.text-design__preview.is-large) { width: 520px !important; }
 
 /* ── 후보정 창 (2026-09-17) — 완성본 조각 옆에 뜬다 ─────────────────────────── */
 .result-object__edit {

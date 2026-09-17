@@ -15,7 +15,8 @@
  * The card is draggable (move) and resizable (corner handles).
  */
 
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { getBlockTypeMeta, type BlockCategory } from '../../domain/blockTypes'
 import { imageFitOf } from '../../domain/imageLayout'
 import { LAYER_MOVES, visibleLayerPosition } from '../../domain/layerOrder'
@@ -666,25 +667,70 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
   )
 
   /**
-   * 글꼴 목록은 **블록 옆에** 뜬다. 막대 바로 아래에 띄웠더니 목록이 그 블록의
-   * 글자를 덮어, 가리키는 글꼴로 바뀌는 모습을 볼 수 없었다 (2026-09-17 확인).
-   * 오른쪽에 자리가 없으면 왼쪽, 둘 다 없으면 블록 아래로 간다.
+   * 문구 디자인 창은 **화면 위에** 뜬다 (2026-09-17 두 번째 판).
+   *
+   * 처음에는 블록 옆에 붙였는데, 캔버스 안에 있어서 페이지 아래쪽 블록을 고르면
+   * 창이 캔버스 끝에서 잘렸다 — 굵기 버튼이 안 보여 블록을 위로 올렸다 내려야 했다.
+   * 이제는 문서 맨 위 층에 띄우고, 블록의 화면 자리를 보고 **화면 안에 들어가게**
+   * 놓는다. 오른쪽 → 왼쪽 → 아래 → 위 순서로 자리를 찾고, 높이가 모자라면 창
+   * 안에서 스크롤된다.
    */
-  const fontPanelSide = (() => {
-    const k = scale > 0 ? scale : 1
-    const room = (FONT_PANEL_WIDTH + FONT_PANEL_GAP) / k
-    if (block.position.x + block.position.width + room <= canvasWidth) return 'right'
-    if (block.position.x - room >= 0) return 'left'
-    return 'below'
-  })()
+  const [fontAt, setFontAt] = useState<{ left: number; top: number; maxHeight: number } | null>(null)
+  useLayoutEffect(() => {
+    if (!fontOpen) {
+      setFontAt(null)
+      return
+    }
+    const place = () => {
+      const anchor = fontRef.current?.closest('.block-card')
+      if (!anchor) return
+      const r = anchor.getBoundingClientRect()
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      const w = fontPanelRef.current?.offsetWidth || FONT_PANEL_WIDTH
+      const h = Math.min(fontPanelRef.current?.offsetHeight ?? 520, vh - 16)
+      const gap = FONT_PANEL_GAP
+      let left: number
+      let top: number
+      if (r.right + gap + w <= vw - 8) {
+        left = r.right + gap
+        top = r.top
+      } else if (r.left - gap - w >= 8) {
+        left = r.left - gap - w
+        top = r.top
+      } else {
+        left = Math.min(Math.max(8, r.left), vw - w - 8)
+        top = r.bottom + gap + h <= vh - 8 ? r.bottom + gap : r.top - gap - h
+      }
+      top = Math.min(Math.max(8, top), Math.max(8, vh - h - 8))
+      setFontAt({ left: Math.round(left), top: Math.round(top), maxHeight: vh - 16 })
+    }
+    place()
+    // 목록을 받아 창 높이가 정해진 뒤 한 번 더 맞춘다.
+    const again = requestAnimationFrame(place)
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    // 탭을 바꾸거나 참고 그림을 크게 보면 창 크기가 바뀐다 — 그때도 화면 안으로.
+    const sized = typeof ResizeObserver === 'function' ? new ResizeObserver(place) : null
+    if (fontPanelRef.current) sized?.observe(fontPanelRef.current)
+    return () => {
+      sized?.disconnect()
+      cancelAnimationFrame(again)
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+    }
+  }, [fontOpen, block.position.x, block.position.y, block.position.width, block.position.height, scale])
   const fontPanel = fontOpen && takesFont && studio !== null && order !== null && (
     <div
       ref={fontPanelRef}
-      className={`block-card__font-panel block-card__font-panel--${fontPanelSide}`}
+      className="block-card__font-panel"
       role="dialog"
       aria-label="문구 디자인"
-      // 캔버스가 줄어 있어도 목록은 제 크기로 읽힌다.
-      style={{ transform: `scale(${String(1 / (scale > 0 ? scale : 1))})` }}
+      style={
+        fontAt === null
+          ? { visibility: 'hidden', width: FONT_PANEL_WIDTH }
+          : { left: fontAt.left, top: fontAt.top, maxHeight: fontAt.maxHeight, width: FONT_PANEL_WIDTH }
+      }
       onPointerDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         e.stopPropagation()
@@ -971,7 +1017,7 @@ export function BriefBlockCard({ block, selected, scale, canvasWidth, canvasHeig
         </span>
       )}
 
-      {fontPanel}
+      {fontPanel !== false && typeof document !== 'undefined' ? createPortal(fontPanel, document.body) : null}
 
       {linkOpen && (
         <div className="block-card__link-editor" onPointerDown={(e) => e.stopPropagation()}>
