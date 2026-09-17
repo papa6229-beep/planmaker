@@ -32,6 +32,9 @@ function formatTime(ms: number): string {
   return `${String(d.getFullYear())}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`
 }
 
+/** 나란히 볼 때 판 좌우의 여백(px). `.compare--split .compare__pad`와 같은 값. */
+const SPLIT_INSET = 24
+
 export function ResultCompare() {
   const { getDocument } = useBriefDocument()
   const studio = useStudioJob()
@@ -60,7 +63,9 @@ export function ResultCompare() {
     if (box === null || report === undefined) return
     const send = () => {
       const rect = box.getBoundingClientRect()
-      report({ width: rect.width, height: rect.height }, { width: logicalWidth, height: logicalHeight })
+      // 나란히 볼 때는 둘레 여백만큼 덜 쓴다 — 폭에 맞춘 판이 가장자리에 붙어 잘려 보이지 않게.
+      const inset = withBrief ? SPLIT_INSET * 2 : 0
+      report({ width: Math.max(0, rect.width - inset), height: rect.height }, { width: logicalWidth, height: logicalHeight })
     }
     send()
     if (typeof ResizeObserver !== 'function') return
@@ -131,7 +136,16 @@ export function ResultCompare() {
             className={`btn compare__with-brief${withBrief ? ' is-active' : ''}`}
             aria-pressed={withBrief}
             title="기획서를 옆에 세웁니다"
-            onClick={() => setWithBrief((on) => !on)}
+            onClick={() => {
+              // 나란히 서면 두 장을 **폭에** 맞춘다 (우측 패널 정리, 2026-09-17) — 세로형 판을
+              // 통째로 담으면 반쪽 자리에서 너무 작아진다. 거두면 다시 통째로.
+              const next = !withBrief
+              setWithBrief(next)
+              if (view !== null && view.fit !== 'manual') {
+                if (next) view.fitWidth()
+                else view.fitPage()
+              }
+            }}
           >
             기획서 나란히 보기
           </button>

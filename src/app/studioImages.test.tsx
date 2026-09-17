@@ -282,7 +282,7 @@ describe('§8 우측 패널', () => {
     expect(screen.queryByRole('complementary', { name: '제품 이미지 연결' })).toBeNull()
     // 작업판 우측은 지금 할 일만 말한다 — 연결하는 자리가 아니다 (실작업 UI §3).
     expect(screen.getByRole('region', { name: '생성 준비' })).toBeTruthy()
-    expect(document.querySelector('.side-right .inspector')).toBeNull()
+    expect(document.querySelector('.inspector')).toBeNull()
   }, 20000)
 })
 

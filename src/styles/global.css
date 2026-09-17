@@ -3548,3 +3548,17 @@ button { font-family: inherit; }
 .studio-rail { overflow-x: hidden; }
 .studio-rail .canvas-controls { flex-wrap: wrap; }
 .studio-rail .canvas-controls > * { flex-wrap: wrap; margin-left: 0; max-width: 100%; }
+
+/* ── 우측 패널 정리 (2026-09-17) ─────────────────────────────────────────────
+ * 작업판에는 우측 칸이 없다. [왼쪽 칸 | 도구 칸 | 캔버스]이고, 왼쪽 칸은 접을 수 있다.
+ * 옛 우측 도구(맞춤·순서·톤·배너)는 도구 칸 아래에 선다. */
+.workspace--studio { grid-template-columns: 240px minmax(0, 1fr); }
+.workspace--studio.is-left-folded { grid-template-columns: minmax(0, 1fr); }
+.workspace--studio.is-left-folded > .side-left { display: none; }
+.studio-rail__fold { align-self: flex-start; font-size: 11px; }
+.studio-rail__more { display: flex; flex-direction: column; gap: 8px; }
+.studio-rail__more > * { flex: 0 0 auto; }
+/* 나란히 볼 때는 두 장이 반씩 — 판 둘레 여백도 줄여 반쪽 자리를 판에 준다. */
+.compare--split .compare__pad { min-width: 100%; padding: 0 24px; }
+.compare__with-brief.is-active:hover { background: var(--color-accent); color: #fff; filter: brightness(1.08); }
+.compare--split .compare__result { padding: 0 0 12px; }

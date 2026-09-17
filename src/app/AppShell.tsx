@@ -53,6 +53,7 @@ import { StudioEffectsSync } from '../features/studio/StudioEffectsSync'
 import { GenerateImageDialog } from '../components/studio/GenerateImageDialog'
 import { ResultCompare } from '../components/studio/ResultCompare'
 import { EditPanel } from '../components/studio/EditPanel'
+import { SHOW_PARTIAL_EDIT } from './studioScreen'
 import { ImageGenerationProvider, useImageGeneration } from '../features/studio/useImageGeneration'
 import { InstructionRefineProvider } from '../features/studio/useInstructionRefine'
 
@@ -240,10 +241,35 @@ function StudioViewTabs() {
   )
 }
 
+const LEFT_FOLD_KEY = 'planmaker.studio.leftFolded'
+
+function readLeftFolded(): boolean {
+  try {
+    return window.localStorage.getItem(LEFT_FOLD_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
 function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: ReactNode }) {
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [requestOpen, setRequestOpen] = useState(false)
   const [startDismissed, setStartDismissed] = useState(false)
+  /**
+   * 맨 왼쪽 칸(참고 그림·배경·팔레트·메모)을 접었는가 (우측 패널 정리, 2026-09-17).
+   * 좁은 화면에서 나란히 보기의 두 장에 자리를 더 준다. 보는 사람마다의 편의라
+   * 이 브라우저에만 기억한다.
+   */
+  const [leftFolded, setLeftFolded] = useState(() => readLeftFolded())
+  const toggleLeft = () => {
+    const next = !leftFolded
+    setLeftFolded(next)
+    try {
+      window.localStorage.setItem(LEFT_FOLD_KEY, next ? '1' : '0')
+    } catch {
+      // 기억하지 못해도 지금 화면은 접힌다.
+    }
+  }
   const { activeReference } = useBriefDocument()
   const { state } = useBriefEditor()
   const generation = useImageGeneration()
@@ -270,7 +296,11 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
         onShowSummary={() => setSummaryOpen(true)}
         {...(mode === 'studio' ? { onShowGenerationRequest: () => setRequestOpen(true) } : {})}
       />
-      <main className="workspace">
+      <main
+        className={
+          mode === 'studio' ? `workspace workspace--studio${leftFolded ? ' is-left-folded' : ''}` : 'workspace'
+        }
+      >
         <div className="side-left">
           {/* 작업판의 왼쪽 첫 칸은 AI가 실제로 참고할 스타일 한 장이다. 배치를
               맞추려고 겹쳐 보던 레이아웃 참고 도구는 작업판에서 걷어냈다 —
@@ -302,6 +332,15 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
              조작 창도 이 칸 안에서 펼쳐져 캔버스를 가리지 않는다. */
           <div className="workspace__center workspace__center--studio">
             <aside className="studio-rail" aria-label="작업 도구">
+              <button
+                type="button"
+                className="btn studio-rail__fold"
+                aria-pressed={leftFolded}
+                title={leftFolded ? '참고 그림·배경·블록 칸을 다시 엽니다' : '캔버스 자리를 넓힙니다'}
+                onClick={toggleLeft}
+              >
+                {leftFolded ? '▶ 왼쪽 칸 펴기' : '◀ 왼쪽 칸 접기'}
+              </button>
               <PageTabs />
               {/* 만든 것들의 목록 — 이벤트 페이지와 배너, 그리고 그 한 장의 저장. */}
               <WorkList />
@@ -313,6 +352,37 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
               <BarMenuInline.Provider value={true}>
                 <DesignBar />
               </BarMenuInline.Provider>
+              {/* 옛 우측 패널의 도구들 (우측 패널 정리, 2026-09-17). 사용자: "쓸데없는 쪽이
+                  우측패널이 되었어" — 우측을 걷어 캔버스 자리를 넓히고(나란히 보기에
+                  두 장이 서야 한다), 남길 것만 이 칸 아래로 옮겼다.
+                  **지금 보고 있는 화면의 도구만** 둔다 (완성본 모드 Patch). 기획서 쪽
+                  셋은 고른 블록이 있어야 나오고, 완성본을 보는 동안에는 고를 수가 없다. */}
+              <div className="studio-rail__more">
+                {/* 배너 패널은 양쪽에 선다 (배너 Patch §5) — 만드는 도중 가운데가 잠깐
+                    기획서로 돌아가도 방금 만든 배너의 안내가 사라지지 않게. */}
+                <BannerPanel />
+                {/* 배너에 없는 조각을 꺼내 놓는 서랍 (배너 Patch §6). 배너에서만 나온다. */}
+                <BannerDrawer />
+                {compare ? (
+                  <>
+                    {/* 만들고 나서 조각을 하나씩 끌어 맞추는 화면 (정렬 Patch). */}
+                    <ResultAlignTools />
+                    {/* AI 부분수정은 화면에서만 뺐다 — `studioScreen.ts`. */}
+                    {SHOW_PARTIAL_EDIT && <EditPanel />}
+                    {/* 결과 전체의 톤 (톤 조절 Patch). 조각 하나의 톤은 위 도구 막대에서. */}
+                    <ToneAdjustPanel />
+                  </>
+                ) : (
+                  <>
+                    {/* 줄 맞춤은 상자의 종류를 가리지 않는다 (정렬 Patch). */}
+                    <AlignTools />
+                    {/* 고른 블록의 배치 — 맞춤 방식과 레이어 순서 (§3.1, §4). */}
+                    <BlockLayerTools />
+                    {/* 아무것도 고르지 않았을 때만 선다. */}
+                    <ReadyPanel />
+                  </>
+                )}
+              </div>
             </aside>
             <div className="studio-main">
               {showStart && !compare && <StartChoice onDismiss={() => setStartDismissed(true)} />}
@@ -337,56 +407,12 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
           </div>
         </div>
         )}
-        {/* 기획서 모드의 우측은 보관함; 작업판과 이미지 요청 화면은 공통 편집기의
-            기본 패널을 그대로 쓴다. 제품 이미지는 이미지 블록에서 직접 넣으므로
+        {/* 기획서 모드의 우측은 보관함; 작업판에는 우측이 없고, 이미지 요청 화면은
+            공통 편집기의 기본 패널을 그대로 쓴다. 제품 이미지는 이미지 블록에서 직접 넣으므로
             같은 정보를 받는 패널을 따로 두지 않는다 (첫 사용 흐름 §8). */}
         {mode === 'brief' ? (
           <BriefLibrary />
-        ) : mode === 'studio' ? (
-          /* 작업판의 우측은 지금 할 일 하나만 말한다: 만들기 전에는 준비 상태,
-             만든 뒤에는 부분수정. 블록 편집 도움말은 왼쪽 캔버스가 이미 하는
-             말이라 여기서 되풀이하지 않는다 (실작업 UI 마감 §3).
-
-             그리고 **지금 보고 있는 화면의 도구만** 둔다 (완성본 모드 Patch).
-             여섯 벌을 한 줄에 쌓으면 절반은 그 화면에서 쓸 일이 없는 것들이고,
-             쓸 것을 찾는 데 스크롤이 든다. 기획서 쪽 셋은 어차피 고른 블록이
-             있어야 나오는데, 완성본을 보는 동안에는 기획서 캔버스가 접혀 있어
-             고를 수가 없다 — 그때 남는 것은 지난 선택의 잔상뿐이다. */
-          <div className={`side-right${compare ? ' side-right--result' : ''}`}>
-            {/* 생성 방식을 고르는 자리는 없다 (한방 생성 Patch §1). 상단
-                `이미지 생성하기` 하나가 메인 실행이고, 종이 컷아웃이 켜져
-                있는지에 따라 흐름은 스스로 갈린다. */}
-            {/* 배너 패널은 양쪽에 선다 (배너 Patch §5). 만드는 도중 가운데가
-                잠깐 기획서로 돌아가는데, 그때 패널이 사라지면 방금 만든 배너의
-                안내(무엇을 버렸는지)도 함께 사라진다. */}
-            <BannerPanel />
-            {/* 배너에 없는 조각을 꺼내 놓는 서랍 (배너 Patch §6). 배너에서만 나온다. */}
-            <BannerDrawer />
-            {compare ? (
-              <>
-                {/* 눈대중이 실제로 일어나는 자리는 여기다 (정렬 Patch) — 만들고
-                    나서 조각을 하나씩 끌어 맞추는 화면. */}
-                <ResultAlignTools />
-                <EditPanel />
-                {/* 결과 전체의 톤 (톤 조절 Patch). */}
-                <ToneAdjustPanel />
-                {/* 조각 하나의 색·그림자·테두리·종이 두께는 완성본의 그 조각 옆
-                    "후보정" 창에서 고친다 (후보정 창 Patch, 2026-09-17). */}
-              </>
-            ) : (
-              <>
-                {/* 줄 맞춤은 상자의 종류를 가리지 않는다 (정렬 Patch) — 무엇을
-                    골랐든 맨 위에 선다. */}
-                <AlignTools />
-                {/* 고른 블록의 배치 — 맞춤 방식과 레이어 순서 (§3.1, §4). */}
-                <BlockLayerTools />
-                {/* 생성 **전**에 이 블록에만 붙이는 주문(글꼴·주문·참고 그림)은 캔버스의
-                    블록 옆 "문구 디자인" 창에만 있다 (2026-09-17). */}
-                <ReadyPanel />
-              </>
-            )}
-          </div>
-        ) : (
+        ) : mode === 'studio' ? null /* 작업판의 우측은 없다 — 도구는 왼쪽 세로 칸 아래로 옮겼다. */ : (
           <div className="side-right">
             <EditPanel />
             <PropertiesPanel />

@@ -94,3 +94,7 @@ vi.mock('../services/shapeArt', () => ({
     pad: { left: 0, top: 0, right: 0, bottom: 0 },
   }),
 }))
+
+// ── 부분수정 창 (우측 패널 정리, 2026-09-17) ────────────────────────────────
+// 화면에서는 숨겼지만 코드는 살아 있다. 그 흐름을 보는 검사들이 계속 돌도록 켠다.
+vi.mock('../app/studioScreen', () => ({ SHOW_PARTIAL_EDIT: true }))

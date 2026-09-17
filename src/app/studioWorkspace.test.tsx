@@ -362,12 +362,14 @@ describe('§2 작업판 좌측은 편집할 것 하나만 남긴다', () => {
 
 // ── 우측: 지금 무엇을 할 차례인가 ────────────────────────────────────────────
 
-describe('§3 작업판 우측은 지금 할 일만 말한다', () => {
+describe('§3 작업판 도구 칸은 지금 할 일만 말한다', () => {
   it('drops the generic block help from the studio', async () => {
     await openStudio()
     // 블록을 골라도 — 도움말이 나오던 바로 그 상태에서도 — 없어야 한다.
     fireEvent.click(document.querySelectorAll('.block-card')[0]!)
-    const right = document.querySelector('.side-right')!
+    // 우측 칸은 없다 (우측 패널 정리, 2026-09-17) — 옛 우측 도구는 도구 칸 아래에 선다.
+    expect(document.querySelector('.side-right')).toBeNull()
+    const right = document.querySelector('.studio-rail__more')!
     expect(right.querySelector('.inspector')).toBeNull()
     expect(right.textContent).not.toContain('사진을 넣거나 들어갈 자리를 적습니다')
     expect(right.textContent).not.toContain('더블클릭하면')
@@ -397,7 +399,7 @@ describe('§3 작업판 우측은 지금 할 일만 말한다', () => {
     await generateHere()
     expect(screen.queryByRole('region', { name: '생성 준비' })).toBeNull()
     expect(screen.getByRole('region', { name: 'AI 부분수정' })).toBeTruthy()
-    expect(document.querySelector('.side-right .inspector')).toBeNull()
+    expect(document.querySelector('.inspector')).toBeNull()
   }, 25000)
 })
 
@@ -630,4 +632,48 @@ describe('§5.5 페이지마다 자기 결과와 자기 이력을 갖는다', ()
       for (const rev of revisionsOf(job.results[page.id]!)) expect(live.has(rev.assetId)).toBe(true)
     }
   }, 30000)
+})
+
+// ── 우측 패널 정리 (2026-09-17) ─────────────────────────────────────────────
+
+describe('§3-2 작업판에는 우측 칸이 없고, 왼쪽 칸은 접힌다', () => {
+  it('keeps the partial-edit panel off the real screen (tests switch it on)', async () => {
+    const actual = await vi.importActual<typeof import('./studioScreen')>('./studioScreen')
+    expect(actual.SHOW_PARTIAL_EDIT).toBe(false)
+  })
+
+  it('folds the far-left column and remembers it in this browser', async () => {
+    localStorage.removeItem('planmaker.studio.leftFolded')
+    await openStudio()
+    const main = document.querySelector('main.workspace')!
+    expect(main.classList.contains('workspace--studio')).toBe(true)
+    expect(main.classList.contains('is-left-folded')).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: '◀ 왼쪽 칸 접기' }))
+    expect(main.classList.contains('is-left-folded')).toBe(true)
+    expect(localStorage.getItem('planmaker.studio.leftFolded')).toBe('1')
+    // 접어도 안의 것은 그대로 살아 있다 — 다시 펴면 같은 자리.
+    expect(document.querySelector('.side-left')).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '▶ 왼쪽 칸 펴기' }))
+    expect(main.classList.contains('is-left-folded')).toBe(false)
+    expect(localStorage.getItem('planmaker.studio.leftFolded')).toBe('0')
+  }, 25000)
+
+  it('puts the old right-hand tools under the rail, and side-by-side fits both to width', async () => {
+    await openStudio()
+    await generateHere()
+    expect(document.querySelector('.side-right')).toBeNull()
+    const more = document.querySelector('.studio-rail__more') as HTMLElement
+    expect(within(more).getByRole('region', { name: 'AI 부분수정' })).toBeTruthy()
+    expect(within(more).getByRole('button', { name: /결과 톤 조절/ })).toBeTruthy()
+
+    const fitPage = screen.getByRole('button', { name: '전체 보기' })
+    const fitWidth = screen.getByRole('button', { name: '폭 맞춤' })
+    expect(fitPage.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: '기획서 나란히 보기' }))
+    expect(screen.getByRole('region', { name: '기획서 작업본' })).toBeTruthy()
+    expect(fitWidth.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: '기획서 나란히 보기' }))
+    expect(screen.queryByRole('region', { name: '기획서 작업본' })).toBeNull()
+    expect(fitPage.getAttribute('aria-pressed')).toBe('true')
+  }, 25000)
 })

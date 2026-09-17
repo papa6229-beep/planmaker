@@ -1598,8 +1598,8 @@ describe('§16-B 문구의 모양은 위쪽 도구 막대에서', () => {
     fireEvent.pointerDown(cards[2]!, { button: 0 })
     fireEvent.pointerUp(window)
 
-    // 오른쪽 패널에는 주문 칸도, 생성 준비도 없다.
-    const right = container.querySelector('.side-right')!
+    // 도구 칸 아래(옛 오른쪽 패널)에는 주문 칸도, 생성 준비도 없다.
+    const right = container.querySelector('.studio-rail__more')!
     expect(within(right as HTMLElement).queryByRole('region', { name: '이 블록의 디자인 주문' })).toBeNull()
     expect(screen.queryByRole('region', { name: '생성 준비' })).toBeNull()
 
