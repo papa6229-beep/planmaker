@@ -23,7 +23,7 @@ import { pageResultIsStale, pageResultOf } from '../../domain/studioJob'
 import { getAsset } from '../../services/assetStore'
 import { ResultObjectLayer } from './ResultObjectLayer'
 import { OriginalOverlay } from './OriginalBrief'
-import { BannerBackgroundHandle } from './BannerBackgroundHandle'
+import { BackgroundHandle } from './BackgroundHandle'
 import { useResultView } from '../../features/studio/useResultView'
 import { clearLivePreview, useLivePreview } from '../../features/studio/livePreview'
 
@@ -187,7 +187,7 @@ export function ResultCompare() {
               <OriginalOverlay scale={zoom} />
               {/* 배경 손잡이가 조각보다 **뒤에** 온다. 앞에 두면 화면 전체가
                   배경이라 어디를 눌러도 배경이 먼저 걸려 조각을 못 잡는다. */}
-              <BannerBackgroundHandle pageId={pageId} page={logical} />
+              <BackgroundHandle pageId={pageId} page={logical} />
               <ResultObjectLayer pageId={pageId} page={logical} />
             </div>
             </div>

@@ -19,6 +19,7 @@ import { AppRoutes } from './AppRoutes'
 import { resetAccessModeForTests } from '../features/studio/apiKeySession'
 import { resetOriginalViewForTests } from '../features/studio/originalView'
 import { resetBackgroundLabForTests } from '../features/studio/useBackgroundLab'
+import { resetDesignToolsForTests } from '../features/studio/designTools'
 import { saveApiKey } from '../features/studio/apiKeySession'
 import { clearAll, putAsset, getAsset, resetAssetStoreForTests, type StoredAsset } from '../services/assetStore'
 import { clearAllDocuments, resetDocumentStoreForTests } from '../services/documentStore'
@@ -915,5 +916,72 @@ describe('§3-5 배경 후보 — 제품을 보고 만들고, 제품을 지워 �
     })
     expect(within(lab()).queryAllByRole('listitem')).toHaveLength(0)
     expect((within(lab()).getByRole('button', { name: '후보 만들기' }) as HTMLButtonElement).disabled).toBe(false)
+  }, 25000)
+})
+
+// ── 배경 크기·자리 (2026-09-17) ─────────────────────────────────────────────
+
+describe('§3-6 이벤트 페이지 배경도 캔버스에서 옮기고 키운다', () => {
+  let pageId = ''
+  beforeEach(async () => {
+    resetDesignToolsForTests()
+    await putAsset(storedAsset('asset_bg_old', 9))
+    const job = readyJob()
+    pageId = job.doc.pages[0]!.id
+    await saveStudioJob({ ...job, backgrounds: { [pageId]: { assetId: 'asset_bg_old', source: 'ai' } } })
+  })
+  afterEach(() => resetDesignToolsForTests())
+
+  it('shows handles only while adjusting, saves the new box, and fits back to the canvas', async () => {
+    await openStudio()
+    // 배경이 있으면 작업판은 열자마자 완성본을 다시 합쳐 완성본 화면으로 간다 (자동 합치기).
+    await waitFor(() => expect(document.querySelector('.compare__stage')).not.toBeNull(), { timeout: 8000 })
+    const bg = () => screen.getByRole('region', { name: '배경' })
+    const saved = async () => (await loadStudioJob(STUDIO_JOB_ID))!.backgrounds?.[pageId]
+    const drag = (handle: Element, dx: number, dy: number) => {
+      fireEvent.pointerDown(handle, { button: 0, clientX: 0, clientY: 0 })
+      fireEvent.pointerMove(window, { clientX: dx, clientY: dy })
+      fireEvent.pointerUp(window)
+    }
+    const stage = () => document.querySelector<HTMLElement>('.compare__stage')!
+    expect(screen.queryByRole('button', { name: '배경 옮기기' })).toBeNull()
+    fireEvent.click(within(bg()).getByRole('button', { name: '크기·위치 조절' }))
+
+    // 완성본 위에서 옮긴다.
+    drag(await within(stage()).findByRole('button', { name: '배경 옮기기' }), 30, -40)
+    await waitFor(async () => expect((await saved())?.rect).toMatchObject({ x: 30, y: -40, width: 840 }))
+
+    // 옆에 세운 작업 캔버스에도 같은 자리로 그려지고, 거기서도 키울 수 있다.
+    fireEvent.click(screen.getByRole('button', { name: '작업 캔버스 나란히 보기' }))
+    const brief = await screen.findByRole('region', { name: '기획서 작업본' })
+    await waitFor(() => expect(brief.querySelector<HTMLImageElement>('.canvas__background')!.style.left).toBe('30px'))
+    drag(within(brief).getByRole('button', { name: '배경 크기 se' }), 100, 100)
+    await waitFor(async () => expect((await saved())!.rect!.width).toBeGreaterThan(840))
+
+    fireEvent.click(within(bg()).getByRole('button', { name: '캔버스에 맞추기' }))
+    await waitFor(async () => {
+      const now = await saved()
+      expect(now?.assetId).toBe('asset_bg_old')
+      expect(now?.rect).toBeUndefined()
+    })
+    fireEvent.click(within(bg()).getByRole('button', { name: '조절 끝내기' }))
+    expect(screen.queryByRole('button', { name: '배경 옮기기' })).toBeNull()
+  }, 25000)
+
+  it('keeps the adjusted box when a candidate background is applied', async () => {
+    const job = (await loadStudioJob(STUDIO_JOB_ID))!
+    await putAsset(storedAsset('asset_cand', 4))
+    await saveStudioJob({
+      ...job,
+      backgrounds: { [pageId]: { assetId: 'asset_bg_old', source: 'ai', rect: { x: -50, y: 0, width: 1000, height: 1600 } } },
+      backgroundLabs: { [pageId]: { candidates: [{ id: 'c1', assetId: 'asset_cand', note: '바다', basis: 'none', createdAt: 1 }] } },
+    })
+    await openStudio()
+    fireEvent.click(await screen.findByRole('button', { name: '바다 적용' }))
+    await waitFor(async () => {
+      const saved = (await loadStudioJob(STUDIO_JOB_ID))!.backgrounds?.[pageId]
+      expect(saved?.assetId).toBe('asset_cand')
+      expect(saved?.rect).toEqual({ x: -50, y: 0, width: 1000, height: 1600 })
+    })
   }, 25000)
 })

@@ -2376,12 +2376,18 @@ button { font-family: inherit; }
 .block-tools__note { margin: 0; font-size: 11px; color: var(--color-muted); }
 
 /* ── 페이지 배경 레이어 (배경 합성 1차 §5) ──────────────────────────────── */
-.canvas__background {
+.canvas__background-clip {
   position: absolute;
-  top: 0;
-  left: 0;
+  inset: 0;
+  overflow: hidden;
   /* 참고 이미지 오버레이(0)보다 뒤, 블록(DOM 순서)보다도 뒤. */
   z-index: -1;
+  pointer-events: none;
+}
+/* 자리는 배경의 rect가 정한다 (배경 크기 Patch). 옮기거나 키운 만큼 캔버스 밖은 잘린다. */
+.canvas__background {
+  position: absolute;
+  max-width: none;
   object-fit: cover;
   pointer-events: none;
   user-select: none;
@@ -3178,36 +3184,38 @@ button { font-family: inherit; }
  * 겹 전체는 **잡히지 않는다.** 화면 전체가 배경이라, 잡히게 두면 어디를 눌러도
  * 배경이 걸려 조각을 고를 수 없다. 잡는 곳은 왼쪽 위 꼬리표와 모서리 넷뿐이다.
  */
-.banner-bg { position: absolute; inset: 0; pointer-events: none; }
+.banner-bg { position: absolute; inset: 0; z-index: 4; overflow: hidden; pointer-events: none; }
+/* 판 밖으로 나간 테두리는 잘라 보인다 — 손잡이는 늘 판 안에 있고, 삐져나온 선이 스크롤을 늘리지 않게. */
 .banner-bg__frame { position: absolute; outline: 1px dashed rgba(79, 70, 229, 0.55); }
+/* 자리는 컴포넌트가 캔버스 안으로 붙여 준다 — 위쪽 가운데. */
 .banner-bg__grab {
   position: absolute;
-  left: 0;
-  top: 0;
-  padding: 1px 6px;
+  transform: translate(-50%, 0);
+  padding: 1px 8px;
   font: inherit;
   font-size: 10px;
   line-height: 1.6;
   color: #fff;
-  background: rgba(79, 70, 229, 0.8);
+  background: rgba(79, 70, 229, 0.85);
   border: 0;
-  border-radius: 0 0 6px 0;
+  border-radius: 0 0 6px 6px;
   cursor: move;
   pointer-events: auto;
 }
 .banner-bg__handle {
   position: absolute;
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   background: #fff;
-  border: 1px solid rgba(79, 70, 229, 0.8);
+  border: 1px solid rgba(79, 70, 229, 0.9);
   border-radius: 2px;
   pointer-events: auto;
 }
-.banner-bg__handle--nw { left: -5px; top: -5px; cursor: nwse-resize; }
-.banner-bg__handle--ne { right: -5px; top: -5px; cursor: nesw-resize; }
-.banner-bg__handle--sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
-.banner-bg__handle--se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+/* 모서리 점에서 캔버스 안쪽으로 — 가장자리에 붙어도 잘리지 않는다. */
+.banner-bg__handle--nw { transform: translate(0, 0); cursor: nwse-resize; }
+.banner-bg__handle--ne { transform: translate(-100%, 0); cursor: nesw-resize; }
+.banner-bg__handle--sw { transform: translate(0, -100%); cursor: nesw-resize; }
+.banner-bg__handle--se { transform: translate(-100%, -100%); cursor: nwse-resize; }
 
 /* ── 배너 프리셋 편집 (프리셋 관리 Patch) ────────────────────────────────── */
 .banner__presets { display: flex; flex-direction: column; gap: 4px; }
@@ -3692,3 +3700,9 @@ button { font-family: inherit; }
 
 /* 레퍼런스 칸 안의 `AI에게 추가로 전달할 말` (왼쪽 칸 정리, 2026-09-17) — 칸 속 칸이 아니라 한 줄 이어서. */
 .style-ref .concept--ai-note { padding: 0; border: 0; background: transparent; margin-top: 4px; }
+
+/* 기획서 캔버스 위의 배경 손잡이 (배경 크기 Patch) — 블록보다 앞, 손잡이만 잡힌다. */
+.canvas__sheet > .banner-bg { z-index: 6; }
+
+.bg-tools__row { flex-wrap: wrap; }
+.bg-tools__row .btn { white-space: nowrap; }

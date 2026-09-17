@@ -21,6 +21,8 @@ interface ToolState {
   editRequest: string | null
   /** 마지막으로 고른 글꼴 — 새 문구가 이어받는다. */
   lastFamily: string | null
+  /** 이벤트 페이지 배경의 크기·자리를 캔버스에서 조절하는 중인가 (배경 크기 Patch). */
+  backgroundEdit: boolean
 }
 
 let state: ToolState = {
@@ -29,6 +31,7 @@ let state: ToolState = {
   selection: null,
   editRequest: null,
   lastFamily: null,
+  backgroundEdit: false,
 }
 const listeners = new Set<() => void>()
 
@@ -73,13 +76,17 @@ export function rememberFamily(family: string): void {
   if (state.lastFamily !== family) set({ lastFamily: family })
 }
 
+export function setBackgroundEdit(on: boolean): void {
+  if (state.backgroundEdit !== on) set({ backgroundEdit: on })
+}
+
 export function lastFamily(): string | null {
   return state.lastFamily
 }
 
 /** 검사마다 처음 상태로. */
 export function resetDesignToolsForTests(): void {
-  state = { tool: 'select', lastShape: 'rect', selection: null, editRequest: null, lastFamily: null }
+  state = { tool: 'select', lastShape: 'rect', selection: null, editRequest: null, lastFamily: null, backgroundEdit: false }
   for (const l of listeners) l()
 }
 

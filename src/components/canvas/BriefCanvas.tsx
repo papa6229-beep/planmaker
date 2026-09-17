@@ -24,6 +24,7 @@ const MARQUEE_MIN_PX = 4
 import type { ReferenceLayer } from '../../domain/pageSchema'
 import { BriefBlockCard } from './BriefBlockCard'
 import { OriginalOverlay } from '../studio/OriginalBrief'
+import { BackgroundHandle } from '../studio/BackgroundHandle'
 import { useDesignTools } from '../../features/studio/designTools'
 import { dragBox, useCreateDesignBlock } from '../../features/studio/useCreateDesignBlock'
 
@@ -65,7 +66,10 @@ export function BriefCanvas() {
   // (and in exports) but is not drawn. Legacy standalone URL blocks still show.
   const visibleBlocks = blocks.filter((b) => !isPairedLinkUrl(blocks, b))
 
-  const backgroundUrl = getUrl(studio?.backgroundOf(activePageId)?.assetId)
+  const background = studio?.backgroundOf(activePageId)
+  const backgroundUrl = getUrl(background?.assetId)
+  // 옮기거나 키운 배경은 그 자리에 (배경 크기 Patch). 캔버스 밖은 잘라 보인다 — 결과와 같다.
+  const backgroundRect = background?.rect ?? { x: 0, y: 0, width: canvasWidth, height: canvasHeight }
   const overlayUrl = getUrl(activeReference.assetId)
   const showOverlay =
     activeReference.viewMode === 'overlay' && activeReference.visible && overlayUrl !== undefined
@@ -198,14 +202,20 @@ export function BriefCanvas() {
           )}
           {/* 언제나 맨 뒤다. 블록 순서 도구는 이 레이어에 닿지 않는다 (§4). */}
           {backgroundUrl !== undefined && (
-            <img
-              className="canvas__background"
-              src={backgroundUrl}
-              alt=""
-              aria-hidden="true"
-              draggable={false}
-              style={{ width: canvasWidth, height: canvasHeight }}
-            />
+            <div className="canvas__background-clip" aria-hidden="true">
+              <img
+                className="canvas__background"
+                src={backgroundUrl}
+                alt=""
+                draggable={false}
+                style={{
+                  left: backgroundRect.x,
+                  top: backgroundRect.y,
+                  width: backgroundRect.width,
+                  height: backgroundRect.height,
+                }}
+              />
+            </div>
           )}
           {/* 받은 기획서를 겹쳐 본다 (원본 기획서 보기 Patch) — 작업판에서만, 누름은 통과. */}
           {studio !== null && <OriginalOverlay />}
@@ -236,6 +246,10 @@ export function BriefCanvas() {
               {...(linkUrlOf(blocks, block) === undefined ? {} : { linkUrl: linkUrlOf(blocks, block)! })}
             />
           ))}
+          {/* 배경 손잡이 — 조절을 켰을 때만. 블록 위에 서야 잡힌다 (배경 크기 Patch). */}
+          {studio !== null && (
+            <BackgroundHandle pageId={activePageId} page={{ width: canvasWidth, height: canvasHeight }} />
+          )}
         </div>
 
         {/* Page length. Only this page changes; the 840px width is fixed.

@@ -15,6 +15,8 @@ import { useAssets } from '../../features/assets/useAssets'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { ACCEPTED_MIME_TYPES } from '../../features/assets/imageUtils'
+import { useImageGeneration } from '../../features/studio/useImageGeneration'
+import { setBackgroundEdit, useDesignTools } from '../../features/studio/designTools'
 
 const IMAGE_ACCEPT = ACCEPTED_MIME_TYPES.join(',')
 
@@ -23,6 +25,8 @@ export function BackgroundTools() {
   const { activePageId } = useBriefDocument()
   const { storeImage, getUrl } = useAssets()
   const fileRef = useRef<HTMLInputElement | null>(null)
+  const generation = useImageGeneration()
+  const { backgroundEdit } = useDesignTools()
   if (studio === null) return null
 
   const background = studio.backgroundOf(activePageId)
@@ -58,6 +62,35 @@ export function BackgroundTools() {
           </button>
         )}
       </div>
+
+      {/* 크기·자리 조절 (배경 크기 Patch, 2026-09-17). 배너는 손잡이가 늘 서 있으므로 묻지 않는다. */}
+      {background !== undefined && studio.bannerSpecOf(activePageId) === null && (
+        <div className="bg-tools__row">
+          <button
+            type="button"
+            className={`btn${backgroundEdit ? ' is-active' : ''}`}
+            aria-pressed={backgroundEdit}
+            title="캔버스에서 배경을 끌어 옮기고, 모서리로 크기를 바꿉니다"
+            onClick={() => setBackgroundEdit(!backgroundEdit)}
+          >
+            {backgroundEdit ? '조절 끝내기' : '크기·위치 조절'}
+          </button>
+          {background.rect !== undefined && (
+            <button
+              type="button"
+              className="btn"
+              title="배경이 캔버스를 다시 꽉 채웁니다"
+              onClick={() => {
+                studio.markStep()
+                const { rect: _rect, ...rest } = background
+                void studio.setBackground(activePageId, rest).then(() => generation?.recomposePage(activePageId))
+              }}
+            >
+              캔버스에 맞추기
+            </button>
+          )}
+        </div>
+      )}
 
       <input
         ref={fileRef}

@@ -10,11 +10,13 @@
  * 조각과 **같은 제스처**를 쓴다 — 눌러 끌면 옮기고, 모서리를 잡으면 크기가 바뀐다.
  * 다만 조각처럼 목록에 서지 않는다. 배경은 늘 맨 뒤 한 장이고 앞뒤도 삭제도 없다.
  *
- * 조각보다 **뒤에** 그린다. 앞에 두면 배경을 잡으려다 조각을 못 잡는다 — 화면
- * 전체가 배경이라 어디를 눌러도 배경이 먼저 걸린다. 그래서 이 겹은 잡히지 않고,
- * 아래 가장자리의 손잡이 하나로만 잡는다.
+ * 겹 자체는 잡히지 않고 **손잡이만** 잡힌다 — 화면 전체가 배경이라, 겹이 잡히면 어디를
+ * 눌러도 배경이 먼저 걸려 조각을 못 잡는다. 손잡이는 조각 겹보다 **앞에** 선다 (배경 크기
+ * Patch — 뒤에 두었더니 조각 겹이 덮어 잡히지 않았다).
  *
- * 배너 페이지에서만 나온다.
+ * 배너 페이지에서는 늘 나온다. 이벤트 페이지에서는 `배경` 칸의 `크기·위치 조절`을 켰을 때만
+ * 나온다 (배경 크기 Patch, 2026-09-17 — 사용자: "생성한 배경이나 후보로 적용한 배경의 크기를
+ * 캔버스 안에서 조절"). 완성본과 기획서 캔버스에서 같은 손잡이다.
  */
 
 import { useRef, type PointerEvent as ReactPointerEvent } from 'react'
@@ -23,21 +25,24 @@ import { useImageGeneration } from '../../features/studio/useImageGeneration'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { minPieceSize, RESIZE_HANDLES, resizeRect, type ResizeHandle } from '../../features/editor/canvasGeometry'
 import type { LayoutRect } from '../../domain/imageLayout'
+import { useDesignTools } from '../../features/studio/designTools'
 
 interface Props {
   pageId: string
   page: { width: number; height: number }
 }
 
-export function BannerBackgroundHandle({ pageId, page }: Props) {
+export function BackgroundHandle({ pageId, page }: Props) {
   const studio = useStudioJob()
   const generation = useImageGeneration()
   const { pages } = useBriefDocument()
   const boxRef = useRef<HTMLDivElement | null>(null)
+  const { backgroundEdit } = useDesignTools()
 
   const specId = studio?.bannerSpecOf(pageId) ?? null
   const background = studio?.backgroundOf(pageId)
-  if (studio === null || specId === null || background === undefined) return null
+  if (studio === null || background === undefined) return null
+  if (specId === null && !backgroundEdit) return null
   if (!pages.some((p) => p.id === pageId)) return null
 
   // 자리를 아직 안 옮겼으면 캔버스 전체가 그 자리다.
@@ -88,6 +93,21 @@ export function BannerBackgroundHandle({ pageId, page }: Props) {
     })
 
   const percent = (value: number, total: number) => `${((value / total) * 100).toFixed(4)}%`
+  // 손잡이는 **캔버스 안에** 둔다 (배경 크기 Patch). 키운 배경의 모서리는 캔버스 밖에 있어
+  // 보이지도 잡히지도 않는다 — 그 모서리를 캔버스 가장자리에 붙여 보여 준다. 끄는 양은
+  // 그대로 그 모서리에 간다.
+  const clampX = (v: number) => Math.min(page.width, Math.max(0, v))
+  const clampY = (v: number) => Math.min(page.height, Math.max(0, v))
+  const corner: Record<ResizeHandle, { x: number; y: number }> = {
+    nw: { x: clampX(rect.x), y: clampY(rect.y) },
+    ne: { x: clampX(rect.x + rect.width), y: clampY(rect.y) },
+    sw: { x: clampX(rect.x), y: clampY(rect.y + rect.height) },
+    se: { x: clampX(rect.x + rect.width), y: clampY(rect.y + rect.height) },
+  }
+  const grabAt = {
+    x: clampX(rect.x + rect.width / 2),
+    y: clampY(rect.y),
+  }
 
   return (
     <div className="banner-bg" ref={boxRef} aria-hidden={false}>
@@ -99,27 +119,28 @@ export function BannerBackgroundHandle({ pageId, page }: Props) {
           width: percent(rect.width, page.width),
           height: percent(rect.height, page.height),
         }}
+      />
+      <button
+        type="button"
+        className="banner-bg__grab"
+        aria-label="배경 옮기기"
+        title="끌어서 배경을 옮깁니다"
+        style={{ left: percent(grabAt.x, page.width), top: percent(grabAt.y, page.height) }}
+        onPointerDown={move}
       >
-        <button
-          type="button"
-          className="banner-bg__grab"
-          aria-label="배경 옮기기"
-          title="끌어서 배경을 옮깁니다"
-          onPointerDown={move}
-        >
-          배경
-        </button>
-        {RESIZE_HANDLES.map((handle) => (
-          <span
-            key={handle}
-            className={`banner-bg__handle banner-bg__handle--${handle}`}
-            role="button"
-            tabIndex={-1}
-            aria-label={`배경 크기 ${handle}`}
-            onPointerDown={resize(handle)}
-          />
-        ))}
-      </div>
+        배경
+      </button>
+      {RESIZE_HANDLES.map((handle) => (
+        <span
+          key={handle}
+          className={`banner-bg__handle banner-bg__handle--${handle}`}
+          role="button"
+          tabIndex={-1}
+          aria-label={`배경 크기 ${handle}`}
+          style={{ left: percent(corner[handle].x, page.width), top: percent(corner[handle].y, page.height) }}
+          onPointerDown={resize(handle)}
+        />
+      ))}
     </div>
   )
 }
