@@ -91,6 +91,8 @@ describe('§U2 갈래별로 묶기', () => {
         'text-layer': { calls: 0, tokens: 0 },
         edit: { calls: 0, tokens: 0 },
         background: { calls: 0, tokens: 0 },
+        // 빛 맞추기 (빛 층 Patch, 2026-09-17)
+        light: { calls: 0, tokens: 0 },
       },
     })
   })

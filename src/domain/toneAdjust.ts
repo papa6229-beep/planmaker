@@ -11,7 +11,16 @@
  * 순수 모듈이다. 캔버스도 DOM도 모른다.
  */
 
-/** 네 손잡이. 전부 -1..+1이고 0이 손대지 않은 상태다. */
+import {
+  applyLuts,
+  normalizeCurves,
+  normalizeToneLevels,
+  toneLuts,
+  type ToneCurves,
+  type ToneLevels,
+} from './toneCurve'
+
+/** 네 손잡이. 전부 -1..+1이고 0이 손대지 않은 상태다. 레벨·커브는 그 뒤에 걸린다. */
 export interface ToneAdjust {
   /** 밝기. +면 밝아진다. */
   brightness: number
@@ -21,11 +30,18 @@ export interface ToneAdjust {
   saturation: number
   /** 색온도. -면 푸르게, +면 노랗게. */
   temperature: number
+  /** 커브 (톤 곡선 Patch). 없으면 손대지 않은 것. 비우려면 `{}`를 넣는다. */
+  curves?: ToneCurves
+  /** 레벨 (톤 곡선 Patch). */
+  levels?: ToneLevels
 }
 
 export const NO_TONE: ToneAdjust = { brightness: 0, contrast: 0, saturation: 0, temperature: 0 }
 
-export const TONE_FIELDS: readonly { key: keyof ToneAdjust; label: string }[] = [
+/** 네 슬라이더의 이름. 레벨·커브는 따로 다룬다. */
+export type ToneSliderKey = 'brightness' | 'contrast' | 'saturation' | 'temperature'
+
+export const TONE_FIELDS: readonly { key: ToneSliderKey; label: string }[] = [
   { key: 'brightness', label: '밝기' },
   { key: 'contrast', label: '대비' },
   { key: 'saturation', label: '채도' },
@@ -40,18 +56,30 @@ function clamp(value: unknown): number {
 /** 모르는 값은 0으로 읽는다 — 예전 작업이 열리기만 해도 달라지지 않게. */
 export function normalizeTone(value: unknown): ToneAdjust {
   const raw = (typeof value === 'object' && value !== null ? value : {}) as Partial<Record<keyof ToneAdjust, unknown>>
+  const curves = normalizeCurves(raw.curves)
+  const levels = normalizeToneLevels(raw.levels)
   return {
     brightness: clamp(raw.brightness),
     contrast: clamp(raw.contrast),
     saturation: clamp(raw.saturation),
     temperature: clamp(raw.temperature),
+    ...(curves === undefined ? {} : { curves }),
+    ...(levels === undefined ? {} : { levels }),
   }
 }
 
 /** 넷 다 0인가. 참이면 픽셀을 훑을 이유가 없다. */
 export function toneIsFlat(tone: ToneAdjust): boolean {
+  return slidersAreFlat(tone) && toneLuts(tone.curves, tone.levels) === null
+}
+
+/** 네 슬라이더만 보고. */
+export function slidersAreFlat(tone: ToneAdjust): boolean {
   return tone.brightness === 0 && tone.contrast === 0 && tone.saturation === 0 && tone.temperature === 0
 }
+
+/** 되돌리기 — 네 슬라이더와 레벨·커브를 모두 비운다. */
+export const RESET_TONE: ToneAdjust = { brightness: 0, contrast: 0, saturation: 0, temperature: 0, curves: {}, levels: {} }
 
 /** 밝기·대비의 최대 폭 — 슬라이더 끝에서 어디까지 갈 것인가. */
 export const TONE_BRIGHTNESS_RANGE = 60
@@ -75,7 +103,13 @@ function toByte(value: number): number {
  * 그 차례다.
  */
 export function applyTone(data: Uint8ClampedArray, tone: ToneAdjust): void {
-  if (toneIsFlat(tone)) return
+  const luts = toneLuts(tone.curves, tone.levels)
+  if (!slidersAreFlat(tone)) applySliders(data, tone)
+  // 레벨·커브는 네 슬라이더 **뒤에** 건다 (톤 곡선 Patch).
+  if (luts !== null) applyLuts(data, luts)
+}
+
+function applySliders(data: Uint8ClampedArray, tone: ToneAdjust): void {
   const lift = tone.brightness * TONE_BRIGHTNESS_RANGE
   const gain = 1 + tone.contrast * TONE_CONTRAST_RANGE
   const sat = 1 + tone.saturation

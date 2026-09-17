@@ -374,6 +374,9 @@ function stepAssetIds(step: StudioStep): string[] {
     ...Object.values(step.textObjects).flatMap((list) => list.map((o) => o.assetId)),
     ...Object.values(step.imageObjects).flatMap((list) => list.map((o) => o.assetId)),
     ...Object.values(step.backgrounds).map((b) => b.assetId),
+    ...Object.values(step.effects)
+      .map((e) => e.lightAssetId)
+      .filter((id): id is string => id !== undefined),
   ]
 }
 

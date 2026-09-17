@@ -138,6 +138,10 @@ export function studioFileAssetIds(state: StudioFileState): string[] {
       ...Object.values(state.blockOrders ?? {})
         .map((o) => o.referenceAssetId)
         .filter((id): id is string => id !== undefined),
+      // 빛 층 (빛 층 Patch) — 빼면 다른 컴퓨터에서 열었을 때 빛 맞춘 제품이 원래대로 돌아간다.
+      ...Object.values(state.effects ?? {})
+        .map((e) => e.lightAssetId)
+        .filter((id): id is string => id !== undefined),
     ]),
   ]
 }
@@ -290,7 +294,22 @@ export function remapStudioFileState(
     blink[pageId] =
       item.assetId === undefined ? item : { ...item, assetId: mapping.get(item.assetId) ?? item.assetId }
   }
-  return { ...state, productImages, backgrounds, styleRefs, textObjects, imageObjects, blockOrders, blink }
+  const effects: Record<string, CompositeEffects> = {}
+  for (const [blockId, e] of Object.entries(state.effects ?? {})) {
+    effects[blockId] =
+      e.lightAssetId === undefined ? e : { ...e, lightAssetId: mapping.get(e.lightAssetId) ?? e.lightAssetId }
+  }
+  return {
+    ...state,
+    productImages,
+    backgrounds,
+    styleRefs,
+    textObjects,
+    imageObjects,
+    blockOrders,
+    blink,
+    ...(state.effects === undefined ? {} : { effects }),
+  }
 }
 
 /**

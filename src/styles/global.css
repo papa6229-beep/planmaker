@@ -3268,3 +3268,29 @@ button { font-family: inherit; }
 .work-list__blink-strength { display: flex; align-items: center; gap: 4px; font-size: 10px; color: var(--color-muted); }
 .work-list__blink-strength input { width: 80px; }
 .work-list__note { font-size: 11px; color: var(--color-muted); }
+
+/* ── 레벨·커브 (톤 곡선 Patch, 2026-09-17) ───────────────────────────────── */
+.tone__fold { border-top: 1px solid var(--color-border); padding-top: 6px; }
+.tone__fold > summary { cursor: pointer; font-size: 11px; font-weight: 600; color: var(--color-muted); }
+.curve { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.curve__head { display: flex; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+.curve__tabs, .curve__channels { display: flex; gap: 3px; }
+.curve__tab, .curve__channel { padding: 2px 8px; font-size: 11px; }
+.curve__tab.is-on, .curve__channel.is-on { border-color: var(--color-accent, #6c5ce7); font-weight: 700; }
+.curve__graph { width: 100%; max-width: 240px; aspect-ratio: 1; touch-action: none; cursor: crosshair; user-select: none; }
+.curve__bg { fill: var(--color-surface, #fff); stroke: var(--color-border); }
+.curve__hist { fill: var(--color-muted); opacity: 0.25; }
+.curve__grid line { stroke: var(--color-border); stroke-width: 0.5; }
+.curve__diag { stroke: var(--color-border); stroke-dasharray: 3 3; }
+.curve__line { fill: none; stroke-width: 1.6; }
+.curve__point { fill: var(--color-surface, #fff); stroke: var(--color-text, #171923); stroke-width: 1.4; }
+.curve__marker { stroke: var(--color-accent, #6c5ce7); stroke-width: 1.2; }
+.curve__hint { margin: 0; font-size: 10px; color: var(--color-muted); }
+.curve__actions { display: flex; align-items: center; gap: 8px; }
+.curve__touched { font-size: 10px; color: var(--color-accent, #6c5ce7); }
+
+/* ── 빛 맞추기 (빛 층 Patch, 2026-09-17) ─────────────────────────────────── */
+.light-match { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+.light-match__concept { padding: 5px 8px; font-size: 12px; }
+.light-match__run { align-self: flex-start; }
+.light-match__stale { margin: 0; font-size: 11px; color: var(--color-danger, #c0392b); }

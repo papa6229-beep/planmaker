@@ -15,7 +15,11 @@
 import { useBriefDocument } from '../../features/document/useBriefDocument'
 import { useStudioJob } from '../../features/studio/useStudioJob'
 import { useImageGeneration } from '../../features/studio/useImageGeneration'
-import { TONE_FIELDS, toneIsFlat } from '../../domain/toneAdjust'
+import { RESET_TONE, TONE_FIELDS, toneIsFlat } from '../../domain/toneAdjust'
+import { imageObjectsOf, pageResultOf } from '../../domain/studioJob'
+import { ToneCurvePanel } from './ToneCurvePanel'
+import { lightKeyOf } from '../../domain/lightLayer'
+import { useState } from 'react'
 import { DEFAULT_COMPOSITE_EFFECTS, type CompositeEffects } from '../../domain/compositeEffects'
 import { PanelFold } from './PanelFold'
 
@@ -31,8 +35,10 @@ export function ToneAdjustPanel() {
   const settle = () => void generation.recomposePage(activePageId)
 
   return (
-    <PanelFold id="tone" title="결과 톤 조절" note="밝기 · 대비 · 채도 · 색온도 · 그림자 · 테두리" marked={!toneIsFlat(tone)}>
+    <PanelFold id="tone" title="결과 톤 조절" note="빛 맞추기 · 밝기 · 대비 · 채도 · 색온도 · 레벨 · 커브 · 그림자 · 테두리" marked={!toneIsFlat(tone)}>
     <section className="tone" aria-label="결과 톤 조절">
+      <LightMatch pageId={activePageId} busy={busy} />
+
       <p className="tone__note">
         완성 결과 전체에 겁니다. 원본은 그대로 두고 그릴 때마다 이 값으로 다시 계산합니다.
       </p>
@@ -62,15 +68,27 @@ export function ToneAdjustPanel() {
         ))}
       </div>
 
+      <details className="tone__fold">
+        <summary>레벨 · 커브</summary>
+        <ToneCurvePanel
+          label="결과 전체"
+          curves={tone.curves}
+          levels={tone.levels}
+          assetId={pageResultOf(studio.job, activePageId)?.assetId}
+          busy={busy}
+          onChange={(patch) => void studio.setTone(activePageId, patch)}
+          onStart={() => studio.markStep()}
+          onCommit={settle}
+        />
+      </details>
+
       <button
         type="button"
         className="btn tone__reset"
         disabled={busy || toneIsFlat(tone)}
         onClick={() => {
           studio.markStep()
-          void studio
-            .setTone(activePageId, { brightness: 0, contrast: 0, saturation: 0, temperature: 0 })
-            .then(settle)
+          void studio.setTone(activePageId, RESET_TONE).then(settle)
         }}
       >
         손대기 전으로
@@ -79,6 +97,111 @@ export function ToneAdjustPanel() {
       <ObjectTone settle={settle} busy={busy} />
     </section>
     </PanelFold>
+  )
+}
+
+/**
+ * 빛 맞추기 버튼 (빛 층 Patch, 2026-09-17).
+ *
+ * 제품 자리를 정한 **뒤에** 누른다. 이미지 오브젝트 모양의 회색 덩어리에 엔진이
+ * 장면의 빛을 입히고, 그 빛만 원본 제품에 얹는다 — 제품 그림은 엔진에 가지 않는다.
+ * 제품 둘레 배경에는 그림자가 생긴다. 외부 호출 1회.
+ *
+ * 오브젝트를 골랐으면 그것만, 아니면 페이지의 이미지 오브젝트 전부.
+ */
+function LightMatch({ pageId, busy }: { pageId: string; busy: boolean }) {
+  const studio = useStudioJob()
+  const generation = useImageGeneration()
+  const [concept, setConcept] = useState('')
+  if (studio === null || generation === null) return null
+  const selected = studio.selectedObjectBlockId
+  const isImage = selected !== null && imageObjectsOf(studio.job, pageId).some((o) => o.blockId === selected)
+  const run = () =>
+    void generation.matchLight(pageId, {
+      ...(isImage && selected !== null ? { blockIds: [selected] } : {}),
+      concept,
+    })
+  return (
+    <div className="light-match">
+      <p className="tone__object-title">빛 맞추기</p>
+      <p className="tone__note">
+        제품 위치를 정한 뒤 누르세요. 배경의 조명을 제품에 입히고, 제품 둘레에 그림자를 만듭니다. 제품 그림은 AI에 보내지
+        않습니다.
+      </p>
+      <input
+        type="text"
+        className="field__input light-match__concept"
+        placeholder="조명 컨셉 (선택) 예: 왼쪽 위에서 들어오는 따뜻한 햇살"
+        aria-label="빛 맞추기 조명 컨셉"
+        value={concept}
+        disabled={busy}
+        onChange={(e) => setConcept(e.target.value)}
+      />
+      <button type="button" className="btn btn--primary light-match__run" disabled={busy} onClick={run}>
+        {isImage ? '고른 이미지만 빛 맞추기' : '이미지 전부 빛 맞추기'}
+      </button>
+    </div>
+  )
+}
+
+/**
+ * 고른 오브젝트의 빛 층 세기 (빛 층 Patch). 빛 맞추기를 한 오브젝트에만 나온다.
+ */
+function ObjectLight({
+  blockId,
+  pageId,
+  label,
+  settle,
+  busy,
+}: {
+  blockId: string
+  pageId: string
+  label: string
+  settle: () => void
+  busy: boolean
+}) {
+  const studio = useStudioJob()
+  if (studio === null) return null
+  const effects = studio.effectsOf(blockId)
+  if (effects.lightAssetId === undefined) return null
+  const object = imageObjectsOf(studio.job, pageId).find((o) => o.blockId === blockId)
+  const moved = object !== undefined && effects.lightKey !== undefined && effects.lightKey !== lightKeyOf(object.rect, object.angle)
+  return (
+    <div className="tone__shadow">
+      <label className="tone__shadow-switch">
+        <input
+          type="checkbox"
+          checked={effects.light}
+          disabled={busy}
+          aria-label={`${label} 빛 층`}
+          onChange={() => {
+            studio.markStep()
+            studio.setEffects(blockId, { light: !effects.light })
+            settle()
+          }}
+        />
+        빛 층
+      </label>
+      {moved && <p className="light-match__stale">위치가 바뀌었습니다. 그림자를 맞추려면 빛 맞추기를 다시 누르세요.</p>}
+      {effects.light && (
+        <label className="tone__slider">
+          <span className="tone__slider-label">세기 · {Math.round(effects.lightStrength * 100)}%</span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(effects.lightStrength * 100)}
+            aria-label={`${label} 빛 층 세기`}
+            disabled={busy}
+            onPointerDown={() => studio.markStep()}
+            onKeyDown={() => studio.markStep()}
+            onChange={(e) => studio.setEffects(blockId, { lightStrength: Number(e.target.value) / 100 })}
+            onPointerUp={settle}
+            onKeyUp={settle}
+          />
+        </label>
+      )}
+    </div>
   )
 }
 
@@ -306,6 +429,20 @@ function ObjectTone({ settle, busy }: { settle: () => void; busy: boolean }) {
           </label>
         ))}
       </div>
+      <details className="tone__fold">
+        <summary>레벨 · 커브</summary>
+        <ToneCurvePanel
+          label={label}
+          curves={tone.curves}
+          levels={tone.levels}
+          assetId={imageObjectsOf(studio.job, activePageId).find((o) => o.blockId === blockId)?.assetId}
+          busy={busy}
+          onChange={(patch) => void studio.setObjectTone(blockId, patch)}
+          onStart={() => studio.markStep()}
+          onCommit={settle}
+        />
+      </details>
+      <ObjectLight blockId={blockId} pageId={activePageId} label={label} settle={settle} busy={busy} />
       <ObjectShadow blockId={blockId} label={label} settle={settle} busy={busy} />
       <ObjectOutline blockId={blockId} label={label} settle={settle} busy={busy} />
       <button
@@ -320,9 +457,7 @@ function ObjectTone({ settle, busy }: { settle: () => void; busy: boolean }) {
             contactShadow: DEFAULT_COMPOSITE_EFFECTS.contactShadow,
             wallShadow: DEFAULT_COMPOSITE_EFFECTS.wallShadow,
           })
-          void studio
-            .setObjectTone(blockId, { brightness: 0, contrast: 0, saturation: 0, temperature: 0 })
-            .then(settle)
+          void studio.setObjectTone(blockId, RESET_TONE).then(settle)
         }}
       >
         이것만 손대기 전으로

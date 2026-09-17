@@ -63,12 +63,38 @@ export interface CompositeEffects {
   outlineOpacity: number
   /** 테두리 색 `#rrggbb`. */
   outlineColor: string
+  /**
+   * 빛 맞추기 (빛 층 Patch, 2026-09-17).
+   *
+   * Klein이 제품 모양의 회색 덩어리에 입힌 빛을 떼어 낸 **빛 층**을 원본 제품에
+   * 곱해 그린다. 제품 픽셀은 AI가 만든 것을 쓰지 않는다 — 세부 보존 0.91~0.97로
+   * 쟀다 (REPORT-2026-09-17 §11). 빛 층은 제품 그림 자체의 좌표로 저장되므로 제품을
+   * 옮겨도 명암이 따라간다.
+   */
+  light: boolean
+  /** 빛 층 세기 0..1. */
+  lightStrength: number
+  /** 빛 층 그림 (RGB = 배율 × 127.5, 즉 128이 그대로). 없으면 빛 맞추기를 안 한 것. */
+  lightAssetId?: string
+  /** 빛 맞추기를 한 **그때의 자리** — 지금 자리와 다르면 다시 맞추라고 알린다. */
+  lightKey?: string
 }
 
 /** 세기로 조절하는 항목만 — 종이 컷아웃은 체크 하나라 여기 끼지 않는다. */
 export type CompositeStrengthKey = Exclude<
   keyof CompositeEffects,
-  'paperCutout' | 'paperWeight' | 'paperOpacity' | 'shadow' | 'outline' | 'outlineWidth' | 'outlineOpacity' | 'outlineColor'
+  | 'paperCutout'
+  | 'paperWeight'
+  | 'paperOpacity'
+  | 'shadow'
+  | 'outline'
+  | 'outlineWidth'
+  | 'outlineOpacity'
+  | 'outlineColor'
+  | 'light'
+  | 'lightStrength'
+  | 'lightAssetId'
+  | 'lightKey'
 >
 
 /**
@@ -92,6 +118,8 @@ export const DEFAULT_COMPOSITE_EFFECTS: CompositeEffects = {
   outlineWidth: 0.35,
   outlineOpacity: 1,
   outlineColor: '#ffffff',
+  light: false,
+  lightStrength: 1,
 }
 
 /** 화면에 그대로 쓰는 이름 — 순서까지 여기서 정한다 (§11). */
@@ -143,6 +171,11 @@ export function normalizeEffects(raw: unknown): CompositeEffects {
       typeof value.outlineColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.outlineColor)
         ? value.outlineColor.toLowerCase()
         : DEFAULT_COMPOSITE_EFFECTS.outlineColor,
+    // 빛 층은 그림이 있을 때만 켤 수 있다.
+    light: value.light === true && typeof value.lightAssetId === 'string',
+    lightStrength: clamp01(value.lightStrength, DEFAULT_COMPOSITE_EFFECTS.lightStrength),
+    ...(typeof value.lightAssetId === 'string' && value.lightAssetId.length > 0 ? { lightAssetId: value.lightAssetId } : {}),
+    ...(typeof value.lightKey === 'string' ? { lightKey: value.lightKey } : {}),
   }
 }
 

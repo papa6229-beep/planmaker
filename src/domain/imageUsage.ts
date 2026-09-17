@@ -21,7 +21,7 @@
  */
 
 /** 어느 동작이 부른 호출인가. */
-export const USAGE_KINDS = ['plate', 'text-layer', 'edit', 'background'] as const
+export const USAGE_KINDS = ['plate', 'text-layer', 'edit', 'background', 'light'] as const
 export type UsageKind = (typeof USAGE_KINDS)[number]
 
 /** 사람이 읽는 이름. 화면과 기록이 같은 말을 쓰게 한다. */
@@ -30,6 +30,7 @@ export const USAGE_KIND_LABEL: Record<UsageKind, string> = {
   'text-layer': '문구 겹',
   edit: '부분수정',
   background: '배경 합성',
+  light: '빛 맞추기',
 }
 
 export interface ImageUsage {
