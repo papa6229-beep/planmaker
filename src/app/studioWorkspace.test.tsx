@@ -17,6 +17,7 @@ import { render, screen, waitFor, fireEvent, cleanup, within } from '@testing-li
 import { MemoryRouter } from 'react-router-dom'
 import { AppRoutes } from './AppRoutes'
 import { resetAccessModeForTests } from '../features/studio/apiKeySession'
+import { resetOriginalViewForTests } from '../features/studio/originalView'
 import { clearAll, putAsset, getAsset, resetAssetStoreForTests, type StoredAsset } from '../services/assetStore'
 import { clearAllDocuments, resetDocumentStoreForTests } from '../services/documentStore'
 import { clearAllRequests, resetRequestStoreForTests } from '../services/requestStore'
@@ -28,7 +29,7 @@ import {
   allStudioAssetIds,
   STUDIO_JOB_ID,
 } from '../services/studioStore'
-import { createStudioJob, linkProductImage, withSource, revisionsOf, cursorOf } from '../domain/studioJob'
+import { createStudioJob, linkProductImage, withSource, withWorkingDoc, revisionsOf, cursorOf } from '../domain/studioJob'
 import { createEmptyDocument, createPage } from '../domain/pageSchema'
 import { createBlock, createEmptyProject } from '../domain/factory'
 import JSZip from 'jszip'
@@ -669,11 +670,77 @@ describe('§3-2 작업판에는 우측 칸이 없고, 왼쪽 칸은 접힌다', 
     const fitPage = screen.getByRole('button', { name: '전체 보기' })
     const fitWidth = screen.getByRole('button', { name: '폭 맞춤' })
     expect(fitPage.getAttribute('aria-pressed')).toBe('true')
-    fireEvent.click(screen.getByRole('button', { name: '기획서 나란히 보기' }))
+    fireEvent.click(screen.getByRole('button', { name: '작업 캔버스 나란히 보기' }))
     expect(screen.getByRole('region', { name: '기획서 작업본' })).toBeTruthy()
     expect(fitWidth.getAttribute('aria-pressed')).toBe('true')
-    fireEvent.click(screen.getByRole('button', { name: '기획서 나란히 보기' }))
+    fireEvent.click(screen.getByRole('button', { name: '작업 캔버스 나란히 보기' }))
     expect(screen.queryByRole('region', { name: '기획서 작업본' })).toBeNull()
     expect(fitPage.getAttribute('aria-pressed')).toBe('true')
+  }, 25000)
+})
+
+// ── 원본 기획서 보기 (2026-09-17) ───────────────────────────────────────────
+
+describe('§3-3 받은 기획서를 옆에 세우거나 겹쳐 본다 — 생성 전에도', () => {
+  beforeEach(async () => {
+    resetOriginalViewForTests()
+    // 원본은 받은 그대로, 작업본은 문구를 고친 상태.
+    const job = readyJob()
+    const working = structuredClone(job.doc)
+    working.pages[0]!.blocks[0]!.content = '고친 문구'
+    await saveStudioJob(withWorkingDoc(job, working, 2))
+  })
+
+  it('shows the original page read-only beside the canvas, not the edited one', async () => {
+    await openStudio()
+    const controls = await screen.findByRole('region', { name: '원본 기획서 보기' })
+    expect(screen.queryByRole('region', { name: '원본 기획서' })).toBeNull()
+    fireEvent.click(within(controls).getByRole('button', { name: '나란히 보기' }))
+    const pane = screen.getByRole('region', { name: '원본 기획서' })
+    expect(pane.textContent).toContain('여름 감사제')
+    expect(pane.textContent).not.toContain('고친 문구')
+    expect(pane.querySelector('.block-card')).toBeNull() // 잡을 수 있는 카드가 아니다
+    // 작업 캔버스는 그대로 옆에 있다.
+    expect(document.querySelector('.stage .canvas__sheet')).not.toBeNull()
+    fireEvent.click(within(controls).getByRole('button', { name: '나란히 보기' }))
+    expect(screen.queryByRole('region', { name: '원본 기획서' })).toBeNull()
+  }, 25000)
+
+  it('lays the original over the canvas with adjustable opacity, behind or in front', async () => {
+    await openStudio()
+    const controls = await screen.findByRole('region', { name: '원본 기획서 보기' })
+    expect(document.querySelector('.canvas__sheet .orig-overlay')).toBeNull()
+    fireEvent.click(within(controls).getByRole('button', { name: '겹쳐 보기' }))
+    const overlay = () => document.querySelector<HTMLElement>('.canvas__sheet .orig-overlay')!
+    expect(overlay().style.opacity).toBe('0.4')
+    expect(overlay().textContent).toContain('여름 감사제')
+    fireEvent.change(within(controls).getByLabelText('원본 겹쳐 보기 불투명도'), { target: { value: '70' } })
+    expect(overlay().style.opacity).toBe('0.7')
+    expect(overlay().classList.contains('orig-overlay--front')).toBe(false)
+    fireEvent.click(within(controls).getByRole('checkbox', { name: '블록 앞에' }))
+    expect(overlay().classList.contains('orig-overlay--front')).toBe(true)
+    // 캔버스의 블록 수는 그대로 — 겹친 원본은 블록이 아니다.
+    expect(document.querySelectorAll('.canvas__sheet .block-card')).toHaveLength(2)
+  }, 25000)
+
+  it('keeps the overlay on the result too, scaled with it', async () => {
+    await openStudio()
+    fireEvent.click(within(await screen.findByRole('region', { name: '원본 기획서 보기' })).getByRole('button', { name: '겹쳐 보기' }))
+    await generateHere()
+    const overlay = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>('.compare__stage .orig-overlay')
+      expect(el).not.toBeNull()
+      return el!
+    })
+    expect(overlay.style.transform === '' || overlay.style.transform.startsWith('scale(')).toBe(true)
+  }, 25000)
+
+  it('says so when the page was added during work', async () => {
+    await openStudio()
+    fireEvent.click(within(await screen.findByRole('region', { name: '원본 기획서 보기' })).getByRole('button', { name: '나란히 보기' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ 페이지 추가' }))
+    await waitFor(() =>
+      expect(screen.getByRole('region', { name: '원본 기획서' }).textContent).toContain('원본 기획서에 없습니다'),
+    )
   }, 25000)
 })

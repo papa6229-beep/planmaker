@@ -608,7 +608,7 @@ describe('§13-1·10·11 생성 버튼과 결과 비교 화면', () => {
     expect(screen.queryByText('기획서 작업본')).toBeNull()
     expect(document.querySelector('.compare__brief .canvas')).toBeNull()
     // 꺼내면 복제본이 아니라 그대로의 캔버스다 — 계속 편집할 수 있다.
-    fireEvent.click(screen.getByRole('button', { name: '기획서 나란히 보기' }))
+    fireEvent.click(screen.getByRole('button', { name: '작업 캔버스 나란히 보기' }))
     await waitFor(() => {
       expect(document.querySelector('.compare__brief .canvas')).toBeTruthy()
     }, { timeout: 5000 })

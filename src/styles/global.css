@@ -3562,3 +3562,70 @@ button { font-family: inherit; }
 .compare--split .compare__pad { min-width: 100%; padding: 0 24px; }
 .compare__with-brief.is-active:hover { background: var(--color-accent); color: #fff; filter: brightness(1.08); }
 .compare--split .compare__result { padding: 0 0 12px; }
+
+/* ── 원본 기획서 보기 (2026-09-17) ───────────────────────────────────────────
+ * 받은 기획서를 작업 캔버스 옆에 세우거나 겹친다. 읽기만 하고, 누름은 통과한다. */
+.orig-sheet {
+  position: relative;
+  flex: none;
+  transform-origin: top left;
+  background: #fff;
+  pointer-events: none;
+  user-select: none;
+}
+.orig-card {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  overflow: hidden;
+  border: 1px solid var(--color-border-strong);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  background: #fff;
+  font-size: 14px;
+  color: var(--color-text, #1f2430);
+}
+.orig-card--design { border-left-color: var(--color-design); }
+.orig-card--reference { border-left-color: #b45309; background: #fff7ed; }
+.orig-card--publishing { border-left-color: #7c3aed; background: #f4f0ff; }
+.orig-card--text {
+  display: block;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow: visible;
+}
+.orig-card__kind { align-self: flex-start; padding: 0 6px; border-radius: 999px; background: var(--color-panel-muted, #f1f2f6); font-size: 11px; color: var(--color-muted); }
+.orig-card__label { font-weight: 700; }
+.orig-card__content { font-size: 13px; color: var(--color-muted); white-space: pre-wrap; }
+.orig-card__image { flex: 1; min-height: 0; width: 100%; object-fit: contain; }
+
+/* 겹쳐 볼 때 — 캔버스의 지면 공간에 그대로 깐다. 바탕은 비운다. */
+.orig-overlay { position: absolute; left: 0; top: 0; z-index: 0; background: transparent; }
+.orig-overlay--front { z-index: 4; }
+
+/* 나란히 볼 때 — 작업 캔버스와 반씩. */
+.orig-pane { position: relative; flex: 1 1 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--color-border); }
+.orig-pane__head { position: absolute; top: 0; left: 0; right: 0; z-index: 1; display: flex; align-items: baseline; gap: 8px; padding: 3px 12px; pointer-events: none; }
+.orig-pane__title { margin: 0; font-size: 13px; font-weight: 700; }
+.orig-pane__note { font-size: 12px; color: var(--color-muted); }
+.orig-pane__viewport { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 24px 24px 50vh; }
+.orig-pane__frame { margin: 0 auto; overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius-sm); box-shadow: 0 4px 20px rgba(23, 25, 35, 0.08); }
+.orig-pane__empty { margin: 24px 0; text-align: center; font-size: 12px; color: var(--color-muted); }
+
+/* 세로 칸의 조절 */
+.orig-controls { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); }
+.orig-controls__title { font-size: 12px; font-weight: 700; }
+.orig-controls__row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.orig-controls__btn { font-size: 12px; }
+.orig-controls__btn.is-active,
+.orig-controls__btn.is-active:hover { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
+.orig-controls__range { display: flex; align-items: center; gap: 6px; font-size: 12px; flex: 1 1 100%; }
+.orig-controls__range input { flex: 1; min-width: 0; }
+.orig-controls__value { min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
+.orig-controls__check { display: flex; align-items: center; gap: 4px; font-size: 12px; }

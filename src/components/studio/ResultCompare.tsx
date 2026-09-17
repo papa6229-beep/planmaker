@@ -5,7 +5,7 @@
  * 순간은 만든 직후 잠깐이고, 그 뒤로는 완성본만 본다. 그런데 반쪽에 갇힌 결과는
  * 배율도 없어서 세로로 잘렸고, 전체를 한 번에 볼 방법이 아예 없었다.
  *
- * 그래서 완성본이 가운데를 **전부** 쓴다. 기획서는 `기획서 나란히 보기`로 필요할
+ * 그래서 완성본이 가운데를 **전부** 쓴다. 기획서는 `작업 캔버스 나란히 보기`로 필요할
  * 때만 꺼낸다 — 꺼내면 예전처럼 같은 캔버스가 그대로 서므로, 거기서 블록을 고치는
  * 일도 그대로 된다.
  *
@@ -22,6 +22,7 @@ import { useStudioJob } from '../../features/studio/useStudioJob'
 import { pageResultIsStale, pageResultOf } from '../../domain/studioJob'
 import { getAsset } from '../../services/assetStore'
 import { ResultObjectLayer } from './ResultObjectLayer'
+import { OriginalOverlay } from './OriginalBrief'
 import { BannerBackgroundHandle } from './BannerBackgroundHandle'
 import { useResultView } from '../../features/studio/useResultView'
 import { clearLivePreview, useLivePreview } from '../../features/studio/livePreview'
@@ -135,7 +136,7 @@ export function ResultCompare() {
             type="button"
             className={`btn compare__with-brief${withBrief ? ' is-active' : ''}`}
             aria-pressed={withBrief}
-            title="기획서를 옆에 세웁니다"
+            title="고치는 중인 작업 캔버스를 옆에 세웁니다 (받은 원본은 왼쪽 칸의 `원본 기획서`)"
             onClick={() => {
               // 나란히 서면 두 장을 **폭에** 맞춘다 (우측 패널 정리, 2026-09-17) — 세로형 판을
               // 통째로 담으면 반쪽 자리에서 너무 작아진다. 거두면 다시 통째로.
@@ -147,7 +148,7 @@ export function ResultCompare() {
               }
             }}
           >
-            기획서 나란히 보기
+            작업 캔버스 나란히 보기
           </button>
           {result !== undefined && (
             <p className="compare__note">
@@ -182,6 +183,8 @@ export function ResultCompare() {
               style={{ width: `${String(Math.round(logical.width * zoom))}px` }}
             >
               <img className="compare__image" src={live ?? url} alt="AI가 생성한 결과 이미지" />
+              {/* 받은 기획서를 완성본에 겹쳐 본다 (원본 기획서 보기 Patch). */}
+              <OriginalOverlay scale={zoom} />
               {/* 배경 손잡이가 조각보다 **뒤에** 온다. 앞에 두면 화면 전체가
                   배경이라 어디를 눌러도 배경이 먼저 걸려 조각을 못 잡는다. */}
               <BannerBackgroundHandle pageId={pageId} page={logical} />

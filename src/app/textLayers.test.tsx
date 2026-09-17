@@ -1236,7 +1236,7 @@ describe('§12 오브젝트 삭제', () => {
     const after = await loadStudioJob(STUDIO_JOB_ID)
     expect(after?.doc.pages[0]?.blocks.some((b) => b.id === 'blk_t1')).toBe(true)
     // 완성본 화면에서는 기획서가 접혀 있다 (완성본 모드 Patch). 꺼내서 확인한다.
-    fireEvent.click(await screen.findByRole('button', { name: '기획서 나란히 보기' }))
+    fireEvent.click(await screen.findByRole('button', { name: '작업 캔버스 나란히 보기' }))
     await waitFor(() => {
       expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(6)
     }, { timeout: 5000 })
@@ -1482,7 +1482,7 @@ describe('§14 결과를 되돌린다', () => {
     // **기획서는 손대지 않는다.** 앞선 판은 여기서 기획서가 한 단계 뒤로 갔다.
     const after = await loadStudioJob(STUDIO_JOB_ID)
     expect(blocksOf(after)).toEqual(blocksOf(before))
-    fireEvent.click(await screen.findByRole('button', { name: '기획서 나란히 보기' }))
+    fireEvent.click(await screen.findByRole('button', { name: '작업 캔버스 나란히 보기' }))
     await waitFor(() => {
       expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(6)
     }, { timeout: 5000 })
@@ -1574,7 +1574,7 @@ describe('§16 완성본이 가운데를 다 쓴다', () => {
     }, { timeout: 5000 })
 
     // 기획서는 필요할 때만 꺼낸다.
-    fireEvent.click(screen.getByRole('button', { name: '기획서 나란히 보기' }))
+    fireEvent.click(screen.getByRole('button', { name: '작업 캔버스 나란히 보기' }))
     await waitFor(() => {
       expect(container.querySelectorAll('.canvas__sheet .block-card').length).toBe(6)
     }, { timeout: 5000 })

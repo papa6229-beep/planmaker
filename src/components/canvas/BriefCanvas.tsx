@@ -23,6 +23,7 @@ import { blocksInRect, marqueeRect, type Rect } from '../../features/editor/canv
 const MARQUEE_MIN_PX = 4
 import type { ReferenceLayer } from '../../domain/pageSchema'
 import { BriefBlockCard } from './BriefBlockCard'
+import { OriginalOverlay } from '../studio/OriginalBrief'
 import { useDesignTools } from '../../features/studio/designTools'
 import { dragBox, useCreateDesignBlock } from '../../features/studio/useCreateDesignBlock'
 
@@ -206,6 +207,8 @@ export function BriefCanvas() {
               style={{ width: canvasWidth, height: canvasHeight }}
             />
           )}
+          {/* 받은 기획서를 겹쳐 본다 (원본 기획서 보기 Patch) — 작업판에서만, 누름은 통과. */}
+          {studio !== null && <OriginalOverlay />}
           {showOverlay && (
             <img
               className="canvas__overlay"

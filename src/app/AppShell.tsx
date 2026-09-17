@@ -24,7 +24,7 @@ import { BlockPalette } from '../components/palette/BlockPalette'
 import { BriefCanvas } from '../components/canvas/BriefCanvas'
 import { CanvasZoomControls } from '../components/canvas/CanvasZoomControls'
 import { ResultZoomControls } from '../components/studio/ResultZoomControls'
-import { ResultViewProvider } from '../features/studio/useResultView'
+import { ResultViewProvider, useResultView } from '../features/studio/useResultView'
 import { PropertiesPanel } from '../components/inspector/PropertiesPanel'
 import { BriefLibrary } from '../components/library/BriefLibrary'
 import { SummaryPanel } from '../components/summary/SummaryPanel'
@@ -54,6 +54,7 @@ import { GenerateImageDialog } from '../components/studio/GenerateImageDialog'
 import { ResultCompare } from '../components/studio/ResultCompare'
 import { EditPanel } from '../components/studio/EditPanel'
 import { SHOW_PARTIAL_EDIT } from './studioScreen'
+import { OriginalControls, OriginalSidePane } from '../components/studio/OriginalBrief'
 import { ImageGenerationProvider, useImageGeneration } from '../features/studio/useImageGeneration'
 import { InstructionRefineProvider } from '../features/studio/useInstructionRefine'
 
@@ -213,7 +214,7 @@ function StudioViewTabs() {
    * 작업자의 말 — "이미 이미지 생성하기 해서 부분수정만 남은 단계라면 저걸 그냥
    * 눈에 보이지만 않게라도 해야지. 왜 눈에 보여야 하는지 모르겠고." 맞는 말이다.
    * 이미지를 만든 뒤에 오갈 곳은 완성본과 배너 둘뿐이고, 기획서 캔버스가 필요하면
-   * 완성본 화면 안의 `기획서 나란히 보기`가 바로 옆에 세워 준다.
+   * 완성본 화면 안의 `작업 캔버스 나란히 보기`가 바로 옆에 세워 준다.
    *
    * 길을 없애지는 않았다. 기획서를 고쳐 다시 뽑는 일은 남아 있어야 하므로, 그
    * 문은 상단 `작업 메뉴`의 `기획서 보기`로 옮겼다. 늘 보이던 것이 가끔 찾는
@@ -239,6 +240,13 @@ function StudioViewTabs() {
       ))}
     </div>
   )
+}
+
+/** 원본 기획서를 옆 화면과 같은 배율로 세운다. */
+function OriginalSide({ compare }: { compare: boolean }) {
+  const canvas = useCanvasView()
+  const result = useResultView()
+  return <OriginalSidePane zoom={compare ? (result?.zoom ?? 1) : canvas.zoom} />
 }
 
 const LEFT_FOLD_KEY = 'planmaker.studio.leftFolded'
@@ -346,6 +354,8 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
               <WorkList />
               {statusPanel}
               {generation !== null && generation.hasResult && <StudioViewTabs />}
+              {/* 받은 기획서를 옆에 세우거나 겹쳐 본다 (원본 기획서 보기 Patch). */}
+              <OriginalControls />
               <div className="canvas-controls">
                 {compare ? <ResultZoomControls /> : <CanvasZoomControls />}
               </div>
@@ -387,6 +397,7 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
             <div className="studio-main">
               {showStart && !compare && <StartChoice onDismiss={() => setStartDismissed(true)} />}
               <div className="stage">
+                <OriginalSide compare={compare} />
                 {compare ? <ResultCompare /> : <BriefCanvas />}
               </div>
             </div>
