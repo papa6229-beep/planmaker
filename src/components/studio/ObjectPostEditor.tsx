@@ -181,6 +181,68 @@ export function ObjectPostEditor({
     { key: 'contactShadow', label: '바닥', hint: '바닥에 닿은 자리의 납작한 그림자', min: 0, max: 100 },
   ]
 
+  const D = DEFAULT_COMPOSITE_EFFECTS
+  const sliderZero = { brightness: 0, contrast: 0, saturation: 0, temperature: 0 }
+  const resetShadow = () =>
+    setFx({
+      contactShadow: D.contactShadow,
+      wallShadow: D.wallShadow,
+      shadowX: D.shadowX,
+      shadowY: D.shadowY,
+      shadowBlur: D.shadowBlur,
+    })
+  const plans: Record<PostEditTab | 'all', { dirty: boolean; run: () => void }> = {
+    color: {
+      dirty: marks.color || (effects !== null && (effects.grading !== D.grading || effects.rimLight !== D.rimLight)),
+      run: () => {
+        if (effects !== null) setFx({ grading: D.grading, rimLight: D.rimLight })
+        void studio.setObjectTone(blockId, sliderZero).then(settle)
+      },
+    },
+    levels: {
+      dirty: marks.levels,
+      run: () => void studio.setObjectTone(blockId, { curves: {}, levels: {} }).then(settle),
+    },
+    shadow: {
+      dirty: effects !== null && !shadowIsDefault(effects),
+      run: () => {
+        resetShadow()
+        settle()
+      },
+    },
+    outline: {
+      dirty:
+        effects !== null &&
+        (effects.outlineWidth !== D.outlineWidth ||
+          effects.outlineOpacity !== D.outlineOpacity ||
+          effects.outlineColor !== D.outlineColor),
+      run: () => {
+        setFx({ outlineWidth: D.outlineWidth, outlineOpacity: D.outlineOpacity, outlineColor: D.outlineColor })
+        settle()
+      },
+    },
+    shape: {
+      dirty:
+        (object?.angle ?? 0) !== 0 ||
+        (effects !== null &&
+          (effects.edge !== D.edge || effects.paperWeight !== D.paperWeight || effects.paperOpacity !== D.paperOpacity)),
+      run: () => {
+        if ((object?.angle ?? 0) !== 0) studio.spinObject(pageId, blockId, 0)
+        if (effects !== null) setFx({ edge: D.edge, paperWeight: D.paperWeight, paperOpacity: D.paperOpacity })
+        settle()
+      },
+    },
+    all: {
+      dirty: !toneIsFlat(tone) || (effects !== null && !shadowIsDefault(effects)),
+      run: () => {
+        // 그림자 **세기**도 함께 되돌린다. 켜고 끄기와 테두리·종이는 그대로 둔다.
+        if (effects !== null) resetShadow()
+        void studio.setObjectTone(blockId, RESET_TONE).then(settle)
+      },
+    },
+  }
+  const resetPlan = plans[only ?? 'all']
+
   return (
     <section className="post-edit" aria-label={`${label} 후보정`}>
       {only === undefined && (
@@ -440,26 +502,18 @@ export function ObjectPostEditor({
         </div>
       )}
 
+      {/* 되돌리기는 **보고 있는 탭의 값만** (2026-09-17). 탭이 막대의 창으로 나뉜 뒤, 모양
+          창에서 누른 되돌리기가 레벨·커브까지 지워 버렸다. 탭 없이 열었을 때만 전부. */}
       <button
         type="button"
         className="btn tone__reset"
-        disabled={busy || (toneIsFlat(tone) && (effects === null || shadowIsDefault(effects)))}
+        disabled={busy || !resetPlan.dirty}
         onClick={() => {
           studio.markStep()
-          // 그림자 **세기**도 함께 되돌린다. 켜고 끄기와 테두리·종이는 그대로 둔다.
-          if (effects !== null) {
-            setFx({
-              contactShadow: DEFAULT_COMPOSITE_EFFECTS.contactShadow,
-              wallShadow: DEFAULT_COMPOSITE_EFFECTS.wallShadow,
-              shadowX: DEFAULT_COMPOSITE_EFFECTS.shadowX,
-              shadowY: DEFAULT_COMPOSITE_EFFECTS.shadowY,
-              shadowBlur: DEFAULT_COMPOSITE_EFFECTS.shadowBlur,
-            })
-          }
-          void studio.setObjectTone(blockId, RESET_TONE).then(settle)
+          resetPlan.run()
         }}
       >
-        이것만 손대기 전으로
+        {only === undefined ? '이것만 손대기 전으로' : `${TAB_LABEL[only]} 되돌리기`}
       </button>
     </section>
   )

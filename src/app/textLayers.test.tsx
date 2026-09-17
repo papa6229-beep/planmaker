@@ -2650,3 +2650,51 @@ describe('§27 빠진 문구·도형 얹기', () => {
     expect(fetchSpy.mock.calls.length).toBe(calls)
   }, 30000)
 })
+
+describe('§28 되돌리기는 그 창의 값만', () => {
+  it('모양 창의 되돌리기는 가장자리만, 레벨·커브 창의 되돌리기는 레벨·커브만 되돌린다', async () => {
+    await seedJob()
+    const seeded = (await loadStudioJob(STUDIO_JOB_ID))!
+    await saveStudioJob({
+      ...seeded,
+      objectTones: {
+        blk_photo: {
+          brightness: 0.2, contrast: 0, saturation: 0, temperature: 0,
+          levels: { rgb: { inBlack: 10, inWhite: 240, gamma: 1.3, outBlack: 0, outWhite: 255 } },
+        },
+      },
+      effects: { ...seeded.effects, blk_photo: normalizeEffects({ edge: 0.9 }) },
+    })
+    const { container } = renderStudio()
+    await documentReady(container)
+    await generateOnce()
+    const photo = await waitFor(() => {
+      const found = container.querySelector<HTMLElement>('.result-object[aria-label="이미지 blk_photo"]')
+      expect(found).not.toBeNull()
+      return found!
+    }, { timeout: 5000 })
+
+    const shape = await openPostEdit(photo, /^모양$/)
+    fireEvent.click(within(shape).getByRole('button', { name: '모양 되돌리기' }))
+    await waitFor(async () => {
+      const job = (await loadStudioJob(STUDIO_JOB_ID))!
+      expect(job.effects?.blk_photo?.edge).toBe(0.5)
+      // 레벨·커브와 밝기는 그대로다.
+      expect(job.objectTones?.blk_photo?.levels?.rgb?.gamma).toBeCloseTo(1.3)
+      expect(job.objectTones?.blk_photo?.brightness).toBeCloseTo(0.2)
+    }, { timeout: 5000 })
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    const levels = await openBarMenu(/^레벨·커브$/)
+    fireEvent.click(within(levels).getByRole('button', { name: '레벨·커브 되돌리기' }))
+    await waitFor(async () => {
+      const tone = (await loadStudioJob(STUDIO_JOB_ID))!.objectTones?.blk_photo
+      expect(tone?.levels).toBeUndefined()
+      // 밝기는 색 창의 값이라 남는다.
+      expect(tone?.brightness).toBeCloseTo(0.2)
+    }, { timeout: 5000 })
+    await waitFor(() =>
+      expect((within(levels).getByRole('button', { name: '레벨·커브 되돌리기' }) as HTMLButtonElement).disabled).toBe(true),
+    )
+  }, 30000)
+})
