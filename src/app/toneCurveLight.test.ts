@@ -232,3 +232,45 @@ describe('크기 어긋남 찾기', () => {
     expect(fit.score).toBeGreaterThan(0.9)
   })
 })
+
+describe('제품에 붙는 그림자 — castShadows', () => {
+  const W = 80
+  const H = 40
+  const flat = (v: number) => {
+    const d = new Uint8ClampedArray(W * H * 4)
+    for (let i = 0; i < W * H; i += 1) d.set([v, v, v, 255], i * 4)
+    return d
+  }
+  const maskAt = (x0: number, x1: number) => {
+    const m = new Float32Array(W * H)
+    for (let y = 10; y < 30; y += 1) for (let x = x0; x < x1; x += 1) m[y * W + x] = 1
+    return m
+  }
+
+  it('어두워진 곳만 그림자가 되고, 가장 가까운 제품의 것이 된다', async () => {
+    const { castShadows } = await import('../domain/lightLayer')
+    const bg = flat(200)
+    const lit = flat(200)
+    // 제품 A(왼쪽) 오른쪽 옆이 어두워졌다
+    for (let y = 10; y < 30; y += 1) for (let x = 20; x < 30; x += 1) lit.set([100, 100, 100, 255], (y * W + x) * 4)
+    const out = castShadows(bg, lit, [maskAt(8, 20), maskAt(60, 72)], W, H)
+    const a = out[0]!
+    expect(a).not.toBeNull()
+    // A의 그림자 칸에 어두운 값이 있다
+    let darkest = 255
+    for (let i = 0; i < a.width * a.height; i += 1) darkest = Math.min(darkest, a.data[i * 4]!)
+    expect(darkest).toBeLessThan(200)
+    // B 쪽에는 어두워진 곳이 없다 — 제 몸 자리만 (값은 그대로 255)
+    const b = out[1]!
+    let bDarkest = 255
+    for (let i = 0; i < b.width * b.height; i += 1) bDarkest = Math.min(bDarkest, b.data[i * 4]!)
+    expect(bDarkest).toBeGreaterThan(240)
+  })
+
+  it('장면 전체가 밝아진 것(조명 컨셉)은 그림자로 치지 않는다', async () => {
+    const { castShadows } = await import('../domain/lightLayer')
+    const out = castShadows(flat(100), flat(160), [maskAt(8, 20)], W, H)
+    const a = out[0]!
+    for (let i = 0; i < a.width * a.height; i += 1) expect(a.data[i * 4]!).toBeGreaterThan(240)
+  })
+})

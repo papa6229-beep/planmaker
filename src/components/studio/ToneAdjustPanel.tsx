@@ -125,8 +125,8 @@ function LightMatch({ pageId, busy }: { pageId: string; busy: boolean }) {
     <div className="light-match">
       <p className="tone__object-title">빛 맞추기</p>
       <p className="tone__note">
-        제품 위치를 정한 뒤 누르세요. 배경의 조명을 제품에 입히고, 제품 둘레에 그림자를 만듭니다. 제품 그림은 AI에 보내지
-        않습니다.
+        제품 위치를 정한 뒤 누르세요. 배경의 조명을 제품에 입히고, 제품 모양대로 그림자를 만들어 제품에 붙입니다 —
+        옮기면 함께 움직입니다. 제품 그림은 AI에 보내지 않습니다.
       </p>
       <input
         type="text"
@@ -141,6 +141,50 @@ function LightMatch({ pageId, busy }: { pageId: string; busy: boolean }) {
         {isImage ? '고른 이미지만 빛 맞추기' : '이미지 전부 빛 맞추기'}
       </button>
     </div>
+  )
+}
+
+/**
+ * 고른 오브젝트의 기울기 (2026-09-17). 캔버스의 회전 손잡이와 같은 값이다 — 손잡이를
+ * 찾기 어렵다는 말에 숫자로도 맞출 수 있게 둔다.
+ */
+function ObjectAngle({
+  blockId,
+  pageId,
+  label,
+  settle,
+  busy,
+}: {
+  blockId: string
+  pageId: string
+  label: string
+  settle: () => void
+  busy: boolean
+}) {
+  const studio = useStudioJob()
+  if (studio === null) return null
+  const object = [...imageObjectsOf(studio.job, pageId), ...(studio.job.textObjects?.[pageId] ?? [])].find(
+    (o) => o.blockId === blockId,
+  )
+  if (object === undefined) return null
+  const angle = object.angle ?? 0
+  return (
+    <label className="tone__slider">
+      <span className="tone__slider-label">기울기 · {angle}°</span>
+      <input
+        type="range"
+        min={-180}
+        max={180}
+        value={angle}
+        aria-label={`${label} 기울기`}
+        disabled={busy}
+        onPointerDown={() => studio.markStep()}
+        onKeyDown={() => studio.markStep()}
+        onChange={(e) => studio.spinObject(pageId, blockId, Number(e.target.value))}
+        onPointerUp={settle}
+        onKeyUp={settle}
+      />
+    </label>
   )
 }
 
@@ -182,7 +226,11 @@ function ObjectLight({
         />
         빛 층
       </label>
-      {moved && <p className="light-match__stale">위치가 바뀌었습니다. 그림자를 맞추려면 빛 맞추기를 다시 누르세요.</p>}
+      {moved && (
+        <p className="light-match__stale">
+          자리나 기울기가 바뀌었습니다. 빛과 그림자는 따라왔지만, 새 자리의 조명에 맞추려면 빛 맞추기를 다시 누르세요.
+        </p>
+      )}
       {effects.light && (
         <label className="tone__slider">
           <span className="tone__slider-label">세기 · {Math.round(effects.lightStrength * 100)}%</span>
@@ -442,6 +490,7 @@ function ObjectTone({ settle, busy }: { settle: () => void; busy: boolean }) {
           onCommit={settle}
         />
       </details>
+      <ObjectAngle blockId={blockId} pageId={activePageId} label={label} settle={settle} busy={busy} />
       <ObjectLight blockId={blockId} pageId={activePageId} label={label} settle={settle} busy={busy} />
       <ObjectShadow blockId={blockId} label={label} settle={settle} busy={busy} />
       <ObjectOutline blockId={blockId} label={label} settle={settle} busy={busy} />

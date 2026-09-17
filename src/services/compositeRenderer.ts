@@ -19,7 +19,7 @@ import { applyTone, normalizeTone, toneIsFlat, type ToneAdjust } from '../domain
 import {
   PROBE_GREY,
   applyLightLayer,
-  blurMasked,
+  castShadows,
   defringe,
   fitProbe,
   lightLayerFrom,
@@ -536,11 +536,14 @@ export async function renderComposite(
     order: number
     image: number
     tone?: ToneAdjust
+    /** 톤을 거치지 않고 바탕에 바로 — 제품에 붙은 그림자 (곱하기). */
+    under?: (c: CanvasRenderingContext2D) => Promise<void>
     draw: (c: CanvasRenderingContext2D) => Promise<void>
   }[] = [
     ...plan.layers.map((layer) => ({
       order: layer.order,
       image: 0,
+      under: (c: CanvasRenderingContext2D) => drawCastShadow(c, layer, sources),
       ...(layer.tone === undefined ? {} : { tone: layer.tone }),
       draw: (c: CanvasRenderingContext2D) =>
         spun(c, layer.rect, layer.angle, () => drawLayer(c, layer, sources, backgroundTone)),
@@ -564,7 +567,10 @@ export async function renderComposite(
     })),
   ].toSorted((a, b) => a.order - b.order || a.image - b.image)
   // 블록별 톤이 먼저 걸리고, 다 그린 뒤에 페이지 전체 톤이 한 번 더 걸린다.
-  for (const item of drawList) await tonedDraw(ctx, plan.size, item.tone, item.draw)
+  for (const item of drawList) {
+    if (item.under !== undefined) await item.under(ctx)
+    await tonedDraw(ctx, plan.size, item.tone, item.draw)
+  }
 
   // ── 전경 문구 레이어 (한방 생성 Patch 2 §4) ───────────────────────────────
   //
@@ -644,6 +650,8 @@ export interface LightProbe {
   background: HTMLCanvasElement
   /** 덩어리들의 모양 (흰색, 나머지 투명). */
   mask: HTMLCanvasElement
+  /** 오브젝트마다의 모양 — 그림자를 누구 것으로 볼지 가른다. */
+  masks: Map<string, HTMLCanvasElement>
 }
 
 /**
@@ -672,6 +680,7 @@ export async function renderLightProbe(
   const probe = make()
   const background = make()
   const mask = make()
+  const masks = new Map<string, HTMLCanvasElement>()
   for (const t of [probe, background]) {
     t.ctx.fillStyle = '#ffffff'
     t.ctx.fillRect(0, 0, plan.size.width, plan.size.height)
@@ -692,9 +701,12 @@ export async function renderLightProbe(
     if (fit === null) continue
     const shape = silhouette(source, fit)
     if (shape === null) continue
+    const own = make()
+    masks.set(layer.blockId, own.canvas)
     for (const [target, color] of [
       [probe.ctx, `rgb(${String(PROBE_GREY)}, ${String(PROBE_GREY)}, ${String(PROBE_GREY)})`],
       [mask.ctx, '#ffffff'],
+      [own.ctx, '#ffffff'],
     ] as const) {
       const tinted = document.createElement('canvas')
       tinted.width = shape.width
@@ -710,7 +722,7 @@ export async function renderLightProbe(
       })
     }
   }
-  return { size, probe: probe.canvas, background: background.canvas, mask: mask.canvas }
+  return { size, probe: probe.canvas, background: background.canvas, mask: mask.canvas, masks }
 }
 
 function grayOf(canvas: HTMLCanvasElement, w: number, h: number): Float32Array {
@@ -825,66 +837,94 @@ export async function lightMapFor(
   return new Promise((resolve) => out.toBlob(resolve, 'image/png'))
 }
 
-function smooth(t: number): number {
-  const x = Math.max(0, Math.min(1, t))
-  return x * x * (3 - 2 * x)
-}
-
 /**
- * 새 배경 판 — 제품 **주변만** Klein 결과(그림자·반사)로 바꾸고 나머지는 원래 배경.
+ * 제품마다 **자기 그림자**를 뗀다 (2026-09-17 저녁).
  *
- * 전체를 바꾸면 배경의 로고·글자까지 흐려진다 (2026-09-17 bg2의 "F:"). 제품 바로
- * 둘레 띠는 결과 속 덩어리 모양이 원본과 조금 달라 테가 보이므로, 그 띠만 주변색으로
- * 메우고 부드럽게 섞는다 (§11 v3).
+ * 처음 판은 제품 주변 배경을 결과로 바꿨다. 그 안에 점토 덩어리까지 들어가, 제품을
+ * 옮기면 흰 덩어리가 제자리에 남았다 — 사용자: "빛처리를 하면 이미지와 하나가 되어야
+ * 한다." 이제 배경은 그대로 두고, 어두워진 만큼만 떼어 제품에 붙인다.
+ *
+ * 돌려주는 자리는 **그때의 오브젝트 상자에 대한 비율**이다. 제품을 옮기거나 키우면
+ * 그림자가 같은 비율로 따라간다.
  */
-export async function blendLitBackground(probe: LightProbe, lit: HTMLCanvasElement): Promise<Blob | null> {
+export async function castShadowsFor(
+  plan: CompositePlan,
+  probe: LightProbe,
+  lit: HTMLCanvasElement,
+  blockIds: readonly string[],
+): Promise<Map<string, { blob: Blob; box: { x: number; y: number; width: number; height: number } }>> {
   const { width: W, height: H } = probe.size
   const read = (canvas: HTMLCanvasElement) => {
     const c = canvas.getContext('2d', { willReadFrequently: true })
     if (!c) throw new Error('캔버스를 읽을 수 없습니다.')
     return c.getImageData(0, 0, W, H).data
   }
-  const bg = read(probe.background)
-  const li = read(lit)
-  const mk = read(probe.mask)
-  const n = W * H
-  const mask = new Float32Array(n)
-  let area = 0
-  for (let i = 0; i < n; i += 1) {
-    mask[i] = mk[i * 4 + 3]! / 255
-    area += mask[i]!
-  }
-  if (area < 1) return null
-  const ones = new Float32Array(n).fill(1)
-  // 제품이 차지한 넓이에 맞춰 영향 반경을 정한다 — 큰 제품은 그림자도 멀리 진다.
-  const reach = Math.max(24, Math.sqrt(area) * 0.35)
-  const near = blurMasked(mask, ones, W, H, reach)
-  const band = blurMasked(mask, ones, W, H, 5)
-  const keep = new Float32Array(n)
-  for (let i = 0; i < n; i += 1) keep[i] = band[i]! > 0.02 ? 0 : 1
-  const out = new Uint8ClampedArray(n * 4)
-  const filled = [0, 1, 2].map((c) => {
-    const v = new Float32Array(n)
-    for (let i = 0; i < n; i += 1) v[i] = li[i * 4 + c]!
-    return blurMasked(v, keep, W, H, 14)
+  const ids = blockIds.filter((id) => probe.masks.has(id))
+  const masks = ids.map((id) => {
+    const d = read(probe.masks.get(id)!)
+    const m = new Float32Array(W * H)
+    for (let i = 0; i < m.length; i += 1) m[i] = d[i * 4 + 3]! / 255
+    return m
   })
-  for (let i = 0; i < n; i += 1) {
-    const region = smooth(near[i]! / 0.06)
-    const bandW = smooth(band[i]! / 0.08)
-    for (let c = 0; c < 3; c += 1) {
-      const f = filled[c]![i]!
-      const litPx = Number.isFinite(f) ? li[i * 4 + c]! * (1 - bandW) + f * bandW : li[i * 4 + c]!
-      out[i * 4 + c] = Math.round(bg[i * 4 + c]! * (1 - region) + litPx * region)
-    }
-    out[i * 4 + 3] = 255
+  const shadows = castShadows(read(probe.background), read(lit), masks, W, H)
+  const kx = W / plan.size.width
+  const ky = H / plan.size.height
+  const out = new Map<string, { blob: Blob; box: { x: number; y: number; width: number; height: number } }>()
+  for (let k = 0; k < ids.length; k += 1) {
+    const shadow = shadows[k]
+    const layer = plan.layers.find((l) => l.blockId === ids[k])
+    if (shadow === null || shadow === undefined || layer === undefined) continue
+    const canvas = document.createElement('canvas')
+    canvas.width = shadow.width
+    canvas.height = shadow.height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) continue
+    ctx.putImageData(new ImageData(shadow.data, shadow.width, shadow.height), 0, 0)
+    const blob = await canvasToPng(canvas)
+    if (blob === null) continue
+    const r = layer.rect
+    out.set(ids[k]!, {
+      blob,
+      box: {
+        x: (shadow.x / kx - r.x) / r.width,
+        y: (shadow.y / ky - r.y) / r.height,
+        width: shadow.width / kx / r.width,
+        height: shadow.height / ky / r.height,
+      },
+    })
   }
-  const canvas = document.createElement('canvas')
-  canvas.width = W
-  canvas.height = H
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return null
-  ctx.putImageData(new ImageData(out, W, H), 0, 0)
-  return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
+  return out
+}
+
+/**
+ * 제품에 붙은 그림자를 그린다 — 제품보다 **먼저**, 곱하기로.
+ *
+ * 자리는 지금 상자에서 비율로 되살린다. 빛 맞추기 뒤에 돌렸으면 그 차이만큼 상자
+ * 가운데를 축으로 함께 돌린다.
+ */
+async function drawCastShadow(ctx: CanvasRenderingContext2D, layer: CompositeLayerPlan, sources: CompositeSources): Promise<void> {
+  const e = layer.effects
+  if (!e.light || e.lightShadowAssetId === undefined || e.lightShadowBox === undefined) return
+  const blob = sources.blobs.get(e.lightShadowAssetId)
+  if (blob === undefined) return
+  try {
+    const source = await toSource(blob)
+    const r = layer.rect
+    const b = e.lightShadowBox
+    const turn = (layer.angle ?? 0) - (e.lightAngle ?? 0)
+    ctx.save()
+    ctx.globalCompositeOperation = 'multiply'
+    ctx.globalAlpha = e.lightStrength
+    if (turn !== 0) {
+      ctx.translate(r.x + r.width / 2, r.y + r.height / 2)
+      ctx.rotate((turn * Math.PI) / 180)
+      ctx.translate(-(r.x + r.width / 2), -(r.y + r.height / 2))
+    }
+    ctx.drawImage(source, r.x + b.x * r.width, r.y + b.y * r.height, b.width * r.width, b.height * r.height)
+    ctx.restore()
+  } catch {
+    // 그림자 하나 때문에 제품이 빠지면 안 된다.
+  }
 }
 
 /** 보낼 그림을 PNG로. */

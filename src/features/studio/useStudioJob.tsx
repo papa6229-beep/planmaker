@@ -375,7 +375,7 @@ function stepAssetIds(step: StudioStep): string[] {
     ...Object.values(step.imageObjects).flatMap((list) => list.map((o) => o.assetId)),
     ...Object.values(step.backgrounds).map((b) => b.assetId),
     ...Object.values(step.effects)
-      .map((e) => e.lightAssetId)
+      .flatMap((e) => [e.lightAssetId, e.lightShadowAssetId])
       .filter((id): id is string => id !== undefined),
   ]
 }

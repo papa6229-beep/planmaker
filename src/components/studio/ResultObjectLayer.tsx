@@ -251,11 +251,11 @@ export function ResultObjectLayer({ pageId, page }: Props) {
     if (box === undefined) return
     const cx = box.left + ((rect.x + rect.width / 2) / page.width) * box.width
     const cy = box.top + ((rect.y + rect.height / 2) / page.height) * box.height
-    // 손잡이는 상자 위에 있다 — 그 방향을 0도로 삼아야 잡은 곳이 따라온다.
+    // 손잡이는 상자 **아래**에 있다 (2026-09-17) — 그 방향을 0도로 삼아야 잡은 곳이 따라온다.
     let moved = false
     const onMove = (ev: PointerEvent) => {
       moved = true
-      const deg = (Math.atan2(ev.clientY - cy, ev.clientX - cx) * 180) / Math.PI + 90
+      const deg = (Math.atan2(ev.clientY - cy, ev.clientX - cx) * 180) / Math.PI - 90
       studio.spinObject(pageId, blockId, ev.shiftKey ? Math.round(deg / 15) * 15 : Math.round(deg))
     }
     const onUp = () => {

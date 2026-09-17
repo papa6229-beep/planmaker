@@ -4,7 +4,7 @@
  * register cleanup explicitly so the suite is robust regardless of config.
  */
 import 'fake-indexeddb/auto'
-import { afterEach } from 'vitest'
+import { afterEach, beforeEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
 
 // jsdom does not implement PointerEvent; provide a MouseEvent-based shim so
@@ -32,6 +32,18 @@ if (typeof URL.createObjectURL !== 'function') {
 
 afterEach(() => {
   cleanup()
+})
+
+// 생성 직후 빛 맞추기 (2026-09-17 저녁)는 캔버스와 엔진이 필요하다. 화면 흐름 검사는
+// 끈 채로 본다 — 켠 동작은 따로 본다.
+// 검사가 저장소를 비워도(`localStorage.clear()`) 꺼진 채로 읽히게 한다.
+const realGetItem = Storage.prototype.getItem
+Storage.prototype.getItem = function getItem(this: Storage, key: string) {
+  if (key === 'planmaker.autoLight' && (globalThis as { __autoLight?: boolean }).__autoLight !== true) return '0'
+  return realGetItem.call(this, key)
+}
+beforeEach(() => {
+  ;(globalThis as { __autoLight?: boolean }).__autoLight = false
 })
 
 // ── 문구 꾸미기 (2026-09-17) ────────────────────────────────────────────────

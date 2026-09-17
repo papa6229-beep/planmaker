@@ -327,3 +327,150 @@ export function fitProbe(probe: Float32Array, result: Float32Array, w: number, h
   const y = fitAxis(edgeProfile(probe, w, h, 'y'), edgeProfile(result, w, h, 'y'))
   return { x, y, ok: x.score >= FIT_MIN_SCORE_X && y.score >= FIT_MIN_SCORE_Y }
 }
+
+// ── 제품에 붙는 그림자 (2026-09-17 저녁) ────────────────────────────────────
+//
+// 사용자: "빛처리를 하고 제품을 이동하면 흰색이 그 자리에 고정되어 있다. 빛처리를
+// 하면 이미지와 하나가 되어야 한다." 처음 판은 제품 주변 배경을 결과로 바꿨고, 그
+// 안에 점토 덩어리가 함께 들어가 제품을 옮기면 드러났다. 이제 배경은 건드리지 않고,
+// **어두워진 만큼만** 떼어 각 제품에 붙인다. 제품을 옮기면 그림자도 따라간다.
+
+export interface CastShadow {
+  /** 결과 그림 좌표의 자리 (픽셀). */
+  x: number
+  y: number
+  width: number
+  height: number
+  /** RGBA — RGB는 곱할 값(255가 그대로), A는 255. */
+  data: Uint8ClampedArray
+}
+
+/**
+ * 이보다 얕게 어두워진 곳은 그림자로 치지 않는다 — 엔진이 남긴 잔결이다. 0.04로는
+ * 배경의 옅은 쐐기 무늬까지 따라왔다 (2026-09-17 bg2).
+ */
+export const SHADOW_FLOOR = 0.1
+export const SHADOW_MIN_RATIO = 0.15
+
+function luminance(d: Uint8ClampedArray, i: number): number {
+  return 0.2126 * (d[i * 4] ?? 0) + 0.7152 * (d[i * 4 + 1] ?? 0) + 0.0722 * (d[i * 4 + 2] ?? 0)
+}
+
+/**
+ * 원래 배경(`background`)과 빛을 입힌 결과(`lit`)를 비교해 제품마다 그림자를 뗀다.
+ *
+ *  - 장면 전체가 밝아지거나 어두워진 만큼(조명 컨셉)은 그림자가 아니다 — 제품에서 먼
+ *    곳의 비율 중앙값으로 나눠 없앤다
+ *  - 제품이 가린 자리는 둘레 값으로 메운다 — 제품을 옮기면 그 자리가 드러난다
+ *  - 어느 제품의 그림자인지는 더 가까운 쪽으로 나눈다
+ */
+export function castShadows(
+  background: Uint8ClampedArray,
+  lit: Uint8ClampedArray,
+  masks: readonly Float32Array[],
+  w: number,
+  h: number,
+): (CastShadow | null)[] {
+  const n = w * h
+  const union = new Float32Array(n)
+  let area = 0
+  for (const m of masks) for (let i = 0; i < n; i += 1) union[i] = Math.max(union[i]!, m[i]!)
+  for (let i = 0; i < n; i += 1) area += union[i]!
+  if (area < 1) return masks.map(() => null)
+  const ones = new Float32Array(n).fill(1)
+  const reach = Math.max(24, Math.sqrt(area) * 0.6)
+
+  // 1~2px 어긋남이 경계선을 "그림자"로 만들지 않게, 두 그림을 살짝 흐린 뒤 비교한다.
+  const lumBg = new Float32Array(n)
+  const lumLit = new Float32Array(n)
+  for (let i = 0; i < n; i += 1) {
+    lumBg[i] = luminance(background, i)
+    lumLit[i] = luminance(lit, i)
+  }
+  const bgSoft = blurMasked(lumBg, ones, w, h, 3)
+  const litSoft = blurMasked(lumLit, ones, w, h, 3)
+  const ratio = new Float32Array(n)
+  for (let i = 0; i < n; i += 1) ratio[i] = (litSoft[i]! + 4) / (bgSoft[i]! + 4)
+
+  // 장면 전체의 밝기 변화
+  const prox = blurMasked(union, ones, w, h, reach)
+  const far: number[] = []
+  for (let i = 0; i < n; i += 7) if ((prox[i] ?? 0) < 0.002) far.push(ratio[i]!)
+  far.sort((a, b) => a - b)
+  const exposure = far.length > 200 ? far[Math.floor(far.length / 2)]! : 1
+
+  // 배경의 뚜렷한 경계선(로고·선반 모서리) 위는 그림자로 치지 않는다 — 엔진이 그런
+  // 자리를 흐리거나 1~2px 옮기면 무늬가 그림자처럼 잡힌다 (2026-09-17 bg2의 "F:").
+  const edge = new Float32Array(n)
+  for (let y = 1; y < h - 1; y += 1) {
+    for (let x = 1; x < w - 1; x += 1) {
+      const i = y * w + x
+      const g = Math.abs(lumBg[i + 1]! - lumBg[i - 1]!) + Math.abs(lumBg[i + w]! - lumBg[i - w]!)
+      edge[i] = g > 24 ? 1 : 0
+    }
+  }
+  const edgeNear = blurMasked(edge, ones, w, h, 3)
+
+  const keep = new Float32Array(n)
+  for (let i = 0; i < n; i += 1) {
+    ratio[i] = Math.max(SHADOW_MIN_RATIO, Math.min(1, ratio[i]! / exposure))
+    keep[i] = union[i]! > 0.5 || edgeNear[i]! > 0.08 ? 0 : 1
+  }
+  // 제품이 가린 자리와 경계선 자리는 둘레로 메우고, 잔결은 살짝 흐려 없앤다.
+  const filled = blurMasked(ratio, keep, w, h, 8)
+  for (let i = 0; i < n; i += 1) if (keep[i] === 0) ratio[i] = Number.isFinite(filled[i]!) ? filled[i]! : 1
+  const soft = blurMasked(ratio, ones, w, h, 2)
+
+  // 누구의 그림자인가 — 제품마다 **제 크기만큼**만 찾는다.
+  const proxEach = masks.map((m) => {
+    let a = 0
+    for (let i = 0; i < n; i += 1) a += m[i]!
+    return blurMasked(m, ones, w, h, Math.max(16, Math.sqrt(a) * 0.45))
+  })
+  const owner = new Int16Array(n).fill(-1)
+  for (let i = 0; i < n; i += 1) {
+    let best = 0.01
+    for (let k = 0; k < masks.length; k += 1) {
+      const pk = proxEach[k]![i] ?? 0
+      if (pk > best) {
+        best = pk
+        owner[i] = k
+      }
+    }
+  }
+
+  return masks.map((mask, k) => {
+    let x0 = w
+    let y0 = h
+    let x1 = -1
+    let y1 = -1
+    const amount = new Float32Array(n)
+    for (let i = 0; i < n; i += 1) {
+      if (owner[i] !== k) continue
+      const s = Math.max(0, 1 - (soft[i] ?? 1) - SHADOW_FLOOR) / (1 - SHADOW_FLOOR)
+      if (s <= 0 && mask[i]! <= 0.5) continue
+      amount[i] = s
+      const x = i % w
+      const y = (i - x) / w
+      if (x < x0) x0 = x
+      if (y < y0) y0 = y
+      if (x > x1) x1 = x
+      if (y > y1) y1 = y
+    }
+    if (x1 < 0) return null
+    const cw = x1 - x0 + 1
+    const ch = y1 - y0 + 1
+    const data = new Uint8ClampedArray(cw * ch * 4)
+    for (let y = 0; y < ch; y += 1) {
+      for (let x = 0; x < cw; x += 1) {
+        const v = Math.round((1 - amount[(y + y0) * w + (x + x0)]!) * 255)
+        const j = (y * cw + x) * 4
+        data[j] = v
+        data[j + 1] = v
+        data[j + 2] = v
+        data[j + 3] = 255
+      }
+    }
+    return { x: x0, y: y0, width: cw, height: ch, data }
+  })
+}

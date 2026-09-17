@@ -133,8 +133,8 @@ import { sizeLabel, toWorkingImage, workingImageTarget, type WorkingImageTarget 
 import { renderPreviewPng } from '../../services/previewRenderer'
 import {
   alignLit,
-  blendLitBackground,
   canvasToPng,
+  castShadowsFor,
   lightMapFor,
   renderComposite,
   renderLightProbe,
@@ -361,6 +361,12 @@ export interface ImageGenerationApi {
    * **외부 호출 1회.** `blockIds`가 없으면 이 페이지의 이미지 오브젝트 전부.
    */
   matchLight: (pageId: string, options?: { blockIds?: readonly string[]; concept?: string }) => Promise<void>
+  /**
+   * 생성이 끝나면 곧바로 빛 맞추기까지 할 것인가 (2026-09-17 저녁). 사용자: 그림자는
+   * 생성할 때부터 있어야 한다. 이 브라우저에 기억한다. 기본은 켬.
+   */
+  autoLight: boolean
+  setAutoLight: (on: boolean) => void
   dismiss: () => void
 
   // ── 부분수정 (부분수정 1단계) ──────────────────────────────────────────────
@@ -402,6 +408,23 @@ const FOREGROUND_MAX_OPAQUE = 0.92
 const TEXT_PLATE_FILE = 'text-plate.png'
 /** 어댑터가 빛 맞추기 길을 알아보는 파일 이름 (빛 층 Patch). */
 const LIGHT_PROBE_FILE = 'light-probe.png'
+const AUTO_LIGHT_KEY = 'planmaker.autoLight'
+
+function readAutoLight(): boolean {
+  try {
+    return localStorage.getItem(AUTO_LIGHT_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
+
+function writeAutoLight(on: boolean): void {
+  try {
+    localStorage.setItem(AUTO_LIGHT_KEY, on ? '1' : '0')
+  } catch {
+    // 기억하지 못해도 이번 화면에서는 따른다.
+  }
+}
 
 /**
  * 이 이상 불투명하면 **투명한 데가 없었다**고 본다 (조각 수정 Patch).
@@ -507,6 +530,12 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
   const [instructions, setInstructions] = useState<Record<string, string>>({})
   /** 요청이 나가 있는 동안은 한 번도 더 나가지 않는다. */
   const runningRef = useRef(false)
+  // 생성 직후 빛 맞추기 (2026-09-17 저녁). 생성 함수가 빛 맞추기보다 먼저 만들어지므로
+  // 가장 최근 것을 쥐고 있다가 부른다.
+  const [autoLight, setAutoLightState] = useState<boolean>(readAutoLight)
+  const autoLightRef = useRef(autoLight)
+  autoLightRef.current = autoLight
+  const matchLightRef = useRef<((pageId: string) => Promise<void>) | null>(null)
   /** 다시 합치기의 차례표. 늦게 끝난 예전 합성이 최신 결과를 덮지 않게 한다. */
   const recomposeRef = useRef(0)
 
@@ -1299,9 +1328,10 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
    *  2. Klein: "덩어리를 장면과 같은 빛을 받는 점토 물체로" (어댑터가 고정 문장을 쥔다)
    *  3. 결과의 크기 어긋남(1.5~4%)을 되돌린다. 못 되돌리면 장면을 새로 그린 것 — 버린다
    *  4. 오브젝트마다 **빛만** 떼어 제품 좌표의 빛 층으로 저장 → 원본 제품에 곱한다
-   *  5. 배경은 **제품 주변만** 결과로 바꾼다 (그림자·반사). 나머지는 그대로
+   *  5. 그림자도 제품마다 떼어 **제품에 붙인다** — 옮기면 따라간다. 배경은 그대로
    *
-   * 제품 자리가 정해진 **뒤에** 누르는 버튼이다. 옮기면 그림자가 남으므로 다시 누른다.
+   * 제품 자리가 정해진 **뒤에** 누르는 버튼이다. 많이 옮기면 바닥과 그림자가 어긋나므로
+   * 다시 누른다.
    * 스스로 다시 부르지 않는다.
    */
   const matchLight = useCallback(
@@ -1368,6 +1398,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           return
         }
 
+        const shadows = await castShadowsFor(plan, probe, lit.canvas, ids)
         studio.markStep()
         for (const object of objects) {
           const layer = plan.layers.find((l) => l.blockId === object.blockId)
@@ -1376,23 +1407,32 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           if (map === null) continue
           const assetId = createId('asset')
           await putAsset({ id: assetId, blob: map, fileName: `light-${object.blockId}.png`, mimeType: 'image/png', byteSize: map.size })
+          const shadow = shadows.get(object.blockId)
+          let shadowAssetId: string | undefined
+          if (shadow !== undefined) {
+            shadowAssetId = createId('asset')
+            await putAsset({
+              id: shadowAssetId,
+              blob: shadow.blob,
+              fileName: `shadow-${object.blockId}.png`,
+              mimeType: 'image/png',
+              byteSize: shadow.blob.size,
+            })
+          }
           studio.setEffects(object.blockId, {
             light: true,
             lightAssetId: assetId,
             lightKey: lightKeyOf(object.rect, object.angle),
-            // 그림자는 이제 배경에 있다. 코드 그림자까지 두면 두 번 진다.
+            lightAngle: object.angle ?? 0,
+            ...(shadowAssetId === undefined || shadow === undefined
+              ? {}
+              : { lightShadowAssetId: shadowAssetId, lightShadowBox: shadow.box }),
+            // 그림자는 이제 제품에 붙어 있다. 코드 그림자까지 두면 두 번 진다.
             shadow: false,
           })
         }
-        // 배경을 옮긴 배너는 판 좌표가 페이지와 다르다 — 빛 층만 쓴다.
-        if (background.rect === undefined) {
-          const plate = await blendLitBackground(probe, lit.canvas)
-          if (plate !== null) {
-            const assetId = createId('asset')
-            await putAsset({ id: assetId, blob: plate, fileName: `plate-lit-${pageId}.png`, mimeType: 'image/png', byteSize: plate.size })
-            await studio.setBackground(pageId, { ...background, assetId, createdAt: Date.now() })
-          }
-        }
+        // 배경은 건드리지 않는다 (2026-09-17 저녁). 처음 판은 제품 주변 배경을 결과로
+        // 바꿨고, 그 안의 점토 덩어리가 제품을 옮기면 드러났다.
         await recomposePage(pageId)
         setState({ kind: 'idle' })
       } catch {
@@ -1403,6 +1443,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
     },
     [studio, compositePlanFor, recomposePage],
   )
+  matchLightRef.current = matchLight
 
   /**
    * 완성본을 **재료에서 되살린다** (다시 합치기 Patch).
@@ -2243,9 +2284,19 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
         setState({ kind: 'blocked', message: errorTextFor('missing_api_key') })
         return
       }
-      void run(plan, auth)
+      const startedAt = Date.now()
+      void run(plan, auth).then(() => {
+        // 생성 직후 빛·그림자까지 (2026-09-17 저녁). 편집이 아닌 첫 생성에서만,
+        // 이번에 만든 결과가 있고 얹힌 이미지가 있을 때만.
+        if (!autoLightRef.current || plan.kind === 'edit' || studio === null) return
+        const job = studio.currentJob()
+        const result = pageResultOf(job, plan.pageId)
+        if (result === undefined || result.createdAt < startedAt) return
+        if ((job.imageObjects?.[plan.pageId] ?? []).length === 0) return
+        void matchLightRef.current?.(plan.pageId)
+      })
     },
-    [state, run],
+    [state, run, studio],
   )
 
   // ── 부분수정 ───────────────────────────────────────────────────────────────
@@ -2617,6 +2668,11 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
             rebuildPage,
             canRebuild,
             matchLight,
+            autoLight,
+            setAutoLight: (on: boolean) => {
+              writeAutoLight(on)
+              setAutoLightState(on)
+            },
             editTargets,
             selectedTargetIds,
             toggleTarget,
@@ -2637,7 +2693,7 @@ export function ImageGenerationProvider({ children }: { children: ReactNode }) {
           },
     [
       studio, state, hasResult, hasKey, keyRemembered, accessMode, askAccessMode, view, begin, confirm, retryConversion, recomposePage,
-      rebuildPage, canRebuild, matchLight,
+      rebuildPage, canRebuild, matchLight, autoLight,
       editTargets, selectedTargetIds, toggleTarget, instructionFor, setInstructionFor,
       canEdit, editBlockedReason, beginEdit, confirmEdit,
       revisions.length, cursor, canGoPrevious, canGoNext, goTo,

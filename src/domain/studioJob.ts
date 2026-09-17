@@ -516,7 +516,7 @@ export function studioLiveAssetIds(job: StudioJob): string[] {
       ...Object.values(job.imageObjects ?? {}).flatMap((list) => list.map((t) => t.assetId)),
       // 빛 층도 같다 (빛 층 Patch). 효과 칸에만 적혀 있어 여기서 말하지 않으면 지워진다.
       ...Object.values(job.effects ?? {})
-        .map((e) => e.lightAssetId)
+        .flatMap((e) => [e.lightAssetId, e.lightShadowAssetId])
         .filter((id): id is string => id !== undefined),
     ]),
   ]

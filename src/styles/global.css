@@ -3005,13 +3005,15 @@ button { font-family: inherit; }
   white-space: nowrap;
   cursor: pointer;
 }
+/* 회전 손잡이는 상자 **아래**에 둔다 (2026-09-17). 위에는 순서·지우기 막대가 있어
+   좁은 오브젝트에서 둘이 겹쳐 손잡이를 잡을 수 없었다. */
 .result-object__spin {
   position: absolute;
   left: 50%;
-  top: -26px;
-  width: 14px;
-  height: 14px;
-  margin-left: -7px;
+  bottom: -30px;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
   border: 2px solid var(--color-accent);
   border-radius: 999px;
   background: #fff;
@@ -3021,7 +3023,7 @@ button { font-family: inherit; }
   content: '';
   position: absolute;
   left: 50%;
-  top: 100%;
+  bottom: 100%;
   width: 2px;
   height: 12px;
   margin-left: -1px;
@@ -3294,3 +3296,6 @@ button { font-family: inherit; }
 .light-match__concept { padding: 5px 8px; font-size: 12px; }
 .light-match__run { align-self: flex-start; }
 .light-match__stale { margin: 0; font-size: 11px; color: var(--color-danger, #c0392b); }
+
+.ready-panel__auto-light { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 12px; margin: 4px 0 8px; }
+.ready-panel__hint { flex-basis: 100%; font-size: 10px; color: var(--color-muted); }

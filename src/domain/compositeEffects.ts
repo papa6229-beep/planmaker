@@ -78,6 +78,14 @@ export interface CompositeEffects {
   lightAssetId?: string
   /** 빛 맞추기를 한 **그때의 자리** — 지금 자리와 다르면 다시 맞추라고 알린다. */
   lightKey?: string
+  /**
+   * 이 제품이 드리운 그림자 (2026-09-17 저녁). 곱하기로 그린다. 제품과 한 몸이라
+   * 옮기고 키우고 돌리면 따라간다. 자리는 오브젝트 상자에 대한 비율이다.
+   */
+  lightShadowAssetId?: string
+  lightShadowBox?: { x: number; y: number; width: number; height: number }
+  /** 빛 맞추기를 한 그때의 기울기 — 지금 기울기와의 차이만큼 그림자를 돌린다. */
+  lightAngle?: number
 }
 
 /** 세기로 조절하는 항목만 — 종이 컷아웃은 체크 하나라 여기 끼지 않는다. */
@@ -95,6 +103,9 @@ export type CompositeStrengthKey = Exclude<
   | 'lightStrength'
   | 'lightAssetId'
   | 'lightKey'
+  | 'lightShadowAssetId'
+  | 'lightShadowBox'
+  | 'lightAngle'
 >
 
 /**
@@ -176,7 +187,21 @@ export function normalizeEffects(raw: unknown): CompositeEffects {
     lightStrength: clamp01(value.lightStrength, DEFAULT_COMPOSITE_EFFECTS.lightStrength),
     ...(typeof value.lightAssetId === 'string' && value.lightAssetId.length > 0 ? { lightAssetId: value.lightAssetId } : {}),
     ...(typeof value.lightKey === 'string' ? { lightKey: value.lightKey } : {}),
+    ...(typeof value.lightShadowAssetId === 'string' && value.lightShadowAssetId.length > 0
+      ? { lightShadowAssetId: value.lightShadowAssetId }
+      : {}),
+    ...(shadowBoxOf(value.lightShadowBox) === undefined ? {} : { lightShadowBox: shadowBoxOf(value.lightShadowBox)! }),
+    ...(typeof value.lightAngle === 'number' && Number.isFinite(value.lightAngle) ? { lightAngle: value.lightAngle } : {}),
   }
+}
+
+function shadowBoxOf(raw: unknown): { x: number; y: number; width: number; height: number } | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const r = raw as Record<string, unknown>
+  const nums = [r.x, r.y, r.width, r.height]
+  if (!nums.every((v) => typeof v === 'number' && Number.isFinite(v))) return undefined
+  if ((r.width as number) <= 0 || (r.height as number) <= 0) return undefined
+  return { x: r.x as number, y: r.y as number, width: r.width as number, height: r.height as number }
 }
 
 /**

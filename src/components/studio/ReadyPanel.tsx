@@ -54,6 +54,15 @@ export function ReadyPanel() {
   return (
     <section className="ready-panel" aria-label="생성 준비">
       <h2 className="ready-panel__title">생성 준비</h2>
+      <label className="ready-panel__auto-light">
+        <input
+          type="checkbox"
+          checked={generation.autoLight}
+          onChange={(e) => generation.setAutoLight(e.target.checked)}
+        />
+        생성 후 빛·그림자 자동 맞추기
+        <span className="ready-panel__hint">이미지 블록 제품에 배경의 조명과 그림자를 입힙니다 (약 3초 더)</span>
+      </label>
       <dl className="ready-panel__facts">
         <div>
           <dt>현재 페이지</dt>
