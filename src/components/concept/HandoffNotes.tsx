@@ -93,32 +93,24 @@ export function TeamNoteField() {
 export function AiNoteField() {
   const { aiNote, setAiNote } = useBriefDocument()
 
+  // 레퍼런스 칸 안, 체크박스 바로 아래에 선다 (왼쪽 칸 정리, 2026-09-17). 사용자: "자연어 명령
+  // 입력하는 부분은 레퍼런스 이미지 관련한 명령이니까 … 체크박스 아래쪽으로", "장황한 설명은
+  // 빼버리자." 그래서 제목과 입력칸, 예시(placeholder)만 남긴다. 정도보다 **상태**를 적으라는
+  // 안내(2026-09-16)는 예시 문장이 대신 보여 준다.
   return (
-    <>
-      <section className="concept">
-        <label className="concept__title" htmlFor="ai-note-input">AI에게 추가로 전달할 말</label>
-        {/*
-          "조금 더 어둡게"처럼 **정도**를 적으면 AI가 그 정도를 버리고 끝까지 간다
-          (2026-09-16: 밤이 됐다). 도달할 **상태**를 적으면 정확히 그만큼 간다.
-          그 차이를 안내 문구와 예시로 알려 준다 — 작업자가 처음 쓰는 자리가 여기다.
-        */}
-        <p className="concept__hint">
-          현재 작업에서 AI가 추가로 지켜야 할 내용을 적어 주세요. <strong>어떻게 되기를 바라는지</strong>를
-          적으면 잘 알아듣습니다 — &ldquo;조금 어둡게&rdquo;보다 &ldquo;늦은 오후 빛으로&rdquo;처럼요.
-        </p>
-        <textarea
-          id="ai-note-input"
-          className="concept__input"
-          rows={3}
-          placeholder="예: 인물과 그림자를 지우고 나머지는 그대로 둬 / 늦은 오후 빛으로 바꿔 줘 / 하단에는 그라데이션을 꼭 넣어 주세요"
-          value={aiNote}
-          onChange={(e) => setAiNote(e.target.value)}
-        />
-        <p className="concept__note">이미지에 인쇄되지 않습니다. 기획서 전달사항과 별도로 전달됩니다.</p>
-        {/* 변환기가 이미 뒤에서 다듬는다 — 단추는 화면에서만 뺐다 (`studioScreen.ts`). */}
-        {SHOW_REFINE_NOTE && <RefineNoteAction />}
-      </section>
-    </>
+    <div className="concept concept--ai-note">
+      <label className="concept__title" htmlFor="ai-note-input">AI에게 추가로 전달할 말</label>
+      <textarea
+        id="ai-note-input"
+        className="concept__input"
+        rows={3}
+        placeholder="예: 인물과 그림자를 지우고 나머지는 그대로 둬 / 늦은 오후 빛으로 바꿔 줘 / 하단에는 그라데이션을 꼭 넣어 주세요"
+        value={aiNote}
+        onChange={(e) => setAiNote(e.target.value)}
+      />
+      {/* 변환기가 이미 뒤에서 다듬는다 — 단추는 화면에서만 뺐다 (`studioScreen.ts`). */}
+      {SHOW_REFINE_NOTE && <RefineNoteAction />}
+    </div>
   )
 }
 

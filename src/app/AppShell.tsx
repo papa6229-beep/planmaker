@@ -32,7 +32,7 @@ import { ReferenceTools } from '../components/reference/ReferenceTools'
 import { ReferenceViewControls } from '../components/reference/ReferenceViewControls'
 import { StartChoice } from '../components/start/StartChoice'
 import { ConceptField } from '../components/concept/ConceptField'
-import { AiNoteField, DesignerNoteField, TeamNoteField } from '../components/concept/HandoffNotes'
+import { DesignerNoteField, TeamNoteField } from '../components/concept/HandoffNotes'
 import { GenerationRequestPreview } from '../components/studio/GenerationRequestPreview'
 import { ReadyPanel } from '../components/studio/ReadyPanel'
 import { LiveTextSync } from '../features/studio/LiveTextSync'
@@ -333,7 +333,8 @@ function Workspace({ mode, statusPanel }: { mode: ShellMode; statusPanel?: React
               입력창 하나가 아니라 저장·전달·덮어쓰기 확인이 함께 보는 제품 개념이라,
               합치는 일은 그 자리들을 옮기는 별도의 작업으로 둔다. */}
           {mode !== 'studio' && <ConceptField />}
-          {mode === 'studio' ? <AiNoteField /> : <DesignerNoteField />}
+          {/* 작업판의 `AI에게 추가로 전달할 말`은 스타일 레퍼런스 칸 안에 있다 (왼쪽 칸 정리). */}
+          {mode !== 'studio' && <DesignerNoteField />}
           {mode !== 'studio' && <TeamNoteField />}
         </div>
         {mode === 'studio' ? (

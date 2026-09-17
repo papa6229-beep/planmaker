@@ -15,6 +15,7 @@
  * 페이지마다 한 장이다.
  */
 
+import { AiNoteField } from '../concept/HandoffNotes'
 import { useRef } from 'react'
 import { useAssets } from '../../features/assets/useAssets'
 import { useBriefDocument } from '../../features/document/useBriefDocument'
@@ -86,6 +87,9 @@ export function StyleReferenceTools() {
           </span>
         </label>
       )}
+
+      {/* 레퍼런스에 대한 말 — 체크박스 바로 아래 (왼쪽 칸 정리, 2026-09-17). */}
+      <AiNoteField />
 
       <input
         ref={fileRef}

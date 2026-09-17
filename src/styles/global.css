@@ -3689,3 +3689,6 @@ button { font-family: inherit; }
 .bg-lab__caption { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bg-lab__item-actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .bg-lab__applied { font-size: 11px; font-weight: 700; color: var(--color-accent); }
+
+/* 레퍼런스 칸 안의 `AI에게 추가로 전달할 말` (왼쪽 칸 정리, 2026-09-17) — 칸 속 칸이 아니라 한 줄 이어서. */
+.style-ref .concept--ai-note { padding: 0; border: 0; background: transparent; margin-top: 4px; }

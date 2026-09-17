@@ -359,7 +359,10 @@ describe('§2 작업판 좌측은 편집할 것 하나만 남긴다', () => {
     const boxes = within(left as HTMLElement).getAllByRole('textbox')
     expect(boxes).toHaveLength(1)
     expect(screen.getByLabelText('AI에게 추가로 전달할 말')).toBe(boxes[0])
-    expect(left.textContent).toContain('현재 작업에서 AI가 추가로 지켜야 할 내용을 적어 주세요.')
+    // 레퍼런스에 대한 말이라 레퍼런스 칸 안에 선다. 긴 설명은 없다 (왼쪽 칸 정리).
+    expect(boxes[0]!.closest('[aria-label="디자인 스타일 레퍼런스"]')).not.toBeNull()
+    expect(left.textContent).not.toContain('현재 작업에서 AI가 추가로 지켜야 할 내용을 적어 주세요.')
+    expect(left.textContent).not.toContain('이미지에 인쇄되지 않습니다')
   }, 25000)
 })
 
